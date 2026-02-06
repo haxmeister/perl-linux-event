@@ -9,7 +9,7 @@ use Time::HiRes qw(time);
 
 # File watching support (optional - load on demand)
 our $INOTIFY_AVAILABLE = eval { require Linux::Inotify2; 1 };
-our $FANOTIFY_AVAILABLE = eval { require Linux::Fanotify; 1 };
+our $FANOTIFY_AVAILABLE = eval { require Linux::Fanotify::Easy; 1 };
 
 our $VERSION = '0.001';
 
@@ -864,7 +864,7 @@ sub _watch_recursive {
 
 =head2 fswatch(%options)
 
-Create a filesystem watcher using fanotify (requires Linux::Fanotify and root privileges).
+Create a filesystem watcher using fanotify (requires Linux::Fanotify::Easy and root privileges).
 
 Options:
 
@@ -901,14 +901,14 @@ Returns a watcher object.
         }
     );
 
-Requires: Linux 2.6.37+ (5.1+ for create/delete/move), Linux::Fanotify module, root privileges
+Requires: Linux 2.6.37+ (5.1+ for create/delete/move), Linux::Fanotify::Easy module, root privileges
 
 =cut
 
 sub fswatch {
     my ($self, %opts) = @_;
     
-    croak "Linux::Fanotify not available" unless $FANOTIFY_AVAILABLE;
+    croak "Linux::Fanotify::Easy not available" unless $FANOTIFY_AVAILABLE;
     
     my $path = delete $opts{path} or croak "path is required";
     my $events = delete $opts{events} or croak "events is required";
@@ -918,14 +918,14 @@ sub fswatch {
     my $priority = delete $opts{priority} || 0;
     
     croak "events must be an array reference" unless ref($events) eq 'ARRAY';
-    croak "Invalid mark_type: $mark_type" 
-        unless $mark_type =~ /^(mount|filesystem|inode)$/;
     
     # Initialize fanotify if not already done
     unless ($self->{fanotify}) {
-        $self->{fanotify} = Linux::Fanotify::FanotifyGroup->new(
-            Linux::Fanotify::FAN_CLASS_NOTIF() | Linux::Fanotify::FAN_NONBLOCK(),
-            Linux::Fanotify::O_RDONLY() | Linux::Fanotify::O_LARGEFILE()
+        $self->{fanotify} = Linux::Fanotify::Easy->new(
+            flags => ['nonblock'],
+            on_error => sub {
+                carp "Fanotify error: $_[0]";
+            }
         ) or croak "Failed to create fanotify instance: $! (are you root?)";
         
         # Watch the fanotify file descriptor for events
@@ -933,86 +933,11 @@ sub fswatch {
             fh => $self->{fanotify}->fd,
             poll => 'r',
             cb => sub {
-                my @events = $self->{fanotify}->read(1);
-                
-                for my $event (@events) {
-                    # Process each fanotify watcher
-                    for my $fw (@{$self->{fanotify_watches}}) {
-                        next unless $fw->{active};
-                        
-                        # Check if event matches this watcher's mask
-                        my $matches = 0;
-                        for my $evt_name (@{$fw->{events}}) {
-                            my $evt_lc = lc($evt_name);
-                            if ($self->_fanotify_event_matches($event, $evt_lc)) {
-                                $matches = 1;
-                                last;
-                            }
-                        }
-                        
-                        next unless $matches;
-                        
-                        # Get event name
-                        my $event_name = $self->_fanotify_mask_to_name($event->mask);
-                        my $pid = $event->pid;
-                        my $path = $event->filename || 'unknown';
-                        
-                        eval {
-                            $fw->{cb}->($fw, $event_name, $path, $pid);
-                        };
-                        if ($@) {
-                            carp "Fswatch callback died: $@";
-                        }
-                    }
-                }
+                # Poll for events - callbacks will be invoked automatically
+                $self->{fanotify}->poll();
             }
         );
     }
-    
-    # Convert event names to fanotify constants
-    my $mask = 0;
-    my %event_map = (
-        'access'        => Linux::Fanotify::FAN_ACCESS(),
-        'modify'        => Linux::Fanotify::FAN_MODIFY(),
-        'close_write'   => Linux::Fanotify::FAN_CLOSE_WRITE(),
-        'close_nowrite' => Linux::Fanotify::FAN_CLOSE_NOWRITE(),
-        'open'          => Linux::Fanotify::FAN_OPEN(),
-        'open_exec'     => Linux::Fanotify::FAN_OPEN_EXEC(),
-    );
-    
-    # Linux 5.1+ events
-    if (Linux::Fanotify->can('FAN_CREATE')) {
-        $event_map{create} = Linux::Fanotify::FAN_CREATE();
-        $event_map{delete} = Linux::Fanotify::FAN_DELETE();
-        $event_map{delete_self} = Linux::Fanotify::FAN_DELETE_SELF();
-        $event_map{moved_from} = Linux::Fanotify::FAN_MOVED_FROM();
-        $event_map{moved_to} = Linux::Fanotify::FAN_MOVED_TO();
-        $event_map{move_self} = Linux::Fanotify::FAN_MOVE_SELF();
-        $event_map{attrib} = Linux::Fanotify::FAN_ATTRIB();
-    }
-    
-    for my $event (@$events) {
-        my $event_lc = lc($event);
-        if (exists $event_map{$event_lc}) {
-            $mask |= $event_map{$event_lc};
-        } else {
-            carp "Unknown or unsupported fanotify event: $event (may require Linux 5.1+)";
-        }
-    }
-    
-    # Determine mark flags
-    my $mark_flags = Linux::Fanotify::FAN_MARK_ADD();
-    if ($mark_type eq 'mount') {
-        $mark_flags |= Linux::Fanotify::FAN_MARK_MOUNT();
-    } elsif ($mark_type eq 'filesystem') {
-        $mark_flags |= Linux::Fanotify::FAN_MARK_FILESYSTEM();
-    }
-    # 'inode' uses no additional flags
-    
-    # Add the mark
-    my $dirfd = -1;  # AT_FDCWD
-    $self->{fanotify}->mark($mark_flags, $mask, $dirfd, $path)
-        or croak "Failed to mark $path: $!";
     
     my $watcher = Linux::Event::Watcher->new(
         id => $self->{next_id}++,
@@ -1027,61 +952,28 @@ sub fswatch {
         active => 1,
     );
     
+    # Create the fanotify watch
+    $watcher->{fanotify_watch} = $self->{fanotify}->watch(
+        path => $path,
+        events => $events,
+        mark_type => $mark_type,
+        on_event => sub {
+            my ($event) = @_;
+            
+            return unless $watcher->{active};
+            
+            eval {
+                $watcher->{cb}->($watcher, $event->{event}, $event->{path}, $event->{pid});
+            };
+            if ($@) {
+                carp "Fswatch callback died: $@";
+            }
+        }
+    );
+    
     push @{$self->{fanotify_watches}}, $watcher;
     
     return $watcher;
-}
-
-sub _fanotify_event_matches {
-    my ($self, $event, $event_name) = @_;
-    
-    my %checks = (
-        'access'        => sub { $event->mask & Linux::Fanotify::FAN_ACCESS() },
-        'modify'        => sub { $event->mask & Linux::Fanotify::FAN_MODIFY() },
-        'close_write'   => sub { $event->mask & Linux::Fanotify::FAN_CLOSE_WRITE() },
-        'close_nowrite' => sub { $event->mask & Linux::Fanotify::FAN_CLOSE_NOWRITE() },
-        'open'          => sub { $event->mask & Linux::Fanotify::FAN_OPEN() },
-        'open_exec'     => sub { $event->mask & Linux::Fanotify::FAN_OPEN_EXEC() },
-    );
-    
-    # Linux 5.1+ events
-    if (Linux::Fanotify->can('FAN_CREATE')) {
-        $checks{create} = sub { $event->mask & Linux::Fanotify::FAN_CREATE() };
-        $checks{delete} = sub { $event->mask & Linux::Fanotify::FAN_DELETE() };
-        $checks{delete_self} = sub { $event->mask & Linux::Fanotify::FAN_DELETE_SELF() };
-        $checks{moved_from} = sub { $event->mask & Linux::Fanotify::FAN_MOVED_FROM() };
-        $checks{moved_to} = sub { $event->mask & Linux::Fanotify::FAN_MOVED_TO() };
-        $checks{move_self} = sub { $event->mask & Linux::Fanotify::FAN_MOVE_SELF() };
-        $checks{attrib} = sub { $event->mask & Linux::Fanotify::FAN_ATTRIB() };
-    }
-    
-    return $checks{$event_name}->() if exists $checks{$event_name};
-    return 0;
-}
-
-sub _fanotify_mask_to_name {
-    my ($self, $mask) = @_;
-    
-    my @names;
-    
-    push @names, 'access' if $mask & Linux::Fanotify::FAN_ACCESS();
-    push @names, 'modify' if $mask & Linux::Fanotify::FAN_MODIFY();
-    push @names, 'close_write' if $mask & Linux::Fanotify::FAN_CLOSE_WRITE();
-    push @names, 'close_nowrite' if $mask & Linux::Fanotify::FAN_CLOSE_NOWRITE();
-    push @names, 'open' if $mask & Linux::Fanotify::FAN_OPEN();
-    push @names, 'open_exec' if $mask & Linux::Fanotify::FAN_OPEN_EXEC();
-    
-    if (Linux::Fanotify->can('FAN_CREATE')) {
-        push @names, 'create' if $mask & Linux::Fanotify::FAN_CREATE();
-        push @names, 'delete' if $mask & Linux::Fanotify::FAN_DELETE();
-        push @names, 'delete_self' if $mask & Linux::Fanotify::FAN_DELETE_SELF();
-        push @names, 'moved_from' if $mask & Linux::Fanotify::FAN_MOVED_FROM();
-        push @names, 'moved_to' if $mask & Linux::Fanotify::FAN_MOVED_TO();
-        push @names, 'move_self' if $mask & Linux::Fanotify::FAN_MOVE_SELF();
-        push @names, 'attrib' if $mask & Linux::Fanotify::FAN_ATTRIB();
-    }
-    
-    return join(',', @names) || 'unknown';
 }
 
 =head2 run()
@@ -1516,7 +1408,9 @@ L<IO::Uring> - Low-level io_uring bindings
 
 L<Linux::Inotify2> - inotify file/directory watching
 
-L<Linux::Fanotify> - fanotify filesystem monitoring
+L<Linux::Fanotify::Easy> - Simplified fanotify filesystem monitoring
+
+L<Linux::Fanotify> - Low-level fanotify bindings
 
 L<EV> - Another high-performance event loop
 

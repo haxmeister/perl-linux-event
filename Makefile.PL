@@ -24,8 +24,8 @@ WriteMakefile(
         'File::Find'        => '0',
     },
     PREREQ_PM_OPTIONAL => {
-        'Linux::Inotify2'   => '0',  # For watch() - file/directory monitoring
-        'Linux::Fanotify'   => '0',  # For fswatch() - filesystem monitoring
+        'Linux::Inotify2'      => '0',  # For watch() - file/directory monitoring
+        'Linux::Fanotify::Easy' => '0',  # For fswatch() - filesystem monitoring
     },
     TEST_REQUIRES => {
         'Test::More' => '0.96',
