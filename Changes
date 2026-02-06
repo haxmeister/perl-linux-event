@@ -1,0 +1,22 @@
+Revision history for Linux-Event
+
+0.001  2026-02-05
+    - Initial release
+    - High-performance event framework using io_uring
+    - Features:
+      * I/O watchers (read/write polling)
+      * One-shot timers
+      * Periodic timers
+      * Signal handlers
+      * Idle callbacks
+      * Deferred execution
+      * Watcher management (start/stop/priority)
+      * Priority-based event processing
+      * Clean, intuitive API
+    - Built on IO::Uring::Easy for simplified io_uring access
+    - Complete examples:
+      * HTTP server
+      * Echo server
+      * Timer demonstrations
+      * Deferred/idle callback examples
+    - Comprehensive documentation and tests
