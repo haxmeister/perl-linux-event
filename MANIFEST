@@ -8,3 +8,5 @@ examples/http_server.pl
 examples/echo_server.pl
 examples/timers.pl
 examples/deferred_idle.pl
+examples/inotify_watch.pl
+examples/fanotify_monitor.pl

@@ -10,6 +10,8 @@ Revision history for Linux-Event
       * Signal handlers
       * Idle callbacks
       * Deferred execution
+      * File/directory watching (inotify via Linux::Inotify2)
+      * Filesystem monitoring (fanotify via Linux::Fanotify)
       * Watcher management (start/stop/priority)
       * Priority-based event processing
       * Clean, intuitive API
@@ -19,4 +21,10 @@ Revision history for Linux-Event
       * Echo server
       * Timer demonstrations
       * Deferred/idle callback examples
+      * File watching with inotify
+      * Filesystem monitoring with fanotify
     - Comprehensive documentation and tests
+    - Kernel compatibility:
+      * Core features: Linux 5.1+ (io_uring)
+      * File watching: Linux 2.6.13+ (inotify)
+      * Filesystem monitoring: Linux 2.6.37+/5.1+ (fanotify)
