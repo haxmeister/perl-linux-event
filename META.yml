@@ -1,0 +1,28 @@
+---
+meta-spec:
+  version: '2'
+  url: https://metacpan.org/pod/CPAN::Meta::Spec
+name: Linux-Event
+version: '0.001_001'
+abstract: Front door for the Linux::Event ecosystem
+author:
+  - Joshua S. Day
+license:
+  - perl_5
+dynamic_config: 1
+release_status: testing
+resources:
+  repository:
+    type: git
+    url: https://github.com/haxmeister/perl-linux-event
+    web: https://github.com/haxmeister/perl-linux-event
+  bugtracker:
+    web: https://github.com/haxmeister/perl-linux-event/issues
+prereqs:
+  runtime:
+    requires:
+      perl: '5.036000'
+      Carp: '0'
+      Linux::Epoll: '0'
+      Linux::Event::Timer: '0.010'
+      Linux::Event::Clock: '0.011'
