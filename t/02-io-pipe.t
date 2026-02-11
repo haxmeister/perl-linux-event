@@ -11,35 +11,37 @@ for my $m (qw(Linux::Epoll Linux::Event::Clock Linux::Event::Timer)) {
 use lib "lib";
 use Linux::Event::Loop;
 
-use constant READABLE => 0x01;
-
-pipe(my $r, my $w) or die "pipe: $!";
-select((select($w), $|=1)[0]);
+pipe(my $r, my $w) or die "pipe failed: $!";
 
 my $loop = Linux::Event::Loop->new( backend => 'epoll' );
 
-my $seen;
+my $got = '';
+
+my $watcher = $loop->watch(
+  $r,
+  read => sub ($loop, $fh, $w) {
+    my $buf = '';
+my $n = sysread($fh, $buf, 1024);
+if (defined $n && $n > 0) {
+  $got .= $buf;
+  $w->cancel;      # stop watching after first read
+  $loop->stop;     # exit loop
+}
+  },
+);
+
+# Schedule a write shortly after loop starts
+$loop->after(0.020, sub ($loop) {
+  syswrite($w, "hello");
+});
 
 local $SIG{ALRM} = sub { die "timeout\n" };
 alarm 3;
-
-$loop->watch_fh($r, READABLE, sub ($loop, $fh, $fd, $mask, $tag) {
-  my $buf = '';
-  my $n = sysread($fh, $buf, 4096);
-  ok(defined $n && $n > 0, "read from pipe");
-  $seen = $buf;
-  $loop->unwatch_fh($fh);
-  $loop->stop;
-}, tag => 'pipe');
-
-$loop->after_ms(20, sub ($loop) {
-  syswrite($w, "ok\n") or die "syswrite: $!";
-});
 
 $loop->run;
 
 alarm 0;
 
-is($seen, "ok\n", "saw payload");
+is($got, 'hello', "readable event fired and data received");
 
 done_testing;

@@ -1,5 +1,11 @@
 Revision history for Linux-Event
 
+0.002_001  2026-02-10
+  - Introduce Linux::Event::Watcher (mutable watcher handles).
+  - IO API: watch(...) returns a watcher; masks are internal.
+  - Watchers support data (avoid closure captures) and enable/disable toggles.
+  - Simplify timer API to seconds: after($seconds) and at($seconds).
+
 0.001_001  2026-02-09
   - First developer release of Linux::Event::Loop + Backend boundary.
   - Epoll backend via Linux::Epoll.

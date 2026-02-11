@@ -18,15 +18,15 @@ my @order;
 local $SIG{ALRM} = sub { die "timeout\n" };
 alarm 3;
 
-$loop->after_ms(30, sub ($loop) { push @order, 'B' });
-$loop->after_ms(10, sub ($loop) { push @order, 'A' });
+$loop->after(0.030, sub ($loop) { push @order, 'B' });
+$loop->after(0.010, sub ($loop) { push @order, 'A' });
 
-my $cancel = $loop->after_ms(20, sub ($loop) { push @order, 'X' });
+my $cancel = $loop->after(0.020, sub ($loop) { push @order, 'X' });
 ok($loop->cancel($cancel), "cancel works");
 
-$loop->after_ms(60, sub ($loop) {
+$loop->after(0.060, sub ($loop) {
   push @order, 'STOP';
-  $loop->stop;
+$loop->stop;
 });
 
 $loop->run;

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.001_001';
+our $VERSION = '0.002_001';
 
 use Linux::Event::Loop;
 
@@ -26,7 +26,8 @@ Linux::Event - Front door for the Linux::Event ecosystem
 
   my $loop = Linux::Event->new( backend => 'epoll' );
 
-  $loop->after_ms(100, sub ($loop) {
+  # Timers use seconds (float allowed)
+  $loop->after(0.100, sub ($loop) {
     say "tick";
     $loop->stop;
   });
@@ -36,7 +37,21 @@ Linux::Event - Front door for the Linux::Event ecosystem
 =head1 DESCRIPTION
 
 C<Linux::Event> is a Linux-focused event loop ecosystem. This distribution
-currently provides the loop and backend boundary, plus a scheduler.
+currently provides:
+
+=over 4
+
+=item * L<Linux::Event::Loop> - policy layer: clock + scheduling + timer rearm
+
+=item * L<Linux::Event::Backend> - backend boundary
+
+=item * L<Linux::Event::Backend::Epoll> - epoll mechanism backend
+
+=item * L<Linux::Event::Scheduler> - deadline scheduler (nanoseconds internally)
+
+=item * L<Linux::Event::Watcher> - mutable watcher handle returned by the loop
+
+=back
 
 This is an early development release.
 
@@ -54,9 +69,9 @@ The project repository is hosted on GitHub:
 
 L<https://github.com/haxmeister/perl-linux-event>
 
-
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>, L<Linux::Event::Backend>, L<Linux::Event::Scheduler>
+L<Linux::Event::Loop>, L<Linux::Event::Watcher>, L<Linux::Event::Backend>,
+L<Linux::Event::Scheduler>
 
 =cut

@@ -8,20 +8,20 @@ my $loop = Linux::Event::Loop->new( backend => 'epoll' );
 
 say "Scheduling...";
 
-$loop->after_ms(50, sub ($loop, $id, $deadline_ns) {
-  say "B (+50ms)";
+$loop->after(0.050, sub ($loop) {
+  say "B (+0.050s)";
 });
 
-$loop->after_ms(10, sub ($loop, $id, $deadline_ns) {
-  say "A (+10ms)";
+$loop->after(0.010, sub ($loop) {
+  say "A (+0.010s)";
 });
 
-my $cancel = $loop->after_ms(20, sub ($loop, $id, $deadline_ns) {
+my $cancel = $loop->after(0.020, sub ($loop) {
   say "SHOULD NOT RUN";
 });
 $loop->cancel($cancel);
 
-$loop->after_ms(120, sub ($loop, $id, $deadline_ns) {
+$loop->after(0.120, sub ($loop) {
   say "Stopping";
   $loop->stop;
 });
