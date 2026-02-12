@@ -1,7 +1,10 @@
 Changes
+examples/io_pipe_demo.pl
 examples/listen_echo.pl
 examples/listen_with_timer.pl
+examples/loop_demo.pl
 examples/timer_basic.pl
+examples/timer_demo.pl
 lib/Linux/Event.pm
 lib/Linux/Event/Backend.pm
 lib/Linux/Event/Backend/Epoll.pm

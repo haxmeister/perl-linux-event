@@ -61,11 +61,11 @@ DIRFILESEP = /
 DFSEP = $(DIRFILESEP)
 NAME = Linux::Event
 NAME_SYM = Linux_Event
-VERSION = 0.002_001
+VERSION = 0.003_001
 VERSION_MACRO = VERSION
-VERSION_SYM = 0_002_001
+VERSION_SYM = 0_003_001
 DEFINE_VERSION = -D$(VERSION_MACRO)=\"$(VERSION)\"
-XS_VERSION = 0.002_001
+XS_VERSION = 0.003_001
 XS_VERSION_MACRO = XS_VERSION
 XS_DEFINE_VERSION = -D$(XS_VERSION_MACRO)=\"$(XS_VERSION)\"
 INST_ARCHLIB = blib/arch
@@ -275,7 +275,7 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 DIST_CP = best
 DIST_DEFAULT = tardist
 DISTNAME = Linux-Event
-DISTVNAME = Linux-Event-0.002_001
+DISTVNAME = Linux-Event-0.003_001
 
 
 # --- MakeMaker macro section:
@@ -534,7 +534,7 @@ metafile : create_distdir
 	$(NOECHO) $(ECHO) '  Linux::Event::Timer: '\''0.01'\''' >> META_new.yml
 	$(NOECHO) $(ECHO) '  perl: '\''5.036000'\''' >> META_new.yml
 	$(NOECHO) $(ECHO) 'resources: {}' >> META_new.yml
-	$(NOECHO) $(ECHO) 'version: 0.002_001' >> META_new.yml
+	$(NOECHO) $(ECHO) 'version: 0.003_001' >> META_new.yml
 	$(NOECHO) $(ECHO) 'x_serialization_backend: '\''CPAN::Meta::YAML version 0.020'\''' >> META_new.yml
 	-$(NOECHO) $(MV) META_new.yml $(DISTVNAME)/META.yml
 	$(NOECHO) $(ECHO) Generating META.json
@@ -582,7 +582,7 @@ metafile : create_distdir
 	$(NOECHO) $(ECHO) '   },' >> META_new.json
 	$(NOECHO) $(ECHO) '   "release_status" : "unstable",' >> META_new.json
 	$(NOECHO) $(ECHO) '   "resources" : {},' >> META_new.json
-	$(NOECHO) $(ECHO) '   "version" : "0.002_001",' >> META_new.json
+	$(NOECHO) $(ECHO) '   "version" : "0.003_001",' >> META_new.json
 	$(NOECHO) $(ECHO) '   "x_serialization_backend" : "JSON::PP version 4.16"' >> META_new.json
 	$(NOECHO) $(ECHO) '}' >> META_new.json
 	-$(NOECHO) $(MV) META_new.json $(DISTVNAME)/META.json
@@ -892,7 +892,7 @@ testdb_static :: static pure_all
 # --- MakeMaker ppd section:
 # Creates a PPD (Perl Package Description) for a binary distribution.
 ppd :
-	$(NOECHO) $(ECHO) '<SOFTPKG NAME="Linux-Event" VERSION="0.002_001">' > Linux-Event.ppd
+	$(NOECHO) $(ECHO) '<SOFTPKG NAME="Linux-Event" VERSION="0.003_001">' > Linux-Event.ppd
 	$(NOECHO) $(ECHO) '    <ABSTRACT>Front door for the Linux::Event ecosystem</ABSTRACT>' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '    <AUTHOR>Joshua S. Day</AUTHOR>' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '    <IMPLEMENTATION>' >> Linux-Event.ppd
