@@ -5,6 +5,10 @@ use warnings;
 
 our $VERSION = '0.003_001';
 
+use v5.36;
+use strict;
+use warnings;
+
 use Carp qw(croak);
 
 sub new ($class, %args) {
@@ -54,18 +58,6 @@ sub after_ns ($self, $delta_ns, $cb) {
   return $self->at_ns($deadline, $cb);
 }
 
-sub after_us ($self, $delta_us, $cb) {
-  croak "delta_us is required" if !defined $delta_us;
-  $delta_us = int($delta_us);
-  return $self->after_ns($delta_us * 1_000, $cb);
-}
-
-sub after_ms ($self, $delta_ms, $cb) {
-  croak "delta_ms is required" if !defined $delta_ms;
-  $delta_ms = int($delta_ms);
-  return $self->after_ns($delta_ms * 1_000_000, $cb);
-}
-
 sub cancel ($self, $id) {
   return 0 if !defined $id;
   return 0 if !$self->{live}{$id};
@@ -74,13 +66,15 @@ sub cancel ($self, $id) {
   return 1;
 }
 
-sub count ($self) {
-  return scalar keys $self->{live}->%*;
-}
-
 sub next_deadline_ns ($self) {
-  _discard_cancelled_root($self);
-  return undef if $self->{size} == 0;
+  _compact($self) if $self->{cancelled} && $self->{cancelled} > 32;
+  return undef if !$self->{size};
+  my $id0 = $self->{id}[0];
+  while ($self->{size} && !$self->{live}{$id0}) {
+    _pop_root($self);
+    return undef if !$self->{size};
+    $id0 = $self->{id}[0];
+  }
   return $self->{d_ns}[0];
 }
 
@@ -88,100 +82,117 @@ sub pop_expired ($self) {
   my $now = $self->{clock}->now_ns;
 
   my @out;
-  while (1) {
-    _discard_cancelled_root($self);
-    last if $self->{size} == 0;
+  while ($self->{size}) {
+    my $deadline = $self->{d_ns}[0];
+    my $id0      = $self->{id}[0];
 
-    my $d = $self->{d_ns}[0];
-    last if $d > $now;
+    if (!$self->{live}{$id0}) {
+      _pop_root($self);
+      next;
+    }
 
-    my ($id, $cb, $deadline) = _pop_root($self);
+    last if $deadline > $now;
 
-    next if !$self->{live}{$id};
-    delete $self->{live}{$id};
+    my $cb = $self->{cb}[0];
 
-    push @out, [$id, $cb, $deadline];
+    delete $self->{live}{$id0};
+    _pop_root($self);
+
+    push @out, [ $id0, $cb, $deadline ];
   }
-
   return @out;
 }
 
-sub _discard_cancelled_root ($self) {
-  while ($self->{size} > 0) {
-    my $id = $self->{id}[0];
-    last if $self->{live}{$id};
-    _pop_root($self);
-    $self->{cancelled}-- if $self->{cancelled} > 0;
+sub _pop_root ($self) {
+  my $last = --$self->{size};
+  if ($last < 0) {
+    $self->{size} = 0;
+    return;
   }
+  if ($last == 0) {
+    $self->{d_ns} = [];
+    $self->{cb}   = [];
+    $self->{id}   = [];
+    return;
+  }
+
+  $self->{d_ns}[0] = $self->{d_ns}[$last];
+  $self->{cb}[0]   = $self->{cb}[$last];
+  $self->{id}[0]   = $self->{id}[$last];
+
+  pop @{ $self->{d_ns} };
+  pop @{ $self->{cb} };
+  pop @{ $self->{id} };
+
+  _sift_down($self, 0);
   return;
 }
 
-sub _pop_root ($self) {
-  my $size = $self->{size};
-  croak "pop on empty heap" if $size <= 0;
-
-  my $root_deadline = $self->{d_ns}[0];
-  my $root_cb       = $self->{cb}[0];
-  my $root_id       = $self->{id}[0];
-
-  my $last = --$self->{size};
-  if ($last > 0) {
-    $self->{d_ns}[0] = $self->{d_ns}[$last];
-    $self->{cb}[0]   = $self->{cb}[$last];
-    $self->{id}[0]   = $self->{id}[$last];
-    _sift_down($self, 0);
-  }
-
-  $self->{d_ns}[$last] = undef;
-  $self->{cb}[$last]   = undef;
-  $self->{id}[$last]   = undef;
-
-  return ($root_id, $root_cb, $root_deadline);
-}
-
 sub _sift_up ($self, $i) {
-  my $d_ns = $self->{d_ns};
-  my $cb   = $self->{cb};
-  my $id   = $self->{id};
-
   while ($i > 0) {
     my $p = int(($i - 1) / 2);
-    last if $d_ns->[$p] <= $d_ns->[$i];
-
-    ($d_ns->[$i], $d_ns->[$p]) = ($d_ns->[$p], $d_ns->[$i]);
-    ($cb->[$i],   $cb->[$p])   = ($cb->[$p],   $cb->[$i]);
-    ($id->[$i],   $id->[$p])   = ($id->[$p],   $id->[$i]);
-
+    last if $self->{d_ns}[$p] <= $self->{d_ns}[$i];
+    _swap($self, $i, $p);
     $i = $p;
   }
-
   return;
 }
 
 sub _sift_down ($self, $i) {
-  my $d_ns = $self->{d_ns};
-  my $cb   = $self->{cb};
-  my $id   = $self->{id};
-  my $n    = $self->{size};
-
   while (1) {
     my $l = $i * 2 + 1;
-    last if $l >= $n;
-
+    last if $l >= $self->{size};
     my $r = $l + 1;
-    my $m = ($r < $n && $d_ns->[$r] < $d_ns->[$l]) ? $r : $l;
 
-    last if $d_ns->[$i] <= $d_ns->[$m];
+    my $m = $l;
+    if ($r < $self->{size} && $self->{d_ns}[$r] < $self->{d_ns}[$l]) {
+      $m = $r;
+    }
 
-    ($d_ns->[$i], $d_ns->[$m]) = ($d_ns->[$m], $d_ns->[$i]);
-    ($cb->[$i],   $cb->[$m])   = ($cb->[$m],   $cb->[$i]);
-    ($id->[$i],   $id->[$m])   = ($id->[$m],   $id->[$i]);
-
+    last if $self->{d_ns}[$i] <= $self->{d_ns}[$m];
+    _swap($self, $i, $m);
     $i = $m;
   }
-
   return;
 }
+
+sub _swap ($self, $a, $b) {
+  (@{$self->{d_ns}}[$a, $b]) = (@{$self->{d_ns}}[$b, $a]);
+  (@{$self->{cb}}[$a, $b])   = (@{$self->{cb}}[$b, $a]);
+  (@{$self->{id}}[$a, $b])   = (@{$self->{id}}[$b, $a]);
+  return;
+}
+
+sub _compact ($self) {
+  # Rebuild heap to drop cancelled entries.
+  return if !$self->{size};
+
+  my @d;
+  my @cb;
+  my @id;
+
+  for my $i (0 .. $self->{size} - 1) {
+    my $idv = $self->{id}[$i];
+    next if !$self->{live}{$idv};
+    push @d,  $self->{d_ns}[$i];
+    push @cb, $self->{cb}[$i];
+    push @id, $idv;
+  }
+
+  $self->{d_ns} = \@d;
+  $self->{cb}   = \@cb;
+  $self->{id}   = \@id;
+  $self->{size} = scalar @id;
+  $self->{cancelled} = 0;
+
+  # Heapify
+  for (my $i = int($self->{size} / 2) - 1; $i >= 0; $i--) {
+    _sift_down($self, $i);
+  }
+  return;
+}
+
+1;
 
 1;
 
@@ -189,80 +200,30 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Scheduler - Deadline scheduler (nanoseconds) for Linux::Event
+Linux::Event::Scheduler - Internal timer queue for Linux::Event
 
 =head1 SYNOPSIS
 
-  use Linux::Event::Clock;
-  use Linux::Event::Scheduler;
-
-  my $clock = Linux::Event::Clock->new(clock => 'monotonic');
-  my $sched = Linux::Event::Scheduler->new(clock => $clock);
-
-  $clock->tick;
-  $sched->after_ms(25, sub { say "fired" });
+  # Internal module. See Linux::Event::Loop.
 
 =head1 DESCRIPTION
 
-Stores callbacks keyed by absolute deadlines in nanoseconds.
+This package implements the timer queue used by L<Linux::Event::Loop>.
+It stores timers keyed by monotonic time and supports popping all
+expired timers for a given time point.
 
-Pairs with:
-
-=over 4
-
-=item * L<Linux::Event::Clock> for cached monotonic time and deadline math
-
-=item * L<Linux::Event::Timer> (timerfd) for kernel wakeups in an event loop
-
-=back
-
-This module does not block and does not manage file descriptors.
-
-The scheduler stores callbacks, but the event loop decides the callback invocation signature.
-
-
-=head1 STATUS
-
-B<EXPERIMENTAL / WORK IN PROGRESS>
-
-The API is not yet considered stable and may change without notice.
-
-=head1 CLOCK CONTRACT
-
-Constructor accepts a duck-typed C<clock> object which must implement:
-
-=over 4
-
-=item * C<now_ns>
-
-=item * C<deadline_in_ns>
-
-=back
-
-The clock is expected to be ticked externally by the loop.
+This module is not intended for direct use.
 
 =head1 METHODS
 
-=head2 new(clock => $clock)
+This class is internal; method names and behavior may change without notice.
 
-=head2 at_ns($deadline_ns, $cb) -> $id
+=head1 AUTHOR
 
-=head2 after_ns($delta_ns, $cb) -> $id
+Joshua S. Day
 
-=head2 after_us($delta_us, $cb) -> $id
+=head1 LICENSE
 
-=head2 after_ms($delta_ms, $cb) -> $id
-
-=head2 cancel($id) -> $bool
-
-=head2 next_deadline_ns() -> $deadline_ns|undef
-
-=head2 pop_expired() -> @items
-
-Each item is:
-
-  [ $id, $coderef, $deadline_ns ]
-
-=head2 count() -> $n
+Same terms as Perl itself.
 
 =cut

@@ -19,7 +19,7 @@
 #     META_MERGE => { resources=>{ bugtracker=>{ web=>q[https://github.com/haxmeister/perl-linux-event/issues] }, repository=>{ type=>q[git], url=>q[https://github.com/haxmeister/perl-linux-event], web=>q[https://github.com/haxmeister/perl-linux-event] } } }
 #     MIN_PERL_VERSION => q[5.036000]
 #     NAME => q[Linux::Event]
-#     PREREQ_PM => { Carp=>q[0], Linux::Epoll=>q[0], Linux::Event::Clock=>q[0.011], Linux::Event::Timer=>q[0.01] }
+#     PREREQ_PM => { Carp=>q[0], Linux::Epoll=>q[0], Linux::Event::Clock=>q[0.011], Linux::Event::Timer=>q[0.01], Linux::FD::Signal=>q[0] }
 #     TEST_REQUIRES => {  }
 #     VERSION_FROM => q[lib/Linux/Event.pm]
 
@@ -171,7 +171,10 @@ MAN3PODS = lib/Linux/Event.pm \
 	lib/Linux/Event/Backend.pm \
 	lib/Linux/Event/Backend/Epoll.pm \
 	lib/Linux/Event/Loop.pm \
+	lib/Linux/Event/Pid.pm \
 	lib/Linux/Event/Scheduler.pm \
+	lib/Linux/Event/Signal.pm \
+	lib/Linux/Event/Wakeup.pm \
 	lib/Linux/Event/Watcher.pm
 
 # Where to build things
@@ -195,7 +198,10 @@ TO_INST_PM = lib/Linux/Event.pm \
 	lib/Linux/Event/Backend.pm \
 	lib/Linux/Event/Backend/Epoll.pm \
 	lib/Linux/Event/Loop.pm \
+	lib/Linux/Event/Pid.pm \
 	lib/Linux/Event/Scheduler.pm \
+	lib/Linux/Event/Signal.pm \
+	lib/Linux/Event/Wakeup.pm \
 	lib/Linux/Event/Watcher.pm
 PERL_ARCHLIBDEP = /home/haxmeister/perl5/perlbrew/perls/perl-5.42.0/lib/5.42.0/x86_64-linux-thread-multi
 PERL_INCDEP = /home/haxmeister/perl5/perlbrew/perls/perl-5.42.0/lib/5.42.0/x86_64-linux-thread-multi/CORE
@@ -433,14 +439,20 @@ manifypods : pure_all config  \
 	lib/Linux/Event/Backend.pm \
 	lib/Linux/Event/Backend/Epoll.pm \
 	lib/Linux/Event/Loop.pm \
+	lib/Linux/Event/Pid.pm \
 	lib/Linux/Event/Scheduler.pm \
+	lib/Linux/Event/Signal.pm \
+	lib/Linux/Event/Wakeup.pm \
 	lib/Linux/Event/Watcher.pm
 	$(NOECHO) $(POD2MAN) --section=$(MAN3SECTION) --perm_rw=$(PERM_RW) -u \
 	  lib/Linux/Event.pm $(INST_MAN3DIR)/Linux::Event.$(MAN3EXT) \
 	  lib/Linux/Event/Backend.pm $(INST_MAN3DIR)/Linux::Event::Backend.$(MAN3EXT) \
 	  lib/Linux/Event/Backend/Epoll.pm $(INST_MAN3DIR)/Linux::Event::Backend::Epoll.$(MAN3EXT) \
 	  lib/Linux/Event/Loop.pm $(INST_MAN3DIR)/Linux::Event::Loop.$(MAN3EXT) \
+	  lib/Linux/Event/Pid.pm $(INST_MAN3DIR)/Linux::Event::Pid.$(MAN3EXT) \
 	  lib/Linux/Event/Scheduler.pm $(INST_MAN3DIR)/Linux::Event::Scheduler.$(MAN3EXT) \
+	  lib/Linux/Event/Signal.pm $(INST_MAN3DIR)/Linux::Event::Signal.$(MAN3EXT) \
+	  lib/Linux/Event/Wakeup.pm $(INST_MAN3DIR)/Linux::Event::Wakeup.$(MAN3EXT) \
 	  lib/Linux/Event/Watcher.pm $(INST_MAN3DIR)/Linux::Event::Watcher.$(MAN3EXT) 
 
 
@@ -532,6 +544,7 @@ metafile : create_distdir
 	$(NOECHO) $(ECHO) '  Linux::Epoll: '\''0'\''' >> META_new.yml
 	$(NOECHO) $(ECHO) '  Linux::Event::Clock: '\''0.011'\''' >> META_new.yml
 	$(NOECHO) $(ECHO) '  Linux::Event::Timer: '\''0.01'\''' >> META_new.yml
+	$(NOECHO) $(ECHO) '  Linux::FD::Signal: '\''0'\''' >> META_new.yml
 	$(NOECHO) $(ECHO) '  perl: '\''5.036000'\''' >> META_new.yml
 	$(NOECHO) $(ECHO) 'resources: {}' >> META_new.yml
 	$(NOECHO) $(ECHO) 'version: 0.003_001' >> META_new.yml
@@ -576,6 +589,7 @@ metafile : create_distdir
 	$(NOECHO) $(ECHO) '            "Linux::Epoll" : "0",' >> META_new.json
 	$(NOECHO) $(ECHO) '            "Linux::Event::Clock" : "0.011",' >> META_new.json
 	$(NOECHO) $(ECHO) '            "Linux::Event::Timer" : "0.01",' >> META_new.json
+	$(NOECHO) $(ECHO) '            "Linux::FD::Signal" : "0",' >> META_new.json
 	$(NOECHO) $(ECHO) '            "perl" : "5.036000"' >> META_new.json
 	$(NOECHO) $(ECHO) '         }' >> META_new.json
 	$(NOECHO) $(ECHO) '      }' >> META_new.json
@@ -901,6 +915,7 @@ ppd :
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Linux::Epoll" />' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Linux::Event::Clock" VERSION="0.011" />' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Linux::Event::Timer" VERSION="0.01" />' >> Linux-Event.ppd
+	$(NOECHO) $(ECHO) '        <REQUIRE NAME="Linux::FD::Signal" />' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '        <ARCHITECTURE NAME="x86_64-linux-thread-multi-5.42" />' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '        <CODEBASE HREF="" />' >> Linux-Event.ppd
 	$(NOECHO) $(ECHO) '    </IMPLEMENTATION>' >> Linux-Event.ppd
@@ -919,7 +934,10 @@ pm_to_blib : $(FIRST_MAKEFILE) $(TO_INST_PM)
 	  'lib/Linux/Event/Backend.pm' 'blib/lib/Linux/Event/Backend.pm' \
 	  'lib/Linux/Event/Backend/Epoll.pm' 'blib/lib/Linux/Event/Backend/Epoll.pm' \
 	  'lib/Linux/Event/Loop.pm' 'blib/lib/Linux/Event/Loop.pm' \
+	  'lib/Linux/Event/Pid.pm' 'blib/lib/Linux/Event/Pid.pm' \
 	  'lib/Linux/Event/Scheduler.pm' 'blib/lib/Linux/Event/Scheduler.pm' \
+	  'lib/Linux/Event/Signal.pm' 'blib/lib/Linux/Event/Signal.pm' \
+	  'lib/Linux/Event/Wakeup.pm' 'blib/lib/Linux/Event/Wakeup.pm' \
 	  'lib/Linux/Event/Watcher.pm' 'blib/lib/Linux/Event/Watcher.pm' 
 	$(NOECHO) $(TOUCH) pm_to_blib
 

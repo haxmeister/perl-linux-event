@@ -6,6 +6,7 @@ use warnings;
 our $VERSION = '0.003_001';
 
 use Carp qw(croak);
+use Scalar::Util qw(weaken);
 
 # NOTE:
 # This object is intentionally lightweight. It is a handle and a data container.
@@ -40,7 +41,12 @@ sub new ($class, %args) {
     croak "error must be a coderef or undef";
   }
 
-  # Default enablement: if a handler exists, it's enabled.
+  
+  # Store a weak reference to the filehandle to avoid ownership and to detect closes.
+  # If the user drops/closes the handle, the weak ref becomes undef and dispatch will auto-purge.
+  weaken($fh) if ref($fh);
+
+# Default enablement: if a handler exists, it's enabled.
   my $read_enabled  = $read  ? 1 : 0;
   my $write_enabled = $write ? 1 : 0;
   my $error_enabled = $error ? 1 : 0;

@@ -3,16 +3,19 @@ use v5.36;
 use strict;
 use warnings;
 
+use Linux::Event::Scheduler;
+
 our $VERSION = '0.003_001';
 
 use Carp qw(croak);
 
 use Linux::Event::Clock;
 use Linux::Event::Timer;
-use Linux::Event::Scheduler;
-
 use Linux::Event::Backend::Epoll;
 use Linux::Event::Watcher;
+use Linux::Event::Signal;
+use Linux::Event::Wakeup;
+use Linux::Event::Pid;
 
 use constant READABLE => 0x01;
 use constant WRITABLE => 0x02;
@@ -94,6 +97,25 @@ sub timer   ($self) { return $self->{timer} }
 sub backend ($self) { return $self->{backend} }
 sub sched   ($self) { return $self->{sched} }
 
+# -- Signals --------------------------------------------------------------
+
+sub signal ($self, @args) {
+  return ($self->{_signal} ||= Linux::Event::Signal->new(loop => $self))->signal(@args);
+}
+
+# -- Wakeups --------------------------------------------------------------
+
+sub waker ($self) {
+  return ($self->{_waker} ||= Linux::Event::Wakeup->new(loop => $self));
+}
+
+# -- Pidfds ---------------------------------------------------------------
+
+sub pid ($self, @args) {
+  $self->{pid_adaptor} //= Linux::Event::Pid->new(loop => $self);
+  return $self->{pid_adaptor}->pid(@args);
+}
+
 # -- Timers ---------------------------------------------------------------
 
 sub after ($self, $seconds, $cb) {
@@ -101,7 +123,8 @@ sub after ($self, $seconds, $cb) {
   croak "cb is required" if !$cb;
   croak "cb must be a coderef" if ref($cb) ne 'CODE';
 
-  # Seconds may be float; store as ns internally.
+  $self->{clock}->tick;
+
   my $delta_ns = int($seconds * 1_000_000_000);
   $delta_ns = 0 if $delta_ns < 0;
 
@@ -115,7 +138,6 @@ sub at ($self, $deadline_seconds, $cb) {
   croak "cb is required" if !$cb;
   croak "cb must be a coderef" if ref($cb) ne 'CODE';
 
-  # Deadline is monotonic seconds (same timebase as Clock).
   my $deadline_ns = int($deadline_seconds * 1_000_000_000);
 
   my $id = $self->{sched}->at_ns($deadline_ns, $cb);
@@ -157,7 +179,9 @@ sub watch ($self, $fh, %spec) {
   croak "fh has no fileno" if !defined $fd;
   $fd = int($fd);
 
-  croak "fd already watched: $fd" if exists $self->{_watchers}{$fd};
+  if (my $old = $self->{_watchers}{$fd}) {
+    $self->_watcher_cancel($old);
+  }
 
   my $w = Linux::Event::Watcher->new(
     loop           => $self,
@@ -171,39 +195,61 @@ sub watch ($self, $fh, %spec) {
     oneshot        => $oneshot ? 1 : 0,
   );
 
-  # Backend callback dispatch:
-  # backend calls this with ($loop,$fh,$fd,$mask,$tag). We map mask->handlers.
-  
-my $dispatch = sub ($loop, $fh, $fd2, $mask, $tag) {
-  my $ww = $loop->{_watchers}{$fd2} or return;
+  my $dispatch = sub ($loop, $fh_from_backend, $fd2, $mask, $tag) {
+    my $ww = $loop->{_watchers}{$fd2} or return;
 
-  # Frozen dispatch contract:
-  # - ERR: call error handler first if installed+enabled; otherwise treat as read+write.
-  # - HUP: also triggers read (EOF detection).
-  my $read_trig  = ($mask & READABLE) ? 1 : 0;
-  my $write_trig = ($mask & WRITABLE) ? 1 : 0;
-
-  if ($mask & ERR) {
-    if ($ww->{error_cb} && $ww->{error_enabled}) {
-      $ww->{error_cb}->($loop, $fh, $ww);
+    my $fhw = $ww->{fh};
+    if (!$fhw) {
+      $loop->_watcher_cancel($ww);
       return;
     }
-    $read_trig  = 1;
-    $write_trig = 1;
-  }
+    my $fnow = fileno($fhw);
+    if (!defined $fnow || int($fnow) != $fd2) {
+      $loop->_watcher_cancel($ww);
+      return;
+    }
 
-  $read_trig = 1 if ($mask & HUP);
+    # Frozen dispatch contract:
+    #  - ERR: call error handler first if installed+enabled; otherwise treat as read+write.
+    #  - HUP: also triggers read (EOF detection).
+    my $read_trig  = ($mask & READABLE) ? 1 : 0;
+    my $write_trig = ($mask & WRITABLE) ? 1 : 0;
 
-  if ($read_trig && $ww->{read_cb} && $ww->{read_enabled}) {
-    $ww->{read_cb}->($loop, $fh, $ww);
-  }
-  if ($write_trig && $ww->{write_cb} && $ww->{write_enabled}) {
-    $ww->{write_cb}->($loop, $fh, $ww);
-  }
-  return;
-};
+    if ($mask & ERR) {
+      if ($ww->{error_cb} && $ww->{error_enabled}) {
+        $ww->{error_cb}->($loop, $fhw, $ww);
+        if ($ww->{oneshot}) {
+          $loop->_watcher_cancel($ww) if ($loop->{_watchers}{$fd2} && $loop->{_watchers}{$fd2} == $ww);
+        }
+        return;
+      }
+      $read_trig  = 1;
+      $write_trig = 1;
+    }
 
-  $w->{_dispatch_cb} = $dispatch; # used by modify fallback
+    $read_trig = 1 if ($mask & HUP);
+
+    if ($read_trig && $ww->{read_cb} && $ww->{read_enabled}) {
+      $ww->{read_cb}->($loop, $fhw, $ww);
+    }
+
+    my $still = $loop->{_watchers}{$fd2};
+    if (!$still || $still != $ww) {
+      return;
+    }
+
+    if ($write_trig && $ww->{write_cb} && $ww->{write_enabled}) {
+      $ww->{write_cb}->($loop, $fhw, $ww);
+    }
+
+    if ($ww->{oneshot}) {
+      $loop->_watcher_cancel($ww) if ($loop->{_watchers}{$fd2} && $loop->{_watchers}{$fd2} == $ww);
+    }
+
+    return;
+  };
+
+  $w->{_dispatch_cb} = $dispatch;
 
   $self->{_watchers}{$fd} = $w;
 
@@ -228,186 +274,45 @@ sub _watcher_mask ($self, $w) {
 sub _watcher_update ($self, $w) {
   return 0 if !$w->{active};
 
-  my $fh = $w->{fh};
-  my $fd = $w->{fd};
-
   my $mask = $self->_watcher_mask($w);
 
   if ($self->{backend}->can('modify')) {
-    $self->{backend}->modify($fh, $mask, _loop => $self);
-    return 1;
+    return $self->{backend}->modify($w->{fh}, $mask);
   }
 
-  # Fallback: unwatch + watch (temporary until backend->modify exists).
-  $self->{backend}->unwatch($fd);
-
-  my $dispatch = $w->{_dispatch_cb};
-  $self->{backend}->watch($fh, $mask, $dispatch, _loop => $self, tag => undef);
-
+  # Fallback: unwatch+watch, preserving dispatch cb.
+  $self->{backend}->unwatch($w->{fh});
+  $self->{backend}->watch($w->{fh}, $mask, $w->{_dispatch_cb}, _loop => $self, tag => undef);
   return 1;
 }
 
 sub _watcher_cancel ($self, $w) {
-  return 0 if !$w->{active};
+  return if !$w || !$w->{active};
 
-  my $fd = $w->{fd};
-  my $ok = $self->{backend}->unwatch($fd);
+  $w->{active} = 0;
+  delete $self->{_watchers}{ $w->{fd} };
 
-  delete $self->{_watchers}{$fd};
+  $self->{backend}->unwatch($w->{fh});
+  $w->{fh} = undef;
 
-  return $ok ? 1 : 0;
+  return;
 }
 
+sub unwatch ($self, $fh) {
+  return 0 if !$fh;
 
-# -- Listening sockets ----------------------------------------------------
+  my $fd = fileno($fh);
+  return 0 if !defined $fd;
+  $fd = int($fd);
 
-sub listen ($self, %spec) {
-  my $type = delete $spec{type};
-  croak "type is required" if !defined $type;
+  my $w = delete $self->{_watchers}{$fd} or return 0;
+  $self->_watcher_cancel($w);
 
-  # Listener watcher spec (aligned with watch()):
-  my $accept_cb = delete $spec{read};
-  croak "read callback is required" if !$accept_cb || ref($accept_cb) ne 'CODE';
-
-  croak "write is not valid for listening sockets" if exists $spec{write};
-
-  my $error_cb = delete $spec{error};
-  if (defined $error_cb && ref($error_cb) ne 'CODE') {
-    croak "error must be a coderef or undef";
-  }
-
-  my $data = delete $spec{data};
-
-  my $edge_triggered = delete $spec{edge_triggered} ? 1 : 0;
-  my $oneshot        = delete $spec{oneshot}        ? 1 : 0;
-
-  # Socket options / policy (frozen defaults)
-  my $reuseaddr  = exists $spec{reuseaddr}  ? (delete $spec{reuseaddr}  ? 1 : 0) : 1;
-  my $reuseport  = exists $spec{reuseport}  ? (delete $spec{reuseport}  ? 1 : 0) : 0;
-  my $max_accept = exists $spec{max_accept} ? int(delete $spec{max_accept})       : 64;
-  $max_accept = 1 if $max_accept < 1;
-
-  my $backlog = exists $spec{backlog} ? int(delete $spec{backlog}) : 0;
-  $backlog = Socket::SOMAXCONN() if $backlog <= 0;
-
-  my $fh;
-
-  require Socket;
-  require Fcntl;
-
-  if ($type eq 'tcp4') {
-    my $host = exists $spec{host} ? delete $spec{host} : '0.0.0.0';
-    my $port = delete $spec{port};
-    croak "port is required" if !defined $port;
-
-    socket($fh, Socket::AF_INET(), Socket::SOCK_STREAM(), 0) or croak "socket: $!";
-
-    if ($reuseaddr) {
-      setsockopt($fh, Socket::SOL_SOCKET(), Socket::SO_REUSEADDR(), pack("l", 1))
-        or croak "setsockopt(SO_REUSEADDR): $!";
-    }
-    if ($reuseport) {
-      setsockopt($fh, Socket::SOL_SOCKET(), Socket::SO_REUSEPORT(), pack("l", 1))
-        or croak "setsockopt(SO_REUSEPORT): $!";
-    }
-
-    my $addr = Socket::sockaddr_in($port, Socket::inet_aton($host));
-    bind($fh, $addr) or croak "bind: $!";
-    listen($fh, $backlog) or croak "listen: $!";
-  }
-  elsif ($type eq 'tcp6') {
-    my $host = exists $spec{host} ? delete $spec{host} : '::';
-    my $port = delete $spec{port};
-    croak "port is required" if !defined $port;
-
-    socket($fh, Socket::AF_INET6(), Socket::SOCK_STREAM(), 0) or croak "socket: $!";
-
-    if ($reuseaddr) {
-      setsockopt($fh, Socket::SOL_SOCKET(), Socket::SO_REUSEADDR(), pack("l", 1))
-        or croak "setsockopt(SO_REUSEADDR): $!";
-    }
-    if ($reuseport) {
-      setsockopt($fh, Socket::SOL_SOCKET(), Socket::SO_REUSEPORT(), pack("l", 1))
-        or croak "setsockopt(SO_REUSEPORT): $!";
-    }
-
-    my $ip = Socket::inet_pton(Socket::AF_INET6(), $host);
-    croak "inet_pton(AF_INET6) failed for host '$host'" if !$ip;
-    my $addr = Socket::sockaddr_in6($port, $ip);
-    bind($fh, $addr) or croak "bind: $!";
-    listen($fh, $backlog) or croak "listen: $!";
-  }
-  elsif ($type eq 'unix') {
-    my $path = delete $spec{path};
-    croak "path is required" if !defined $path;
-
-    my $do_unlink = delete $spec{unlink} ? 1 : 0;
-    unlink $path if $do_unlink;
-
-    socket($fh, Socket::AF_UNIX(), Socket::SOCK_STREAM(), 0) or croak "socket: $!";
-    my $addr = Socket::sockaddr_un($path);
-    bind($fh, $addr) or croak "bind: $!";
-    listen($fh, $backlog) or croak "listen: $!";
-  }
-  else {
-    croak "unknown listen type '$type'";
-  }
-
-  # nonblocking
-  my $flags = fcntl($fh, Fcntl::F_GETFL(), 0);
-  croak "fcntl(F_GETFL): $!" if !defined $flags;
-  fcntl($fh, Fcntl::F_SETFL(), $flags | Fcntl::O_NONBLOCK()) or croak "fcntl(F_SETFL): $!";
-
-  croak "unknown args: " . join(", ", sort keys %spec) if %spec;
-
-  my $w;
-  $w = $self->watch(
-    $fh,
-    read => sub ($loop, $server_fh, $ww) {
-
-      my $count = 0;
-
-      while (1) {
-        last if $count >= $max_accept;
-
-        my $client;
-        if (!accept($client, $server_fh)) {
-          last if $!{EAGAIN} || $!{EWOULDBLOCK};
-
-          if ($error_cb) {
-            $error_cb->($loop, $server_fh, $ww);
-            return;
-          }
-
-          croak "accept: $!";
-        }
-
-        my $cflags = fcntl($client, Fcntl::F_GETFL(), 0);
-        croak "fcntl(F_GETFL client): $!" if !defined $cflags;
-        fcntl($client, Fcntl::F_SETFL(), $cflags | Fcntl::O_NONBLOCK()) or croak "fcntl(F_SETFL client): $!";
-
-        # Invoke the accept callback with the accepted client socket as $fh.
-        $accept_cb->($loop, $client, $ww);
-        $count++;
-      }
-
-      return;
-    },
-    (defined $error_cb ? (error => $error_cb) : ()),
-    data           => $data,
-    edge_triggered => $edge_triggered,
-    oneshot        => $oneshot,
-  );
-
-  return wantarray ? ($fh, $w) : $fh;
+  return 1;
 }
-
-# -- Loop ----------------------------------------------------------------
 
 sub run ($self) {
   $self->{running} = 1;
-  $self->{clock}->tick;
-  $self->_rearm_timer;
 
   while ($self->{running}) {
     $self->run_once;
@@ -422,6 +327,15 @@ sub stop ($self) {
 }
 
 sub run_once ($self, $timeout_s = undef) {
+  # One syscall per iteration/batch: refresh cached monotonic time.
+  $self->{clock}->tick;
+
+  # Run any due timer callbacks before blocking.
+  $self->_dispatch_due;
+
+  # Ensure kernel timerfd is armed for the next deadline (or disarmed if none).
+  $self->_rearm_timer;
+
   return $self->{backend}->run_once($self, $timeout_s);
 }
 
@@ -463,14 +377,14 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Loop - Backend-agnostic Linux event loop (timers + epoll watchers)
+Linux::Event::Loop - Linux-native event loop (epoll + timerfd + signalfd + eventfd + pidfd)
 
 =head1 SYNOPSIS
 
   use v5.36;
   use Linux::Event;
 
-  my $loop = Linux::Event->new;
+  my $loop = Linux::Event->new;   # epoll backend, monotonic clock
 
   # I/O watcher (read/write) with user data stored on the watcher:
   my $conn = My::Conn->new(...);
@@ -485,52 +399,124 @@ Linux::Event::Loop - Backend-agnostic Linux event loop (timers + epoll watchers)
     oneshot        => 0,              # optional, default false
   );
 
-  $w->disable_write; # enable later when output buffered
+  $w->disable_write;
 
-  # Timers (seconds, float ok)
-  $loop->after(0.250, sub ($loop) {
-    warn "250ms elapsed\n";
+  # Timers (monotonic)
+  my $id = $loop->after(0.250, sub ($loop) {
+    say "250ms later";
+  });
+
+  # Signals (signalfd): strict 4-arg callback
+  my $sub = $loop->signal('INT', sub ($loop, $sig, $count, $data) {
+    say "SIG$sig ($count)";
+    $loop->stop;
+  });
+
+  # Wakeups (eventfd): watch like a normal fd
+  my $waker = $loop->waker;
+  $loop->watch($waker->fh,
+    read => sub ($loop, $fh, $watcher) {
+      my $n = $waker->drain;
+      ... handle non-fd work ...
+    },
+  );
+
+  # Pidfds (pidfd): one-shot exit notification
+  my $pid = fork() // die "fork: $!";
+  if ($pid == 0) { exit 42 }
+
+  my $psub = $loop->pid($pid, sub ($loop, $pid, $status, $data) {
+    require POSIX;
+    if (POSIX::WIFEXITED($status)) {
+      say "child $pid exited: " . POSIX::WEXITSTATUS($status);
+    }
   });
 
   $loop->run;
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Loop> ties together:
+Linux::Event::Loop is a minimal, Linux-native event loop that exposes Linux
+FD primitives cleanly and predictably. It is built around:
 
 =over 4
 
-=item * L<Linux::Event::Clock> (monotonic time, cached)
+=item * C<epoll(7)> for I/O readiness
 
-=item * L<Linux::Event::Timer> (timerfd wrapper)
+=item * C<timerfd(2)> for timers
 
-=item * L<Linux::Event::Scheduler> (deadline scheduler in nanoseconds)
+=item * C<signalfd(2)> for signal delivery
 
-=item * A backend mechanism (currently epoll via L<Linux::Event::Backend::Epoll>)
+=item * C<eventfd(2)> for explicit wakeups
+
+=item * C<pidfd_open(2)> (via L<Linux::FD::Pid>) for process lifecycle notifications
 
 =back
 
-The loop owns policy (timer scheduling and dispatch ordering). The backend owns
-readiness waiting and low-level polling.
+Linux::Event is intentionally I<not> a networking framework, protocol layer,
+retry/backoff engine, process supervisor, or socket abstraction. Ownership is
+explicit; there is no implicit close, and teardown operations are idempotent.
+
+=head1 CONSTRUCTION
+
+=head2 new(%opts) -> $loop
+
+  my $loop = Linux::Event->new(
+    backend => 'epoll',   # default
+    clock   => $clock,    # optional; must provide tick/now_ns/etc.
+    timer   => $timer,    # optional; must provide after/disarm/read_ticks/fh
+  );
+
+Options:
+
+=over 4
+
+=item * C<backend>
+
+Either the string C<'epoll'> (default) or a backend object that implements
+C<watch>, C<unwatch>, and C<run_once>.
+
+=item * C<clock>
+
+An object implementing the clock interface used by the scheduler. By default,
+a monotonic clock is used.
+
+=item * C<timer>
+
+An object implementing the timerfd interface used by the loop. By default,
+L<Linux::Event::Timer> is used.
+
+=back
+
+=head1 RUNNING THE LOOP
+
+=head2 run() / run_once($timeout_seconds) / stop()
+
+C<run()> enters the dispatch loop and continues until C<stop()> is called.
+
+C<run_once($timeout_seconds)> runs at most one backend wait/dispatch cycle. The
+timeout is in seconds; fractions are allowed.
 
 =head1 WATCHERS
 
 =head2 watch($fh, %spec) -> Linux::Event::Watcher
 
-Create a mutable watcher for a filehandle. Interest is inferred from installed
-handlers and enable/disable state.
+Create (or replace) a watcher for a filehandle.
+
+Watchers are keyed internally by file descriptor (fd). Calling C<watch()> again
+for the same fd replaces the existing watcher atomically.
 
 Supported keys in C<%spec>:
 
 =over 4
 
-=item * C<read> - coderef (optional)
+=item * C<read>  - coderef (optional)
 
 =item * C<write> - coderef (optional)
 
-=item * C<error> - coderef (optional). Called on EPOLLERR (see Dispatch).
+=item * C<error> - coderef (optional). Called on C<EPOLLERR>.
 
-=item * C<data> - user data (optional). Stored on the watcher to avoid closure captures.
+=item * C<data>  - user data (optional). Stored on the watcher to avoid closure captures.
 
 =item * C<edge_triggered> - boolean (optional, advanced). Defaults to false.
 
@@ -544,118 +530,134 @@ Handlers are invoked as:
   write => sub ($loop, $fh, $watcher) { ... }
   error => sub ($loop, $fh, $watcher) { ... }
 
-The watcher can be modified later using its methods (enable/disable write, swap
-handlers, cancel, etc).
+=head2 unwatch($fh) -> bool
+
+Remove the watcher for C<$fh>. Returns true if a watcher was removed, false if
+C<$fh> was not watched (or had no fd). Calling C<unwatch()> multiple times is safe.
 
 =head2 Dispatch contract
 
-When the backend reports events for a file descriptor, the loop dispatches as:
+When the backend reports events for a file descriptor, the loop dispatches
+callbacks in this order (when applicable):
 
 =over 4
 
-=item * If EPOLLERR is present and an C<error> handler is installed and enabled, call C<error> first and return.
+=item 1. C<error>
 
-=item * Otherwise EPOLLERR behaves like both readable and writable readiness (read+write may be invoked).
+=item 2. C<read>
 
-=item * EPOLLHUP also triggers C<read> readiness (EOF detection via read() returning 0).
-
-=item * C<read> is invoked before C<write> when both are ready.
+=item 3. C<write>
 
 =back
 
-The loop does not auto-close filehandles and does not auto-cancel watchers; user
-code decides lifecycle (cancel then close is recommended).
+This order is frozen.
 
-=head1 LISTENING SOCKETS
+=head1 SIGNALS
 
-=head2 listen(%spec) -> $socket
-=head2 listen(%spec) -> ($socket, $watcher)
+=head2 signal($sig_or_list, $cb, %opt) -> Linux::Event::Signal::Subscription
 
-Create a nonblocking listening socket and register it with the loop. This is a
-convenience wrapper around raw socket/bind/listen plus a watcher that drains
-accept() in a bounded loop.
+Register a signal handler using Linux C<signalfd>.
 
-The listener uses the normal watcher key C<read> as the "accept callback".
-Each accepted client socket is passed as C<$fh> to that callback.
+C<$sig_or_list> may be a signal number (e.g. C<2>), a signal name (C<'INT'> or
+C<'SIGINT'>), or an arrayref of those values.
 
-Required keys:
+Callback ABI (strict): the callback is always invoked with 4 arguments:
+
+  sub ($loop, $sig, $count, $data) { ... }
+
+Only one handler is stored per signal; calling C<signal()> again for the same
+signal replaces the previous handler.
+
+Options:
 
 =over 4
 
-=item * C<type> - one of C<tcp4>, C<tcp6>, C<unix>
-
-=item * C<read> - coderef, invoked for each accepted client socket
+=item * C<data> - arbitrary user value passed as the final callback argument.
 
 =back
 
-Common keys:
+Returns a subscription handle with an idempotent C<cancel> method.
 
-=over 4
+See L<Linux::Event::Signal>.
 
-=item * C<host> - for tcp4/tcp6 (defaults: C<0.0.0.0> / C<::>)
+=head1 WAKEUPS
 
-=item * C<port> - for tcp4/tcp6 (required)
+=head2 waker() -> Linux::Event::Wakeup
 
-=item * C<path> - for unix (required)
+Returns the loop's singleton waker object (an C<eventfd(2)> handle) used to
+wake the loop from another thread or process.
 
-=item * C<unlink> - for unix (optional). If true, unlink path before bind.
+The waker is created lazily on first use and is never destroyed for the lifetime
+of the loop.
 
-=item * C<reuseaddr> - boolean (default true)
+The waker exposes a readable filehandle (C<< $waker->fh >>) suitable for
+C<< $loop->watch(...) >>, and provides C<< $waker->signal >> and
+C<< $waker->drain >> methods. No watcher is installed automatically.
 
-=item * C<reuseport> - boolean (default false)
+See L<Linux::Event::Wakeup>.
 
-=item * C<max_accept> - integer (default 64). Bounds accept-drain per readiness event.
+=head1 PIDFDS
 
-=item * C<backlog> - integer (default SOMAXCONN)
+=head2 pid($pid, $cb, %opts) -> Linux::Event::Pid::Subscription
 
-=item * C<error> - coderef (optional). If accept() fails with a non-EAGAIN error.
+Registers a pidfd watcher for C<$pid>.
 
-=item * C<data>, C<edge_triggered>, C<oneshot> - forwarded to the listener watcher.
+Callback ABI (strict): the callback is always invoked with 4 arguments:
 
-=back
+  sub ($loop, $pid, $status, $data) { ... }
 
-Callback signature:
+If C<reap =E<gt> 1> (default), the loop attempts a non-blocking reap of the PID
+and passes a wait-status compatible value in C<$status>. If C<reap =E<gt> 0>,
+no reap is attempted and C<$status> is C<undef>.
 
-  read => sub ($loop, $client_fh, $listener_watcher) {
-    my $server_state = $listener_watcher->data;
-    ...
-  }
+This is a one-shot subscription: after a defined status is observed and the
+callback is invoked, the subscription is automatically canceled.
 
-Notes:
+Replacement semantics apply per PID: calling C<pid()> again for the same C<$pid>
+replaces the existing subscription.
 
-=over 4
-
-=item * C<write> is not valid for listening sockets and will croak.
-
-=item * Accepted sockets are set to nonblocking before callback.
-
-=item * This method returns the listening socket; the watcher is returned in list context.
-
-=back
+See L<Linux::Event::Pid> for full semantics and caveats (child-only reaping).
 
 =head1 TIMERS
 
+Timers use a monotonic clock.
+
 =head2 after($seconds, $cb) -> $id
 
-Schedule C<$cb> to run after C<$seconds>. Fractions are allowed. Callback is
-invoked as C<< $cb->($loop) >>.
+Schedule C<$cb> to run after C<$seconds>. Fractions are allowed.
+
+Timer callbacks are invoked as:
+
+  sub ($loop) { ... }
 
 =head2 at($deadline_seconds, $cb) -> $id
 
-Schedule at an absolute monotonic deadline in seconds (same timebase as Clock).
+Schedule C<$cb> at an absolute monotonic deadline in seconds (same timebase as
+the clock used by this loop). Fractions are allowed.
 
 =head2 cancel($id) -> bool
 
-Cancel a scheduled timer by id.
+Cancel a scheduled timer. Returns true if a timer was removed.
+
+=head1 NOTES
+
+=head2 Threading and forking helpers
+
+Linux::Event intentionally does not provide C<< $loop->thread >> or
+C<< $loop->fork >> helpers. Concurrency helpers are policy-layer constructs
+and belong in separate distributions. The core provides primitives (C<waker>,
+C<pid>) that make such helpers straightforward to implement in user code.
 
 =head1 VERSION
 
-0.003_001
+This document describes Linux::Event::Loop version 0.003_001.
 
 =head1 AUTHOR
 
-Joshua S. Day and contributors.
+Joshua S. Day
 
 =head1 LICENSE
 
 Same terms as Perl itself.
+
+=cut

@@ -9,7 +9,7 @@ for my $m (qw(Linux::Epoll Linux::Event::Clock Linux::Event::Timer)) {
 }
 
 use lib "lib";
-use Linux::Event::Loop;
+require Linux::Event::Loop;
 
 my $loop = Linux::Event::Loop->new( backend => 'epoll' );
 

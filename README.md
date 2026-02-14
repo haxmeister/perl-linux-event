@@ -1,5 +1,15 @@
 [![CI](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml/badge.svg)](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml)
 
+## Additional Linux primitives
+
+Beyond timers and I/O watchers, Linux::Event can integrate:
+
+- **Signals** via `signalfd` (`$loop->signal(...)`)
+- **Wakeups** via `eventfd` (`$loop->waker`, then watch `$waker->fh`)
+- **Process exit** via `pidfd` (`$loop->pid($pid, ...)` for child exit notifications)
+
+See the `examples/` directory for working, minimal scripts.
+
 # Linux::Event
 
 A Linux-focused, backend-swappable event loop framework.

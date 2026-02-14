@@ -9,7 +9,7 @@ for my $m (qw(Linux::Epoll Linux::Event::Clock Linux::Event::Timer)) {
 }
 
 use lib "lib";
-use Linux::Event::Loop;
+require Linux::Event::Loop;
 
 pipe(my $r, my $w) or die "pipe failed: $!";
 
