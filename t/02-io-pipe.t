@@ -8,8 +8,8 @@ for my $m (qw(Linux::Epoll Linux::Event::Clock Linux::Event::Timer)) {
   eval "require $m; 1" or plan skip_all => "$m not available: $@";
 }
 
-use lib "lib";
-require Linux::Event::Loop;
+
+use Linux::Event::Loop;
 
 pipe(my $r, my $w) or die "pipe failed: $!";
 

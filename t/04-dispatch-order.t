@@ -8,8 +8,7 @@ for my $m (qw(Linux::Epoll Linux::Event::Clock Linux::Event::Timer)) {
     eval "require $m; 1" or plan skip_all => "$m not available: $@";
 }
 
-use lib "lib";
-require Linux::Event::Loop;
+use Linux::Event::Loop;
 
 # Pull masks from the Epoll backend (authoritative for this loop)
 use Linux::Event::Backend::Epoll ();

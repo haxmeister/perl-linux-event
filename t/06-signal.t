@@ -8,8 +8,7 @@ for my $m (qw(Linux::Epoll Linux::Event::Clock Linux::Event::Timer Linux::FD::Si
   eval "require $m; 1" or plan skip_all => "$m not available: $@";
 }
 
-use lib 'lib';
-require Linux::Event::Loop;
+use Linux::Event::Loop;
 
 my $loop = Linux::Event::Loop->new( backend => 'epoll' );
 
