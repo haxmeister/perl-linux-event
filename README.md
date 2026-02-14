@@ -1,5 +1,7 @@
 [![CI](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml/badge.svg)](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml)
 
+Linux::Event **0.004** is the first stable API release. It provides a minimal, Linux-native event loop built on epoll, timerfd, signalfd, eventfd, and pidfd.
+
 ## Additional Linux primitives
 
 Beyond timers and I/O watchers, Linux::Event can integrate:

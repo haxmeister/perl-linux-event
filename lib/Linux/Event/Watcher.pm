@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.003_001';
+our $VERSION = '0.004';
 
 use Carp qw(croak);
 use Scalar::Util qw(weaken);
@@ -288,7 +288,11 @@ On EPOLLHUP, read readiness is triggered (EOF detection via read() returning 0).
 
 =head1 VERSION
 
-0.003_001
+This document describes Linux::Event::Watcher version 0.004.
+
+=head1 AUTHOR
+
+Joshua S. Day
 
 =head1 LICENSE
 

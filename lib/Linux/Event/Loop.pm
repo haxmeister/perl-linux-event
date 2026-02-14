@@ -5,7 +5,7 @@ use warnings;
 
 use Linux::Event::Scheduler;
 
-our $VERSION = '0.003_001';
+our $VERSION = '0.004';
 
 use Carp qw(croak);
 
@@ -650,7 +650,7 @@ C<pid>) that make such helpers straightforward to implement in user code.
 
 =head1 VERSION
 
-This document describes Linux::Event::Loop version 0.003_001.
+This document describes Linux::Event::Loop version 0.004.
 
 =head1 AUTHOR
 
@@ -659,5 +659,25 @@ Joshua S. Day
 =head1 LICENSE
 
 Same terms as Perl itself.
+
+=head1 STABILITY
+
+As of version 0.004, the public API and the following contracts are frozen:
+
+=over 4
+
+=item * I/O watcher callback ABI and dispatch order (error, then read, then write)
+
+=item * Timer callback ABI (C<< ($loop) >>)
+
+=item * Signal callback ABI (C<< ($loop, $sig, $count, $data) >>) and replacement semantics per signal
+
+=item * Wakeup (waker) single-instance contract
+
+=item * Pid subscription callback ABI (C<< ($loop, $pid, $status, $data) >>) and replacement semantics per PID
+
+=back
+
+Future releases will be additive and will not change existing behavior.
 
 =cut

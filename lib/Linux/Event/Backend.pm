@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.003_001';
+our $VERSION = '0.004';
 
 1;
 
@@ -23,9 +23,9 @@ wait/dispatch mechanism (epoll now, io_uring later).
 
 =head1 STATUS
 
-B<EXPERIMENTAL / WORK IN PROGRESS>
-
-The API is not yet considered stable and may change without notice.
+As of version 0.004, the backend contract described here is considered stable.
+New optional methods may be added in future releases, but required methods and callback ABI
+will not change.
 
 =head1 REQUIRED METHODS
 
@@ -88,5 +88,21 @@ If not implemented, the loop may fall back to unwatch+watch.
 =head1 SEE ALSO
 
 L<Linux::Event::Loop>, L<Linux::Event::Backend::Epoll>
+
+=head1 SYNOPSIS
+
+  # Internal. See L<Linux::Event::Loop>.
+
+=head1 VERSION
+
+This document describes Linux::Event::Backend version 0.004.
+
+=head1 AUTHOR
+
+Joshua S. Day
+
+=head1 LICENSE
+
+Same terms as Perl itself.
 
 =cut

@@ -3,7 +3,6 @@ LICENSE
 MANIFEST			This list of files
 Makefile.PL
 README.md
-docs/Linux-Event-M3-Pidfd-Semantics-Freeze.md
 examples/01_timer_after.pl
 examples/02_timer_at.pl
 examples/03_watch_read_pipe.pl

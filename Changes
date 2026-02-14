@@ -1,11 +1,17 @@
 Revision history for Linux-Event
 
+0.004  2026-02-14
+  - First stable API release.
+  - Split timer queue into Linux::Event::Scheduler (Loop delegates scheduling).
+  - Add signalfd integration: $loop->signal(...) with strict 4-argument callback ABI.
+  - Add eventfd-based wakeups: $loop->waker (user watches $waker->fh).
+  - Add pidfd integration: $loop->pid(...) for process-exit notifications (one-shot, replacement semantics per PID).
+  - Freeze dispatch order for I/O watchers: error, then read, then write.
+  - Freeze callback ABIs per watcher type (I/O, timer, signal, pid).
+
 0.003_001  2026-02-12
-  - Add Loop->listen(...) helper for TCP4/TCP6/UNIX listening sockets.
-    Defaults: reuseaddr=1, reuseport=0, max_accept=64.
-    Listener accepts are delivered via the normal watcher 'read' callback.
-  - Add watcher 'error' handler (error => sub {...}) dispatched on EPOLLERR.
-  - Refresh examples (timers, listen echo server, listen+timer).
+  - Development snapshot prior to 0.004 API freeze.
+  - Timers (after/at), I/O watchers (replacement semantics) and dispatch order tests.
 
 0.002_001  2026-02-10
   - Introduce Linux::Event::Watcher (mutable watcher handles).

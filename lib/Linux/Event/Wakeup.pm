@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.003_001';
+our $VERSION = '0.004';
 
 use Carp qw(croak);
 use Scalar::Util qw(weaken);
@@ -191,5 +191,9 @@ Joshua S. Day
 =head1 LICENSE
 
 Same terms as Perl itself.
+
+=head1 VERSION
+
+This document describes Linux::Event::Wakeup version 0.004.
 
 =cut

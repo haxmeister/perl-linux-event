@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.003_001';
+our $VERSION = '0.004';
 
 use Carp qw(croak);
 use Scalar::Util qw(weaken);
@@ -217,7 +217,7 @@ Linux::Event::Signal - signalfd integration for Linux::Event
 
   my $loop = Linux::Event->new;
 
-  my $sub = $loop->signal('INT', sub ($loop, $sig, $count) {
+  my $sub = $loop->signal('INT', sub ($loop, $sig, $count, $data) {
     $loop->stop;
   });
 
@@ -240,7 +240,7 @@ contract:
 
 =item * One handler per signal; subsequent registration replaces
 
-=item * Callback signature: C<< ($loop, $sig, $count, $data?) >>
+=item * Callback signature (strict): C<< ($loop, $sig, $count, $data) >>
 
 =item * No fan-out policy; users can implement fan-out themselves
 
@@ -282,6 +282,18 @@ Returns a subscription handle object with a C<cancel> method.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>, L<Linux::FD::Signal>, L<signalfd(2)>
+L<Linux::Event::Loop>, L<Linux::FD>, L<signalfd(2)>
+
+=head1 VERSION
+
+This document describes Linux::Event::Signal version 0.004.
+
+=head1 AUTHOR
+
+Joshua S. Day
+
+=head1 LICENSE
+
+Same terms as Perl itself.
 
 =cut

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.003_001';
+our $VERSION = '0.004';
 
 use Linux::Event::Loop;
 
@@ -41,27 +41,38 @@ currently provides:
 
 =over 4
 
-=item * L<Linux::Event::Loop> - policy layer: clock + scheduling + timer rearm
+=item * L<Linux::Event::Loop> - main event loop (epoll + timerfd + signalfd + eventfd + pidfd)
 
-=item * L<Linux::Event::Backend> - backend boundary
+=item * L<Linux::Event::Watcher> - mutable watcher handles returned by the loop
 
-=item * L<Linux::Event::Backend::Epoll> - epoll mechanism backend
+=item * L<Linux::Event::Signal> - signalfd adaptor (signal subscriptions)
 
-=item * L<Linux::Event::Scheduler> - deadline scheduler (nanoseconds internally)
+=item * L<Linux::Event::Wakeup> - eventfd-backed wakeups (loop waker)
 
-=item * L<Linux::Event::Watcher> - mutable watcher handle returned by the loop
+=item * L<Linux::Event::Pid> - pidfd-backed process exit notifications
+
+=item * L<Linux::Event::Scheduler> - internal deadline scheduler (nanoseconds)
+
+=item * L<Linux::Event::Backend> - backend contract boundary
+
+=item * L<Linux::Event::Backend::Epoll> - epoll backend implementation
 
 =back
 
-This is an early development release.
 
 =head1 STATUS
 
-B<EXPERIMENTAL / WORK IN PROGRESS>
+As of version 0.004, the public API of this distribution is considered stable.
 
-The API is not yet considered stable and may change without notice. This release
-is intended for early testing and feedback and is not recommended for production
-use.
+Linux::Event intentionally exposes Linux primitives with explicit semantics and minimal policy:
+
+  * epoll for I/O readiness
+  * timerfd for timers
+  * signalfd for signals
+  * eventfd for explicit wakeups
+  * pidfd (via L<Linux::FD::Pid>) for process exit notifications
+
+Future releases will be additive and will not change existing callback ABIs or dispatch order.
 
 =head1 REPOSITORY
 
@@ -73,5 +84,17 @@ L<https://github.com/haxmeister/perl-linux-event>
 
 L<Linux::Event::Loop>, L<Linux::Event::Watcher>, L<Linux::Event::Backend>,
 L<Linux::Event::Scheduler>
+
+=head1 VERSION
+
+This document describes Linux::Event version 0.004.
+
+=head1 AUTHOR
+
+Joshua S. Day
+
+=head1 LICENSE
+
+Same terms as Perl itself.
 
 =cut
