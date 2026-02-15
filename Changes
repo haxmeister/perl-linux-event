@@ -1,5 +1,13 @@
 Revision history for Linux-Event
 
+0.006  2026-02-14
+  - Fix: stop() no longer falls into backend wait in the same tick after stop() is called.
+  - Fix: EPOLLONESHOT rearm is reliable even when the effective mask is unchanged.
+  - Fix: after(0) no longer disarms the timer; it arms a minimal non-zero delay for immediate scheduling.
+  - Fix: run()/run_once() derives epoll wait timeout from next timer deadline when no explicit timeout is provided.
+  - Tests: add regressions for stop/no-wait, EPOLLONESHOT rearm, oneshot watcher persistence, and after(0).
+  - Examples: add reliable oneshot+edge stress and a simple pipe throughput benchmark.
+
 0.004  2026-02-14
   - First stable API release.
   - Split timer queue into Linux::Event::Scheduler (Loop delegates scheduling).

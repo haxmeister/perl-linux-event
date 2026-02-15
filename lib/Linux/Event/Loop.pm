@@ -5,7 +5,7 @@ use warnings;
 
 use Linux::Event::Scheduler;
 
-our $VERSION = '0.004';
+our $VERSION = '0.006';
 
 use Carp qw(croak);
 
@@ -218,9 +218,6 @@ sub watch ($self, $fh, %spec) {
     if ($mask & ERR) {
       if ($ww->{error_cb} && $ww->{error_enabled}) {
         $ww->{error_cb}->($loop, $fhw, $ww);
-        if ($ww->{oneshot}) {
-          $loop->_watcher_cancel($ww) if ($loop->{_watchers}{$fd2} && $loop->{_watchers}{$fd2} == $ww);
-        }
         return;
       }
       $read_trig  = 1;
@@ -240,10 +237,6 @@ sub watch ($self, $fh, %spec) {
 
     if ($write_trig && $ww->{write_cb} && $ww->{write_enabled}) {
       $ww->{write_cb}->($loop, $fhw, $ww);
-    }
-
-    if ($ww->{oneshot}) {
-      $loop->_watcher_cancel($ww) if ($loop->{_watchers}{$fd2} && $loop->{_watchers}{$fd2} == $ww);
     }
 
     return;
@@ -312,6 +305,10 @@ sub unwatch ($self, $fh) {
 }
 
 sub run ($self) {
+  # run() controls the running flag. run_once() may be called manually even
+  # when the loop is not in run() mode (tests and advanced callers rely on
+  # this), so run_once() must only honor running=0 when run() is active.
+  local $self->{_in_run} = 1;
   $self->{running} = 1;
 
   while ($self->{running}) {
@@ -323,6 +320,14 @@ sub run ($self) {
 
 sub stop ($self) {
   $self->{running} = 0;
+
+  # If a waker was already created (user called $loop->waker), poke it so a
+  # currently-blocking backend wait can return promptly. This does not create
+  # the waker implicitly (contract: no implicit watcher).
+  if (my $w = $self->{_waker}) {
+    eval { $w->signal; 1 };
+  }
+
   return;
 }
 
@@ -330,14 +335,44 @@ sub run_once ($self, $timeout_s = undef) {
   # One syscall per iteration/batch: refresh cached monotonic time.
   $self->{clock}->tick;
 
+  # Snapshot whether we were "running" at entry. This matters because callers
+  # are allowed to pump the loop manually via run_once() without calling run()
+  # (so running may be false). If running *was* true and stop() flips it during
+  # callback dispatch, we must not enter backend wait in the same iteration.
+  my $was_running = $self->{running} ? 1 : 0;
+
   # Run any due timer callbacks before blocking.
   $self->_dispatch_due;
 
-  # Ensure kernel timerfd is armed for the next deadline (or disarmed if none).
+  # stop() can be called from a timer callback (or other user callback).
+  # - If we're inside run(), honor running immediately.
+  # - If running was true at entry, also honor it (prevents an extra backend wait)
+  # - If running was false at entry, allow manual pumping.
+  return 0 if (!$self->{running} && ($self->{_in_run} || $was_running));
+
+  # If no explicit timeout was provided, derive one from the next scheduled
+  # timer deadline. This is what makes $loop->run() advance timers without
+  # requiring callers to manually pass a timeout.
+  if (!defined $timeout_s) {
+    my $next = $self->{sched}->next_deadline_ns;
+    if (defined $next) {
+      my $remain_ns = $self->{clock}->remaining_ns($next);
+      $timeout_s = ($remain_ns <= 0) ? 0 : ($remain_ns / 1_000_000_000);
+    }
+  }
+
+  # Keep timerfd state in sync for users who may be watching the timer fd
+  # directly (or for future backends that integrate it). This is not relied on
+  # for core scheduling.
   $self->_rearm_timer;
+
+  # Re-check after rearm, since user callbacks can run during _rearm_timer()
+  # (e.g. via a custom timer implementation).
+  return 0 if (!$self->{running} && ($self->{_in_run} || $was_running));
 
   return $self->{backend}->run_once($self, $timeout_s);
 }
+
 
 sub _dispatch_due ($self) {
   my @ready = $self->{sched}->pop_expired;
@@ -361,7 +396,10 @@ sub _rearm_timer ($self) {
   my $remain_ns = $self->{clock}->remaining_ns($next);
 
   if ($remain_ns <= 0) {
-    $self->{timer}->after(0);
+    # timerfd APIs treat 0 as "disarm". For due/overdue timers we must
+    # arm a *minimal* non-zero delay so the kernel wakes us promptly.
+    my $min_s = sprintf('%.9f', 1 / 1_000_000_000);
+    $self->{timer}->after($min_s);
     return;
   }
 
@@ -522,6 +560,11 @@ Supported keys in C<%spec>:
 
 =item * C<oneshot> - boolean (optional, advanced). Defaults to false.
 
+If true, the watcher uses C<EPOLLONESHOT>-style semantics: after an event is
+delivered, the fd is disabled inside the kernel until it is re-armed. Re-arming
+is typically done by forcing an epoll C<MOD> (for example by toggling
+C<disable_read/enable_read> or C<disable_write/enable_write>).
+
 =back
 
 Handlers are invoked as:
@@ -650,7 +693,7 @@ C<pid>) that make such helpers straightforward to implement in user code.
 
 =head1 VERSION
 
-This document describes Linux::Event::Loop version 0.004.
+This document describes Linux::Event::Loop version 0.005_004.
 
 =head1 AUTHOR
 
@@ -662,7 +705,7 @@ Same terms as Perl itself.
 
 =head1 STABILITY
 
-As of version 0.004, the public API and the following contracts are frozen:
+As of version 0.005_004, the public API and the following contracts are frozen:
 
 =over 4
 

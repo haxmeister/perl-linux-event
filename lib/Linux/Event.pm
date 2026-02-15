@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.004';
+our $VERSION = '0.006';
 
 use Linux::Event::Loop;
 
@@ -62,7 +62,7 @@ currently provides:
 
 =head1 STATUS
 
-As of version 0.004, the public API of this distribution is considered stable.
+As of version 0.005_004, the public API of this distribution is considered stable.
 
 Linux::Event intentionally exposes Linux primitives with explicit semantics and minimal policy:
 
@@ -87,7 +87,7 @@ L<Linux::Event::Scheduler>
 
 =head1 VERSION
 
-This document describes Linux::Event version 0.004.
+This document describes Linux::Event version 0.005_004.
 
 =head1 AUTHOR
 

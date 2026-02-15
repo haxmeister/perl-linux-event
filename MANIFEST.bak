@@ -26,7 +26,6 @@ lib/Linux/Event/Signal.pm
 lib/Linux/Event/Wakeup.pm
 lib/Linux/Event/Watcher.pm
 LICENSE
-Linux-Event-0.006.tar.gz
 Makefile.PL
 MANIFEST			This list of files
 README.md

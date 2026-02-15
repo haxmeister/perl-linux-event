@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.004';
+our $VERSION = '0.006';
 
 use v5.36;
 use strict;
@@ -228,6 +228,6 @@ Same terms as Perl itself.
 
 =head1 VERSION
 
-This document describes Linux::Event::Scheduler version 0.004.
+This document describes Linux::Event::Scheduler version 0.005_004.
 
 =cut

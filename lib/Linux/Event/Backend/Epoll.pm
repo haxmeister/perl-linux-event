@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.004';
+our $VERSION = '0.006';
 
 use Carp qw(croak);
 use Linux::Epoll;
@@ -80,9 +80,24 @@ sub modify ($self, $fh_or_fd, $mask, %opt) {
 
   $w->{loop} = $loop;
   $w->{tag}  = $tag;
-  $w->{mask} = int($mask);
 
-  my $events = _mask_to_events($self, $mask);
+  my $new_mask = int($mask);
+  my $old_mask = int($w->{mask});
+
+  $w->{mask} = $new_mask;
+
+  my $events = _mask_to_events($self, $new_mask);
+
+
+  # EPOLLONESHOT rearm:
+  # Rearming must be possible from inside a callback. Linux::Epoll's callback
+  # dispatch is not guaranteed to be safe against a delete+add cycle performed
+  # re-entrantly from within the callback. So for oneshot, prefer a real MOD.
+  #
+  # We still need to ensure a MOD happens even if the effective event set is
+  # unchanged; Linux::Epoll->modify performs epoll_ctl(MOD) and does not elide
+  # "no-op" masks.
+  my $need_oneshot = (($new_mask & ONESHOT) || ($old_mask & ONESHOT) || $self->{oneshot}) ? 1 : 0;
 
   if ($self->{ep}->can('modify')) {
     $self->{ep}->modify($w->{fh}, $events, sub ($ev) {
@@ -102,6 +117,7 @@ sub modify ($self, $fh_or_fd, $mask, %opt) {
   return 1;
 }
 
+
 sub unwatch ($self, $fh_or_fd) {
   my $fd = ref($fh_or_fd) ? fileno($fh_or_fd) : $fh_or_fd;
   return 0 if !defined $fd;
@@ -115,10 +131,15 @@ sub unwatch ($self, $fh_or_fd) {
 
 sub run_once ($self, $loop, $timeout_s = undef) {
   my $max = 256;
+
+  # Linux::Epoll->wait($number, $timeout) uses fractional seconds.
+  # Keep $timeout_s in seconds (possibly fractional). undef => block, 0 => poll.
   my $ret = $self->{ep}->wait($max, $timeout_s);
+
   return 0 if !defined $ret;
   return $ret;
 }
+
 
 sub _mask_to_events ($self, $mask) {
   $mask = int($mask);
@@ -175,6 +196,6 @@ Same terms as Perl itself.
 
 =head1 VERSION
 
-This document describes Linux::Event::Backend::Epoll version 0.004.
+This document describes Linux::Event::Backend::Epoll version 0.005_004.
 
 =cut
