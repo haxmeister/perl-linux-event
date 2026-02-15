@@ -286,7 +286,7 @@ L<Linux::Event::Loop>, L<Linux::FD>, L<signalfd(2)>
 
 =head1 VERSION
 
-This document describes Linux::Event::Signal version 0.005_004.
+This document describes Linux::Event::Signal version 0.006.
 
 =head1 AUTHOR
 

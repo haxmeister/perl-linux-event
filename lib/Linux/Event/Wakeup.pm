@@ -194,6 +194,6 @@ Same terms as Perl itself.
 
 =head1 VERSION
 
-This document describes Linux::Event::Wakeup version 0.005_004.
+This document describes Linux::Event::Wakeup version 0.006.
 
 =cut

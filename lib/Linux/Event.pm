@@ -62,7 +62,7 @@ currently provides:
 
 =head1 STATUS
 
-As of version 0.005_004, the public API of this distribution is considered stable.
+As of version 0.006, the public API of this distribution is considered stable.
 
 Linux::Event intentionally exposes Linux primitives with explicit semantics and minimal policy:
 
@@ -87,7 +87,7 @@ L<Linux::Event::Scheduler>
 
 =head1 VERSION
 
-This document describes Linux::Event version 0.005_004.
+This document describes Linux::Event version 0.006.
 
 =head1 AUTHOR
 

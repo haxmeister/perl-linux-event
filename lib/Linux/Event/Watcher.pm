@@ -288,7 +288,7 @@ On EPOLLHUP, read readiness is triggered (EOF detection via read() returning 0).
 
 =head1 VERSION
 
-This document describes Linux::Event::Watcher version 0.005_004.
+This document describes Linux::Event::Watcher version 0.006.
 
 =head1 AUTHOR
 

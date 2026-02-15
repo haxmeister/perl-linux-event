@@ -23,7 +23,7 @@ wait/dispatch mechanism (epoll now, io_uring later).
 
 =head1 STATUS
 
-As of version 0.005_004, the backend contract described here is considered stable.
+As of version 0.006, the backend contract described here is considered stable.
 New optional methods may be added in future releases, but required methods and callback ABI
 will not change.
 
@@ -95,7 +95,7 @@ L<Linux::Event::Loop>, L<Linux::Event::Backend::Epoll>
 
 =head1 VERSION
 
-This document describes Linux::Event::Backend version 0.005_004.
+This document describes Linux::Event::Backend version 0.006.
 
 =head1 AUTHOR
 

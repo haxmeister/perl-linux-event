@@ -693,7 +693,7 @@ C<pid>) that make such helpers straightforward to implement in user code.
 
 =head1 VERSION
 
-This document describes Linux::Event::Loop version 0.005_004.
+This document describes Linux::Event::Loop version 0.006.
 
 =head1 AUTHOR
 
@@ -705,7 +705,7 @@ Same terms as Perl itself.
 
 =head1 STABILITY
 
-As of version 0.005_004, the public API and the following contracts are frozen:
+As of version 0.006, the public API and the following contracts are frozen:
 
 =over 4
 

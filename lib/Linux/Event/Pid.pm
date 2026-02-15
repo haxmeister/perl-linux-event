@@ -275,6 +275,6 @@ Same terms as Perl itself.
 
 =head1 VERSION
 
-This document describes Linux::Event::Pid version 0.005_004.
+This document describes Linux::Event::Pid version 0.006.
 
 =cut
