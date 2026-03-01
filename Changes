@@ -1,5 +1,8 @@
 Revision history for Linux-Event
 
+0.009  2026-002-28
+  - fixed error where perl's scientific notation stringifies
+
 0.008  2026-002-28
   - fixed error where _rearm_timer cannot comput remaining duration and returns a non number
 
