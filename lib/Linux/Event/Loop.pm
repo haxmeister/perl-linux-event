@@ -5,7 +5,7 @@ use warnings;
 
 use Linux::Event::Scheduler;
 
-our $VERSION = '0.007';
+our $VERSION = '0.008';
 
 use Carp qw(croak);
 
