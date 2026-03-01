@@ -409,6 +409,10 @@ sub _rearm_timer ($self) {
 
   my $remain_ns = $self->{clock}->remaining_ns($next);
 
+  # Defensive: if the clock cannot compute a remaining duration (e.g. during
+  # teardown or a race with scheduler state), do not attempt to arm the timer.
+  return if !defined $remain_ns;
+
   if ($remain_ns <= 0) {
     # timerfd APIs treat 0 as "disarm". For due/overdue timers we must
     # arm a *minimal* non-zero delay so the kernel wakes us promptly.
