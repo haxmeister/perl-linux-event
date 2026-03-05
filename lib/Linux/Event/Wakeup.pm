@@ -115,80 +115,182 @@ Linux::Event::Wakeup - eventfd-backed wakeups for Linux::Event
   use v5.36;
   use Linux::Event;
 
-  my $loop  = Linux::Event->new;
+  my $loop = Linux::Event->new;
 
-  # Create once during initialization:
-  my $waker = $loop->waker;
+  # Create a wakeup handle attached to the loop:
+  my $wakeup = $loop->wakeup(sub ($loop, $wakeup, $count, $data) {
+    say "woken $count time(s)";
+    $loop->stop;
+  });
 
-  # From another thread (or a forked child), wake the loop:
-  $waker->signal;
+  # Trigger the wakeup (from the same thread or another thread/process with the fd):
+  $wakeup->wake;
+
+  $loop->run;
 
 =head1 DESCRIPTION
 
-This module provides a minimal, Linux-native wakeup primitive for
-L<Linux::Event> based on C<eventfd(2)>. It is intended to be used as a
-building block for thread and process integration without adding policy to
-the core loop.
+B<Linux::Event::Wakeup> provides an explicit wakeup mechanism for a
+L<Linux::Event::Loop> using Linux C<eventfd(2)>.
 
-The wakeup is implemented internally using C<eventfd(2)> and exposed to the
-loop as a readable filehandle.
+A wakeup is useful when you need to prompt the loop to run work "soon" even if
+no file descriptors are currently becoming ready. It is also the standard tool
+for cross-thread wakeups: one thread writes to the eventfd, the loop thread is
+woken by readability on the eventfd.
 
-When created via C<< $loop->waker >>, the loop installs an internal watcher
-that drains the wakeup fd automatically. This guarantees that
-C<< $waker->signal >> (and C<< $loop->stop >> after waker creation) can
-reliably wake a blocking backend wait.
+This module is kept separate so that applications that do not need wakeups do
+not pay for or depend on eventfd support.
 
-The wakeup fd is reserved for loop wakeups and must not be watched directly
-by user code.
+=head1 LAYERING
 
-=head1 SEMANTICS
+This distribution is a loop primitive.
 
-The semantics contract for the single-waker model is:
+It does not perform socket acquisition or buffered I/O. For sockets and I/O
+stack composition, see:
 
 =over 4
 
-=item * Exactly one waker per loop (cached by C<< $loop->waker >>).
+=item * L<Linux::Event::Listen> - accept produces an accepted fh
 
-=item * Created lazily on first use; never destroyed during loop lifetime.
+=item * L<Linux::Event::Connect> - connect produces a connected fh
 
-=item * The loop installs an internal read watcher that drains the wakeup fd.
-
-=item * User code must not call C<< $loop->watch($waker->fh, ...) >>,
-        as this would replace the loop's internal watcher and break wakeup semantics.
-
-=item * C<signal()> is safe from any thread.
-
-=item * C<drain()> is non-blocking and returns the coalesced count.
+=item * L<Linux::Event::Stream> - buffered I/O + backpressure, owns the fh
 
 =back
 
+=head1 LOOP CONVENIENCE API
+
+Most users create a wakeup via the loop method:
+
+  my $wakeup = $loop->wakeup($cb, %opt);
+
+This installs an internal watcher on the eventfd and dispatches your callback on
+wakeup.
+
+=head1 CALLBACK CONTRACT
+
+Wakeup callbacks are invoked with this signature:
+
+  sub ($loop, $wakeup, $count, $data) { ... }
+
+Where:
+
+=over 4
+
+=item * C<$loop>
+
+The L<Linux::Event::Loop> instance.
+
+=item * C<$wakeup>
+
+The wakeup object.
+
+=item * C<$count>
+
+The number of wakeup increments drained from the eventfd since the last dispatch
+cycle. If multiple C<wake()> calls occur before the loop drains the fd, they are
+coalesced into a single callback with C<$count E<gt> 1>.
+
+=item * C<$data>
+
+The C<data> option you supplied (or undef).
+
+=back
+
+=head1 SEMANTICS
+
+=head2 Coalescing
+
+C<eventfd> is counter-based. Each C<wake()> increments the counter. When the fd
+becomes readable, the loop drains the counter and delivers the aggregate count
+to your callback.
+
+=head2 Nonblocking
+
+The underlying eventfd is used in nonblocking mode, and draining it will not
+block the loop.
+
+=head2 Threading
+
+The wakeup fd can be written from another thread to wake the loop thread. The
+wakeups themselves are safe across threads, but the loop and watcher operations
+are not thread-safe; only call loop mutation APIs from the loop thread.
+
+=head1 CONSTRUCTOR
+
+=head2 new
+
+  my $wakeup = Linux::Event::Wakeup->new(
+    loop => $loop,
+    on_wakeup => $cb,
+    %opt,
+  );
+
+Creates a wakeup object attached to a loop.
+
+Most users should prefer C<< $loop->wakeup(...) >>.
+
+=head1 OPTIONS
+
+=head2 on_wakeup
+
+  on_wakeup => sub ($loop, $wakeup, $count, $data) { ... }
+
+Required. Handler invoked when the eventfd is drained.
+
+=head2 data
+
+  data => $any
+
+Optional user data passed to C<on_wakeup> as the last argument.
+
+=head2 cloexec
+
+  cloexec => 1  # default
+
+Best-effort FD_CLOEXEC on the underlying eventfd.
+
 =head1 METHODS
 
-=head2 fh
+=head2 wake
 
-  my $fh = $waker->fh;
+  $wakeup->wake;
+  $wakeup->wake($n);
 
-Returns the readable filehandle for this eventfd.
+Increment the eventfd counter by 1 (or by C<$n> if supported by the
+implementation). This causes readability on the wakeup fd and schedules a future
+dispatch to C<on_wakeup>.
 
-=head2 signal
+=head2 fh / fd
 
-  $waker->signal;      # increment by 1
-  $waker->signal($n);  # increment by $n
+  my $fh = $wakeup->fh;
+  my $fd = $wakeup->fd;
 
-Increments the eventfd counter. Multiple signals coalesce in the kernel.
+Return the underlying eventfd filehandle or numeric file descriptor.
 
-=head2 drain
+=head2 watcher
 
-  my $count = $waker->drain;
+  my $w = $wakeup->watcher;
 
-Drains the eventfd counter (non-blocking) and returns the total number of
-signals coalesced since the last drain.
+Return the underlying L<Linux::Event::Watcher> installed on the loop.
 
-=head1 DEPENDENCIES
+=head2 cancel
 
-Wakeup support requires L<Linux::FD::Event> (part of the C<Linux::FD> distribution).
-The dependency is loaded lazily so you can still use the core loop features
-(timers and I/O watchers) without it.
+  $wakeup->cancel;
+
+Cancel the watcher and detach from the loop. Idempotent.
+
+=head1 SEE ALSO
+
+L<Linux::Event::Listen> - nonblocking bind + accept
+
+L<Linux::Event::Connect> - nonblocking outbound connect
+
+L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
+
+L<Linux::Event::Fork> - asynchronous child process management
+
+L<Linux::Event::Clock> - high resolution monotonic clock utilities
 
 =head1 AUTHOR
 
@@ -197,9 +299,5 @@ Joshua S. Day
 =head1 LICENSE
 
 Same terms as Perl itself.
-
-=head1 VERSION
-
-This document describes Linux::Event::Wakeup version 0.007.
 
 =cut

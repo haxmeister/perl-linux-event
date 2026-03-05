@@ -1,51 +1,99 @@
 [![CI](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml/badge.svg)](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml)
 
-Linux::Event **0.006** is the first stable API release. It provides a minimal, Linux-native event loop built on epoll, timerfd, signalfd, eventfd, and pidfd.
-
-## Additional Linux primitives
-
-Beyond timers and I/O watchers, Linux::Event can integrate:
-
-- **Signals** via `signalfd` (`$loop->signal(...)`)
-- **Wakeups** via `eventfd` (`$loop->waker`, then watch `$waker->fh`)
-- **Process exit** via `pidfd` (`$loop->pid($pid, ...)` for child exit notifications)
-
-See the `examples/` directory for working, minimal scripts.
-
 # Linux::Event
 
-A Linux-focused, backend-swappable event loop framework.
+Linux-native event loop for Perl.
 
-**Status:** EXPERIMENTAL / WORK IN PROGRESS\
-**Current Version:** 0.006 (stable)
+Linux::Event is a Linux-native event loop similar in role to EV or AnyEvent,
+but designed specifically around modern Linux kernel facilities such as
+epoll, timerfd, signalfd, eventfd, and pidfd. Providing a minimal event loop built on modern Linux kernel
+facilities:
 
-------------------------------------------------------------------------
+- epoll
+- timerfd
+- signalfd
+- eventfd
+- pidfd
 
-## Overview
+The goal is a **small, explicit, composable foundation** for building
+high-performance event-driven systems on Linux.
 
-`Linux::Event` provides a clean, layered architecture:
+---------------------------------------------------------------------
 
-User Code\
-↓\
-Linux::Event::Watcher\
-↓\
-Linux::Event::Loop (policy layer)\
-├── Linux::Event::Clock\
-├── Linux::Event::Timer\
-├── Linux::Event::Scheduler\
-└── Backend (mechanism layer)
+## Linux::Event Ecosystem
 
-### Design Goals
+The Linux::Event modules form a composable stack of small components
+rather than a framework.
 
--   Clear, minimal public API
--   No epoll mask exposure
--   Mutable watcher handles
--   Backend-swappable architecture
--   Nanosecond precision internally
--   Seconds-based public timer API
--   Foundation for future socket/server abstractions
+Each module has a narrow responsibility and can be combined with the
+others to build servers, clients, and asynchronous systems.
 
-------------------------------------------------------------------------
+Core layers:
+
+Linux::Event
+    The event loop. Linux-native readiness engine providing watchers
+    and the dispatch loop.
+
+Linux::Event::Listen
+    Server-side socket acquisition (bind + listen + accept).
+    Produces accepted nonblocking filehandles.
+
+Linux::Event::Connect
+    Client-side socket acquisition (nonblocking connect).
+    Produces connected nonblocking filehandles.
+
+Linux::Event::Stream
+    Buffered I/O and backpressure management for an established
+    filehandle.
+
+Linux::Event::Fork
+    Asynchronous child process management integrated with the event
+    loop.
+
+Linux::Event::Clock
+    High-resolution monotonic time utilities.
+
+Canonical network composition:
+
+Listen / Connect
+        ↓
+      Stream
+        ↓
+  Application protocol
+
+Example stack:
+
+Linux::Event::Listen → Linux::Event::Stream → your protocol
+
+or
+
+Linux::Event::Connect → Linux::Event::Stream → your protocol
+
+The core loop intentionally remains a primitive layer and does not grow
+into a framework. Higher-level behavior is composed from small modules.
+
+---------------------------------------------------------------------
+
+## Design Goals
+
+- Minimal public API
+- Explicit semantics
+- No hidden ownership
+- Composable modules
+- Linux-native performance
+- Backend abstraction for future evolution
+
+---------------------------------------------------------------------
+## Keywords
+
+event loop  
+epoll  
+async IO  
+nonblocking IO  
+reactor pattern  
+network servers  
+high performance networking  
+Linux event loop
 
 ## Installation
 
@@ -58,150 +106,86 @@ Development install:
 
 Requires:
 
--   Linux
--   Linux::Epoll
--   Linux::Event::Clock \>= 0.011
--   Linux::Event::Timer \>= 0.010
+    Linux
+    Linux::Epoll
+    Linux::Event::Clock >= 0.011
+    Linux::Event::Timer >= 0.010
 
-------------------------------------------------------------------------
+---------------------------------------------------------------------
 
-# Basic Usage
+## Basic Usage
 
     use v5.36;
     use Linux::Event;
 
-    my $loop = Linux::Event->new( backend => 'epoll' );
+    my $loop = Linux::Event->new;
 
-    $loop->after(0.250, sub ($loop) {
+    $loop->after(0.25, sub ($loop) {
         say "250ms elapsed";
         $loop->stop;
     });
 
     $loop->run;
 
-Timers use seconds (float allowed). Internally everything is stored in
-nanoseconds.
+---------------------------------------------------------------------
 
-------------------------------------------------------------------------
+## Additional Linux primitives
 
-# Watching Filehandles
+Linux::Event integrates several Linux kernel facilities.
 
-Create a watcher with `watch(...)`.
+Signals via signalfd
 
-Interest is inferred from installed handlers.
-
-    my $conn = My::Conn->new(...);
-
-    my $w = $loop->watch(
-        $fh,
-        read  => \&My::Conn::on_read,
-        write => \&My::Conn::on_write,
-        data  => $conn,
-    );
-
-Handlers are invoked as:
-
-    sub on_read ($loop, $fh, $watcher) {
-        my $conn = $watcher->data;
-        ...
-    }
-
-------------------------------------------------------------------------
-
-## Watcher Object
-
-`watch()` returns a `Linux::Event::Watcher`.
-
-It is a mutable handle.
-
-### Common Methods
-
-    $w->enable_write;
-    $w->disable_write;
-
-    $w->on_read(sub { ... });
-    $w->on_write(sub { ... });
-
-    $w->data($obj);
-    my $obj = $w->data;
-
-    $w->cancel;
-
-------------------------------------------------------------------------
-
-## Edge Triggered Mode
-
-Advanced users may enable edge-triggered behavior:
-
-    my $w = $loop->watch(
-        $fh,
-        read => \&on_read,
-        edge_triggered => 1,
-    );
-
-Important: In edge-triggered mode, read handlers must drain the
-filehandle until EAGAIN.
-
-Level-triggered mode (default) is safer and recommended unless you
-understand epoll semantics.
-
-------------------------------------------------------------------------
-
-# Timer API
-
-Timers are simple and seconds-based.
-
-    my $id = $loop->after(0.100, sub ($loop) {
-        ...
+    $loop->signal('INT', sub ($loop, $sig) {
+        $loop->stop;
     });
 
-Cancel:
+Wakeups via eventfd
 
-    $loop->cancel($id);
+    my $w = $loop->wakeup(sub ($loop) {
+        say "woken";
+    });
 
-Absolute deadline (monotonic timebase):
+Process exit notifications via pidfd
 
-    $loop->at($deadline_seconds, sub ($loop) { ... });
+    $loop->pid($pid, sub ($loop, $pid, $status) {
+        say "child exited";
+    });
 
-------------------------------------------------------------------------
+See the examples/ directory for complete scripts.
 
-# Architecture
+---------------------------------------------------------------------
 
-### Loop (Policy)
+## Example: TCP server
 
--   Owns scheduler
--   Owns timer rearm logic
--   Dispatches expired timers
--   Manages watcher state
+    use v5.36;
+    use Linux::Event;
+    use Linux::Event::Listen;
+    use Linux::Event::Stream;
 
-### Backend (Mechanism)
+    my $loop = Linux::Event->new;
 
--   Waits for readiness
--   Converts epoll events to internal mask
--   Dispatches to loop
+    Linux::Event::Listen->new(
+        loop => $loop,
+        host => '127.0.0.1',
+        port => 3000,
 
-Currently implemented:
+        on_accept => sub ($loop, $fh, $peer, $listen) {
 
--   Linux::Event::Backend::Epoll
+            Linux::Event::Stream->new(
+                loop => $loop,
+                fh   => $fh,
 
-Future:
+                codec => 'line',
 
--   Backend::Uring
--   Hybrid backends
--   Possibly select fallback
+                on_message => sub ($stream, $line) {
+                    $stream->write_message("echo: $line");
+                },
+            );
+        },
+    );
 
-------------------------------------------------------------------------
+$loop->run;
 
-# Development Status
+## License
 
-This is a developer release.
-
-The architecture is stabilizing, but APIs may change before 0.01.
-
-Not yet recommended for production use.
-
-------------------------------------------------------------------------
-
-# Repository
-
-https://github.com/haxmeister/perl-linux-event
+Same terms as Perl itself.

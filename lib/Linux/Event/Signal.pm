@@ -217,76 +217,219 @@ Linux::Event::Signal - signalfd integration for Linux::Event
 
   my $loop = Linux::Event->new;
 
+  # Subscribe via the loop convenience method:
   my $sub = $loop->signal('INT', sub ($loop, $sig, $count, $data) {
     $loop->stop;
   });
 
   $loop->run;
 
+  # Cancel the subscription (idempotent):
+  $sub->cancel;
+
 =head1 DESCRIPTION
 
-This module provides Linux C<signalfd> integration for L<Linux::Event::Loop>.
-The loop exposes this via C<< $loop->signal(...) >>, but all implementation
-details live here to keep C<Loop.pm> small.
+B<Linux::Event::Signal> provides Linux C<signalfd(2)> integration for
+L<Linux::Event::Loop>.
 
-The semantics for this feature are frozen by the project's M2.1 signals
-contract:
+The loop exposes this via C<< $loop->signal(...) >>, but the implementation lives
+in this module to keep C<Loop.pm> small and to avoid forcing a hard dependency
+on signalfd support for users who do not need it.
 
-=over 4
+This module uses L<Linux::FD::Signal> lazily. You only need it installed if you
+use signal subscriptions.
 
-=item * One signalfd per loop (created lazily on first registration)
+=head1 LAYERING
 
-=item * Single or multiple signals accepted at registration time
+This distribution is a loop primitive.
 
-=item * One handler per signal; subsequent registration replaces
-
-=item * Callback signature (strict): C<< ($loop, $sig, $count, $data) >>
-
-=item * No fan-out policy; users can implement fan-out themselves
-
-=item * Returned subscription handle supports idempotent C<cancel>
-
-=back
-
-=head1 METHODS
-
-=head2 new(loop => $loop)
-
-Create a signal adaptor bound to the given loop.
-
-=head2 signal($sig_or_list, $cb, %opt) -> $subscription
-
-Register one (or many) signals and associate them with a callback.
-
-C<$sig_or_list> may be:
+It does not perform socket acquisition or buffered I/O. For sockets and I/O
+stack composition, see:
 
 =over 4
 
-=item * a signal number
+=item * L<Linux::Event::Listen> - accept produces an accepted fh
 
-=item * a signal name (C<'INT'>) or with prefix (C<'SIGINT'>)
+=item * L<Linux::Event::Connect> - connect produces a connected fh
 
-=item * an arrayref of the above
+=item * L<Linux::Event::Stream> - buffered I/O + backpressure, owns the fh
 
 =back
 
-Options:
+=head1 LOOP CONVENIENCE API
+
+Most users will subscribe via the loop method:
+
+  my $sub = $loop->signal($sig_or_list, $cb, %opt);
+
+This delegates to an internal L<Linux::Event::Signal> instance owned by the
+loop. The returned value is a subscription object (see L</SUBSCRIPTIONS>).
+
+=head1 SUBSCRIPTIONS
+
+Subscribing returns a subscription object:
+
+  my $sub = $loop->signal('TERM', $cb, data => $data);
+
+The subscription object supports:
 
 =over 4
 
-=item * C<data> - arbitrary user value passed as the final callback argument
+=item * C<< $sub->cancel >>
+
+Cancel the subscription (idempotent).
+
+=item * C<< $sub->is_active >>
+
+True if the subscription is still active.
 
 =back
 
-Returns a subscription handle object with a C<cancel> method.
+=head1 CALLBACK CONTRACT
+
+Signal callbacks are invoked with this signature:
+
+  sub ($loop, $signum, $count, $data) { ... }
+
+Where:
+
+=over 4
+
+=item * C<$loop>
+
+The L<Linux::Event::Loop> instance.
+
+=item * C<$signum>
+
+The numeric signal number.
+
+=item * C<$count>
+
+Number of signal records drained for this signal since the last dispatch cycle.
+
+This module drains the signalfd in nonblocking mode and aggregates counts per
+signal. Dispatch occurs once per signal per cycle (not once per record).
+
+=item * C<$data>
+
+The C<data> option you provided when registering the handler (or undef).
+
+=back
+
+=head1 SEMANTICS
+
+=head2 Signal name and number inputs
+
+You may subscribe using a numeric signal number, a string name, or an arrayref:
+
+  $loop->signal(2,       $cb);
+  $loop->signal('INT',   $cb);
+  $loop->signal(['HUP','TERM'], $cb);
+
+String names may be provided with or without a leading C<SIG> prefix.
+
+=head2 Replacement semantics (one handler per signal)
+
+This module stores one handler per numeric signal.
+
+If you register a handler for a signal that already has a handler, the new
+registration replaces the old one (last registration wins).
+
+If you want fan-out, do it explicitly in your callback.
+
+=head2 Mask growth and signal blocking
+
+For the lifetime of the loop, the signal mask and blocked-set only grow.
+
+When you first subscribe to a signal:
+
+=over 4
+
+=item * the signalfd mask is extended to include that signal
+
+=item * the process signal mask is updated to block that signal (SIG_BLOCK)
+
+=back
+
+This module does not attempt to restore the prior signal disposition or unblock
+signals on cancel. This is a deliberate semantics freeze to keep behavior
+explicit and stable.
+
+=head2 Nonblocking drain
+
+The underlying signalfd is created in nonblocking mode. When readability fires,
+this module drains signalfd records until C<EAGAIN>/C<EWOULDBLOCK>, aggregates
+counts by signal, and then dispatches callbacks.
+
+=head1 API
+
+=head2 Linux::Event::Signal->new
+
+  my $sig = Linux::Event::Signal->new(loop => $loop);
+
+Create a signal dispatcher bound to a loop.
+
+=head2 $sig->signal
+
+  my $sub = $sig->signal($sig_or_list, $cb, %opt);
+
+Register (or replace) a handler for one or more signals.
+
+Required:
+
+=over 4
+
+=item * C<$sig_or_list>
+
+A signal number, a signal name string, or an arrayref of numbers/names.
+
+=item * C<$cb>
+
+A coderef.
+
+=back
+
+Optional:
+
+=over 4
+
+=item * C<data>
+
+Opaque user data passed to the callback as the last argument.
+
+=back
+
+Returns a subscription object that can be cancelled.
+
+=head2 $sig->cancel
+
+  $sig->cancel;
+
+Cancel the internal signalfd watcher and detach from the loop. This is an
+internal control method; most users only cancel individual subscriptions.
+
+=head2 $sig->is_active
+
+  if ($sig->is_active) { ... }
+
+True if the internal watcher is installed and the dispatcher is active.
+
+=head1 DEPENDENCIES
+
+This module requires L<Linux::FD::Signal> only when signal support is used. It is
+loaded lazily, and an informative error is thrown if it is missing.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>, L<Linux::FD>, L<signalfd(2)>
+L<Linux::Event::Listen> - nonblocking bind + accept
 
-=head1 VERSION
+L<Linux::Event::Connect> - nonblocking outbound connect
 
-This document describes Linux::Event::Signal version 0.006.
+L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
+
+L<Linux::Event::Fork> - asynchronous child process management
+
+L<Linux::Event::Clock> - high resolution monotonic clock utilities
 
 =head1 AUTHOR
 

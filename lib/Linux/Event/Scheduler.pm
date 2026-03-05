@@ -230,4 +230,16 @@ Same terms as Perl itself.
 
 This document describes Linux::Event::Scheduler version 0.006.
 
+=head1 SEE ALSO
+
+L<Linux::Event::Listen> - nonblocking bind + accept
+
+L<Linux::Event::Connect> - nonblocking outbound connect
+
+L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
+
+L<Linux::Event::Fork> - asynchronous child process management
+
+L<Linux::Event::Clock> - high resolution monotonic clock utilities
+
 =cut

@@ -87,7 +87,15 @@ If not implemented, the loop may fall back to unwatch+watch.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>, L<Linux::Event::Backend::Epoll>
+L<Linux::Event::Listen> - nonblocking bind + accept
+
+L<Linux::Event::Connect> - nonblocking outbound connect
+
+L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
+
+L<Linux::Event::Fork> - asynchronous child process management
+
+L<Linux::Event::Clock> - high resolution monotonic clock utilities
 
 =head1 SYNOPSIS
 

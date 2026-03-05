@@ -444,287 +444,261 @@ Linux::Event::Loop - Linux-native event loop (epoll + timerfd + signalfd + event
   use v5.36;
   use Linux::Event;
 
-  my $loop = Linux::Event->new;   # epoll backend, monotonic clock
+  my $loop = Linux::Event->new( backend => 'epoll' );
 
-  # I/O watcher (read/write) with user data stored on the watcher:
-  my $conn = My::Conn->new(...);
+  # Timer (seconds, fractional allowed)
+  $loop->after(0.250, sub ($loop) {
+    say "tick";
+  });
 
-  my $w = $loop->watch($fh,
-    read  => \&My::Conn::on_read,
-    write => \&My::Conn::on_write,
-    error => \&My::Conn::on_error,   # optional
-    data  => $conn,                   # optional (avoid closure captures)
+  # Raw I/O watcher
+  my $w = $loop->watch(
+    $fh,
 
-    edge_triggered => 0,              # optional, default false
-    oneshot        => 0,              # optional, default false
+    read => sub ($loop, $fh, $w) {
+      my $buf;
+      my $n = sysread($fh, $buf, 8192);
+
+      if (!defined $n || $n == 0) {
+        $w->cancel;
+        close $fh;
+        return;
+      }
+
+      # ... handle $buf ...
+    },
+
+    write => sub ($loop, $fh, $w) {
+      # fd became writable
+    },
+
+    error => sub ($loop, $fh, $w) {
+      # error readiness
+    },
   );
-
-  $w->disable_write;
-
-  # Timers (monotonic)
-  my $id = $loop->after(0.250, sub ($loop) {
-    say "250ms later";
-  });
-
-  # Signals (signalfd): strict 4-arg callback
-  my $sub = $loop->signal('INT', sub ($loop, $sig, $count, $data) {
-    say "SIG$sig ($count)";
-    $loop->stop;
-  });
-
-  # Wakeups (eventfd): create once, then use to wake a blocking run()
-  my $waker = $loop->waker;
-
-  # In another thread/process (or any place you need to wake the loop):
-  #   $waker->signal;
-  #
-  # After calling $loop->waker, the loop installs an internal watcher that drains
-  # the wakeup fd automatically. The wakeup fd is reserved for loop wakeups.
-
-  # Pidfds (pidfd): one-shot exit notification
-  my $pid = fork() // die "fork: $!";
-  if ($pid == 0) { exit 42 }
-
-  my $psub = $loop->pid($pid, sub ($loop, $pid, $status, $data) {
-    require POSIX;
-    if (POSIX::WIFEXITED($status)) {
-      say "child $pid exited: " . POSIX::WEXITSTATUS($status);
-    }
-  });
 
   $loop->run;
 
+  # For socket acquisition and buffered I/O, see:
+  #   Linux::Event::Listen
+  #   Linux::Event::Connect
+  #   Linux::Event::Stream
+
 =head1 DESCRIPTION
 
-Linux::Event::Loop is a minimal, Linux-native event loop that exposes Linux
-FD primitives cleanly and predictably. It is built around:
+B<Linux::Event::Loop> is a Linux-native event loop built on:
 
 =over 4
 
-=item * C<epoll(7)> for I/O readiness
+=item * epoll for I/O readiness
 
-=item * C<timerfd(2)> for timers
+=item * timerfd for timers
 
-=item * C<signalfd(2)> for signal delivery
+=item * signalfd for signals
 
-=item * C<eventfd(2)> for explicit wakeups
+=item * eventfd for explicit wakeups
 
-=item * C<pidfd_open(2)> (via L<Linux::FD::Pid>) for process lifecycle notifications
+=item * pidfd for process exit notifications
 
 =back
 
-Linux::Event is intentionally I<not> a networking framework, protocol layer,
-retry/backoff engine, process supervisor, or socket abstraction. Ownership is
-explicit; there is no implicit close, and teardown operations are idempotent.
+It provides low-level primitives for readiness, timers, signals, wakeups, and
+process monitoring. It does not implement higher-level socket acquisition or
+buffered I/O; those live in separate distributions.
 
-=head1 CONSTRUCTION
+=head1 LAYERING
 
-=head2 new(%opts) -> $loop
-
-  my $loop = Linux::Event->new(
-    backend => 'epoll',   # default
-    clock   => $clock,    # optional; must provide tick/now_ns/etc.
-    timer   => $timer,    # optional; must provide after/disarm/read_ticks/fh
-  );
-
-Options:
+This module is the primitive layer of the ecosystem.
 
 =over 4
 
-=item * C<backend>
+=item * B<Linux::Event::Loop>
 
-Either the string C<'epoll'> (default) or a backend object that implements
-C<watch>, C<unwatch>, and C<run_once>.
+Core event loop and kernel primitive integration.
 
-=item * C<clock>
+=item * B<Linux::Event::Listen>
 
-An object implementing the clock interface used by the scheduler. By default,
-a monotonic clock is used.
+Server-side socket acquisition (bind + accept).
 
-=item * C<timer>
+=item * B<Linux::Event::Connect>
 
-An object implementing the timerfd interface used by the loop. By default,
-L<Linux::Event::Timer> is used.
+Client-side socket acquisition (nonblocking connect).
+
+=item * B<Linux::Event::Stream>
+
+Buffered I/O and backpressure for established filehandles.
 
 =back
 
-=head1 RUNNING THE LOOP
+Canonical composition:
 
-=head2 run() / run_once($timeout_seconds) / stop()
+  Listen/Connect -> Stream -> (your protocol/state)
 
-C<run()> enters the dispatch loop and continues until C<stop()> is called.
+The loop intentionally does not grow into a framework layer. Higher-level
+composition belongs in application code or optional glue distributions.
 
-C<run_once($timeout_seconds)> runs at most one backend wait/dispatch cycle. The
-timeout is in seconds; fractions are allowed.
+=head1 CALLBACK CONTRACTS
 
-If you need C<stop()> to reliably wake a blocking backend wait, call
-C<< $loop->waker >> once during initialization. When present, C<stop()> signals
-the waker to return promptly from a blocking wait.
+=head2 I/O watchers
 
-=head1 WATCHERS
+  $loop->watch($fh, %callbacks);
 
-=head2 watch($fh, %spec) -> Linux::Event::Watcher
+Callbacks use this signature:
 
-Create (or replace) a watcher for a filehandle.
+  sub ($loop, $fh, $watcher) { ... }
 
-Watchers are keyed internally by file descriptor (fd). Calling C<watch()> again
-for the same fd replaces the existing watcher atomically.
-
-Supported keys in C<%spec>:
+Where:
 
 =over 4
 
-=item * C<read>  - coderef (optional)
+=item * C<$loop>
 
-=item * C<write> - coderef (optional)
+The loop instance.
 
-=item * C<error> - coderef (optional). Called on C<EPOLLERR>.
+=item * C<$fh>
 
-=item * C<data>  - user data (optional). Stored on the watcher to avoid closure captures.
+The filehandle that became ready.
 
-=item * C<edge_triggered> - boolean (optional, advanced). Defaults to false.
+=item * C<$watcher>
 
-=item * C<oneshot> - boolean (optional, advanced). Defaults to false.
-
-If true, the watcher uses C<EPOLLONESHOT>-style semantics: after an event is
-delivered, the fd is disabled inside the kernel until it is re-armed. Re-arming
-is typically done by forcing an epoll C<MOD> (for example by toggling
-C<disable_read/enable_read> or C<disable_write/enable_write>).
+The L<Linux::Event::Watcher> object returned by C<watch()>.
 
 =back
 
-Handlers are invoked as:
-
-  read  => sub ($loop, $fh, $watcher) { ... }
-  write => sub ($loop, $fh, $watcher) { ... }
-  error => sub ($loop, $fh, $watcher) { ... }
-
-=head2 unwatch($fh) -> bool
-
-Remove the watcher for C<$fh>. Returns true if a watcher was removed, false if
-C<$fh> was not watched (or had no fd). Calling C<unwatch()> multiple times is safe.
-
-=head2 Dispatch contract
-
-When the backend reports events for a file descriptor, the loop dispatches
-callbacks in this order (when applicable):
+Possible callback keys:
 
 =over 4
 
-=item 1. C<error>
+=item * C<read>
 
-=item 2. C<read>
+Invoked when the fd becomes readable.
 
-=item 3. C<write>
+=item * C<write>
 
-=back
+Invoked when the fd becomes writable.
 
-This order is frozen.
+=item * C<error>
 
-=head1 SIGNALS
-
-=head2 signal($sig_or_list, $cb, %opt) -> Linux::Event::Signal::Subscription
-
-Register a signal handler using Linux C<signalfd>.
-
-C<$sig_or_list> may be a signal number (e.g. C<2>), a signal name (C<'INT'> or
-C<'SIGINT'>), or an arrayref of those values.
-
-Callback ABI (strict): the callback is always invoked with 4 arguments:
-
-  sub ($loop, $sig, $count, $data) { ... }
-
-Only one handler is stored per signal; calling C<signal()> again for the same
-signal replaces the previous handler.
-
-Options:
-
-=over 4
-
-=item * C<data> - arbitrary user value passed as the final callback argument.
+Invoked when error readiness is reported.
 
 =back
 
-Returns a subscription handle with an idempotent C<cancel> method.
+Callbacks are invoked synchronously during C<run()> dispatch.
 
-See L<Linux::Event::Signal>.
+=head2 Timers
 
-=head1 WAKEUPS
+  $loop->after($seconds, sub ($loop) { ... });
 
-=head2 waker() -> Linux::Event::Wakeup
-
-Returns the loop's singleton waker object (an C<eventfd(2)> handle) used to
-wake the loop from another thread or process.
-
-The waker is created lazily on first use and is never destroyed for the lifetime
-of the loop.
-
-B<Important:> when the waker is created via C<< $loop->waker >>, the loop also
-installs an internal read watcher that drains the wakeup fd. This guarantees that
-C<< $waker->signal >> (and C<< $loop->stop >> after waker creation) can reliably
-wake a blocking backend wait (for example, C<epoll_wait>).
-
-Because watchers are keyed by file descriptor and calling C<watch()> replaces the
-existing watcher for that fd, user code MUST NOT call C<< $loop->watch($waker->fh, ...) >>.
-The wakeup fd is reserved for loop wakeups and is managed internally.
-
-See L<Linux::Event::Wakeup>.
-
-=head1 PIDFDS
-
-=head2 pid($pid, $cb, %opts) -> Linux::Event::Pid::Subscription
-
-Registers a pidfd watcher for C<$pid>.
-
-Callback ABI (strict): the callback is always invoked with 4 arguments:
-
-  sub ($loop, $pid, $status, $data) { ... }
-
-If C<reap =E<gt> 1> (default), the loop attempts a non-blocking reap of the PID
-and passes a wait-status compatible value in C<$status>. If C<reap =E<gt> 0>,
-no reap is attempted and C<$status> is C<undef>.
-
-This is a one-shot subscription: after a defined status is observed and the
-callback is invoked, the subscription is automatically canceled.
-
-Replacement semantics apply per PID: calling C<pid()> again for the same C<$pid>
-replaces the existing subscription.
-
-See L<Linux::Event::Pid> for full semantics and caveats (child-only reaping).
-
-=head1 TIMERS
-
-Timers use a monotonic clock.
-
-=head2 after($seconds, $cb) -> $id
-
-Schedule C<$cb> to run after C<$seconds>. Fractions are allowed.
-
-Timer callbacks are invoked as:
+Timer callbacks receive:
 
   sub ($loop) { ... }
 
-=head2 at($deadline_seconds, $cb) -> $id
+=head2 Signals
 
-Schedule C<$cb> at an absolute monotonic deadline in seconds (same timebase as
-the clock used by this loop). Fractions are allowed.
+Signal callbacks receive:
 
-=head2 cancel($id) -> bool
+  sub ($loop, $signal_number, $watcher) { ... }
 
-Cancel a scheduled timer. Returns true if a timer was removed.
+(See L<Linux::Event::Signal>.)
 
-=head1 NOTES
+=head2 PID notifications
 
-=head2 Threading and forking helpers
+PID callbacks receive:
 
-Linux::Event intentionally does not provide C<< $loop->thread >> or
-C<< $loop->fork >> helpers. Concurrency helpers are policy-layer constructs
-and belong in separate distributions. The core provides primitives (C<waker>,
-C<pid>) that make such helpers straightforward to implement in user code.
+  sub ($loop, $pid, $status, $watcher) { ... }
 
-=head1 VERSION
+(See L<Linux::Event::Pid>.)
 
-This document describes Linux::Event::Loop version 0.007.
+=head1 WATCHERS
+
+=head2 watch
+
+  my $w = $loop->watch($fh, %callbacks);
+
+Registers readiness interest for C<$fh> and returns a
+L<Linux::Event::Watcher>.
+
+The watcher object controls readiness interest and lifetime.
+
+=head2 Watcher semantics
+
+=over 4
+
+=item * Ownership
+
+The loop does not close C<$fh>. You own the filehandle.
+
+=item * cancel
+
+  $w->cancel;
+
+Removes the watcher from the loop. Idempotent.
+
+=item * enable_read / disable_read
+=item * enable_write / disable_write
+
+Mutate readiness interest without destroying the watcher.
+
+=item * Lifetime
+
+When cancelled, the watcher becomes inert and will not invoke callbacks again.
+
+=back
+
+=head1 TIMERS
+
+=head2 after
+
+  $loop->after($seconds, sub ($loop) { ... });
+
+Schedules a one-shot timer.
+
+=head2 every (if supported)
+
+  $loop->every($seconds, sub ($loop) { ... });
+
+Schedules a repeating timer.
+
+Timer precision is governed by the underlying timerfd and scheduler.
+
+=head1 RUN CONTROL
+
+=head2 run
+
+  $loop->run;
+
+Enters the event loop and dispatches events until C<stop> is called.
+
+=head2 stop
+
+  $loop->stop;
+
+Stops the loop after the current dispatch iteration.
+
+=head1 ERROR HANDLING
+
+The loop itself does not impose global error policy. Errors are delivered to
+watcher callbacks (I/O), signal callbacks, PID callbacks, or higher-level
+modules such as Listen and Connect.
+
+=head1 THREADING
+
+This loop is not thread-safe. All operations must occur from the same thread
+that owns the loop.
+
+For cross-thread wakeups, use L<Linux::Event::Wakeup>.
+
+=head1 SEE ALSO
+
+L<Linux::Event::Listen> - nonblocking bind + accept
+
+L<Linux::Event::Connect> - nonblocking outbound connect
+
+L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
+
+L<Linux::Event::Fork> - asynchronous child process management
+
+L<Linux::Event::Clock> - high resolution monotonic clock utilities>
 
 =head1 AUTHOR
 
@@ -733,25 +707,5 @@ Joshua S. Day
 =head1 LICENSE
 
 Same terms as Perl itself.
-
-=head1 STABILITY
-
-As of version 0.007, the public API and the following contracts are frozen:
-
-=over 4
-
-=item * I/O watcher callback ABI and dispatch order (error, then read, then write)
-
-=item * Timer callback ABI (C<< ($loop) >>)
-
-=item * Signal callback ABI (C<< ($loop, $sig, $count, $data) >>) and replacement semantics per signal
-
-=item * Wakeup (waker) single-instance contract and reliable stop() wake guarantee
-
-=item * Pid subscription callback ABI (C<< ($loop, $pid, $status, $data) >>) and replacement semantics per PID
-
-=back
-
-Future releases will be additive and will not change existing behavior.
 
 =cut

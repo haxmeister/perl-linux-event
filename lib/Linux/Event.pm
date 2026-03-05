@@ -26,22 +26,49 @@ Linux::Event - Front door for the Linux::Event ecosystem
 
   my $loop = Linux::Event->new( backend => 'epoll' );
 
-  # Timers use seconds (float allowed)
+  # Timer (seconds, fractional allowed)
   $loop->after(0.100, sub ($loop) {
     say "tick";
     $loop->stop;
   });
 
+  # Raw I/O watcher
+  my $w = $loop->watch(
+    $fh,
+    read => sub ($loop, $fh, $w) {
+      my $buf;
+      my $n = sysread($fh, $buf, 8192);
+
+      if (!defined $n || $n == 0) {
+        $w->cancel;
+        close $fh;
+        return;
+      }
+
+      # ... handle $buf ...
+    },
+  );
+
   $loop->run;
+
+  # For socket acquisition and buffered I/O:
+  #   see Linux::Event::Listen
+  #   see Linux::Event::Connect
+  #   see Linux::Event::Stream
 
 =head1 DESCRIPTION
 
-C<Linux::Event> is a Linux-focused event loop ecosystem. This distribution
-currently provides:
+C<Linux::Event> is the front door for the Linux::Event ecosystem.
+
+In this distribution, C<Linux::Event-E<gt>new> returns a L<Linux::Event::Loop>.
+That keeps the common case short while allowing the loop implementation to stay
+in its own module.
+
+This distribution provides the core loop and kernel-primitive adaptors:
 
 =over 4
 
-=item * L<Linux::Event::Loop> - main event loop (epoll + timerfd + signalfd + eventfd + pidfd)
+=item * L<Linux::Event::Loop> - main event loop (backend + timers + signals + wakeups + pid notifications)
 
 =item * L<Linux::Event::Watcher> - mutable watcher handles returned by the loop
 
@@ -59,20 +86,60 @@ currently provides:
 
 =back
 
+=head1 LAYERING
 
-=head1 STATUS
+The ecosystem is intentionally composable and policy-light.
 
-As of version 0.006, the public API of this distribution is considered stable.
+This distribution provides the event loop and low-level primitives. Socket
+acquisition and buffered I/O live in separate distributions:
 
-Linux::Event intentionally exposes Linux primitives with explicit semantics and minimal policy:
+=over 4
 
-  * epoll for I/O readiness
-  * timerfd for timers
-  * signalfd for signals
-  * eventfd for explicit wakeups
-  * pidfd (via L<Linux::FD::Pid>) for process exit notifications
+=item * L<Linux::Event::Listen>
 
-Future releases will be additive and will not change existing callback ABIs or dispatch order.
+Server-side socket acquisition: nonblocking bind + accept. Produces accepted
+nonblocking filehandles.
+
+=item * L<Linux::Event::Connect>
+
+Client-side socket acquisition: nonblocking outbound connect. Produces connected
+nonblocking filehandles.
+
+=item * L<Linux::Event::Stream>
+
+Buffered I/O + backpressure for an established filehandle (accepted or
+connected). Stream owns the filehandle and handles read/write buffering.
+
+=back
+
+Canonical composition:
+
+  Listen/Connect -> Stream -> (your protocol/codec/state)
+
+C<Linux::Event::Loop> deliberately does not grow into a framework layer. Higher
+level composition belongs in application code (or optional glue distributions),
+not in the core loop.
+
+=head1 STATUS AND COMPATIBILITY
+
+The public API is intended to be stable. Future releases should be additive and
+should not change existing callback ABIs or dispatch order.
+
+Linux::Event exposes Linux primitives with explicit semantics and minimal policy:
+
+=over 4
+
+=item * epoll for I/O readiness (via the backend)
+
+=item * timerfd for timers
+
+=item * signalfd for signals
+
+=item * eventfd for explicit wakeups
+
+=item * pidfd for process exit notifications
+
+=back
 
 =head1 REPOSITORY
 
@@ -82,12 +149,15 @@ L<https://github.com/haxmeister/perl-linux-event>
 
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>, L<Linux::Event::Watcher>, L<Linux::Event::Backend>,
-L<Linux::Event::Scheduler>
+L<Linux::Event::Listen> - nonblocking bind + accept
 
-=head1 VERSION
+L<Linux::Event::Connect> - nonblocking outbound connect
 
-This document describes Linux::Event version 0.006.
+L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
+
+L<Linux::Event::Fork> - asynchronous child process management
+
+L<Linux::Event::Clock> - high resolution monotonic clock utilities
 
 =head1 AUTHOR
 
