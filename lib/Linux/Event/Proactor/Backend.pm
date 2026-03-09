@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 1;
 
@@ -11,24 +11,23 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Proactor::Backend - Backend contract for Linux::Event::Proactor
+Linux::Event::Proactor::Backend - Contract for completion backends used by Linux::Event::Proactor
 
 =head1 DESCRIPTION
 
-This module documents the contract implemented by proactor backends for
-L<Linux::Event::Proactor>. Backends are intentionally duck-typed, but they are
-expected to follow the submission, completion, and cancellation semantics
-described here.
+This module documents the contract implemented by completion backends for
+L<Linux::Event::Proactor>.
 
-The proactor owns operation objects, callback queueing, lifecycle state, and
-settle-once guarantees. A proactor backend owns submission to the underlying
-completion mechanism and raw completion delivery.
+A proactor backend submits operations to an underlying completion mechanism,
+tracks backend tokens, delivers raw completions, and participates in
+cancellation. The proactor engine itself owns operation objects, callback
+queueing, result normalization, and settle-once guarantees.
 
 =head1 REQUIRED METHODS
 
 =head2 _new(%args)
 
-Construct the backend instance. C<loop> is required.
+Construct the backend. The C<loop> argument is required.
 
 =head2 name()
 
@@ -52,55 +51,46 @@ Return a short backend name such as C<uring> or C<fake>.
 
 =head2 _submit_close($op, %args)
 
-Submit an operation of the given kind and return a backend token that can later
-be used for cancellation and bookkeeping.
+Submit the operation and return a backend token suitable for registry and
+cancellation bookkeeping.
 
-=head2 _cancel($token)
+=head2 _cancel_op($op)
 
-Attempt to cancel an in-flight operation identified by the backend token. The
-backend may complete cancellation asynchronously. The proactor remains
-responsible for settle-once semantics.
+Attempt to cancel the in-flight operation. Cancellation may complete
+asynchronously. The backend must cooperate with the proactor's settle-once and
+registry rules.
 
-=head2 _complete_backend_events() -> $count
+=head2 _complete_backend_events()
 
 Drive backend completion processing once and return the number of processed
 backend events when available.
 
-=head1 COMPLETION CONVENTIONS
+=head1 COMPLETION RULES
 
-A backend must report raw completion results back into the owning proactor in a
-way that allows the proactor to decide whether the operation succeeds, fails, or
-was cancelled.
+A backend must never run user callbacks inline. It should report raw completion
+facts back into the owning proactor so the proactor can normalize the result and
+queue any callback.
 
-For io_uring-style backends, negative completion results correspond to negative
-errno values and must be normalized accordingly.
+For io_uring-style backends, a negative completion result is a negative errno.
+The backend or the engine must normalize that into a positive errno and create a
+L<Linux::Event::Error> object.
 
-Callbacks provided by users must never be executed inline by the backend. User
-callback dispatch is the responsibility of L<Linux::Event::Proactor>.
+=head1 BUFFER LIFETIME
 
-=head1 LIFETIME RULES
+For operations that expose user buffers to the kernel, the backend must keep the
+necessary Perl values alive until the kernel no longer needs them.
 
-For operations that depend on buffer lifetime, the backend must preserve any
-required Perl values until the kernel no longer needs them.
+=head1 CANCELLATION AND RACES
 
-A backend must not settle an operation more than once. In cancellation races, it
-must cooperate with the proactor's registry and state checks so that the final
-settled state is consistent.
+Cancellation is inherently racy. A backend must be written so that an operation
+cannot settle twice even when completion and cancellation race closely together.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>,
 L<Linux::Event::Proactor>,
 L<Linux::Event::Proactor::Backend::Uring>,
 L<Linux::Event::Proactor::Backend::Fake>,
-L<Linux::Event::Reactor::Backend>
-
-=head1 AUTHOR
-
-Joshua S. Day
-
-=head1 LICENSE
-
-Same terms as Perl itself.
+L<Linux::Event::Operation>,
+L<Linux::Event::Error>
 
 =cut

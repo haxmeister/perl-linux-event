@@ -2,189 +2,151 @@
 
 # Linux::Event
 
-Linux-native event loop for Perl.
+Linux::Event is a Linux-native event-loop distribution for Perl with two peer execution models:
 
-Linux::Event is a Linux-native event loop similar in role to EV or AnyEvent,
-but designed specifically around modern Linux kernel facilities such as
-epoll, timerfd, signalfd, eventfd, and pidfd. Providing a minimal event loop built on modern Linux kernel
-facilities:
+- **Reactor** for readiness-based I/O
+- **Proactor** for completion-based I/O
 
-- epoll
-- timerfd
-- signalfd
-- eventfd
-- pidfd
+The public front door is `Linux::Event::Loop`, and `Linux::Event->new` is a convenient shortcut to it.
 
-The goal is a **small, explicit, composable foundation** for building
-high-performance event-driven systems on Linux.
+## Architecture
 
----------------------------------------------------------------------
+```text
+Linux::Event::Loop
+    |
+    +-- Linux::Event::Reactor
+    |       |
+    |       +-- Linux::Event::Reactor::Backend::Epoll
+    |
+    +-- Linux::Event::Proactor
+            |
+            +-- Linux::Event::Proactor::Backend::Uring
+            +-- Linux::Event::Proactor::Backend::Fake
+```
 
-## Linux::Event Ecosystem
+## What this distribution contains
 
-The Linux::Event modules form a composable stack of small components
-rather than a framework.
+Core modules in this repository:
 
-Each module has a narrow responsibility and can be combined with the
-others to build servers, clients, and asynchronous systems.
+- `Linux::Event` - front door shortcut returning `Linux::Event::Loop`
+- `Linux::Event::Loop` - selector and delegating public API
+- `Linux::Event::Reactor` - readiness engine
+- `Linux::Event::Reactor::Backend` - readiness backend contract
+- `Linux::Event::Reactor::Backend::Epoll` - epoll backend
+- `Linux::Event::Watcher` - mutable reactor watcher handle
+- `Linux::Event::Signal` - signalfd adaptor
+- `Linux::Event::Wakeup` - eventfd-backed wakeup primitive
+- `Linux::Event::Pid` - pidfd-backed process exit notifications
+- `Linux::Event::Scheduler` - internal monotonic deadline queue
+- `Linux::Event::Proactor` - completion engine
+- `Linux::Event::Proactor::Backend` - completion backend contract
+- `Linux::Event::Proactor::Backend::Uring` - io_uring backend
+- `Linux::Event::Proactor::Backend::Fake` - deterministic testing backend
+- `Linux::Event::Operation` - in-flight operation object
+- `Linux::Event::Error` - lightweight proactor error object
 
-Core layers:
+## Ecosystem layering
 
-Linux::Event
-    The event loop. Linux-native readiness engine providing watchers
-    and the dispatch loop.
+This distribution intentionally stays at the loop-and-primitives layer.
 
-Linux::Event::Listen
-    Server-side socket acquisition (bind + listen + accept).
-    Produces accepted nonblocking filehandles.
+Companion distributions provide higher-level networking and process-building blocks:
 
-Linux::Event::Connect
-    Client-side socket acquisition (nonblocking connect).
-    Produces connected nonblocking filehandles.
+- `Linux::Event::Listen` - server-side socket acquisition
+- `Linux::Event::Connect` - client-side nonblocking connect
+- `Linux::Event::Stream` - buffered I/O and backpressure for established filehandles
+- `Linux::Event::Fork` - asynchronous child-process helpers
+- `Linux::Event::Clock` - monotonic time helpers
+- `Linux::Event::Timer` - timerfd wrapper used by the reactor
 
-Linux::Event::Stream
-    Buffered I/O and backpressure management for an established
-    filehandle.
+Canonical networking composition:
 
-Linux::Event::Fork
-    Asynchronous child process management integrated with the event
-    loop.
-
-Linux::Event::Clock
-    High-resolution monotonic time utilities.
-
-Canonical network composition:
-
+```text
 Listen / Connect
-        ↓
+        |
       Stream
-        ↓
-  Application protocol
+        |
+   your protocol
+```
 
-Example stack:
+## Choosing a model
 
-Linux::Event::Listen → Linux::Event::Stream → your protocol
+Use the **reactor** when you want readiness notifications over existing filehandles:
 
-or
+```perl
+use v5.36;
+use Linux::Event;
 
-Linux::Event::Connect → Linux::Event::Stream → your protocol
+my $loop = Linux::Event->new(model => 'reactor');
 
-The core loop intentionally remains a primitive layer and does not grow
-into a framework. Higher-level behavior is composed from small modules.
+$loop->after(0.250, sub ($loop) {
+  say "timer fired";
+  $loop->stop;
+});
 
----------------------------------------------------------------------
+$loop->run;
+```
 
-## Design Goals
+Use the **proactor** when you want explicit operation objects and completion callbacks:
 
-- Minimal public API
-- Explicit semantics
-- No hidden ownership
-- Composable modules
-- Linux-native performance
-- Backend abstraction for future evolution
+```perl
+use v5.36;
+use Linux::Event::Loop;
 
----------------------------------------------------------------------
-## Keywords
+my $loop = Linux::Event::Loop->new(
+  model   => 'proactor',
+  backend => 'uring',
+);
 
-event loop  
-epoll  
-async IO  
-nonblocking IO  
-reactor pattern  
-network servers  
-high performance networking  
-Linux event loop
+my $op = $loop->read(
+  fh          => $fh,
+  len         => 4096,
+  on_complete => sub ($op, $result, $data) {
+    return if $op->is_cancelled;
+    die $op->error->message if $op->failed;
+
+    say "read $result->{bytes} bytes";
+  },
+);
+
+while ($loop->live_op_count) {
+  $loop->run_once;
+}
+```
 
 ## Installation
 
 Development install:
 
-    perl Makefile.PL
-    make
-    make test
-    make install
+```bash
+perl Makefile.PL
+make
+make test
+make install
+```
 
-Requires:
+Primary dependencies include:
 
-    Linux
-    Linux::Epoll
-    Linux::Event::Clock >= 0.011
-    Linux::Event::Timer >= 0.010
+- Linux
+- `Linux::Epoll`
+- `Linux::Event::Clock >= 0.011`
+- `Linux::Event::Timer >= 0.010`
+- `IO::Uring` and `Time::Spec` for the real proactor backend
 
----------------------------------------------------------------------
+The proactor test suite also supports a fake backend for deterministic testing.
 
-## Basic Usage
+## Examples
 
-    use v5.36;
-    use Linux::Event;
+The `examples/` directory is organized around the current architecture and includes:
 
-    my $loop = Linux::Event->new;
+- reactor timers, watchers, signals, wakeups, and pidfd examples
+- proactor timer, read/write, and socket lifecycle examples
+- deeper reactor benchmarking and regression scripts
 
-    $loop->after(0.25, sub ($loop) {
-        say "250ms elapsed";
-        $loop->stop;
-    });
+The CI workflow syntax-checks all examples so they do not silently rot.
 
-    $loop->run;
+## Status
 
----------------------------------------------------------------------
-
-## Additional Linux primitives
-
-Linux::Event integrates several Linux kernel facilities.
-
-Signals via signalfd
-
-    $loop->signal('INT', sub ($loop, $sig) {
-        $loop->stop;
-    });
-
-Wakeups via eventfd
-
-    my $w = $loop->wakeup(sub ($loop) {
-        say "woken";
-    });
-
-Process exit notifications via pidfd
-
-    $loop->pid($pid, sub ($loop, $pid, $status) {
-        say "child exited";
-    });
-
-See the examples/ directory for complete scripts.
-
----------------------------------------------------------------------
-
-## Example: TCP server
-
-    use v5.36;
-    use Linux::Event;
-    use Linux::Event::Listen;
-    use Linux::Event::Stream;
-
-    my $loop = Linux::Event->new;
-
-    Linux::Event::Listen->new(
-        loop => $loop,
-        host => '127.0.0.1',
-        port => 3000,
-
-        on_accept => sub ($loop, $fh, $peer, $listen) {
-
-            Linux::Event::Stream->new(
-                loop => $loop,
-                fh   => $fh,
-
-                codec => 'line',
-
-                on_message => sub ($stream, $line) {
-                    $stream->write_message("echo: $line");
-                },
-            );
-        },
-    );
-
-$loop->run;
+This project is still pre-1.0 and is being actively refined toward a cohesive forward-looking architecture. Large structural cleanup is expected during this stage so the eventual stable API lands in a cleaner shape.
 
 ## License
 

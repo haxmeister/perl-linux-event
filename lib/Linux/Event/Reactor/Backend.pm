@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 1;
 
@@ -11,90 +11,59 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Reactor::Backend - Backend contract for Linux::Event::Reactor
+Linux::Event::Reactor::Backend - Contract for readiness backends used by Linux::Event::Reactor
 
 =head1 DESCRIPTION
 
-This module documents the contract implemented by reactor backends for
-L<Linux::Event::Reactor>. Backends are intentionally duck-typed, but the method
-surface and callback ABI described here are the forward-looking contract for
-this distribution.
+This module documents the contract implemented by readiness backends for
+L<Linux::Event::Reactor>.
 
-The reactor owns scheduling policy, timer integration, watcher state, and user
-callback dispatch rules. A reactor backend owns readiness registration and the
-kernel wait mechanism.
+A reactor backend owns the kernel registration and wait mechanism. The reactor
+engine owns watcher replacement policy, timer integration, dispatch order,
+signal integration, wakeups, and pidfd policy.
+
+Backends are duck-typed, but they are expected to implement the method surface
+and callback semantics documented here.
 
 =head1 REQUIRED METHODS
 
 =head2 new(%args)
 
-Construct the backend instance. Backends may accept implementation-specific
-arguments.
+Construct the backend object.
 
 =head2 name()
 
 Return a short backend name such as C<epoll>.
 
-=head2 watch($fh, $mask, $cb, %opt) -> $fd
+=head2 watch($fh, $mask, $cb, %opt)
 
-Register readiness interest for C<$fh>.
+Register readiness interest for C<$fh> and return the integer file descriptor.
 
 The callback ABI is:
 
-  $cb->($loop, $fh, $fd, $mask, $tag);
+  $cb->($loop, $fh, $fd, $mask, $tag)
 
-Where:
+Where C<$loop> and C<$tag> come from C<%opt> if provided.
 
-=over 4
+=head2 unwatch($fh_or_fd)
 
-=item * C<$loop> is the public loop object used by the caller
+Remove an existing registration. Return true if a registration was removed.
 
-=item * C<$fh> is the watched filehandle
+=head2 run_once($loop, $timeout_s = undef)
 
-=item * C<$fd> is the integer file descriptor
-
-=item * C<$mask> is the Linux::Event readiness mask
-
-=item * C<$tag> is an optional backend passthrough value
-
-=back
-
-The backend must not reinterpret the callback ABI. It may invoke the callback
-inline from C<run_once>, but it must not mutate reactor policy.
-
-The distribution uses these optional keys in C<%opt>:
-
-=over 4
-
-=item * C<_loop> - the public loop object to pass back to the callback
-
-=item * C<tag> - optional passthrough tag
-
-=back
-
-=head2 unwatch($fh_or_fd) -> $bool
-
-Remove an existing readiness registration. Return true if something was removed
-and false otherwise.
-
-=head2 run_once($loop, $timeout_s = undef) -> $count
-
-Wait for readiness and dispatch backend callbacks. C<$timeout_s> is expressed in
-seconds and may be fractional. Undef means block as the backend sees fit.
-
-Return the number of processed readiness events when available, or another
-backend-defined count.
+Enter the backend wait once, dispatch native readiness callbacks, and return the
+number of processed events when available.
 
 =head1 OPTIONAL METHODS
 
-=head2 modify($fh_or_fd, $mask, %opt) -> $bool
+=head2 modify($fh_or_fd, $mask, %opt)
 
-Update an existing readiness registration without removing and re-adding it.
-When unsupported, the reactor may fall back to unwatch plus watch.
+Update an existing registration without a delete-and-add cycle. The reactor can
+fall back to C<unwatch> plus C<watch> when this method is absent.
 
 =head1 READINESS MASKS
 
-The reactor uses this bit layout:
+The reactor uses these bit flags:
 
   READABLE => 0x01
   WRITABLE => 0x02
@@ -105,26 +74,26 @@ The reactor uses this bit layout:
   ERR      => 0x40
   HUP      => 0x80
 
-Backends are expected to translate to and from native kernel representations.
+The backend is responsible for translating between these masks and the native
+kernel representation.
 
-=head1 DESIGN NOTES
+=head1 CALLBACK RULES
 
-A reactor backend does not own timers, watcher replacement policy, signal
-integration, wakeups, or pidfd policy. Those remain in the reactor engine.
+Backend callbacks may run inline from C<run_once>. That is normal for the
+reactor model.
+
+A backend must not reinterpret watcher policy. In particular, it must not
+change the dispatch order chosen by the reactor engine.
+
+=head1 FILEHANDLE OWNERSHIP
+
+A reactor backend observes filehandles. It does not take ownership of them.
+Closing a filehandle remains the caller's responsibility.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Loop>,
 L<Linux::Event::Reactor>,
 L<Linux::Event::Reactor::Backend::Epoll>,
 L<Linux::Event::Proactor::Backend>
-
-=head1 AUTHOR
-
-Joshua S. Day
-
-=head1 LICENSE
-
-Same terms as Perl itself.
 
 =cut

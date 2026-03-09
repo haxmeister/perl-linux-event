@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 use Linux::Event::Loop;
 
@@ -17,153 +17,155 @@ __END__
 
 =head1 NAME
 
-Linux::Event - Front door for the Linux::Event ecosystem
+Linux::Event - Front door for the Linux::Event reactor and proactor ecosystem
 
 =head1 SYNOPSIS
 
   use v5.36;
   use Linux::Event;
 
-  my $loop = Linux::Event->new( model => 'reactor', backend => 'epoll' );
+  # The default model is the reactor.
+  my $reactor = Linux::Event->new;
 
-  # Timer (seconds, fractional allowed)
-  $loop->after(0.100, sub ($loop) {
-    say "tick";
+  $reactor->after(0.250, sub ($loop) {
+    say "reactor timer fired";
     $loop->stop;
   });
 
-  # Raw I/O watcher
-  my $w = $loop->watch(
-    $fh,
-    read => sub ($loop, $fh, $w) {
-      my $buf;
-      my $n = sysread($fh, $buf, 8192);
+  $reactor->run;
 
-      if (!defined $n || $n == 0) {
-        $w->cancel;
-        close $fh;
+  # Choose the proactor explicitly.
+  my $proactor = Linux::Event->new(
+    model   => 'proactor',
+    backend => 'uring',
+  );
+
+  my $op = $proactor->read(
+    fh          => $fh,
+    len         => 4096,
+    on_complete => sub ($op, $result, $data) {
+      if ($op->failed) {
+        warn $op->error->message;
         return;
       }
 
-      # ... handle $buf ...
+      my $bytes = $result->{bytes};
+      my $buf   = $result->{data};
     },
   );
 
-  $loop->run;
-
-  # For socket acquisition and buffered I/O:
-  #   see Linux::Event::Listen
-  #   see Linux::Event::Connect
-  #   see Linux::Event::Stream
-
 =head1 DESCRIPTION
 
-C<Linux::Event> is the front door for the Linux::Event ecosystem.
+C<Linux::Event> is the front door for the Linux::Event distribution.
+C<Linux::Event-E<gt>new> returns a L<Linux::Event::Loop>, which then selects a
+reactor or proactor engine.
 
-In this distribution, C<Linux::Event-E<gt>new> returns a L<Linux::Event::Loop>.
-That keeps the common case short while allowing the loop implementation to stay
-in its own module.
-
-This distribution provides the core loop and kernel-primitive adaptors:
+The distribution is intentionally split into clear layers.
 
 =over 4
 
-=item * L<Linux::Event::Loop> - front-door selector for reactor and proactor engines
+=item * L<Linux::Event::Loop>
 
-=item * L<Linux::Event::Watcher> - mutable watcher handles returned by the loop
+Selector and public front door. It chooses a reactor or proactor engine and
+forwards the public API.
 
-=item * L<Linux::Event::Signal> - signalfd adaptor (signal subscriptions)
+=item * L<Linux::Event::Reactor>
 
-=item * L<Linux::Event::Wakeup> - eventfd-backed wakeups (loop waker)
+Readiness-based engine built around epoll plus Linux timer, signal, wakeup, and
+pid primitives.
 
-=item * L<Linux::Event::Pid> - pidfd-backed process exit notifications
+=item * L<Linux::Event::Proactor>
 
-=item * L<Linux::Event::Scheduler> - internal reactor deadline scheduler (nanoseconds)
+Completion-based engine built for io_uring-style operations.
 
-=item * L<Linux::Event::Reactor> - readiness-based event loop engine
+=item * L<Linux::Event::Watcher>
 
-=item * L<Linux::Event::Reactor::Backend> - reactor backend contract
+Mutable watcher handle returned by reactor C<watch()> registrations.
 
-=item * L<Linux::Event::Reactor::Backend::Epoll> - epoll reactor backend
+=item * L<Linux::Event::Operation>
 
-=item * L<Linux::Event::Proactor> - completion-based event loop engine
+In-flight operation object returned by proactor submissions.
 
-=item * L<Linux::Event::Proactor::Backend> - proactor backend contract
+=item * L<Linux::Event::Error>
+
+Lightweight failure object for proactor operations.
 
 =back
 
-=head1 LAYERING
+=head1 ARCHITECTURE
 
-The ecosystem is intentionally composable and policy-light.
+The distribution now has two peer engines under one front door:
 
-This distribution provides the event loop and low-level primitives. Socket
-acquisition and buffered I/O live in separate distributions:
+  Linux::Event::Loop
+      |
+      +-- Linux::Event::Reactor
+      |       |
+      |       +-- Linux::Event::Reactor::Backend::Epoll
+      |
+      +-- Linux::Event::Proactor
+              |
+              +-- Linux::Event::Proactor::Backend::Uring
+              +-- Linux::Event::Proactor::Backend::Fake
+
+Use the reactor when you want readiness callbacks over existing filehandles.
+Use the proactor when you want explicit operation objects and completion-based
+I/O.
+
+=head1 MODEL SELECTION
+
+The default model is C<reactor>:
+
+  my $loop = Linux::Event->new;
+
+Select a model explicitly when you want to make the choice obvious in the
+calling code:
+
+  my $reactor = Linux::Event->new(model => 'reactor');
+  my $proactor = Linux::Event->new(model => 'proactor');
+
+Backend names are model-specific. In this release:
+
+=over 4
+
+=item * reactor: C<epoll>
+
+=item * proactor: C<uring>, C<fake>
+
+=back
+
+=head1 ECOSYSTEM LAYERING
+
+This distribution intentionally stays at the loop-and-primitives layer. Higher
+level networking remains in companion distributions:
 
 =over 4
 
 =item * L<Linux::Event::Listen>
 
-Server-side socket acquisition: nonblocking bind + accept. Produces accepted
-nonblocking filehandles.
+Server-side socket acquisition.
 
 =item * L<Linux::Event::Connect>
 
-Client-side socket acquisition: nonblocking outbound connect. Produces connected
-nonblocking filehandles.
+Client-side nonblocking outbound connect.
 
 =item * L<Linux::Event::Stream>
 
-Buffered I/O + backpressure for an established filehandle (accepted or
-connected). Stream owns the filehandle and handles read/write buffering.
+Buffered I/O and backpressure management for an established filehandle.
+
+=item * L<Linux::Event::Fork>
+
+Asynchronous child-process helpers built on the loop.
+
+=item * L<Linux::Event::Clock>
+
+Monotonic clock helpers used by the core loop and related modules.
 
 =back
 
-Canonical composition:
+=head1 EXAMPLES
 
-  Listen/Connect -> Stream -> (your protocol/codec/state)
-
-C<Linux::Event::Loop> deliberately does not grow into a framework layer. Higher
-level composition belongs in application code (or optional glue distributions),
-not in the core loop.
-
-=head1 STATUS AND COMPATIBILITY
-
-The public API is intended to be stable. Future releases should be additive and
-should not change existing callback ABIs or dispatch order.
-
-Linux::Event exposes Linux primitives with explicit semantics and minimal policy:
-
-=over 4
-
-=item * epoll for I/O readiness (via the backend)
-
-=item * timerfd for timers
-
-=item * signalfd for signals
-
-=item * eventfd for explicit wakeups
-
-=item * pidfd for process exit notifications
-
-=back
-
-=head1 REPOSITORY
-
-The project repository is hosted on GitHub:
-
-L<https://github.com/haxmeister/perl-linux-event>
-
-=head1 SEE ALSO
-
-L<Linux::Event::Listen> - nonblocking bind + accept
-
-L<Linux::Event::Connect> - nonblocking outbound connect
-
-L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
-
-L<Linux::Event::Fork> - asynchronous child process management
-
-L<Linux::Event::Clock> - high resolution monotonic clock utilities
+See the C<examples/> directory for small, current examples covering both the
+reactor and proactor models.
 
 =head1 AUTHOR
 

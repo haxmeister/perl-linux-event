@@ -1,5 +1,13 @@
 {{$NEXT}}
 
+  * Bump version to 0.010 for the post-restructure release candidate.
+
+  * Rewrite and expand POD across the selector, reactor, proactor, backend contract, and support modules so the dual-engine architecture is explained consistently.
+
+  * Refresh the examples directory to reflect the current reactor/proactor structure and retire stale pre-restructure examples.
+
+  * Update README and CI example checking so user-facing documentation stays aligned with the code.
+
   * Restructure the core loop into a forward-looking selector/engine layout.
     Linux::Event::Loop is now the front-door selector, with the readiness
     engine in Linux::Event::Reactor and the epoll backend in

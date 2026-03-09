@@ -25,3 +25,6 @@ jobs:
         run: |
           perl Makefile.PL
           make test
+      - name: Syntax-check examples
+        run: |
+          perl -c examples/*.pl

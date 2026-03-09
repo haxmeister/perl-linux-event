@@ -476,56 +476,67 @@ sub _validate_allowed_keys ($self, $href, @allowed) {
 
 __END__
 
-=pod
-
 =head1 NAME
 
-Linux::Event::Proactor - Minimal proactor loop for Linux::Event
+Linux::Event::Proactor - Completion-based event loop engine for Linux::Event
 
 =head1 SYNOPSIS
 
   use v5.36;
-  use Linux::Event::Proactor;
+  use Linux::Event::Loop;
 
-  my $loop = Linux::Event::Proactor->new(backend => 'uring');
+  my $loop = Linux::Event::Loop->new(
+    model   => 'proactor',
+    backend => 'uring',
+  );
 
-  my $read = $loop->read(
-    fh => $fh,
-    len => 4096,
-    data => { id => 1 },
+  my $op = $loop->recv(
+    fh          => $fh,
+    len         => 4096,
+    flags       => 0,
+    data        => { request_id => 1 },
     on_complete => sub ($op, $result, $ctx) {
       return if $op->is_cancelled;
-      die $op->error->message if $op->failed;
+
+      if ($op->failed) {
+        warn $op->error->message;
+        return;
+      }
 
       my $bytes = $result->{bytes};
-      my $data  = $result->{data};
+      my $buf   = $result->{data};
       my $eof   = $result->{eof};
     },
   );
 
-  my $timer = $loop->after(0.250, on_complete => sub ($op, $result, $ctx) {
-    # $result is { expired => 1 }
-  });
-
-  $loop->run;
+  while ($loop->live_op_count) {
+    $loop->run_once;
+  }
 
 =head1 DESCRIPTION
 
-Linux::Event::Proactor is a small proactor-style event loop built for the
-Linux::Event ecosystem. It models each in-flight action as a
-L<Linux::Event::Operation> and keeps completion callback dispatch deferred
-through an internal callback queue. Callbacks are never executed inline at
-submission time or completion time.
+C<Linux::Event::Proactor> is the completion-based engine in this distribution.
+It submits operations to a backend such as io_uring, tracks them with
+L<Linux::Event::Operation> objects, and dispatches completion callbacks through
+a deferred callback queue.
 
-The loop itself stays intentionally small. It submits operations, tracks them
-until settlement, and drains queued callbacks. Higher-level buffering, framing,
-connection policy, and ownership rules are expected to live in other layers.
+The core invariants are:
+
+=over 4
+
+=item * callbacks never run inline
+
+=item * operations settle exactly once
+
+=item * cancellation must remain race-safe
+
+=item * the operation registry remains consistent
+
+=back
 
 =head1 CONSTRUCTOR
 
-=head2 new
-
-  my $loop = Linux::Event::Proactor->new(%arg);
+=head2 new(%args)
 
 Recognized arguments:
 
@@ -533,232 +544,150 @@ Recognized arguments:
 
 =item * C<backend>
 
-Either C<fake> or C<uring>. Defaults to C<fake>.
-
-=item * C<clock>
-
-Clock object used for timers. If omitted, a monotonic
-L<Linux::Event::Clock> is created. The object must provide C<tick> and
-C<now_ns>.
+Backend name or backend object. Supported backend names in this release are
+C<uring> and C<fake>.
 
 =item * C<queue_size>
 
-Submission queue size for the uring backend. Defaults to C<64>.
+Backend queue size. Defaults to 256.
 
-=item * Any additional arguments
+=item * C<clock>
 
-Additional arguments are passed through to the selected backend. The uring
-backend accepts tuning arguments documented in
-L<Linux::Event::Proactor::Backend::Uring>.
+Clock object. The proactor uses a monotonic clock for timer operations.
+
+=item * backend-specific options
+
+Arguments such as C<submit_batch_size>, C<cqe_entries>, and C<sqpoll> are
+passed through to the uring backend.
 
 =back
 
-=head1 LOOP METHODS
+=head1 LIFECYCLE
 
 =head2 run
 
-Runs the loop until C<stop> is called.
+Run until C<stop> is called.
 
 =head2 run_once
 
-Processes backend completions and then drains queued callbacks once. Returns
-the number of processed completions plus drained callbacks.
+Process one round of backend completions and deferred callbacks.
+Returns the combined count of processed backend events and callbacks.
 
 =head2 stop
 
-Requests that C<run> stop after the current iteration.
-
-=head2 clock
-
-Returns the loop clock object.
-
-=head2 backend_name
-
-Returns the backend name, either C<fake> or C<uring>.
-
-=head2 live_op_count
-
-Returns the number of currently registered in-flight operations.
+Request that a running loop stop.
 
 =head2 is_running
 
 True while C<run> is active.
 
-=head2 drain_callbacks
-
-Drains the deferred callback queue immediately. This is mostly useful in tests.
-
 =head1 OPERATIONS
 
-Each submission method returns a L<Linux::Event::Operation>. Successful result
-shapes are shown below. Errors are reported through C<< $op->error >> as a
-L<Linux::Event::Error>.
+Each submission method returns a L<Linux::Event::Operation>.
 
 =head2 read
 
-  my $op = $loop->read(
-    fh => $fh,
-    len => $bytes,
-    data => $ctx,
-    on_complete => sub ($op, $result, $ctx) { ... },
-  );
+  $loop->read(fh => $fh, len => $bytes, %opt)
 
-Result:
+Result shape:
 
-  {
-    bytes => N,
-    data  => $string,
-    eof   => 0|1,
-  }
+  { bytes => N, data => $string, eof => 0|1 }
 
 =head2 write
 
-  my $op = $loop->write(
-    fh => $fh,
-    buf => $buffer,
-    data => $ctx,
-    on_complete => sub ($op, $result, $ctx) { ... },
-  );
+  $loop->write(fh => $fh, buf => $buffer, %opt)
 
-Result:
+Result shape:
 
   { bytes => N }
-
-Partial writes are treated as success.
 
 =head2 recv
 
-Socket-oriented receive with optional flags.
+  $loop->recv(fh => $fh, len => $bytes, flags => 0, %opt)
 
-  my $op = $loop->recv(
-    fh    => $sock,
-    len   => 4096,
-    flags => 0,
-  );
-
-Result:
-
-  {
-    bytes => N,
-    data  => $string,
-    eof   => 0|1,
-  }
+Socket-oriented read with flags. Result shape matches C<read>.
 
 =head2 send
 
-Socket-oriented send with optional flags.
+  $loop->send(fh => $fh, buf => $buffer, flags => 0, %opt)
 
-  my $op = $loop->send(
-    fh    => $sock,
-    buf   => $bytes,
-    flags => 0,
-  );
-
-Result:
-
-  { bytes => N }
-
-Partial sends are treated as success.
+Socket-oriented write with flags. Result shape matches C<write>.
 
 =head2 accept
 
-  my $op = $loop->accept(
-    fh => $listen_socket,
-  );
+  $loop->accept(fh => $listen_fh, %opt)
 
-Result:
+Result shape:
 
-  {
-    fh   => $client_socket,
-    addr => $sockaddr,
-  }
+  { fh => $client_fh, addr => $sockaddr }
 
 =head2 connect
 
-  my $op = $loop->connect(
-    fh   => $socket,
-    addr => $sockaddr,
-  );
+  $loop->connect(fh => $fh, addr => $sockaddr, %opt)
 
-Result:
+Successful result shape:
 
   {}
 
 =head2 shutdown
 
-  my $op = $loop->shutdown(
-    fh  => $socket,
-    how => 'both',
-  );
+  $loop->shutdown(fh => $fh, how => 'read' | 'write' | 'both', %opt)
 
-C<how> accepts the semantic values C<read>, C<write>, and C<both>. Numeric
-C<SHUT_RD>, C<SHUT_WR>, and C<SHUT_RDWR> values are also accepted.
-
-Result:
-
-  {}
+Numeric shutdown constants are also accepted. Successful result shape is C<{}>.
 
 =head2 close
 
-  my $op = $loop->close(
-    fh => $fh,
-  );
+  $loop->close(fh => $fh, %opt)
 
-Result:
-
-  {}
+Successful result shape is C<{}>.
 
 =head2 after
 
-  my $op = $loop->after(0.5);
-
-Schedules a timer relative to the loop clock.
+  $loop->after($seconds, %opt)
 
 =head2 at
 
-  my $op = $loop->at($deadline_seconds);
+  $loop->at($deadline_seconds, %opt)
 
-Schedules a timer at an absolute deadline expressed in seconds in the loop
-clock domain.
-
-Both timer methods complete with:
+Timer result shape:
 
   { expired => 1 }
 
 =head1 CALLBACKS
 
-Completion callbacks receive three arguments:
+User callbacks are supplied with C<on_complete>. The callback ABI is:
 
-  sub ($op, $result, $data) { ... }
+  $cb->($op, $result, $data)
 
-C<$result> is the successful result hashref for successful operations and
-C<undef> for failed or cancelled operations. C<$data> is the opaque value
-passed at submission time.
+The callback is never executed inline from backend completion delivery. Instead,
+it is queued and drained by C<run_once> or C<drain_callbacks>.
 
-Callbacks are queued and later drained by C<run_once> or C<drain_callbacks>.
-They are never executed inline.
+=head1 ACCESSORS
 
-=head1 DESIGN NOTES
+=head2 clock
 
-=over 4
+Returns the clock object.
 
-=item * Operations settle exactly once.
+=head2 backend_name
 
-=item * Cancellation is delegated to the backend but settlement rules remain
-centralized in the operation object.
+Returns the backend name.
 
-=item * The loop stays policy-free. It does not impose buffering, framing, or
-ownership conventions on filehandles.
+=head2 live_op_count
 
-=item * Callback queue draining uses an indexed queue rather than repeated
-C<shift> calls so callback-heavy workloads avoid unnecessary array compaction.
+Returns the number of operations still registered with the loop.
 
-=back
+=head2 drain_callbacks
+
+Manually drain the deferred callback queue. This is primarily useful for tests
+and advanced control flows.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Operation>, L<Linux::Event::Error>,
+L<Linux::Event::Loop>,
+L<Linux::Event::Operation>,
+L<Linux::Event::Error>,
+L<Linux::Event::Proactor::Backend>,
 L<Linux::Event::Proactor::Backend::Uring>,
-L<Linux::Event::Proactor::Backend::Fake>, L<Linux::Event::Clock>
+L<Linux::Event::Proactor::Backend::Fake>
 
 =cut

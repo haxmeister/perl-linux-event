@@ -25,11 +25,9 @@ sub message ($self) { return $self->{message} }
 
 __END__
 
-=pod
-
 =head1 NAME
 
-Linux::Event::Error - Lightweight error object for Linux::Event::Proactor
+Linux::Event::Error - Lightweight proactor error object
 
 =head1 SYNOPSIS
 
@@ -40,37 +38,32 @@ Linux::Event::Error - Lightweight error object for Linux::Event::Proactor
 
 =head1 DESCRIPTION
 
-Linux::Event::Error is a compact object used to report operation failures from
-L<Linux::Event::Proactor>. It stores an errno-style numeric code, a short
-symbolic name, and a human-readable message.
+C<Linux::Event::Error> is a compact object used by
+L<Linux::Event::Proactor> to report failed operations. It stores an errno-style
+numeric code, a short symbolic name, and a descriptive message.
 
 =head1 METHODS
 
-=head2 new
+=head2 new(%args)
 
-  my $err = Linux::Event::Error->new(
-    code    => $code,
-    name    => $name,
-    message => $message,
-  );
-
-C<code> is required. C<name> defaults to C<EUNKNOWN>. C<message> defaults to
-the empty string.
+Create a new error object. C<code> is required. C<name> defaults to
+C<EUNKNOWN>. C<message> defaults to the empty string.
 
 =head2 code
 
-Returns the numeric error code.
+Return the numeric code.
 
 =head2 name
 
-Returns the symbolic error name.
+Return the symbolic name.
 
 =head2 message
 
-Returns the descriptive message.
+Return the descriptive message.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Operation>, L<Linux::Event::Proactor>
+L<Linux::Event::Operation>,
+L<Linux::Event::Proactor>
 
 =cut

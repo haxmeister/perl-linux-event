@@ -472,104 +472,93 @@ sub _error_from_errno ($self, $code) {
 
 __END__
 
-=pod
-
 =head1 NAME
 
 Linux::Event::Proactor::Backend::Uring - io_uring backend for Linux::Event::Proactor
 
 =head1 SYNOPSIS
 
-  my $loop = Linux::Event::Proactor->new(
+  # Usually constructed internally by Linux::Event::Proactor.
+  my $loop = Linux::Event::Loop->new(
+    model   => 'proactor',
     backend => 'uring',
-    queue_size => 256,
-    submit_batch_size => 64,
   );
 
 =head1 DESCRIPTION
 
-This backend binds L<Linux::Event::Proactor> to L<IO::Uring>. It maps the
-current proactor operation set onto real io_uring submissions and normalizes
-completion results into the result shapes expected by the loop.
+C<Linux::Event::Proactor::Backend::Uring> is the real completion backend for
+L<Linux::Event::Proactor>. It submits reads, writes, socket operations, timers,
+and cancellation requests through L<IO::Uring>.
 
-The backend is intentionally small. It owns the ring, keeps submission-time
-buffers alive until completion, converts negative CQE results into
-L<Linux::Event::Error> objects, and unregisters operations from the loop when
-they settle.
+The backend preserves the core proactor invariants by leaving user callback
+execution to the engine. It records pending operations by backend token and
+hands normalized success or failure information back to the owning loop.
 
-=head1 CONSTRUCTOR ARGUMENTS
+=head1 CONSTRUCTOR OPTIONS
 
-These arguments are passed through from C<< Linux::Event::Proactor->new(...) >>
-when C<backend =E<gt> 'uring'> is selected.
-
-=head2 queue_size
-
-Submission queue size. This is owned by the loop object and passed to
-L<IO::Uring>.
-
-=head2 cqe_entries
-
-Optional completion queue size override passed to L<IO::Uring>.
-
-=head2 sqpoll
-
-Optional SQPOLL idle time in milliseconds. When supported by the system, this
-can reduce submission syscall overhead by letting a kernel thread poll the
-submission queue.
-
-=head2 submit_batch_size
-
-Optional batching threshold for proactive C<submit> calls. When set to a
-positive integer, the backend flushes submissions after that many queued
-operations, or sooner when the submission queue is almost full. This reduces
-submission-side overhead in callback-heavy or bursty workloads while preserving
-existing semantics. The default of C<0> disables proactive flushing and leaves
-submission to C<run_once>.
-
-=head1 IMPLEMENTED OPERATIONS
-
-This backend currently implements:
-
-  read
-  write
-  recv
-  send
-  accept
-  connect
-  shutdown
-  close
-  timeout
-  cancel
-
-=head1 RESULT NORMALIZATION
+The backend is normally constructed internally. Recognized options include:
 
 =over 4
 
-=item * Negative CQE results are treated as errno values and converted into
-L<Linux::Event::Error> objects.
+=item * C<submit_batch_size>
 
-=item * C<accept> returns a new filehandle and peer sockaddr when available.
+Optional submission batching threshold. When non-zero, the backend flushes the
+ring after this many queued submissions.
 
-=item * C<read> and C<recv> preserve their submission buffers until completion
-and then slice the completed byte count into the returned C<data> field.
+=item * C<cqe_entries>
 
-=item * C<write> and C<send> treat partial completion as success and return the
-completed byte count.
+Optional C<IO::Uring> completion queue size tuning.
 
-=item * Timeout completion returns C<< { expired =E<gt> 1 } >>.
+=item * C<sqpoll>
+
+Optional C<IO::Uring> SQPOLL mode toggle.
 
 =back
 
+=head1 SUPPORTED OPERATIONS
+
+This backend currently implements:
+
+=over 4
+
+=item * C<read>
+
+=item * C<write>
+
+=item * C<recv>
+
+=item * C<send>
+
+=item * C<accept>
+
+=item * C<connect>
+
+=item * C<shutdown>
+
+=item * C<close>
+
+=item * C<timeout>
+
+=item * C<cancel>
+
+=back
+
+=head1 ERROR HANDLING
+
+io_uring completion results use negative errno values for failures. This backend
+normalizes those into positive errno values and uses
+L<Linux::Event::Error> objects through the owning proactor.
+
 =head1 PERFORMANCE NOTES
 
-This backend keeps completion handling compact and avoids repeated callback
-queue array shifts in the loop. It also supports optional proactive submission
-flushing via C<submit_batch_size> and optional kernel SQ polling via
-C<sqpoll>. Those knobs are intentionally backend-specific so the public
-proactor API remains small and cohesive.
+Submission batching is intentionally optional. The default favors simplicity and
+predictable semantics. When enabled, batching can improve throughput under heavy
+operation loads by reducing ring submissions.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Proactor>, L<IO::Uring>, L<Linux::Event::Error>
+L<Linux::Event::Proactor>,
+L<Linux::Event::Proactor::Backend>,
+L<IO::Uring>
 
 =cut

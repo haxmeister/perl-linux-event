@@ -164,8 +164,6 @@ sub _cleanup_after_callback ($self) {
 
 __END__
 
-=pod
-
 =head1 NAME
 
 Linux::Event::Operation - In-flight operation object for Linux::Event::Proactor
@@ -173,20 +171,19 @@ Linux::Event::Operation - In-flight operation object for Linux::Event::Proactor
 =head1 SYNOPSIS
 
   my $op = $loop->read(
-    fh => $fh,
-    len => 4096,
-    data => $ctx,
+    fh          => $fh,
+    len         => 4096,
+    data        => $ctx,
     on_complete => sub ($op, $result, $ctx) {
+      return if $op->is_cancelled;
+
       if ($op->failed) {
         warn $op->error->message;
         return;
       }
 
-      return if $op->is_cancelled;
-
       my $state = $op->state;
       my $kind  = $op->kind;
-      my $data  = $op->data;
       my $res   = $op->result;
     },
   );
@@ -195,27 +192,28 @@ Linux::Event::Operation - In-flight operation object for Linux::Event::Proactor
 
 =head1 DESCRIPTION
 
-Linux::Event::Operation represents one in-flight action submitted through
-L<Linux::Event::Proactor>. It tracks kind, state, completion result, failure
-object, user data, and the deferred completion callback.
+C<Linux::Event::Operation> represents one in-flight action submitted through
+L<Linux::Event::Proactor>. Users obtain operation objects from the proactor
+loop; they are not normally constructed directly.
 
-Users normally obtain operation objects from the proactor loop; they are not
-constructed directly.
+An operation carries its kind, state, result or error, optional user data, and
+a deferred completion callback.
 
 =head1 STATES
 
 An operation begins in C<pending> and then settles exactly once into one of
-the following terminal states:
+these terminal states:
 
 =over 4
 
 =item * C<done>
 
-Successful or failed completion. Use C<success> or C<failed> to distinguish.
+The operation completed. Inspect C<success> or C<failed> to distinguish success
+from failure.
 
 =item * C<cancelled>
 
-Cancellation won the race and the operation was not completed successfully.
+Cancellation won the race.
 
 =back
 
@@ -223,89 +221,60 @@ Cancellation won the race and the operation was not completed successfully.
 
 =head2 loop
 
-Returns the owning proactor loop.
+Return the owning proactor.
 
 =head2 kind
 
-Returns the submitted operation kind such as C<read>, C<send>, or C<timeout>.
+Return the operation kind, such as C<read>, C<send>, or C<timeout>.
 
 =head2 data
 
-Returns the user data payload associated with the operation.
+Return the user data payload associated with the operation.
 
 =head2 state
 
-Returns the current state string.
+Return the state string.
 
 =head2 result
 
-Returns the success result hashref once the operation completes successfully.
-Returns C<undef> for failed or cancelled operations.
+Return the normalized success result, if any.
 
 =head2 error
 
-Returns the L<Linux::Event::Error> object for failed operations. Returns
-C<undef> otherwise.
+Return the L<Linux::Event::Error> object for failed operations.
 
 =head2 is_pending
 
-True while the operation is still pending.
-
 =head2 is_done
-
-True when the operation reached the C<done> state.
 
 =head2 is_cancelled
 
-True when the operation reached the C<cancelled> state.
-
-=head2 is_terminal
-
-True when the operation is no longer pending.
+Predicate helpers for state inspection.
 
 =head2 success
 
-True for successful completion.
+True when the operation completed successfully.
 
 =head2 failed
 
-True for terminal failure.
-
-=head2 on_complete
-
-  $op->on_complete(sub ($op, $result, $data) { ... });
-
-Attaches a callback if one was not already supplied. If the operation is
-already terminal, the callback is queued for later execution; it is still not
-run inline.
+True when the operation completed with an error.
 
 =head2 cancel
 
-Requests cancellation through the owning loop. Returns true if the request was
-accepted, false otherwise.
+Request cancellation through the owning proactor.
 
-=head2 detach
+=head1 CALLBACKS
 
-Drops the callback and user data from the operation. This is useful when the
-user wants completion bookkeeping to continue but no longer wants a callback or
-attached context retained.
+The user callback, if one was supplied, is queued by the proactor and later run
+with this ABI:
 
-=head1 CALLBACK CONTRACT
+  $cb->($op, $result, $data)
 
-Callbacks receive:
-
-  sub ($op, $result, $data) { ... }
-
-On success, C<$result> is the operation-specific result hashref. On failure or
-cancellation, C<$result> is C<undef> and the operation state indicates the
-outcome.
-
-Callbacks are deferred through the loop callback queue and never executed
-inline. After the callback runs, the stored callback and user data are cleared
-to reduce retained memory.
+Callbacks are never executed inline by the backend.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Proactor>, L<Linux::Event::Error>
+L<Linux::Event::Proactor>,
+L<Linux::Event::Error>
 
 =cut

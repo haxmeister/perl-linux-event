@@ -403,75 +403,57 @@ sub _fake_error (%arg) {
 
 __END__
 
-=pod
-
 =head1 NAME
 
-Linux::Event::Proactor::Backend::Fake - Deterministic test backend for Linux::Event::Proactor
-
-=head1 SYNOPSIS
-
-  my $loop = Linux::Event::Proactor->new(backend => 'fake');
-
-  my $op = $loop->read(fh => $fh, len => 4);
-  $loop->_fake_complete_read_success($op->_backend_token, 'test');
-  $loop->drain_callbacks;
+Linux::Event::Proactor::Backend::Fake - Deterministic testing backend for Linux::Event::Proactor
 
 =head1 DESCRIPTION
 
-This backend is intended for tests. It never performs real kernel I/O. Instead,
-submitted operations are stored in predictable in-memory registries and can be
-completed or failed explicitly through helper methods.
+C<Linux::Event::Proactor::Backend::Fake> is a deterministic backend used by the
+proactor test suite. It does not perform real asynchronous I/O. Instead, it
+allocates backend tokens, records pending operations, and exposes helper methods
+that let tests complete operations explicitly.
 
-The fake backend preserves the same high-level invariants as the uring backend:
-operations register once, settle once, callbacks are deferred, and cancellation
-remains observable in tests.
+This backend is useful for verifying lifecycle, callback queueing, cancellation,
+settle-once behavior, and registry bookkeeping without relying on a real kernel
+backend.
 
-=head1 TEST HELPERS
+=head1 SUPPORTED OPERATIONS
 
-The backend supports completion helpers for all currently implemented operation
-kinds. These helpers are normally reached through the delegators on
-L<Linux::Event::Proactor>.
-
-Examples include:
-
-  _fake_complete_read_success
-  _fake_complete_read_error
-  _fake_complete_write_success
-  _fake_complete_write_error
-  _fake_complete_recv_success
-  _fake_complete_recv_error
-  _fake_complete_send_success
-  _fake_complete_send_error
-  _fake_complete_accept_success
-  _fake_complete_accept_error
-  _fake_complete_connect_success
-  _fake_complete_connect_error
-  _fake_complete_shutdown_success
-  _fake_complete_shutdown_error
-  _fake_complete_close_success
-  _fake_complete_close_error
-
-=head1 DESIGN NOTES
+The fake backend supports the same operation surface as the engine:
 
 =over 4
 
-=item * Timers complete when their stored deadline is less than or equal to the
-current loop clock reading.
+=item * C<read>
 
-=item * Read and recv helpers validate that the supplied fake payload does not
-exceed the originally requested length.
+=item * C<write>
 
-=item * Write and send helpers validate that the supplied fake byte count does
-not exceed the submitted buffer size.
+=item * C<recv>
 
-=item * Cancellation removes the pending record before settling the operation
-as cancelled.
+=item * C<send>
+
+=item * C<accept>
+
+=item * C<connect>
+
+=item * C<shutdown>
+
+=item * C<close>
+
+=item * C<timeout>
 
 =back
 
+=head1 TEST HELPERS
+
+This backend provides helper methods used by tests to force completion of pending
+operations. They are intentionally private and are not part of the public user
+API.
+
 =head1 SEE ALSO
 
-L<Linux::Event::Proactor>, L<Linux::Event::Operation>
+L<Linux::Event::Proactor>,
+L<Linux::Event::Proactor::Backend>,
+L<Linux::Event::Proactor::Backend::Uring>
 
 =cut

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 use Scalar::Util qw(looks_like_number);
 use Carp qw(croak);
@@ -445,275 +445,227 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Reactor - Linux-native reactor loop (epoll + timerfd + signalfd + eventfd + pidfd)
+Linux::Event::Reactor - Readiness-based event loop engine for Linux::Event
 
 =head1 SYNOPSIS
 
   use v5.36;
   use Linux::Event;
 
-  my $loop = Linux::Event->new( model => 'reactor', backend => 'epoll' );
+  my $loop = Linux::Event->new(
+    model   => 'reactor',
+    backend => 'epoll',
+  );
 
-  # Timer (seconds, fractional allowed)
-  $loop->after(0.250, sub ($loop) {
-    say "tick";
+  $loop->after(0.100, sub ($loop) {
+    say "timer fired";
   });
 
-  # Raw I/O watcher
-  my $w = $loop->watch(
+  my $watcher = $loop->watch(
     $fh,
-
-    read => sub ($loop, $fh, $w) {
-      my $buf;
+    read => sub ($loop, $fh, $watcher) {
+      my $buf = '';
       my $n = sysread($fh, $buf, 8192);
 
-      if (!defined $n || $n == 0) {
-        $w->cancel;
-        close $fh;
+      if (!defined $n) {
+        die "sysread failed: $!";
+      }
+
+      if ($n == 0) {
+        $watcher->cancel;
+        $loop->stop;
         return;
       }
 
-      # ... handle $buf ...
-    },
-
-    write => sub ($loop, $fh, $w) {
-      # fd became writable
-    },
-
-    error => sub ($loop, $fh, $w) {
-      # error readiness
+      print $buf;
     },
   );
 
   $loop->run;
 
-  # For socket acquisition and buffered I/O, see:
-  #   Linux::Event::Listen
-  #   Linux::Event::Connect
-  #   Linux::Event::Stream
-
 =head1 DESCRIPTION
 
-B<Linux::Event::Reactor> is the reactor engine for Linux::Event, built on:
+C<Linux::Event::Reactor> is the readiness engine in this distribution. It is
+built around epoll readiness notifications plus Linux-native primitives for
+monotonic timers, signals, wakeups, and pidfds.
+
+It is deliberately small and explicit:
 
 =over 4
 
-=item * epoll for I/O readiness
+=item * it watches filehandles for readiness
 
-=item * timerfd for timers
+=item * it schedules timers in monotonic time
 
-=item * signalfd for signals
+=item * it adapts Linux signal, wakeup, and pid primitives into the loop
 
-=item * eventfd for explicit wakeups
-
-=item * pidfd for process exit notifications
+=item * it does not own socket acquisition or buffered stream policy
 
 =back
 
-It provides low-level primitives for readiness, timers, signals, wakeups, and
-process monitoring. It does not implement higher-level socket acquisition or
-buffered I/O; those live in separate distributions.
+Higher-level networking remains in companion distributions such as
+L<Linux::Event::Listen>, L<Linux::Event::Connect>, and L<Linux::Event::Stream>.
 
-=head1 LAYERING
+=head1 CONSTRUCTOR
 
-This module is the reactor engine layer of the ecosystem.
+=head2 new(%args)
+
+Recognized arguments:
 
 =over 4
 
-=item * B<Linux::Event::Loop>
+=item * C<backend>
 
-Reactor loop and kernel primitive integration.
+Backend name or backend object. The built-in backend is C<epoll>.
 
-=item * B<Linux::Event::Listen>
+=item * C<clock>
 
-Server-side socket acquisition (bind + accept).
+Clock object. It must provide C<tick>, C<now_ns>, C<deadline_in_ns>, and
+C<remaining_ns>.
 
-=item * B<Linux::Event::Connect>
+=item * C<timer>
 
-Client-side socket acquisition (nonblocking connect).
+Timer object. It must provide C<after>, C<disarm>, C<read_ticks>, and C<fh>.
 
-=item * B<Linux::Event::Stream>
+=item * C<loop>
 
-Buffered I/O and backpressure for established filehandles.
-
-=back
-
-Canonical composition:
-
-  Listen/Connect -> Stream -> (your protocol/state)
-
-The loop intentionally does not grow into a framework layer. Higher-level
-composition belongs in application code or optional glue distributions.
-
-=head1 CALLBACK CONTRACTS
-
-=head2 I/O watchers
-
-  $loop->watch($fh, %callbacks);
-
-Callbacks use this signature:
-
-  sub ($loop, $fh, $watcher) { ... }
-
-Where:
-
-=over 4
-
-=item * C<$loop>
-
-The loop instance.
-
-=item * C<$fh>
-
-The filehandle that became ready.
-
-=item * C<$watcher>
-
-The L<Linux::Event::Watcher> object returned by C<watch()>.
+Optional public loop facade. This is used internally when the reactor is
+constructed by L<Linux::Event::Loop> so callbacks receive the public loop
+object rather than the engine object.
 
 =back
 
-Possible callback keys:
+=head1 LIFECYCLE
+
+=head2 run
+
+Enter the event loop and keep running until C<stop> is called.
+
+=head2 run_once($timeout_s = undef)
+
+Advance the loop by one iteration. Due timer callbacks are dispatched first;
+then the backend wait is entered if appropriate.
+
+C<$timeout_s> is in seconds and may be fractional.
+
+=head2 stop
+
+Stop a running loop. If a wakeup object has already been created, the reactor
+signals it so a blocking backend wait can return promptly.
+
+=head2 is_running
+
+True while C<run> is actively looping.
+
+=head1 TIMERS
+
+=head2 after($seconds, $cb)
+
+Schedule C<$cb> to run after a relative monotonic delay.
+
+=head2 at($deadline_seconds, $cb)
+
+Schedule C<$cb> for an absolute monotonic deadline expressed in seconds.
+
+=head2 cancel($timer_id)
+
+Cancel a timer previously returned by C<after> or C<at>.
+
+Timer callbacks are invoked as:
+
+  $cb->($loop)
+
+=head1 WATCHERS
+
+=head2 watch($fh, %spec)
+
+Register a watcher for a filehandle. Recognized keys in C<%spec>:
 
 =over 4
 
 =item * C<read>
 
-Invoked when the fd becomes readable.
-
 =item * C<write>
-
-Invoked when the fd becomes writable.
 
 =item * C<error>
 
-Invoked when error readiness is reported.
+=item * C<data>
+
+=item * C<edge_triggered>
+
+=item * C<oneshot>
 
 =back
 
-Callbacks are invoked synchronously during C<run()> dispatch.
+Returns a L<Linux::Event::Watcher>.
 
-=head2 Timers
+Watcher callbacks receive:
 
-  $loop->after($seconds, sub ($loop) { ... });
+  $cb->($loop, $fh, $watcher)
 
-Timer callbacks receive:
-
-  sub ($loop) { ... }
-
-=head2 Signals
-
-Signal callbacks receive:
-
-  sub ($loop, $signal_number, $watcher) { ... }
-
-(See L<Linux::Event::Signal>.)
-
-=head2 PID notifications
-
-PID callbacks receive:
-
-  sub ($loop, $pid, $status, $watcher) { ... }
-
-(See L<Linux::Event::Pid>.)
-
-=head1 WATCHERS
-
-=head2 watch
-
-  my $w = $loop->watch($fh, %callbacks);
-
-Registers readiness interest for C<$fh> and returns a
-L<Linux::Event::Watcher>.
-
-The watcher object controls readiness interest and lifetime.
-
-=head2 Watcher semantics
+The dispatch rules are intentionally explicit:
 
 =over 4
 
-=item * Ownership
+=item * error runs first if an error handler is installed and enabled
 
-The loop does not close C<$fh>. You own the filehandle.
+=item * otherwise an error condition is treated as readable and writable
 
-=item * cancel
-
-  $w->cancel;
-
-Removes the watcher from the loop. Idempotent.
-
-=item * enable_read / disable_read
-=item * enable_write / disable_write
-
-Mutate readiness interest without destroying the watcher.
-
-=item * Lifetime
-
-When cancelled, the watcher becomes inert and will not invoke callbacks again.
+=item * hup also makes the watcher readable so EOF can be observed
 
 =back
 
-=head1 TIMERS
+=head2 unwatch($fh)
 
-=head2 after
+Remove the watcher for the given filehandle, if one exists.
 
-  $loop->after($seconds, sub ($loop) { ... });
+=head1 SIGNALS, WAKEUPS, AND PIDFDS
 
-Schedules a one-shot timer.
+=head2 signal(...)
 
-=head2 every (if supported)
+Returns the loop-owned L<Linux::Event::Signal> adaptor and subscribes a signal
+handler.
 
-  $loop->every($seconds, sub ($loop) { ... });
+=head2 waker
 
-Schedules a repeating timer.
+Returns the loop-owned L<Linux::Event::Wakeup> object. The reactor installs an
+internal watcher that drains the eventfd so stop and explicit signals can wake
+backend waits promptly.
 
-Timer precision is governed by the underlying timerfd and scheduler.
+=head2 pid(...)
 
-=head1 RUN CONTROL
+Returns a pid subscription using the loop-owned L<Linux::Event::Pid> adaptor.
 
-=head2 run
+=head1 ACCESSORS
 
-  $loop->run;
+=head2 clock
 
-Enters the event loop and dispatches events until C<stop> is called.
+Returns the clock object.
 
-=head2 stop
+=head2 timer
 
-  $loop->stop;
+Returns the timer object.
 
-Stops the loop after the current dispatch iteration.
+=head2 backend
 
-=head1 ERROR HANDLING
+Returns the reactor backend object.
 
-The loop itself does not impose global error policy. Errors are delivered to
-watcher callbacks (I/O), signal callbacks, PID callbacks, or higher-level
-modules such as Listen and Connect.
+=head2 backend_name
 
-=head1 THREADING
+Returns the backend name.
 
-This loop is not thread-safe. All operations must occur from the same thread
-that owns the loop.
+=head2 sched
 
-For cross-thread wakeups, use L<Linux::Event::Wakeup>.
+Returns the internal scheduler object.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Listen> - nonblocking bind + accept
-
-L<Linux::Event::Connect> - nonblocking outbound connect
-
-L<Linux::Event::Stream> - buffered I/O and backpressure for sockets
-
-L<Linux::Event::Fork> - asynchronous child process management
-
-L<Linux::Event::Clock> - high resolution monotonic clock utilities>
-
-=head1 AUTHOR
-
-Joshua S. Day
-
-=head1 LICENSE
-
-Same terms as Perl itself.
+L<Linux::Event::Loop>,
+L<Linux::Event::Watcher>,
+L<Linux::Event::Signal>,
+L<Linux::Event::Wakeup>,
+L<Linux::Event::Pid>,
+L<Linux::Event::Reactor::Backend>,
+L<Linux::Event::Reactor::Backend::Epoll>
 
 =cut

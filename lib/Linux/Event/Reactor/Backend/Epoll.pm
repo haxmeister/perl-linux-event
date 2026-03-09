@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 use Carp qw(croak);
 use Linux::Epoll;
@@ -184,16 +184,17 @@ Linux::Event::Reactor::Backend::Epoll - epoll backend for Linux::Event::Reactor
 
 =head1 SYNOPSIS
 
-  # Internal backend used by Linux::Event::Reactor and Linux::Event::Loop.
+  # Usually constructed internally by Linux::Event::Reactor.
+  my $backend = Linux::Event::Reactor::Backend::Epoll->new;
 
 =head1 DESCRIPTION
 
-B<Linux::Event::Reactor::Backend::Epoll> is the epoll readiness backend for
-L<Linux::Event::Reactor>. It translates Linux::Event readiness masks to and
-from the native epoll event set and invokes the standardized reactor backend
-callback ABI.
+C<Linux::Event::Reactor::Backend::Epoll> is the built-in readiness backend for
+L<Linux::Event::Reactor>. It translates the reactor bitmask into the event set
+expected by L<Linux::Epoll> and translates native epoll notifications back into
+reactor masks.
 
-=head1 METHODS
+=head1 CONSTRUCTOR
 
 =head2 new(%args)
 
@@ -211,40 +212,42 @@ Enable one-shot mode by default for all registrations.
 
 =back
 
+=head1 METHODS
+
 =head2 name
 
 Returns C<epoll>.
 
-=head2 watch
+=head2 watch($fh, $mask, $cb, %opt)
 
-Register a filehandle for readiness notifications.
+Register a filehandle with epoll and install the standardized reactor callback.
+Returns the integer file descriptor.
 
-=head2 modify
+=head2 modify($fh_or_fd, $mask, %opt)
 
-Modify an existing registration. If the underlying L<Linux::Epoll> instance
-provides C<modify>, that is used directly. Otherwise this backend falls back to
-delete plus add.
+Modify an existing epoll registration. If the underlying C<Linux::Epoll>
+instance provides C<modify>, it is used directly. Otherwise the backend falls
+back to delete plus add.
 
-=head2 unwatch
+This path is especially important for C<EPOLLONESHOT> rearm.
+
+=head2 unwatch($fh_or_fd)
 
 Remove an existing registration.
 
-=head2 run_once
+=head2 run_once($loop, $timeout_s = undef)
 
-Wait for readiness and dispatch epoll callbacks.
+Call epoll wait once and dispatch readiness callbacks.
+
+=head1 NOTES
+
+This backend keeps a small registration table keyed by file descriptor so it can
+preserve callback, tag, and loop information across C<modify> calls.
 
 =head1 SEE ALSO
 
 L<Linux::Event::Reactor>,
 L<Linux::Event::Reactor::Backend>,
 L<Linux::Epoll>
-
-=head1 AUTHOR
-
-Joshua S. Day
-
-=head1 LICENSE
-
-Same terms as Perl itself.
 
 =cut

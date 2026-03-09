@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.009';
+our $VERSION = '0.010';
 
 use Carp qw(croak);
 use Linux::Event::Reactor ();
@@ -103,12 +103,12 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Loop - Front-door loop selector for the Linux::Event ecosystem
+Linux::Event::Loop - Selector and public front door for Linux::Event engines
 
 =head1 SYNOPSIS
 
   use v5.36;
-  use Linux::Event;
+  use Linux::Event::Loop;
 
   my $reactor = Linux::Event::Loop->new(
     model   => 'reactor',
@@ -120,35 +120,31 @@ Linux::Event::Loop - Front-door loop selector for the Linux::Event ecosystem
     backend => 'uring',
   );
 
-  # model defaults to reactor
-  my $loop = Linux::Event->new;
-
 =head1 DESCRIPTION
 
-B<Linux::Event::Loop> is the public front door and selector for loop engines in
-the Linux::Event ecosystem.
+C<Linux::Event::Loop> is the stable public front door for this distribution.
+It does not implement the readiness engine or the completion engine itself.
+Instead, it selects one of the engine classes and delegates the public API to
+that implementation object.
 
-It constructs and delegates to one of two engine classes:
+The current engines are:
 
 =over 4
 
 =item * L<Linux::Event::Reactor>
 
-Readiness-based event loop built on epoll and related Linux primitives.
-
 =item * L<Linux::Event::Proactor>
-
-Completion-based event loop built for io_uring-style operations.
 
 =back
 
-The default model is C<reactor>.
+This split keeps the public constructor short while allowing the reactor and
+proactor internals to evolve independently.
 
 =head1 CONSTRUCTOR
 
 =head2 new(%args)
 
-Recognized top-level selector arguments:
+Recognized selector arguments:
 
 =over 4
 
@@ -158,34 +154,111 @@ Either C<reactor> or C<proactor>. Defaults to C<reactor>.
 
 =item * C<backend>
 
-Backend name or backend object appropriate to the selected model.
+A backend name or backend object appropriate to the selected model.
 
 =back
 
-All remaining arguments are passed through to the selected engine constructor.
+Any remaining arguments are forwarded to the selected engine constructor.
 
-=head1 DELEGATION
+=head1 COMMON METHODS
 
-This module is intentionally thin. It delegates public methods to the selected
-engine instance. Reactor-specific methods are available when the selected model
-is a reactor; proactor-specific methods are available when the selected model is
-a proactor.
+These methods are delegated for both models when supported:
+
+=over 4
+
+=item * C<backend_name>
+
+=item * C<clock>
+
+=item * C<is_running>
+
+=item * C<run>
+
+=item * C<run_once>
+
+=item * C<stop>
+
+=back
+
+=head1 REACTOR METHODS
+
+When the selected model is C<reactor>, the following methods are available
+through the loop facade:
+
+=over 4
+
+=item * C<timer>
+
+=item * C<backend>
+
+=item * C<sched>
+
+=item * C<signal>
+
+=item * C<waker>
+
+=item * C<pid>
+
+=item * C<watch>
+
+=item * C<unwatch>
+
+=item * C<cancel>
+
+=item * C<after>
+
+=item * C<at>
+
+=back
+
+=head1 PROACTOR METHODS
+
+When the selected model is C<proactor>, the following methods are available
+through the loop facade:
+
+=over 4
+
+=item * C<read>
+
+=item * C<write>
+
+=item * C<recv>
+
+=item * C<send>
+
+=item * C<accept>
+
+=item * C<connect>
+
+=item * C<shutdown>
+
+=item * C<close>
+
+=item * C<after>
+
+=item * C<at>
+
+=item * C<live_op_count>
+
+=item * C<drain_callbacks>
+
+=back
+
+If a method is not supported by the selected model, the loop croaks with a
+clear delegation error.
+
+=head1 MODEL-SPECIFIC BEHAVIOR
+
+This module does not try to erase the semantic difference between readiness and
+completion I/O. It only gives both engines a common entry point.
+
+For readiness semantics, see L<Linux::Event::Reactor>.
+For completion semantics, see L<Linux::Event::Proactor>.
 
 =head1 SEE ALSO
 
 L<Linux::Event>,
 L<Linux::Event::Reactor>,
-L<Linux::Event::Reactor::Backend>,
-L<Linux::Event::Reactor::Backend::Epoll>,
-L<Linux::Event::Proactor>,
-L<Linux::Event::Proactor::Backend>
-
-=head1 AUTHOR
-
-Joshua S. Day
-
-=head1 LICENSE
-
-Same terms as Perl itself.
+L<Linux::Event::Proactor>
 
 =cut
