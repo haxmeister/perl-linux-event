@@ -30,7 +30,7 @@ my $READ_SIZE = $ENV{READ_SIZE} // 8192;
 
 die "N must be > 0\n" if $N <= 0;
 
-my $loop = Linux::Event->new;
+my $loop = Linux::Event->new( model => 'reactor' );
 
 pipe(my $r, my $w) or die "pipe: $!";
 

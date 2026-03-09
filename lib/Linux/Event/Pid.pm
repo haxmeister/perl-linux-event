@@ -170,6 +170,17 @@ Linux::Event::Pid - pidfd-backed process-exit subscriptions for Linux::Event::Re
 
 =head1 SYNOPSIS
 
+<<<<<<< HEAD
+=======
+  use v5.36;
+  use Linux::Event;
+
+  my $loop = Linux::Event->new( model => 'reactor' );
+
+  my $pid = fork() // die "fork: $!";
+  if ($pid == 0) { exit 42 }
+
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
   my $sub = $loop->pid($pid, sub ($loop, $pid, $status, $data) {
     ...
   });

@@ -5,6 +5,7 @@ use warnings;
 
 use Carp qw(croak);
 use Socket qw(SHUT_RD SHUT_WR SHUT_RDWR);
+our $VERSION = '0.010';
 
 use Linux::Event::Clock ();
 use Linux::Event::Operation ();

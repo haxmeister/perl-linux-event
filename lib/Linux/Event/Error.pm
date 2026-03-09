@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Carp qw(croak);
+our $VERSION = '0.010';
 
 sub new ($class, %arg) {
     croak 'code is required' unless exists $arg{code};

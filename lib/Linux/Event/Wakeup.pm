@@ -114,8 +114,12 @@ Linux::Event::Wakeup - eventfd-backed wakeup primitive for Linux::Event::Reactor
 
   my $waker = $loop->waker;
 
+<<<<<<< HEAD
   # from another thread or cooperating producer
   $waker->signal;
+=======
+  my $loop = Linux::Event->new( model => 'reactor' );
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
   # in the loop
   my $count = $waker->drain;

@@ -20,4 +20,8 @@ is($proactor->model, 'proactor', 'selector uses proactor model');
 is($proactor->backend_name, 'fake', 'proactor backend name');
 ok($proactor->can('read'), 'proactor surface available');
 
+my $ok = eval { Linux::Event::Loop->new(); 1 };
+ok(!$ok, 'missing model dies');
+like($@, qr/model is required/, 'missing model error is clear');
+
 done_testing;

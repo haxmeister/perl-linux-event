@@ -4,6 +4,7 @@ use strict;
 use warnings;
 
 use Carp qw(croak);
+our $VERSION = '0.010';
 
 sub _new ($class, %arg) {
     croak 'loop is required' unless $arg{loop};

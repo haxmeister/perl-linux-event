@@ -45,7 +45,7 @@ die "READ_SIZE must be > 0\n" if $READ_SIZE <= 0;
 die "HB_S must be > 0\n" if $HB_S <= 0;
 die "TIMEOUT_S must be > 0\n" if $TIMEOUT_S <= 0;
 
-my $loop = Linux::Event->new;
+my $loop = Linux::Event->new( model => 'reactor' );
 
 pipe(my $r, my $w) or die "pipe: $!";
 

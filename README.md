@@ -9,7 +9,13 @@ Linux::Event is a Linux-native event-loop distribution for Perl with two peer ex
 
 The public front door is `Linux::Event::Loop`, and `Linux::Event->new` is a convenient shortcut to it.
 
+<<<<<<< HEAD
 ## Architecture
+=======
+The goal is a **small, explicit, composable foundation** for building
+high-performance event-driven systems on Linux. Model selection is explicit
+and mandatory: choose reactor or proactor when constructing a loop.
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 ```text
 Linux::Event::Loop
@@ -47,7 +53,13 @@ Core modules in this repository:
 
 ## Ecosystem layering
 
+<<<<<<< HEAD
 This distribution intentionally stays at the loop-and-primitives layer.
+=======
+Linux::Event
+    Front door for the Linux::Event ecosystem. Construct a
+    Linux::Event::Loop by explicitly choosing reactor or proactor mode.
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 Companion distributions provide higher-level networking and process-building blocks:
 
@@ -62,21 +74,36 @@ Canonical networking composition:
 
 ```text
 Listen / Connect
+<<<<<<< HEAD
         |
       Stream
         |
    your protocol
 ```
+=======
+        
+      Stream
+        
+  Application protocol
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 ## Choosing a model
 
+<<<<<<< HEAD
 Use the **reactor** when you want readiness notifications over existing filehandles:
+=======
+Linux::Event::Listen  Linux::Event::Stream  your protocol
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 ```perl
 use v5.36;
 use Linux::Event;
 
+<<<<<<< HEAD
 my $loop = Linux::Event->new(model => 'reactor');
+=======
+Linux::Event::Connect  Linux::Event::Stream  your protocol
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 $loop->after(0.250, sub ($loop) {
   say "timer fired";
@@ -126,11 +153,19 @@ make install
 
 Primary dependencies include:
 
+<<<<<<< HEAD
 - Linux
 - `Linux::Epoll`
 - `Linux::Event::Clock >= 0.011`
 - `Linux::Event::Timer >= 0.010`
 - `IO::Uring` and `Time::Spec` for the real proactor backend
+=======
+    Linux
+    Linux::Epoll
+    Linux::Event::Clock >= 0.011
+    Linux::Event::Timer >= 0.010
+    IO::Uring and Time::Spec for proactor mode
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 The proactor test suite also supports a fake backend for deterministic testing.
 
@@ -138,15 +173,84 @@ The proactor test suite also supports a fake backend for deterministic testing.
 
 The `examples/` directory is organized around the current architecture and includes:
 
+<<<<<<< HEAD
 - reactor timers, watchers, signals, wakeups, and pidfd examples
 - proactor timer, read/write, and socket lifecycle examples
 - deeper reactor benchmarking and regression scripts
+=======
+    my $loop = Linux::Event->new(
+        model => 'reactor',
+    );
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 The CI workflow syntax-checks all examples so they do not silently rot.
 
 ## Status
 
+<<<<<<< HEAD
 This project is still pre-1.0 and is being actively refined toward a cohesive forward-looking architecture. Large structural cleanup is expected during this stage so the eventual stable API lands in a cleaner shape.
+=======
+---------------------------------------------------------------------
+
+## Additional Linux primitives
+
+Linux::Event integrates several Linux kernel facilities.
+
+Signals via signalfd
+
+    $loop->signal('INT', sub ($loop, $sig) {
+        $loop->stop;
+    });
+
+Wakeups via eventfd
+
+    my $w = $loop->waker(sub ($loop) {
+        say "woken";
+    });
+
+Process exit notifications via pidfd
+
+    $loop->pid($pid, sub ($loop, $pid, $status) {
+        say "child exited";
+    });
+
+See the examples/ directory for complete scripts.
+
+---------------------------------------------------------------------
+
+## Example: TCP server
+
+    use v5.36;
+    use Linux::Event;
+    use Linux::Event::Listen;
+    use Linux::Event::Stream;
+
+    my $loop = Linux::Event->new(
+        model => 'reactor',
+    );
+
+    Linux::Event::Listen->new(
+        loop => $loop,
+        host => '127.0.0.1',
+        port => 3000,
+
+        on_accept => sub ($loop, $fh, $peer, $listen) {
+
+            Linux::Event::Stream->new(
+                loop => $loop,
+                fh   => $fh,
+
+                codec => 'line',
+
+                on_message => sub ($stream, $line) {
+                    $stream->write_message("echo: $line");
+                },
+            );
+        },
+    );
+
+$loop->run;
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 ## License
 

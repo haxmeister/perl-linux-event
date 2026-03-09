@@ -10,7 +10,11 @@ use Linux::Event;
 
 pipe(my $r, my $w) or die "pipe failed: $!";
 
+<<<<<<<< HEAD:examples/03-reactor-watch-pipe.pl
 my $loop = Linux::Event->new(model => 'reactor');
+========
+my $loop = Linux::Event->new( model => 'reactor', backend => 'epoll' );
+>>>>>>>> 1401c31 (prep for cpan and release, new tool added):examples/03_watch_read_pipe.pl
 
 $loop->watch(
   $r,

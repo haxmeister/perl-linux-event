@@ -22,7 +22,7 @@ sub new ($class, %arg) {
   my $model   = delete $arg{model};
   my $backend = delete $arg{backend};
 
-  $model //= _infer_model_from_backend($backend) // 'reactor';
+  croak "model is required and must be 'reactor' or 'proactor'" if !defined $model;
 
   my ($impl_class, $default_backend) = _resolve_model($model);
   $backend //= $default_backend;
@@ -39,12 +39,6 @@ sub new ($class, %arg) {
   return $self;
 }
 
-sub _infer_model_from_backend ($backend) {
-  return undef if !defined $backend || ref($backend);
-  return 'reactor'  if $backend eq 'epoll';
-  return 'proactor' if $backend eq 'uring' || $backend eq 'fake';
-  return undef;
-}
 
 sub _resolve_model ($model) {
   return ('Linux::Event::Reactor', 'epoll')   if $model eq 'reactor';
@@ -120,6 +114,13 @@ Linux::Event::Loop - Selector and public front door for Linux::Event engines
     backend => 'uring',
   );
 
+<<<<<<< HEAD
+=======
+  my $loop = Linux::Event->new(
+    model => 'reactor',
+  );
+
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 =head1 DESCRIPTION
 
 C<Linux::Event::Loop> is the stable public front door for this distribution.
@@ -137,9 +138,12 @@ The current engines are:
 
 =back
 
+<<<<<<< HEAD
 This split keeps the public constructor short while allowing the reactor and
 proactor internals to evolve independently.
 
+=======
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 =head1 CONSTRUCTOR
 
 =head2 new(%args)
@@ -150,7 +154,7 @@ Recognized selector arguments:
 
 =item * C<model>
 
-Either C<reactor> or C<proactor>. Defaults to C<reactor>.
+Either C<reactor> or C<proactor>. This argument is required.
 
 =item * C<backend>
 

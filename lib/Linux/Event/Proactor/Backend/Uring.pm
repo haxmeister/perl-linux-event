@@ -5,7 +5,7 @@ use warnings;
 
 use Carp qw(croak);
 use POSIX qw(strerror);
-
+our $VERSION = '0.010';
 use Linux::Event::Error ();
 
 use constant DEFAULT_SUBMIT_BATCH_SIZE => 0;

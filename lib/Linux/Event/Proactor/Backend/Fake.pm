@@ -5,7 +5,7 @@ use warnings;
 
 use Carp qw(croak);
 use Linux::Event::Error ();
-
+our $VERSION = '0.010';
 sub name ($self) { return 'fake' }
 
 sub _new ($class, %arg) {

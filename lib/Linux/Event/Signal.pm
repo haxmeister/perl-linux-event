@@ -212,6 +212,15 @@ Linux::Event::Signal - signalfd adaptor for Linux::Event::Reactor
 
 =head1 SYNOPSIS
 
+<<<<<<< HEAD
+=======
+  use v5.36;
+  use Linux::Event;
+
+  my $loop = Linux::Event->new( model => 'reactor' );
+
+  # Subscribe via the loop convenience method:
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
   my $sub = $loop->signal('INT', sub ($loop, $sig, $count, $data) {
     $loop->stop;
   });

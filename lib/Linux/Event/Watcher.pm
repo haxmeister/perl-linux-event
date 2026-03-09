@@ -207,10 +207,41 @@ Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::React
 
 =head1 SYNOPSIS
 
+<<<<<<< HEAD
   my $watcher = $loop->watch(
     $fh,
     read => sub ($loop, $fh, $watcher) {
       ...
+=======
+  use v5.36;
+  use Linux::Event;
+
+  my $loop = Linux::Event->new( model => 'reactor' );
+
+  my $w = $loop->watch($fh,
+    read => sub ($loop, $fh, $w) {
+      my $buf;
+      my $n = sysread($fh, $buf, 8192);
+
+      if (!defined $n || $n == 0) {
+        $w->cancel;
+        close $fh;
+        return;
+      }
+
+      # ... handle $buf ...
+    },
+
+    write => sub ($loop, $fh, $w) {
+      # fd became writable
+      $w->disable_write; # typical: only enable when you actually have pending output
+    },
+
+    error => sub ($loop, $fh, $w) {
+      # error readiness reported (see DISPATCH SEMANTICS)
+      $w->cancel;
+      close $fh;
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
     },
   );
 
@@ -273,7 +304,29 @@ Remove the watcher from the loop.
 
 Watcher callbacks receive:
 
+<<<<<<< HEAD
   $cb->($loop, $fh, $watcher)
+=======
+=head2 Error readiness ordering
+
+If an epoll event indicates an error condition (for example C<EPOLLERR>), the loop
+dispatches to the watcher's C<error> callback first (if installed and enabled)
+and returns.
+
+If no C<error> callback is installed/enabled, error readiness may be treated as
+readable and/or writable (depending on the platform and backend behavior). Do not
+rely on a specific fallback; install an C<error> handler if you want explicit
+error handling.
+
+=head2 Hangup / EOF
+
+On hangup conditions (for example C<EPOLLHUP>), readable readiness is typically
+delivered so user code can observe EOF via C<read(2)> returning 0.
+
+=head1 VERSION
+
+This document describes Linux::Event::Watcher version 0.009.
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 =head1 SEE ALSO
 

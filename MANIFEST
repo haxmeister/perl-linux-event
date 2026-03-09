@@ -1,10 +1,29 @@
 Changes
 examples/01-reactor-after.pl
+<<<<<<< HEAD
 examples/02-reactor-at.pl
 examples/03-reactor-watch-pipe.pl
 examples/04-reactor-signal.pl
 examples/05-reactor-waker-thread.pl
 examples/06-reactor-pid.pl
+=======
+examples/01_timer_after.pl
+examples/02-reactor-at.pl
+examples/02_timer_at.pl
+examples/03-reactor-watch-pipe.pl
+examples/03_watch_read_pipe.pl
+examples/04-reactor-signal.pl
+examples/04_watch_replace.pl
+examples/05-reactor-waker-thread.pl
+examples/05_watch_oneshot.pl
+examples/06-reactor-pid.pl
+examples/06_unwatch_safe.pl
+examples/07_edge_triggered_note.pl
+examples/08_signal.pl
+examples/09_waker_thread.pl
+examples/10_waker_fork_pipe.pl
+examples/11_pid.pl
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 examples/20-proactor-after.pl
 examples/21-proactor-read-pipe.pl
 examples/22-proactor-socketpair-send-recv.pl
@@ -14,6 +33,14 @@ examples/91-reactor-stress-oneshot-edge-safe.pl
 examples/92-reactor-linux-epoll-oneshot-rearm.pl
 examples/93-reactor-regress-stop-no-backend-wait.pl
 examples/94-reactor-regress-epoll-oneshot-rearm.pl
+<<<<<<< HEAD
+=======
+examples/95_bench_oneshot.pl
+examples/96_stress_oneshot_edge_safe.pl
+examples/97_linux_epoll_oneshot_rearm.pl
+examples/98_regress_stop_no_backend_wait.pl
+examples/99_regress_epoll_oneshot_rearm.pl
+>>>>>>> 1401c31 (prep for cpan and release, new tool added)
 examples/all.pl
 examples/README.md
 lib/Linux/Event.pm
@@ -34,7 +61,7 @@ lib/Linux/Event/Wakeup.pm
 lib/Linux/Event/Watcher.pm
 LICENSE
 Makefile.PL
-MANIFEST
+MANIFEST			This list of files
 README.md
 t/00-load.t
 t/01-timers.t
@@ -70,3 +97,4 @@ t/56-proactor-uring-shutdown.t
 t/57-proactor-close.t
 t/58-proactor-uring-close.t
 t/98-no-stray-leading-bytes.t
+tools/release-check.pl

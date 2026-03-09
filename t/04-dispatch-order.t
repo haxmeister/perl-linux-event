@@ -18,7 +18,7 @@ my $WRITABLE = Linux::Event::Reactor::Backend::Epoll::WRITABLE();
 my $ERR      = Linux::Event::Reactor::Backend::Epoll::ERR();
 my $HUP      = Linux::Event::Reactor::Backend::Epoll::HUP();
 
-sub make_loop () { Linux::Event::Loop->new( backend => 'epoll' ) }
+sub make_loop () { Linux::Event::Loop->new( model => 'reactor', backend => 'epoll' ) }
 
 subtest "dispatch order: read before write" => sub {
     my $loop = make_loop();
