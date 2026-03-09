@@ -10,6 +10,8 @@ use Linux::Event::Error ();
 
 use constant DEFAULT_SUBMIT_BATCH_SIZE => 0;
 
+sub name ($self) { return 'uring' }
+
 sub _new ($class, %arg) {
     croak 'loop is required' unless $arg{loop};
 

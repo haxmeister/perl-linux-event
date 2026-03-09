@@ -52,7 +52,7 @@ my $loop = Linux::Event::Loop->new(
   timer   => t::MockTimer->new,
 );
 
-$loop->{running} = 1;
+$loop->impl->{running} = 1;
 $loop->sched->after_ns(0, sub ($loop) { $loop->stop });
 
 eval { $loop->run_once(10); 1 } or die $@;

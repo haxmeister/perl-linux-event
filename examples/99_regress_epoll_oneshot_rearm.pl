@@ -6,14 +6,14 @@ use warnings;
 use FindBin qw($Bin);
 use lib "$Bin/../lib";
 
-use Linux::Event::Backend::Epoll;
+use Linux::Event::Reactor::Backend::Epoll;
 
 # Manual regression runner for EPOLLONESHOT re-arm behavior.
 # Expected output: OK: count=2
 
 pipe(my $r, my $w) or die "pipe: $!";
 
-my $backend = Linux::Event::Backend::Epoll->new;
+my $backend = Linux::Event::Reactor::Backend::Epoll->new;
 
 my $READABLE = 0x01;
 my $ONESHOT  = 0x20;

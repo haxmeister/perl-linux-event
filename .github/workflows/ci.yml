@@ -20,6 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           cpanm --notest --quiet --skip-satisfied --installdeps .
+          cpanm --notest --quiet --skip-satisfied Linux::FD::Event Linux::FD::Pid || true
       - name: Run tests
         run: |
           perl Makefile.PL

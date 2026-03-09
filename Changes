@@ -1,3 +1,17 @@
+{{$NEXT}}
+
+  * Restructure the core loop into a forward-looking selector/engine layout.
+    Linux::Event::Loop is now the front-door selector, with the readiness
+    engine in Linux::Event::Reactor and the epoll backend in
+    Linux::Event::Reactor::Backend::Epoll.
+
+  * Add Linux::Event::Reactor::Backend and Linux::Event::Proactor::Backend
+    contract modules with backend contract POD for both engine families.
+
+  * Update the test suite and examples to use the new reactor backend
+    namespace and add a selector test covering reactor and proactor model
+    construction.
+
 Revision history for Linux-Event
 
 0.009  2026-002-28

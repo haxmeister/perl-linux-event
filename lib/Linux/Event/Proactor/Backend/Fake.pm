@@ -6,6 +6,8 @@ use warnings;
 use Carp qw(croak);
 use Linux::Event::Error ();
 
+sub name ($self) { return 'fake' }
+
 sub _new ($class, %arg) {
     croak 'loop is required' unless $arg{loop};
 

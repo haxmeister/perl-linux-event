@@ -24,7 +24,7 @@ Linux::Event - Front door for the Linux::Event ecosystem
   use v5.36;
   use Linux::Event;
 
-  my $loop = Linux::Event->new( backend => 'epoll' );
+  my $loop = Linux::Event->new( model => 'reactor', backend => 'epoll' );
 
   # Timer (seconds, fractional allowed)
   $loop->after(0.100, sub ($loop) {
@@ -68,7 +68,7 @@ This distribution provides the core loop and kernel-primitive adaptors:
 
 =over 4
 
-=item * L<Linux::Event::Loop> - main event loop (backend + timers + signals + wakeups + pid notifications)
+=item * L<Linux::Event::Loop> - front-door selector for reactor and proactor engines
 
 =item * L<Linux::Event::Watcher> - mutable watcher handles returned by the loop
 
@@ -78,11 +78,17 @@ This distribution provides the core loop and kernel-primitive adaptors:
 
 =item * L<Linux::Event::Pid> - pidfd-backed process exit notifications
 
-=item * L<Linux::Event::Scheduler> - internal deadline scheduler (nanoseconds)
+=item * L<Linux::Event::Scheduler> - internal reactor deadline scheduler (nanoseconds)
 
-=item * L<Linux::Event::Backend> - backend contract boundary
+=item * L<Linux::Event::Reactor> - readiness-based event loop engine
 
-=item * L<Linux::Event::Backend::Epoll> - epoll backend implementation
+=item * L<Linux::Event::Reactor::Backend> - reactor backend contract
+
+=item * L<Linux::Event::Reactor::Backend::Epoll> - epoll reactor backend
+
+=item * L<Linux::Event::Proactor> - completion-based event loop engine
+
+=item * L<Linux::Event::Proactor::Backend> - proactor backend contract
 
 =back
 

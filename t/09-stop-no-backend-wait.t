@@ -55,7 +55,7 @@ my $loop = Linux::Event::Loop->new(
   timer   => t::MockTimer->new,
 );
 
-$loop->{running} = 1;
+$loop->impl->{running} = 1;
 
 # Schedule an immediate timer that stops the loop.
 $loop->sched->after_ns(0, sub ($loop) { $loop->stop });
