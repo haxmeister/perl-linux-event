@@ -207,12 +207,10 @@ Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::React
 
 =head1 SYNOPSIS
 
-<<<<<<< HEAD
   my $watcher = $loop->watch(
     $fh,
     read => sub ($loop, $fh, $watcher) {
       ...
-=======
   use v5.36;
   use Linux::Event;
 
@@ -241,7 +239,6 @@ Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::React
       # error readiness reported (see DISPATCH SEMANTICS)
       $w->cancel;
       close $fh;
->>>>>>> 1401c31 (prep for cpan and release, new tool added)
     },
   );
 
@@ -304,9 +301,8 @@ Remove the watcher from the loop.
 
 Watcher callbacks receive:
 
-<<<<<<< HEAD
   $cb->($loop, $fh, $watcher)
-=======
+
 =head2 Error readiness ordering
 
 If an epoll event indicates an error condition (for example C<EPOLLERR>), the loop
@@ -326,7 +322,6 @@ delivered so user code can observe EOF via C<read(2)> returning 0.
 =head1 VERSION
 
 This document describes Linux::Event::Watcher version 0.009.
->>>>>>> 1401c31 (prep for cpan and release, new tool added)
 
 =head1 SEE ALSO
 

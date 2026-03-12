@@ -114,13 +114,10 @@ Linux::Event::Loop - Selector and public front door for Linux::Event engines
     backend => 'uring',
   );
 
-<<<<<<< HEAD
-=======
   my $loop = Linux::Event->new(
     model => 'reactor',
   );
 
->>>>>>> 1401c31 (prep for cpan and release, new tool added)
 =head1 DESCRIPTION
 
 C<Linux::Event::Loop> is the stable public front door for this distribution.
@@ -138,12 +135,10 @@ The current engines are:
 
 =back
 
-<<<<<<< HEAD
+
 This split keeps the public constructor short while allowing the reactor and
 proactor internals to evolve independently.
 
-=======
->>>>>>> 1401c31 (prep for cpan and release, new tool added)
 =head1 CONSTRUCTOR
 
 =head2 new(%args)

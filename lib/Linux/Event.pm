@@ -60,16 +60,15 @@ C<Linux::Event> is the front door for the Linux::Event distribution.
 C<Linux::Event-E<gt>new> returns a L<Linux::Event::Loop>, which then selects a
 reactor or proactor engine.
 
-<<<<<<< HEAD
 The distribution is intentionally split into clear layers.
-=======
+
 In this distribution, C<Linux::Event-E<gt>new> returns a L<Linux::Event::Loop>.
 That keeps the common case short while allowing the loop implementation to stay
 in its own module. Model selection is explicit and required: callers must pass
 C<model =E<gt> 'reactor'> or C<model =E<gt> 'proactor'>.
 
 This distribution provides the core loop and kernel-primitive adaptors:
->>>>>>> 1401c31 (prep for cpan and release, new tool added)
+
 
 =over 4
 
