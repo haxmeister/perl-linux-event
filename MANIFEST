@@ -19,7 +19,9 @@ examples/21-proactor-read-pipe.pl
 examples/22-proactor-socketpair-send-recv.pl
 examples/23-proactor-accept-connect.pl
 examples/90-reactor-bench-oneshot.pl
+examples/90_tcp_splice_proxy.pl
 examples/91-reactor-stress-oneshot-edge-safe.pl
+examples/91_proactor_echo_server.pl
 examples/92-reactor-linux-epoll-oneshot-rearm.pl
 examples/93-reactor-regress-stop-no-backend-wait.pl
 examples/94-reactor-regress-epoll-oneshot-rearm.pl

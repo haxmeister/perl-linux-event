@@ -1,0 +1,183 @@
+echo-server model=proactor backend=uring listening on 127.0.0.1:8082
+accept_concurrency=64 recv_len=4096 report_interval=1s
+[Sun Mar 15 00:16:17 2026] recv eof
+uptime=1s active=1 accepts=2 reads=71 writes=70 bytes_in=4544 bytes_out=4480 read_ops/sec=71.0 write_ops/sec=70.0 MiB_in/sec=0.00 MiB_out/sec=0.00
+[Sun Mar 15 00:16:17 2026] recv eof
+uptime=2s active=10 accepts=12 reads=10610 writes=10606 bytes_in=679040 bytes_out=678784 read_ops/sec=5305.0 write_ops/sec=5303.0 MiB_in/sec=0.32 MiB_out/sec=0.32
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+[Sun Mar 15 00:16:18 2026] recv eof
+uptime=3s active=50 accepts=62 reads=17595 writes=17578 bytes_in=1126080 bytes_out=1124992 read_ops/sec=5865.0 write_ops/sec=5859.3 MiB_in/sec=0.36 MiB_out/sec=0.36
+uptime=4s active=50 accepts=62 reads=30942 writes=30921 bytes_in=1980288 bytes_out=1978944 read_ops/sec=7735.5 write_ops/sec=7730.2 MiB_in/sec=0.47 MiB_out/sec=0.47
+uptime=5s active=50 accepts=62 reads=44344 writes=44325 bytes_in=2838016 bytes_out=2836800 read_ops/sec=8868.8 write_ops/sec=8865.0 MiB_in/sec=0.54 MiB_out/sec=0.54
+uptime=6s active=50 accepts=62 reads=57790 writes=57765 bytes_in=3698560 bytes_out=3696960 read_ops/sec=9631.7 write_ops/sec=9627.5 MiB_in/sec=0.59 MiB_out/sec=0.59
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+[Sun Mar 15 00:16:22 2026] recv eof
+uptime=7s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=8714.3 write_ops/sec=8714.3 MiB_in/sec=0.53 MiB_out/sec=0.53
+uptime=8s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=7625.0 write_ops/sec=7625.0 MiB_in/sec=0.47 MiB_out/sec=0.47
+uptime=9s active=100 accepts=162 reads=70966 writes=70921 bytes_in=4541824 bytes_out=4538944 read_ops/sec=7885.1 write_ops/sec=7880.1 MiB_in/sec=0.48 MiB_out/sec=0.48
+uptime=10s active=100 accepts=162 reads=84395 writes=84336 bytes_in=5401280 bytes_out=5397504 read_ops/sec=8439.5 write_ops/sec=8433.6 MiB_in/sec=0.52 MiB_out/sec=0.51
+uptime=11s active=100 accepts=162 reads=97536 writes=97469 bytes_in=6242304 bytes_out=6238016 read_ops/sec=8866.9 write_ops/sec=8860.8 MiB_in/sec=0.54 MiB_out/sec=0.54
+uptime=12s active=100 accepts=162 reads=111036 writes=110989 bytes_in=7106304 bytes_out=7103296 read_ops/sec=9253.0 write_ops/sec=9249.1 MiB_in/sec=0.56 MiB_out/sec=0.56
+uptime=13s active=100 accepts=162 reads=124530 writes=124465 bytes_in=7969920 bytes_out=7965760 read_ops/sec=9579.2 write_ops/sec=9574.2 MiB_in/sec=0.58 MiB_out/sec=0.58
+uptime=14s active=100 accepts=162 reads=137936 writes=137892 bytes_in=8827904 bytes_out=8825088 read_ops/sec=9852.6 write_ops/sec=9849.4 MiB_in/sec=0.60 MiB_out/sec=0.60
+uptime=15s active=100 accepts=162 reads=151359 writes=151305 bytes_in=9686976 bytes_out=9683520 read_ops/sec=10090.6 write_ops/sec=10087.0 MiB_in/sec=0.62 MiB_out/sec=0.62
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+[Sun Mar 15 00:16:32 2026] recv eof
+uptime=16s active=0 accepts=162 reads=161000 writes=161000 bytes_in=10304000 bytes_out=10304000 read_ops/sec=10062.5 write_ops/sec=10062.5 MiB_in/sec=0.61 MiB_out/sec=0.61
+uptime=17s active=0 accepts=162 reads=161000 writes=161000 bytes_in=10304000 bytes_out=10304000 read_ops/sec=9470.6 write_ops/sec=9470.6 MiB_in/sec=0.58 MiB_out/sec=0.58
+uptime=18s active=0 accepts=162 reads=161000 writes=161000 bytes_in=10304000 bytes_out=10304000 read_ops/sec=8944.4 write_ops/sec=8944.4 MiB_in/sec=0.55 MiB_out/sec=0.55
+uptime=19s active=0 accepts=162 reads=161000 writes=161000 bytes_in=10304000 bytes_out=10304000 read_ops/sec=8473.7 write_ops/sec=8473.7 MiB_in/sec=0.52 MiB_out/sec=0.52

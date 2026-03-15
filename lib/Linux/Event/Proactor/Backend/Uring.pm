@@ -215,27 +215,24 @@ sub _submit_recv_multishot ($self, $op, %arg) {
 }
 
 sub _submit_send ($self, $op, %arg) {
-    my $buf   = $arg{buf};
-    my $flags = $arg{flags} // 0;
+    my $buf = $arg{buf};
     my $token;
 
-    $token = $self->_ring->send(
+    $token = $self->_ring->write(
         $arg{fh},
         $buf,
-        $flags,
+        -1,
         0,
-        0,
-        sub ($res, $cqe_flags) {
-            $self->_complete_send($token, $res, $cqe_flags);
+        sub ($res, $flags) {
+            $self->_complete_send($token, $res, $flags);
         },
     );
 
     $self->{pending_sends}{$token} = {
-        op    => $op,
-        fh    => $arg{fh},
-        buf   => $buf,
-        size  => length($buf),
-        flags => $flags,
+        op   => $op,
+        fh   => $arg{fh},
+        buf  => $buf,
+        size => length($buf),
     };
 
     $self->_record_submission;
@@ -566,7 +563,15 @@ sub _recv_source_key ($self, $fh) {
 
 sub _get_or_create_recv_source ($self, $fh) {
     my $key = $self->_recv_source_key($fh);
-    return $self->{recv_sources}{$key} if $self->{recv_sources}{$key};
+
+    if (my $src = $self->{recv_sources}{$key}) {
+        # File descriptor numbers may be reused after close(). Refresh the
+        # live handle so a stale source object cannot keep pointing at an old,
+        # already-closed handle that happened to use the same fd number.
+        $src->{fh} = $fh;
+        $src->{fd} = $key;
+        return $src;
+    }
 
     my $src = {
         fh            => $fh,
@@ -598,7 +603,7 @@ sub _arm_multishot_recv ($self, $src) {
         $self->{provided_buffer_group},
         0,
         sub ($res, $flags) {
-            $self->_complete_recv_multishot($src, $res, $flags);
+            $self->_complete_recv_multishot($src, $token, $res, $flags);
         },
     );
 
@@ -632,13 +637,19 @@ sub _disarm_multishot_recv ($self, $src) {
     return defined $cancel_id ? 1 : 0;
 }
 
-sub _complete_recv_multishot ($self, $src, $res, $flags) {
+sub _complete_recv_multishot ($self, $src, $token, $res, $flags) {
     return if !$src;
     return if $src->{closing};
+
+    # Ignore stale CQEs from an older cancelled/replaced arm.
+    return if !defined($src->{ring_token}) || $src->{ring_token} != $token;
 
     my $code = $self->_result_error_code($res);
 
     if (defined $code) {
+        # Late CQEs after close/cancel/disarm can surface as EBADF/ECANCELED.
+        # They do not represent a live user-visible recv failure.
+        return if $code == 9 || $code == 125;
         $self->_queue_recv_source_error($src, $code);
     }
     else {
@@ -660,6 +671,8 @@ sub _complete_recv_multishot ($self, $src, $res, $flags) {
     $self->_dispatch_ready_recvs($src);
 
     if (!$self->_cqe_has_more($flags)) {
+        return if !defined($src->{ring_token}) || $src->{ring_token} != $token;
+
         $src->{armed}      = 0;
         $src->{ring_token} = undef;
 
@@ -694,6 +707,13 @@ sub _dispatch_ready_recvs ($self, $src) {
 
     if (!@{ $src->{waiters} } && $src->{armed}) {
         $self->_disarm_multishot_recv($src);
+    }
+
+    # Recv sources are keyed by numeric fd. Because fd numbers can be reused
+    # after close(), retire idle sources so a later connection that reuses the
+    # same fd number cannot inherit stale multishot state from an old socket.
+    if (!@{ $src->{waiters} } && !@{ $src->{ready_results} } && !$src->{armed}) {
+        delete $self->{recv_sources}{ $src->{fd} };
     }
 
     return;
@@ -783,7 +803,7 @@ sub _arm_multishot_accept ($self, $src) {
         $src->{fh},
         0,
         sub ($res, $flags) {
-            $self->_complete_accept_multishot($src, $res, $flags);
+            $self->_complete_accept_multishot($src, $token, $res, $flags);
         },
     );
 
@@ -817,9 +837,12 @@ sub _disarm_multishot_accept ($self, $src) {
     return defined $cancel_id ? 1 : 0;
 }
 
-sub _complete_accept_multishot ($self, $src, $res, $flags) {
+sub _complete_accept_multishot ($self, $src, $token, $res, $flags) {
     return if !$src;
     return if $src->{closing};
+
+    # Ignore stale CQEs from an older cancelled/replaced arm.
+    return if !defined($src->{ring_token}) || $src->{ring_token} != $token;
 
     my $code = $self->_result_error_code($res);
 
@@ -840,6 +863,8 @@ sub _complete_accept_multishot ($self, $src, $res, $flags) {
     $self->_dispatch_ready_accepts($src);
 
     if (!$self->_cqe_has_more($flags)) {
+        return if !defined($src->{ring_token}) || $src->{ring_token} != $token;
+
         $src->{armed}      = 0;
         $src->{ring_token} = undef;
 

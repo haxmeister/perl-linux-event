@@ -1,0 +1,21 @@
+echo-server model=reactor backend=epoll listening on 127.0.0.1:8083
+accept_concurrency=64 recv_len=4096 report_interval=1s
+uptime=1s active=0 accepts=1 reads=0 writes=0 bytes_in=0 bytes_out=0 read_ops/sec=0.0 write_ops/sec=0.0 MiB_in/sec=0.00 MiB_out/sec=0.00
+uptime=2s active=0 accepts=2 reads=1000 writes=1000 bytes_in=64000 bytes_out=64000 read_ops/sec=500.0 write_ops/sec=500.0 MiB_in/sec=0.03 MiB_out/sec=0.03
+uptime=3s active=0 accepts=12 reads=11000 writes=11000 bytes_in=704000 bytes_out=704000 read_ops/sec=3666.7 write_ops/sec=3666.7 MiB_in/sec=0.22 MiB_out/sec=0.22
+uptime=4s active=0 accepts=12 reads=11000 writes=11000 bytes_in=704000 bytes_out=704000 read_ops/sec=2750.0 write_ops/sec=2750.0 MiB_in/sec=0.17 MiB_out/sec=0.17
+uptime=5s active=0 accepts=12 reads=11000 writes=11000 bytes_in=704000 bytes_out=704000 read_ops/sec=2200.0 write_ops/sec=2200.0 MiB_in/sec=0.13 MiB_out/sec=0.13
+uptime=6s active=0 accepts=12 reads=11000 writes=11000 bytes_in=704000 bytes_out=704000 read_ops/sec=1833.3 write_ops/sec=1833.3 MiB_in/sec=0.11 MiB_out/sec=0.11
+uptime=7s active=50 accepts=62 reads=29524 writes=29508 bytes_in=1889536 bytes_out=1888512 read_ops/sec=4217.7 write_ops/sec=4215.4 MiB_in/sec=0.26 MiB_out/sec=0.26
+uptime=8s active=50 accepts=62 reads=55724 writes=55690 bytes_in=3566336 bytes_out=3564160 read_ops/sec=6965.5 write_ops/sec=6961.2 MiB_in/sec=0.43 MiB_out/sec=0.42
+uptime=9s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=6777.8 write_ops/sec=6777.8 MiB_in/sec=0.41 MiB_out/sec=0.41
+uptime=10s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=6100.0 write_ops/sec=6100.0 MiB_in/sec=0.37 MiB_out/sec=0.37
+uptime=11s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=5545.5 write_ops/sec=5545.5 MiB_in/sec=0.34 MiB_out/sec=0.34
+uptime=12s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=5083.3 write_ops/sec=5083.3 MiB_in/sec=0.31 MiB_out/sec=0.31
+uptime=13s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=4692.3 write_ops/sec=4692.3 MiB_in/sec=0.29 MiB_out/sec=0.29
+uptime=14s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=4357.1 write_ops/sec=4357.1 MiB_in/sec=0.27 MiB_out/sec=0.27
+uptime=15s active=0 accepts=62 reads=61000 writes=61000 bytes_in=3904000 bytes_out=3904000 read_ops/sec=4066.7 write_ops/sec=4066.7 MiB_in/sec=0.25 MiB_out/sec=0.25
+uptime=16s active=100 accepts=162 reads=66185 writes=66130 bytes_in=4235840 bytes_out=4232320 read_ops/sec=4136.6 write_ops/sec=4133.1 MiB_in/sec=0.25 MiB_out/sec=0.25
+uptime=17s active=100 accepts=162 reads=91987 writes=91984 bytes_in=5887168 bytes_out=5886976 read_ops/sec=5411.0 write_ops/sec=5410.8 MiB_in/sec=0.33 MiB_out/sec=0.33
+uptime=18s active=100 accepts=162 reads=117944 writes=117885 bytes_in=7548416 bytes_out=7544640 read_ops/sec=6552.4 write_ops/sec=6549.2 MiB_in/sec=0.40 MiB_out/sec=0.40
+uptime=19s active=100 accepts=162 reads=144099 writes=144083 bytes_in=9222336 bytes_out=9221312 read_ops/sec=7584.2 write_ops/sec=7583.3 MiB_in/sec=0.46 MiB_out/sec=0.46
