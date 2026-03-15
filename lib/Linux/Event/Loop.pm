@@ -39,10 +39,9 @@ sub new ($class, %arg) {
   return $self;
 }
 
-
 sub _resolve_model ($model) {
-  return ('Linux::Event::Reactor', 'epoll')   if $model eq 'reactor';
-  return ('Linux::Event::Proactor', 'uring')  if $model eq 'proactor';
+  return ('Linux::Event::Reactor', 'epoll')  if $model eq 'reactor';
+  return ('Linux::Event::Proactor', 'uring') if $model eq 'proactor';
   croak "unknown model '$model'";
 }
 
@@ -84,6 +83,7 @@ sub accept          ($self, @arg) { return $self->_delegate('accept', @arg) }
 sub connect         ($self, @arg) { return $self->_delegate('connect', @arg) }
 sub shutdown        ($self, @arg) { return $self->_delegate('shutdown', @arg) }
 sub close           ($self, @arg) { return $self->_delegate('close', @arg) }
+sub splice          ($self, @arg) { return $self->_delegate('splice', @arg) }
 sub live_op_count   ($self, @arg) { return $self->_delegate('live_op_count', @arg) }
 sub drain_callbacks ($self, @arg) { return $self->_delegate('drain_callbacks', @arg) }
 
@@ -134,7 +134,6 @@ The current engines are:
 =item * L<Linux::Event::Proactor>
 
 =back
-
 
 This split keeps the public constructor short while allowing the reactor and
 proactor internals to evolve independently.
@@ -233,6 +232,8 @@ through the loop facade:
 
 =item * C<close>
 
+=item * C<splice>
+
 =item * C<after>
 
 =item * C<at>
@@ -242,17 +243,6 @@ through the loop facade:
 =item * C<drain_callbacks>
 
 =back
-
-If a method is not supported by the selected model, the loop croaks with a
-clear delegation error.
-
-=head1 MODEL-SPECIFIC BEHAVIOR
-
-This module does not try to erase the semantic difference between readiness and
-completion I/O. It only gives both engines a common entry point.
-
-For readiness semantics, see L<Linux::Event::Reactor>.
-For completion semantics, see L<Linux::Event::Proactor>.
 
 =head1 SEE ALSO
 

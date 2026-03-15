@@ -126,6 +126,11 @@ sub close ($self, %arg) {
     return $self->_submit_op('close', %arg);
 }
 
+sub splice ($self, %arg) {
+    $self->_validate_splice_args(%arg);
+    return $self->_submit_op('splice', %arg);
+}
+
 sub after ($self, $seconds, %arg) {
     $self->_validate_after_args($seconds, %arg);
     my $deadline_ns = $self->_deadline_ns_after($seconds);
@@ -137,7 +142,6 @@ sub at ($self, $deadline, %arg) {
     my $deadline_ns = $self->_deadline_ns_at($deadline);
     return $self->_submit_op('timeout', deadline_ns => $deadline_ns, %arg);
 }
-
 
 sub _new_op ($self, %arg) {
     return Linux::Event::Operation->_new(
@@ -432,6 +436,21 @@ sub _validate_close_args ($self, %arg) {
     return;
 }
 
+sub _validate_splice_args ($self, %arg) {
+    $self->_validate_allowed_keys(\%arg, qw(in_fh out_fh len flags data on_complete));
+    croak 'in_fh is required' unless exists $arg{in_fh};
+    croak 'out_fh is required' unless exists $arg{out_fh};
+    croak 'len is required' unless exists $arg{len};
+    croak 'len must be defined' unless defined $arg{len};
+    croak 'len must be non-negative' if $arg{len} < 0;
+    if (exists $arg{flags}) {
+        croak 'flags must be defined' unless defined $arg{flags};
+        croak 'flags must be an integer' if $arg{flags} !~ /\A-?\d+\z/;
+    }
+    $self->_validate_common_args(%arg);
+    return;
+}
+
 sub _validate_after_args ($self, $seconds, %arg) {
     croak 'after requires seconds' unless defined $seconds;
     $self->_validate_allowed_keys(\%arg, qw(data on_complete));
@@ -518,26 +537,17 @@ Linux::Event::Proactor - Completion-based event loop engine for Linux::Event
 
 C<Linux::Event::Proactor> is the completion-based engine in this distribution.
 It submits operations to a backend such as io_uring, tracks them with
-L<Linux::Event::Operation> objects, and dispatches completion callbacks through
-a deferred callback queue.
+L<Linux::Event::Operation>, and delivers completion callbacks asynchronously
+through the callback queue.
 
-The core invariants are:
-
-=over 4
-
-=item * callbacks never run inline
-
-=item * operations settle exactly once
-
-=item * cancellation must remain race-safe
-
-=item * the operation registry remains consistent
-
-=back
+Callbacks never run inline. Operations settle exactly once. Cancellation is
+race-safe and still delivers through the same deferred callback path.
 
 =head1 CONSTRUCTOR
 
 =head2 new(%args)
+
+Creates a new proactor engine.
 
 Recognized arguments:
 
@@ -545,150 +555,65 @@ Recognized arguments:
 
 =item * C<backend>
 
-Backend name or backend object. Supported backend names in this release are
-C<uring> and C<fake>.
-
-=item * C<queue_size>
-
-Backend queue size. Defaults to 256.
+Either C<fake> or C<uring>. Defaults to C<fake>.
 
 =item * C<clock>
 
-Clock object. The proactor uses a monotonic clock for timer operations.
+Clock object used for timeout calculations. It must provide C<tick()> and
+C<now_ns()>.
 
-=item * backend-specific options
+=item * C<queue_size>
 
-Arguments such as C<submit_batch_size>, C<cqe_entries>, and C<sqpoll> are
-passed through to the uring backend.
+Queue depth hint used by the backend.
 
 =back
 
-=head1 LIFECYCLE
-
-=head2 run
-
-Run until C<stop> is called.
-
-=head2 run_once
-
-Process one round of backend completions and deferred callbacks.
-Returns the combined count of processed backend events and callbacks.
-
-=head2 stop
-
-Request that a running loop stop.
-
-=head2 is_running
-
-True while C<run> is active.
-
-=head1 OPERATIONS
-
-Each submission method returns a L<Linux::Event::Operation>.
+=head1 METHODS
 
 =head2 read
 
-  $loop->read(fh => $fh, len => $bytes, %opt)
-
-Result shape:
-
-  { bytes => N, data => $string, eof => 0|1 }
-
 =head2 write
-
-  $loop->write(fh => $fh, buf => $buffer, %opt)
-
-Result shape:
-
-  { bytes => N }
 
 =head2 recv
 
-  $loop->recv(fh => $fh, len => $bytes, flags => 0, %opt)
-
-Socket-oriented read with flags. Result shape matches C<read>.
-
 =head2 send
-
-  $loop->send(fh => $fh, buf => $buffer, flags => 0, %opt)
-
-Socket-oriented write with flags. Result shape matches C<write>.
 
 =head2 accept
 
-  $loop->accept(fh => $listen_fh, %opt)
-
-Result shape:
-
-  { fh => $client_fh, addr => $sockaddr }
-
 =head2 connect
-
-  $loop->connect(fh => $fh, addr => $sockaddr, %opt)
-
-Successful result shape:
-
-  {}
 
 =head2 shutdown
 
-  $loop->shutdown(fh => $fh, how => 'read' | 'write' | 'both', %opt)
-
-Numeric shutdown constants are also accepted. Successful result shape is C<{}>.
-
 =head2 close
 
-  $loop->close(fh => $fh, %opt)
-
-Successful result shape is C<{}>.
+=head2 splice
 
 =head2 after
 
-  $loop->after($seconds, %opt)
-
 =head2 at
 
-  $loop->at($deadline_seconds, %opt)
+=head2 run
 
-Timer result shape:
+=head2 run_once
 
-  { expired => 1 }
-
-=head1 CALLBACKS
-
-User callbacks are supplied with C<on_complete>. The callback ABI is:
-
-  $cb->($op, $result, $data)
-
-The callback is never executed inline from backend completion delivery. Instead,
-it is queued and drained by C<run_once> or C<drain_callbacks>.
-
-=head1 ACCESSORS
-
-=head2 clock
-
-Returns the clock object.
-
-=head2 backend_name
-
-Returns the backend name.
+=head2 stop
 
 =head2 live_op_count
 
-Returns the number of operations still registered with the loop.
+=head2 is_running
+
+=head2 backend_name
+
+=head2 clock
 
 =head2 drain_callbacks
 
-Manually drain the deferred callback queue. This is primarily useful for tests
-and advanced control flows.
-
 =head1 SEE ALSO
 
+L<Linux::Event>,
 L<Linux::Event::Loop>,
 L<Linux::Event::Operation>,
-L<Linux::Event::Error>,
-L<Linux::Event::Proactor::Backend>,
-L<Linux::Event::Proactor::Backend::Uring>,
-L<Linux::Event::Proactor::Backend::Fake>
+L<Linux::Event::Proactor::Backend::Fake>,
+L<Linux::Event::Proactor::Backend::Uring>
 
 =cut
