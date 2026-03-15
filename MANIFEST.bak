@@ -87,5 +87,6 @@ t/64-proactor-uring-recv-fallback.t
 t/65-proactor-uring-recv-cancel.t
 t/66-proactor-uring-recv-ready-queue.t
 t/67-proactor-uring-splice-basic.t
+t/68-proactor-splice-cancel-and-error.t
 t/98-no-stray-leading-bytes.t
 tools/release-check.pl
