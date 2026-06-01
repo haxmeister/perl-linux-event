@@ -112,12 +112,14 @@ Linux::Event::Wakeup - eventfd-backed wakeup primitive for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
+  use v5.36;
+  use Linux::Event;
+
+  my $loop = Linux::Event->new;
   my $waker = $loop->waker;
 
   # from another thread or cooperating producer
   $waker->signal;
-
-  my $loop = Linux::Event->new;
 
   # in the loop
   my $count = $waker->drain;

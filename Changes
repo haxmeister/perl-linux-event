@@ -7,6 +7,11 @@ Revision history for Linux-Event
   - Remove mandatory model selection. Linux::Event->new and
     Linux::Event::Loop->new now construct the epoll backend by default.
   - Passing model => ... is now an error.
+  - Collapse Linux::Event::Reactor into Linux::Event::Loop while preserving
+    the backend abstraction for future readiness backends.
+  - Rename backend modules to Linux::Event::Backend::* and remove the unused
+    Linux::Event::Error module.
+  - Renumber examples and tests into a single consistent naming scheme.
   - Refresh README, POD, examples, tests, and MANIFEST for the smaller API.
 
 0.010  previous

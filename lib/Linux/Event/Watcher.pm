@@ -207,22 +207,19 @@ Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
-  my $watcher = $loop->watch(
-    $fh,
-    read => sub ($loop, $fh, $watcher) {
-      ...
   use v5.36;
   use Linux::Event;
 
   my $loop = Linux::Event->new;
 
-  my $w = $loop->watch($fh,
-    read => sub ($loop, $fh, $w) {
-      my $buf;
+  my $watcher = $loop->watch(
+    $fh,
+    read => sub ($loop, $fh, $watcher) {
+      my $buf = '';
       my $n = sysread($fh, $buf, 8192);
 
       if (!defined $n || $n == 0) {
-        $w->cancel;
+        $watcher->cancel;
         close $fh;
         return;
       }
@@ -230,14 +227,14 @@ Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::Loop
       # ... handle $buf ...
     },
 
-    write => sub ($loop, $fh, $w) {
+    write => sub ($loop, $fh, $watcher) {
       # fd became writable
-      $w->disable_write; # typical: only enable when you actually have pending output
+      $watcher->disable_write;
     },
 
-    error => sub ($loop, $fh, $w) {
-      # error readiness reported (see DISPATCH SEMANTICS)
-      $w->cancel;
+    error => sub ($loop, $fh, $watcher) {
+      # error readiness reported
+      $watcher->cancel;
       close $fh;
     },
   );
@@ -279,19 +276,31 @@ Get or set one-shot mode.
 
 =head2 on_read([$cb])
 
+Get or replace the read callback.
+
 =head2 on_write([$cb])
+
+Get or replace the write callback.
 
 =head2 on_error([$cb])
 
-Install or replace callbacks.
+Get or replace the error callback.
 
 =head2 enable_read, disable_read
 
+Enable or disable read readiness dispatch for this watcher.
+
 =head2 enable_write, disable_write
+
+Enable or disable write readiness dispatch for this watcher.
 
 =head2 enable_error, disable_error
 
-Toggle callback enablement.
+Enable or disable error readiness dispatch for this watcher.
+
+=head2 read_enabled, write_enabled, error_enabled
+
+Return true when the corresponding readiness callback is enabled.
 
 =head2 cancel
 

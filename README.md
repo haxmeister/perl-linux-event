@@ -2,10 +2,12 @@
 
 # Linux::Event
 
-Linux::Event is a Linux-native event loop for Perl built around epoll and small
-Linux kernel primitives: timerfd, signalfd, eventfd, and pidfd.
+Linux::Event is a Linux-native readiness event loop for Perl. It currently
+ships with an epoll backend and is built around small Linux kernel primitives:
+timerfd, signalfd, eventfd, and pidfd.
 
-`Linux::Event->new` returns a `Linux::Event::Loop` object directly.
+`Linux::Event->new` returns a `Linux::Event::Loop` object directly. Additional
+readiness backends may be added in future releases.
 
 ## Architecture
 
@@ -27,7 +29,7 @@ Core modules in this repository:
 - `Linux::Event` - front door returning `Linux::Event::Loop`
 - `Linux::Event::Loop` - public readiness loop
 - `Linux::Event::Backend` - readiness backend contract
-- `Linux::Event::Backend::Epoll` - epoll backend
+- `Linux::Event::Backend::Epoll` - built-in epoll backend
 - `Linux::Event::Watcher` - mutable watcher handle
 - `Linux::Event::Signal` - signalfd adaptor
 - `Linux::Event::Wakeup` - eventfd-backed wakeup primitive

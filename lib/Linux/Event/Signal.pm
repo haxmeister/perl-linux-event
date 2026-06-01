@@ -225,8 +225,8 @@ Linux::Event::Signal - signalfd adaptor for Linux::Event::Loop
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Signal> adapts signalfd-style signal delivery into the loop
-loop. Most users access it through C<< $loop->signal(...) >> rather than
+C<Linux::Event::Signal> adapts signalfd-style signal delivery into the loop.
+Most users access it through C<< $loop->signal(...) >> rather than
 constructing it directly.
 
 Signal subscriptions are loop primitives. They are not a general-purpose signal

@@ -17,7 +17,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event - Linux-native epoll event loop for Perl
+Linux::Event - Linux-native readiness event loop for Perl
 
 =head1 SYNOPSIS
 
@@ -36,10 +36,12 @@ Linux::Event - Linux-native epoll event loop for Perl
 =head1 DESCRIPTION
 
 C<Linux::Event> is the front door for a Linux-native readiness event loop. It
-returns a L<Linux::Event::Loop> object backed by Linux kernel primitives: epoll, timerfd, signalfd, eventfd, and pidfd.
+currently ships with an epoll backend and uses Linux kernel primitives: timerfd,
+signalfd, eventfd, and pidfd.
 
 This distribution intentionally stays at the loop-and-primitives layer. Higher
 level socket, stream, and process helpers live in companion distributions.
+Additional readiness backends may be added in future releases.
 
 =head1 CONSTRUCTOR
 
