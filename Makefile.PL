@@ -25,4 +25,7 @@ WriteMakefile(
     'Linux::Event::Timer' => 0.010,
     'Linux::Event::Clock' => 0.011,
   },
+  TEST_REQUIRES   => {
+    'Test2::V0' => 0,
+  },
 );
