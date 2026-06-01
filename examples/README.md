@@ -1,17 +1,32 @@
 # Linux::Event examples
 
-These examples demonstrate the readiness-backend Linux::Event API.
+These examples demonstrate the current Linux::Event API. The low-numbered
+examples are ordered from basic loop features to more advanced composition
+patterns. The 90-series files are manual benchmarks and regression runners.
 
-## Basic loop examples
+## Basic and feature examples
 
 - `01-after.pl` - relative timer
-- `02-at.pl` - absolute timer deadline
+- `02-at.pl` - absolute monotonic timer deadline
 - `03-watch-pipe.pl` - readiness watch on a pipe
-- `04-signal.pl` - signalfd signal delivery
-- `05-waker-thread.pl` - eventfd wakeup from another thread
-- `06-pid.pl` - pidfd child exit notification
+- `04-watch-replace.pl` - replacing an existing watcher for the same file descriptor
+- `05-watch-oneshot.pl` - one-shot watcher behavior
+- `06-unwatch-safe.pl` - idempotent unwatch and watcher cancellation
+- `07-signal.pl` - signalfd signal delivery
+- `08-waker-thread.pl` - eventfd wakeup from another thread
+- `09-waker-fork-pipe.pl` - eventfd wakeup with a forked producer and separate payload pipe
+- `10-pid.pl` - pidfd child exit notification
 
-## Compatibility and regression examples
+## Manual benchmarks and regression runners
 
-The remaining examples exercise watcher replacement, oneshot rearming, safe
-unwatch behavior, wakeups, pidfds, and epoll regression cases.
+- `90-bench-oneshot.pl` - pipe readability throughput benchmark
+- `91-stress-oneshot-edge-safe.pl` - edge-triggered one-shot stress runner
+- `92-linux-epoll-oneshot-rearm.pl` - direct Linux::Epoll one-shot rearm check
+- `93-regress-stop-no-backend-wait.pl` - stop-before-backend-wait regression runner
+- `94-regress-epoll-oneshot-rearm.pl` - Linux::Event backend one-shot rearm regression runner
+
+Run all examples with:
+
+```sh
+perl examples/all.pl
+```

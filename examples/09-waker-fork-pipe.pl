@@ -35,7 +35,7 @@ fcntl($r, F_SETFL, $flags | O_NONBLOCK) or die "fcntl(F_SETFL): $!";
 
 $loop->watch(
   $waker->fh,
-  read => sub ($loop, $watcher, $data) {
+  read => sub ($loop, $fh, $watcher) {
 
     my $count = $waker->drain;
     say "[loop] woken ($count)";
