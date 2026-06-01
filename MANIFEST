@@ -1,3 +1,9 @@
+bench/echo-client.pl
+bench/echo-server.pl
+bench/out/echo-bench-20260315-150011.csv
+bench/out/proactor-20260315-150011.log
+bench/out/reactor-20260315-150011.log
+bench/run-echo-bench.pl
 Changes
 examples/01-reactor-after.pl
 examples/01_timer_after.pl
