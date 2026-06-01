@@ -1,4 +1,4 @@
-package Linux::Event::Reactor::Backend::Epoll;
+package Linux::Event::Backend::Epoll;
 use v5.36;
 use strict;
 use warnings;
@@ -174,25 +174,23 @@ sub _events_to_mask ($ev) {
 
 1;
 
-1;
-
 __END__
 
 =head1 NAME
 
-Linux::Event::Reactor::Backend::Epoll - epoll backend for Linux::Event::Reactor
+Linux::Event::Backend::Epoll - epoll backend for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
-  # Usually constructed internally by Linux::Event::Reactor.
-  my $backend = Linux::Event::Reactor::Backend::Epoll->new;
+  # Usually constructed internally by Linux::Event::Loop.
+  my $backend = Linux::Event::Backend::Epoll->new;
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Reactor::Backend::Epoll> is the built-in readiness backend for
-L<Linux::Event::Reactor>. It translates the reactor bitmask into the event set
+C<Linux::Event::Backend::Epoll> is the built-in readiness backend for
+L<Linux::Event::Loop>. It translates the readiness bitmask into the event set
 expected by L<Linux::Epoll> and translates native epoll notifications back into
-reactor masks.
+readiness masks.
 
 =head1 CONSTRUCTOR
 
@@ -220,7 +218,7 @@ Returns C<epoll>.
 
 =head2 watch($fh, $mask, $cb, %opt)
 
-Register a filehandle with epoll and install the standardized reactor callback.
+Register a filehandle with epoll and install the standardized readiness callback.
 Returns the integer file descriptor.
 
 =head2 modify($fh_or_fd, $mask, %opt)
@@ -246,8 +244,8 @@ preserve callback, tag, and loop information across C<modify> calls.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Reactor>,
-L<Linux::Event::Reactor::Backend>,
+L<Linux::Event::Loop>,
+L<Linux::Event::Backend>,
 L<Linux::Epoll>
 
 =cut

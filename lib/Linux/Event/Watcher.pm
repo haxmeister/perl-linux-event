@@ -203,7 +203,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::Reactor
+Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
@@ -249,7 +249,7 @@ Linux::Event::Watcher - Mutable readiness watcher handle for Linux::Event::React
 =head1 DESCRIPTION
 
 C<Linux::Event::Watcher> is the lightweight handle returned by
-L<Linux::Event::Reactor/watch>. It stores the current callbacks, enablement
+L<Linux::Event::Loop/watch>. It stores the current callbacks, enablement
 flags, filehandle metadata, and a user data slot.
 
 The watcher does not own backend policy. Methods that change interest state
@@ -321,11 +321,10 @@ delivered so user code can observe EOF via C<read(2)> returning 0.
 
 =head1 VERSION
 
-This document describes Linux::Event::Watcher version 0.009.
+This document describes Linux::Event::Watcher version 0.011.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Reactor>,
 L<Linux::Event::Loop>
 
 =cut

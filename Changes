@@ -1,11 +1,11 @@
 Revision history for Linux-Event
 
 0.011  unreleased
-  - Simplify Linux::Event to a single reactor-only event loop.
+  - Simplify Linux::Event to a single readiness event loop.
   - Remove the experimental proactor/io_uring engine, operation object API,
     fake completion backend, examples, tests, and documentation.
   - Remove mandatory model selection. Linux::Event->new and
-    Linux::Event::Loop->new now construct the epoll reactor by default.
+    Linux::Event::Loop->new now construct the epoll backend by default.
   - Passing model => ... is now an error.
   - Refresh README, POD, examples, tests, and MANIFEST for the smaller API.
 

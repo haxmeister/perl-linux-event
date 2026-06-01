@@ -10,9 +10,9 @@ use Linux::Event;
 
 my $loop = Linux::Event->new;
 
-say "scheduling reactor timer for 0.100 seconds";
+say "scheduling readiness timer for 0.100 seconds";
 $loop->after(0.100, sub ($loop) {
-  say "reactor timer fired";
+  say "readiness timer fired";
   $loop->stop;
 });
 

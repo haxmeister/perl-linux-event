@@ -108,7 +108,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Wakeup - eventfd-backed wakeup primitive for Linux::Event::Reactor
+Linux::Event::Wakeup - eventfd-backed wakeup primitive for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
@@ -125,10 +125,10 @@ Linux::Event::Wakeup - eventfd-backed wakeup primitive for Linux::Event::Reactor
 =head1 DESCRIPTION
 
 C<Linux::Event::Wakeup> provides an eventfd-backed wakeup mechanism for the
-reactor. The usual pattern is to enqueue work elsewhere, then signal the waker
+loop. The usual pattern is to enqueue work elsewhere, then signal the waker
 so the loop can wake promptly and drain that work source.
 
-Most users obtain the waker through C<< $loop->waker >>. The reactor installs an
+Most users obtain the waker through C<< $loop->waker >>. The loop installs an
 internal read watcher for the eventfd so stop and explicit wakeups can break a
 blocking backend wait.
 
@@ -148,7 +148,6 @@ Drain pending wakeups and return the number observed.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Reactor>,
 L<Linux::Event::Loop>
 
 =cut

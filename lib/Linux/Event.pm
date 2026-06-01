@@ -36,8 +36,7 @@ Linux::Event - Linux-native epoll event loop for Perl
 =head1 DESCRIPTION
 
 C<Linux::Event> is the front door for a Linux-native readiness event loop. It
-returns a L<Linux::Event::Loop> object backed by L<Linux::Event::Reactor> and
-Linux kernel primitives: epoll, timerfd, signalfd, eventfd, and pidfd.
+returns a L<Linux::Event::Loop> object backed by Linux kernel primitives: epoll, timerfd, signalfd, eventfd, and pidfd.
 
 This distribution intentionally stays at the loop-and-primitives layer. Higher
 level socket, stream, and process helpers live in companion distributions.
@@ -50,7 +49,7 @@ Create a new loop. With no arguments, the default epoll backend is used:
 
   my $loop = Linux::Event->new;
 
-You may pass C<backend =E<gt> 'epoll'> explicitly or provide a custom reactor
+You may pass C<backend =E<gt> 'epoll'> explicitly or provide a custom readiness
 backend object:
 
   my $loop = Linux::Event->new(backend => 'epoll');
@@ -63,18 +62,13 @@ The old model selector has been removed. Passing C<model> is an error.
 
 =item * L<Linux::Event::Loop>
 
-Public loop facade.
+Public readiness loop.
 
-=item * L<Linux::Event::Reactor>
-
-Readiness engine built around epoll plus Linux timer, signal, wakeup, and pid
-primitives.
-
-=item * L<Linux::Event::Reactor::Backend>
+=item * L<Linux::Event::Backend>
 
 Readiness backend contract.
 
-=item * L<Linux::Event::Reactor::Backend::Epoll>
+=item * L<Linux::Event::Backend::Epoll>
 
 Built-in epoll backend.
 

@@ -208,7 +208,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Signal - signalfd adaptor for Linux::Event::Reactor
+Linux::Event::Signal - signalfd adaptor for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
@@ -225,7 +225,7 @@ Linux::Event::Signal - signalfd adaptor for Linux::Event::Reactor
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Signal> adapts signalfd-style signal delivery into the reactor
+C<Linux::Event::Signal> adapts signalfd-style signal delivery into the loop
 loop. Most users access it through C<< $loop->signal(...) >> rather than
 constructing it directly.
 
@@ -246,7 +246,6 @@ The returned subscription object supports C<cancel>.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Reactor>,
 L<Linux::Event::Loop>
 
 =cut

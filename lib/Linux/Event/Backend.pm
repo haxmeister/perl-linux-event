@@ -1,4 +1,4 @@
-package Linux::Event::Reactor::Backend;
+package Linux::Event::Backend;
 use v5.36;
 use strict;
 use warnings;
@@ -11,14 +11,14 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Reactor::Backend - Contract for readiness backends used by Linux::Event::Reactor
+Linux::Event::Backend - Contract for readiness backends used by Linux::Event::Loop
 
 =head1 DESCRIPTION
 
 This module documents the contract implemented by readiness backends for
-L<Linux::Event::Reactor>.
+L<Linux::Event::Loop>.
 
-A reactor backend owns the kernel registration and wait mechanism. The reactor
+A readiness backend owns the kernel registration and wait mechanism. The loop
 engine owns watcher replacement policy, timer integration, dispatch order,
 signal integration, wakeups, and pidfd policy.
 
@@ -58,12 +58,12 @@ number of processed events when available.
 
 =head2 modify($fh_or_fd, $mask, %opt)
 
-Update an existing registration without a delete-and-add cycle. The reactor can
+Update an existing registration without a delete-and-add cycle. The loop can
 fall back to C<unwatch> plus C<watch> when this method is absent.
 
 =head1 READINESS MASKS
 
-The reactor uses these bit flags:
+The loop uses these bit flags:
 
   READABLE => 0x01
   WRITABLE => 0x02
@@ -80,20 +80,19 @@ kernel representation.
 =head1 CALLBACK RULES
 
 Backend callbacks may run inline from C<run_once>. That is normal for the
-reactor loop.
+readiness loop.
 
 A backend must not reinterpret watcher policy. In particular, it must not
-change the dispatch order chosen by the reactor engine.
+change the dispatch order chosen by the loop.
 
 =head1 FILEHANDLE OWNERSHIP
 
-A reactor backend observes filehandles. It does not take ownership of them.
+A readiness backend observes filehandles. It does not take ownership of them.
 Closing a filehandle remains the caller's responsibility.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Reactor>,
-L<Linux::Event::Reactor::Backend::Epoll>,
-L<Linux::Event::Reactor::Backend::Epoll>
+L<Linux::Event::Loop>,
+L<Linux::Event::Backend::Epoll>
 
 =cut

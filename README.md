@@ -5,8 +5,7 @@
 Linux::Event is a Linux-native event loop for Perl built around epoll and small
 Linux kernel primitives: timerfd, signalfd, eventfd, and pidfd.
 
-The public front door is `Linux::Event::Loop`, and `Linux::Event->new` is a
-convenient shortcut to it.
+`Linux::Event->new` returns a `Linux::Event::Loop` object directly.
 
 ## Architecture
 
@@ -18,20 +17,17 @@ Linux::Event
     |
     +-- Linux::Event::Loop
             |
-            +-- Linux::Event::Reactor
-                    |
-                    +-- Linux::Event::Reactor::Backend::Epoll
+            +-- Linux::Event::Backend::Epoll
 ```
 
 ## What this distribution contains
 
 Core modules in this repository:
 
-- `Linux::Event` - front door shortcut returning `Linux::Event::Loop`
-- `Linux::Event::Loop` - public loop facade
-- `Linux::Event::Reactor` - readiness engine
-- `Linux::Event::Reactor::Backend` - readiness backend contract
-- `Linux::Event::Reactor::Backend::Epoll` - epoll backend
+- `Linux::Event` - front door returning `Linux::Event::Loop`
+- `Linux::Event::Loop` - public readiness loop
+- `Linux::Event::Backend` - readiness backend contract
+- `Linux::Event::Backend::Epoll` - epoll backend
 - `Linux::Event::Watcher` - mutable watcher handle
 - `Linux::Event::Signal` - signalfd adaptor
 - `Linux::Event::Wakeup` - eventfd-backed wakeup primitive
@@ -140,5 +136,5 @@ signals, wakeups, pidfds, and epoll regression cases.
 
 ## Project status
 
-This project is still pre-1.0. The loop is intentionally reactor-only so the
-stable API can stay small and maintainable.
+This project is still pre-1.0. The loop is intentionally focused on readiness
+backends so the stable API can stay small and maintainable.

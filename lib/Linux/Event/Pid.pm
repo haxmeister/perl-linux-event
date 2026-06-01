@@ -166,7 +166,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Pid - pidfd-backed process-exit subscriptions for Linux::Event::Reactor
+Linux::Event::Pid - pidfd-backed process-exit subscriptions for Linux::Event::Loop
 
 =head1 SYNOPSIS
 
@@ -185,7 +185,7 @@ Linux::Event::Pid - pidfd-backed process-exit subscriptions for Linux::Event::Re
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Pid> adapts Linux pidfds into the reactor loop. It opens a
+C<Linux::Event::Pid> adapts Linux pidfds into the readiness loop. It opens a
 pidfd using L<Linux::FD::Pid>, watches it like any other readable filehandle,
 and invokes the callback when the target process exits.
 
@@ -218,7 +218,6 @@ The returned subscription object supports C<cancel>.
 
 =head1 SEE ALSO
 
-L<Linux::Event::Reactor>,
 L<Linux::Event::Loop>,
 L<Linux::FD::Pid>
 

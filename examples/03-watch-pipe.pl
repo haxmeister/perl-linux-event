@@ -35,7 +35,7 @@ $loop->watch(
 );
 
 $loop->after(0.050, sub ($loop) {
-  syswrite($w, "hello from reactor
+  syswrite($w, "hello from Linux::Event
 ") or die "syswrite failed: $!";
 });
 

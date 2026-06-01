@@ -11,9 +11,8 @@ for my $m (qw(Linux::Epoll Linux::FD::Event Linux::FD::Signal Linux::FD::Pid Lin
 my @mods = qw(
   Linux::Event
   Linux::Event::Loop
-  Linux::Event::Reactor
-  Linux::Event::Reactor::Backend
-  Linux::Event::Reactor::Backend::Epoll
+  Linux::Event::Backend
+  Linux::Event::Backend::Epoll
   Linux::Event::Signal
   Linux::Event::Watcher
   Linux::Event::Wakeup
