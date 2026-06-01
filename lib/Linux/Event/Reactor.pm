@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.010';
+our $VERSION = '0.011';
 
 use Scalar::Util qw(looks_like_number);
 use Carp qw(croak);
@@ -453,7 +453,6 @@ Linux::Event::Reactor - Readiness-based event loop engine for Linux::Event
   use Linux::Event;
 
   my $loop = Linux::Event->new(
-    model   => 'reactor',
     backend => 'epoll',
   );
 

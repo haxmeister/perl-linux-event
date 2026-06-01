@@ -3,11 +3,10 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.010';
+our $VERSION = '0.011';
 
 use Carp qw(croak);
 use Linux::Event::Reactor ();
-use Linux::Event::Proactor ();
 
 use constant READABLE => 0x01;
 use constant WRITABLE => 0x02;
@@ -19,39 +18,20 @@ use constant ERR      => 0x40;
 use constant HUP      => 0x80;
 
 sub new ($class, %arg) {
-  my $model   = delete $arg{model};
-  my $backend = delete $arg{backend};
-
-  croak "model is required and must be 'reactor' or 'proactor'" if !defined $model;
-
-  my ($impl_class, $default_backend) = _resolve_model($model);
-  $backend //= $default_backend;
+  croak "model is no longer supported; Linux::Event is reactor-only" if exists $arg{model};
 
   my $self = bless {
-    model => $model,
-    impl  => undef,
+    reactor => undef,
   }, $class;
 
-  my %impl_arg = (%arg, backend => $backend);
-  $impl_arg{loop} = $self if $model eq 'reactor';
-
-  $self->{impl} = $impl_class->new(%impl_arg);
+  $arg{loop} = $self;
+  $self->{reactor} = Linux::Event::Reactor->new(%arg);
   return $self;
 }
 
-sub _resolve_model ($model) {
-  return ('Linux::Event::Reactor', 'epoll')  if $model eq 'reactor';
-  return ('Linux::Event::Proactor', 'uring') if $model eq 'proactor';
-  croak "unknown model '$model'";
-}
-
-sub model ($self) { return $self->{model} }
-sub impl  ($self) { return $self->{impl} }
 
 sub _delegate ($self, $method, @arg) {
-  my $impl = $self->{impl};
-  croak "loop model '$self->{model}' does not support $method()" if !$impl->can($method);
-  return $impl->$method(@arg);
+  return $self->{reactor}->$method(@arg);
 }
 
 sub backend_name ($self) { return $self->_delegate('backend_name') }
@@ -61,7 +41,6 @@ sub run          ($self, @arg) { return $self->_delegate('run', @arg) }
 sub run_once     ($self, @arg) { return $self->_delegate('run_once', @arg) }
 sub stop         ($self, @arg) { return $self->_delegate('stop', @arg) }
 
-# Reactor surface
 sub timer   ($self, @arg) { return $self->_delegate('timer', @arg) }
 sub backend ($self, @arg) { return $self->_delegate('backend', @arg) }
 sub sched   ($self, @arg) { return $self->_delegate('sched', @arg) }
@@ -74,19 +53,6 @@ sub cancel  ($self, @arg) { return $self->_delegate('cancel', @arg) }
 sub after   ($self, @arg) { return $self->_delegate('after', @arg) }
 sub at      ($self, @arg) { return $self->_delegate('at', @arg) }
 
-# Proactor surface
-sub read            ($self, @arg) { return $self->_delegate('read', @arg) }
-sub write           ($self, @arg) { return $self->_delegate('write', @arg) }
-sub recv            ($self, @arg) { return $self->_delegate('recv', @arg) }
-sub send            ($self, @arg) { return $self->_delegate('send', @arg) }
-sub accept          ($self, @arg) { return $self->_delegate('accept', @arg) }
-sub connect         ($self, @arg) { return $self->_delegate('connect', @arg) }
-sub shutdown        ($self, @arg) { return $self->_delegate('shutdown', @arg) }
-sub close           ($self, @arg) { return $self->_delegate('close', @arg) }
-sub splice          ($self, @arg) { return $self->_delegate('splice', @arg) }
-sub live_op_count   ($self, @arg) { return $self->_delegate('live_op_count', @arg) }
-sub drain_callbacks ($self, @arg) { return $self->_delegate('drain_callbacks', @arg) }
-
 # Private watcher hooks used by Linux::Event::Watcher.
 sub _watcher_update ($self, @arg) { return $self->_delegate('_watcher_update', @arg) }
 sub _watcher_cancel ($self, @arg) { return $self->_delegate('_watcher_cancel', @arg) }
@@ -97,70 +63,58 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Loop - Selector and public front door for Linux::Event engines
+Linux::Event::Loop - Reactor event loop facade for Linux::Event
 
 =head1 SYNOPSIS
 
   use v5.36;
   use Linux::Event::Loop;
 
-  my $reactor = Linux::Event::Loop->new(
-    model   => 'reactor',
-    backend => 'epoll',
-  );
+  my $loop = Linux::Event::Loop->new;
 
-  my $proactor = Linux::Event::Loop->new(
-    model   => 'proactor',
-    backend => 'uring',
-  );
+  $loop->after(0.100, sub ($loop) {
+    say "timer fired";
+    $loop->stop;
+  });
 
-  my $loop = Linux::Event->new(
-    model => 'reactor',
-  );
+  $loop->run;
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Loop> is the stable public front door for this distribution.
-It does not implement the readiness engine or the completion engine itself.
-Instead, it selects one of the engine classes and delegates the public API to
-that implementation object.
+C<Linux::Event::Loop> is the public event loop facade for this distribution.
+It builds a single readiness-based L<Linux::Event::Reactor> engine backed by
+Linux epoll, timerfd, signalfd, eventfd, and pidfd primitives.
 
-The current engines are:
-
-=over 4
-
-=item * L<Linux::Event::Reactor>
-
-=item * L<Linux::Event::Proactor>
-
-=back
-
-This split keeps the public constructor short while allowing the reactor and
-proactor internals to evolve independently.
+The old model selector API has been removed. C<Linux::Event> is now
+reactor-only, so C<model> is not a constructor argument.
 
 =head1 CONSTRUCTOR
 
 =head2 new(%args)
 
-Recognized selector arguments:
+Create a new reactor loop. Recognized arguments are forwarded to
+L<Linux::Event::Reactor/new>, including:
 
 =over 4
 
-=item * C<model>
-
-Either C<reactor> or C<proactor>. This argument is required.
-
 =item * C<backend>
 
-A backend name or backend object appropriate to the selected model.
+Either C<epoll>, omitted for the default epoll backend, or a backend object
+implementing the reactor backend contract.
+
+=item * C<clock>
+
+Optional clock object.
+
+=item * C<timer>
+
+Optional timerfd wrapper object.
 
 =back
 
-Any remaining arguments are forwarded to the selected engine constructor.
+Passing C<model> is an error.
 
-=head1 COMMON METHODS
-
-These methods are delegated for both models when supported:
+=head1 METHODS
 
 =over 4
 
@@ -175,15 +129,6 @@ These methods are delegated for both models when supported:
 =item * C<run_once>
 
 =item * C<stop>
-
-=back
-
-=head1 REACTOR METHODS
-
-When the selected model is C<reactor>, the following methods are available
-through the loop facade:
-
-=over 4
 
 =item * C<timer>
 
@@ -209,45 +154,11 @@ through the loop facade:
 
 =back
 
-=head1 PROACTOR METHODS
-
-When the selected model is C<proactor>, the following methods are available
-through the loop facade:
-
-=over 4
-
-=item * C<read>
-
-=item * C<write>
-
-=item * C<recv>
-
-=item * C<send>
-
-=item * C<accept>
-
-=item * C<connect>
-
-=item * C<shutdown>
-
-=item * C<close>
-
-=item * C<splice>
-
-=item * C<after>
-
-=item * C<at>
-
-=item * C<live_op_count>
-
-=item * C<drain_callbacks>
-
-=back
-
 =head1 SEE ALSO
 
 L<Linux::Event>,
 L<Linux::Event::Reactor>,
-L<Linux::Event::Proactor>
+L<Linux::Event::Reactor::Backend>,
+L<Linux::Event::Reactor::Backend::Epoll>
 
 =cut

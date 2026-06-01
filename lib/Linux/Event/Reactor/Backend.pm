@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.010';
+our $VERSION = '0.011';
 
 1;
 
@@ -80,7 +80,7 @@ kernel representation.
 =head1 CALLBACK RULES
 
 Backend callbacks may run inline from C<run_once>. That is normal for the
-reactor model.
+reactor loop.
 
 A backend must not reinterpret watcher policy. In particular, it must not
 change the dispatch order chosen by the reactor engine.
@@ -94,6 +94,6 @@ Closing a filehandle remains the caller's responsibility.
 
 L<Linux::Event::Reactor>,
 L<Linux::Event::Reactor::Backend::Epoll>,
-L<Linux::Event::Proactor::Backend>
+L<Linux::Event::Reactor::Backend::Epoll>
 
 =cut

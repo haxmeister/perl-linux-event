@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.010';
+our $VERSION = '0.011';
 
 use Carp qw(croak);
 use Scalar::Util qw(weaken);
@@ -117,7 +117,7 @@ Linux::Event::Wakeup - eventfd-backed wakeup primitive for Linux::Event::Reactor
   # from another thread or cooperating producer
   $waker->signal;
 
-  my $loop = Linux::Event->new( model => 'reactor' );
+  my $loop = Linux::Event->new;
 
   # in the loop
   my $count = $waker->drain;
