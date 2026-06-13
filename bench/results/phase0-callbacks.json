@@ -1,0 +1,18 @@
+{
+   "backend" : "pp",
+   "callbacks" : 1000000,
+   "callbacks_per_second" : 179588.93,
+   "elapsed_seconds" : 5.568272,
+   "events" : 1000000,
+   "fd_cap_hit" : true,
+   "fds" : 499,
+   "git_commit" : "fd84176",
+   "linux_kernel" : "6.12.90+deb13.1-amd64",
+   "max_rss_kb" : 25104,
+   "perl_version" : "v5.42.0",
+   "phase" : "phase0",
+   "requested_fds" : 1000,
+   "scenario" : "callback_storm",
+   "system_cpu_seconds" : 1.1,
+   "user_cpu_seconds" : 4.47
+}

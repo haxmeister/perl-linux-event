@@ -1,0 +1,15 @@
+{
+   "backend" : "xs",
+   "callbacks" : 1000000,
+   "elapsed_seconds" : 4.807458,
+   "events" : 1000000,
+   "events_per_second" : 208010.14,
+   "git_commit" : null,
+   "linux_kernel" : "6.12.90+deb13.1-amd64",
+   "max_rss_kb" : 23716,
+   "perl_version" : "v5.42.0",
+   "phase" : "phase5",
+   "scenario" : "pipe_churn",
+   "system_cpu_seconds" : 0.81,
+   "user_cpu_seconds" : 3.99
+}

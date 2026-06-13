@@ -1,0 +1,15 @@
+{
+   "backend" : "pp",
+   "callbacks" : 1000000,
+   "elapsed_seconds" : 8.931892,
+   "events" : 1000000,
+   "events_per_second" : 111958.36,
+   "git_commit" : "fd84176",
+   "linux_kernel" : "6.12.90+deb13.1-amd64",
+   "max_rss_kb" : 23964,
+   "perl_version" : "v5.42.0",
+   "phase" : "phase0",
+   "scenario" : "pipe_churn",
+   "system_cpu_seconds" : 1.11,
+   "user_cpu_seconds" : 7.8
+}

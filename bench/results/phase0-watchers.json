@@ -1,0 +1,14 @@
+{
+   "backend" : "pp",
+   "elapsed_seconds" : 2.980288,
+   "git_commit" : "fd84176",
+   "linux_kernel" : "6.12.90+deb13.1-amd64",
+   "max_rss_kb" : 23964,
+   "perl_version" : "v5.42.0",
+   "phase" : "phase0",
+   "scenario" : "watcher_churn",
+   "system_cpu_seconds" : 0.5,
+   "user_cpu_seconds" : 2.46,
+   "watchers" : 100000,
+   "watchers_per_second" : 33553.8
+}
