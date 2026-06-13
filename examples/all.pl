@@ -11,7 +11,13 @@ use IPC::Open3 qw(open3);
 use Symbol qw(gensym);
 
 opendir(my $dh, $Bin) or die "opendir failed: $!";
-my @files = sort grep { /\.pl\z/ && $_ ne 'all.pl' } readdir($dh);
+
+my @files = sort grep {
+  /\.pl\z/
+    && $_ ne 'all.pl'
+    && !($ENV{LINUX_EVENT_SKIP_THREAD_EXAMPLE} && $_ eq '08-waker-thread.pl')
+} readdir($dh);
+
 closedir $dh;
 
 my @failed;

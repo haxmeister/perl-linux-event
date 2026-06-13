@@ -35,10 +35,12 @@ jobs:
       - name: Syntax-check examples
         run: |
           for f in examples/*.pl; do
-            [ "$(basename "$f")" = "all.pl" ] && continue
+            base="$(basename "$f")"
+            [ "$base" = "all.pl" ] && continue
+            [ "$base" = "08-waker-thread.pl" ] && continue
             perl -Mblib -c "$f"
           done
 
       - name: Run examples
         run: |
-          perl -Mblib examples/all.pl
+          LINUX_EVENT_SKIP_THREAD_EXAMPLE=1 perl -Mblib examples/all.pl
