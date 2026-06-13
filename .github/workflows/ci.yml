@@ -7,24 +7,38 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
         perl: ['5.36', '5.38', '5.40', '5.42']
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Perl
         uses: shogo82148/actions-setup-perl@v1
         with:
           perl-version: ${{ matrix.perl }}
+
       - name: Install dependencies
         run: |
           cpanm --notest --quiet --skip-satisfied --installdeps .
           cpanm --notest --quiet --skip-satisfied Linux::FD::Event Linux::FD::Pid || true
-      - name: Run tests
+
+      - name: Build and test
         run: |
           perl Makefile.PL
+          make
           make test
+
       - name: Syntax-check examples
         run: |
-          perl -c examples/*.pl
+          for f in examples/*.pl; do
+            [ "$(basename "$f")" = "all.pl" ] && continue
+            perl -Mblib -c "$f"
+          done
+
+      - name: Run examples
+        run: |
+          perl -Mblib examples/all.pl
