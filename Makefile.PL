@@ -1,27 +1,18 @@
 use strict;
 use warnings;
-
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-  NAME            => 'Linux::Event',
-  VERSION_FROM    => 'lib/Linux/Event.pm',
-  ABSTRACT_FROM   => 'lib/Linux/Event.pm',
-  AUTHOR          => 'Joshua S. Day',
-  LICENSE         => 'perl',
-  MIN_PERL_VERSION=> '5.36.0',
-  META_MERGE      => {
-    resources => {
-      repository => { type => 'git', url => 'https://github.com/haxmeister/perl-linux-event', web => 'https://github.com/haxmeister/perl-linux-event' },
-      bugtracker  => { web => 'https://github.com/haxmeister/perl-linux-event/issues' },
+    NAME          => 'Linux::Event::XSLoop',
+    VERSION_FROM  => 'lib/Linux/Event/XSLoop.pm',
+    ABSTRACT      => 'Experimental XS-first Linux::Event loop core',
+    AUTHOR        => 'Joshua S. Day <hax@cpan.org>',
+    LICENSE       => 'perl_5',
+    MIN_PERL_VERSION => '5.036000',
+    XS            => { 'XSLoop.xs' => 'XSLoop.c' },
+    PM            => {
+        'lib/Linux/Event/XSLoop.pm'    => '$(INST_LIB)/Linux/Event/XSLoop.pm',
+        'lib/Linux/Event/XSWatcher.pm' => '$(INST_LIB)/Linux/Event/XSWatcher.pm',
     },
-  },
-  PREREQ_PM       => {
-    'Carp'                => 0,
-    'Linux::Event::Timer' => 0.010,
-    'Linux::Event::Clock' => 0.011,
-  },
-  TEST_REQUIRES   => {
-    'Test2::V0' => 0,
-  },
+    clean         => { FILES => 'XSLoop.c' },
 );
