@@ -1,0 +1,14 @@
+/Makefile
+/Makefile.old
+/MYMETA.json
+/MYMETA.yml
+/XSLoop.c
+/XSLoop.o
+/XSLoop.bs
+/pm_to_blib
+/blib/
+*.bak
+*~
+bench/results/*.json
+bench/results/*.html
+!bench/results/.gitkeep
