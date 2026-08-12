@@ -4,7 +4,7 @@ use Linux::Event::XSLoop;
 use IO::Handle;
 
 my $loop = Linux::Event::XSLoop->new;
-is($loop->callback_scope_limit, 128, 'Phase33C defaults to 128 callbacks per scope');
+is($loop->callback_scope_limit, 128, 'default is 128 callbacks per scope');
 
 $loop->set_callback_scope_limit(4);
 is($loop->callback_scope_limit, 4, 'callback scope limit is configurable for tuning');
@@ -47,7 +47,7 @@ ok($stats->{callback_batch_scope_enters} >= 5, 'multiple Perl scopes were entere
 ok($stats->{callback_scope_max_callbacks} <= 4, 'no Perl scope exceeded configured callback limit');
 
 $loop->set_callback_scope_limit(0);
-is($loop->callback_scope_limit, 0, 'zero selects whole-batch Phase33B behavior');
+is($loop->callback_scope_limit, 0, 'zero selects whole-batch callback scope behavior');
 
 close $_ for @writes;
 close $_ for @reads;

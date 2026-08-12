@@ -27,8 +27,8 @@ my $repeats = 6;
 my $client_workers = 4;
 my $build = 0;
 my $check_deps = 0;
-my $out = 'bench/results/reactor-ceiling-comparison.html';
-my $json_out = 'bench/results/reactor-ceiling-comparison.json';
+my $out = 'bench/results/reactor-comparison.html';
+my $json_out = 'bench/results/reactor-comparison.json';
 
 GetOptions(
     'systems=s' => \$systems,
@@ -78,8 +78,8 @@ if ($check_deps) {
 
 my @results;
 # Run systems in a deterministic balanced rotation instead of system-by-system.
-# With five systems and five repeats, every system occupies every execution
-# position exactly once for each client count. This prevents long-run CPU
+# When repeats is a multiple of the selected system count, every system occupies
+# every execution position equally for each client count. This prevents long-run CPU
 # frequency, thermal, and scheduler drift from being confounded with a
 # particular reactor implementation.
 for my $client_index (0 .. $#clients) {
@@ -109,7 +109,7 @@ for my $client_index (0 .. $#clients) {
 
 my @summary = summarize(\@results);
 write_json($json_out, {
-    benchmark => 'strict preconnected same-work reactor echo ceiling (balanced order)',
+    benchmark => 'strict preconnected same-work reactor comparison (balanced order)',
     fairness_contract => fairness_contract(),
     results => \@results,
     summary => \@summary,
@@ -121,13 +121,13 @@ print "wrote $out\n";
 sub usage {
     return <<'USAGE';
 Usage:
-  perl bench/run-reactor-ceiling-comparison.pl --build \
+  perl bench/run-reactor-comparison.pl --build \
     --systems linuxevent,ev,anyevent-ae,uv,ioasync-epoll,mojo-epoll \
     --clients 1000,2500,5000,10000,15000,20000 \
     --warmup 1 --messages 10 --bytes 64 \
     --client-workers 4 --repeats 6 --timeout 90 \
-    --out bench/results/reactor-ceiling-comparison.html \
-    --json bench/results/reactor-ceiling-comparison.json
+    --out bench/results/reactor-comparison.html \
+    --json bench/results/reactor-comparison.json
 
 Strict fairness contract:
   * every TCP connection is established and accepted before reactor timing
@@ -141,7 +141,7 @@ Strict fairness contract:
   * reactor cases use a balanced rotating execution order across repeats
 
 Systems:
-  linuxevent        Phase33C-style Linux::Event run_once(-1) loop
+  linuxevent        Linux::Event XSLoop run_once(-1) loop
   ev                direct EV::io watchers + EV::run
   anyevent-ae       AE::io fast API + AnyEvent condition variable
   uv                UV::Poll watchers + dedicated libuv loop
@@ -433,7 +433,9 @@ sub run_case ($system, $count, $repeat) {
     my $user_cpu = $times_after[0] - $times_before[0];
     my $sys_cpu = $times_after[1] - $times_before[1];
     my $total_cpu = $user_cpu + $sys_cpu;
-    my $reactor_iterations = $reactor_after - $reactor_before;
+    my $reactor_iterations = defined($reactor_after) && defined($reactor_before)
+        ? $reactor_after - $reactor_before
+        : undef;
     my $meta = $driver->{metadata}->();
 
     my %result = (
@@ -589,7 +591,7 @@ sub setup_ev ($sockets, $c, $phase) {
             return {
                 backend => 'EV/libev',
                 backend_runtime => ev_backend_name(),
-                ev_version => $EV::VERSION,
+                ev_version => version_text($EV::VERSION),
                 callback_api => 'EV::io public API (watcher + revents supplied by EV)',
                 loop_drive => 'EV::run',
             };
@@ -639,8 +641,8 @@ sub setup_uv ($sockets, $c, $phase) {
             return {
                 backend => 'UV::Poll/libuv',
                 backend_runtime => 'epoll via libuv',
-                uv_version => $UV::VERSION,
-                libuv_version => eval { UV::version_string() } // 'unknown',
+                uv_version => version_text($UV::VERSION),
+                libuv_version => version_text(eval { UV::version_string() }),
                 callback_api => 'UV::Poll UV_READABLE callback (handle + status + events)',
                 loop_drive => 'UV::Loop->run (UV_RUN_DEFAULT)',
             };
@@ -681,7 +683,7 @@ sub setup_ioasync_epoll ($sockets, $c, $phase) {
             return {
                 backend => 'IO::Async::Loop::Epoll',
                 backend_runtime => 'epoll',
-                ioasync_loop_epoll_version => $IO::Async::Loop::Epoll::VERSION,
+                ioasync_loop_epoll_version => version_text($IO::Async::Loop::Epoll::VERSION),
                 callback_api => 'IO::Async low-level watch_io on_read_ready',
                 loop_drive => 'IO::Async::Loop::Epoll->run',
             };
@@ -723,7 +725,7 @@ sub setup_mojo_epoll ($sockets, $c, $phase) {
             return {
                 backend => 'Mojo::Reactor::Epoll',
                 backend_runtime => 'epoll',
-                mojo_reactor_epoll_version => $Mojo::Reactor::Epoll::VERSION,
+                mojo_reactor_epoll_version => version_text($Mojo::Reactor::Epoll::VERSION),
                 callback_api => 'Mojo::Reactor::Epoll readable io callback',
                 loop_drive => 'Mojo::Reactor::Epoll->start',
             };
@@ -787,7 +789,7 @@ sub setup_anyevent ($system, $sockets, $c, $phase) {
             return {
                 backend => 'AnyEvent with EV adaptor',
                 backend_runtime => ev_backend_name(),
-                anyevent_version => $AnyEvent::VERSION,
+                anyevent_version => version_text($AnyEvent::VERSION),
                 anyevent_model => $AnyEvent::MODEL,
                 ae_io_direct_ev_alias => $fast_alias ? JSON::PP::true : JSON::PP::false,
                 callback_api => $system eq 'anyevent-method'
@@ -1126,7 +1128,7 @@ sub ev_backend_name {
 }
 
 sub display_system ($system) {
-    return 'Linux::Event Phase33C same-work Perl echo (run_once)' if $system eq 'linuxevent';
+    return 'Linux::Event XSLoop same-work Perl echo' if $system eq 'linuxevent';
     return 'EV direct same-work Perl echo' if $system eq 'ev';
     return 'AnyEvent AE::io fast API on EV' if $system eq 'anyevent-ae';
     return 'UV::Poll same-work Perl echo on libuv' if $system eq 'uv';
@@ -1166,6 +1168,7 @@ sub summarize ($results) {
             push @summary, {
                 system => display_system($system),
                 system_key => $system,
+                backend => ($r[0]{backend_runtime} // $r[0]{backend} // ''),
                 clients => $count,
                 repeats => scalar @r,
                 median_messages_per_second => median(map { $_->{messages_per_second} } @r),
@@ -1208,6 +1211,11 @@ sub pct ($arr, $p) {
     return $arr->[$idx];
 }
 
+sub version_text ($value) {
+    return 'unknown' unless defined $value;
+    return "$value";
+}
+
 sub num ($value) {
     return 0 + sprintf('%.6f', $value);
 }
@@ -1246,37 +1254,175 @@ sub write_html ($path, $results, $summary) {
         make_path($1) unless -d $1;
     }
     open my $fh, '>', $path or die "write $path: $!";
+
+    my @system_names = sort { lc($a) cmp lc($b) }
+        do { my %seen; grep { !$seen{$_}++ } map { $_->{system} // '' } @$results };
+    my @client_counts = sort { $a <=> $b }
+        do { my %seen; grep { !$seen{$_}++ } map { $_->{clients} // 0 } @$results };
+
     print {$fh} <<'HTML';
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Strict same-work reactor ceiling comparison</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Strict same-work reactor comparison</title>
 <style>
-body{font-family:system-ui,sans-serif;margin:2rem;line-height:1.35}table{border-collapse:collapse;width:100%;margin:1rem 0 2rem}th,td{border:1px solid #ccc;padding:.4rem .55rem;text-align:right}th:first-child,td:first-child{text-align:left}th{background:#f2f2f2}.note{background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:1rem}code{background:#f2f2f2;padding:.1rem .25rem}
-</style></head><body>
-<h1>Strict same-work reactor ceiling comparison</h1>
+:root{color-scheme:light dark}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:2rem;line-height:1.4;max-width:1800px}h1,h2{line-height:1.2}.note{background:color-mix(in srgb,Canvas 94%,#0969da 6%);border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:8px;padding:1rem;margin:1rem 0}.toolbar{display:flex;gap:.8rem;align-items:end;flex-wrap:wrap;margin:1rem 0;padding:.8rem;border:1px solid color-mix(in srgb,CanvasText 20%,transparent);border-radius:8px}.toolbar label{display:flex;flex-direction:column;gap:.25rem;font-size:.9rem}.toolbar input,.toolbar select,.toolbar button{font:inherit;padding:.4rem .55rem;border:1px solid color-mix(in srgb,CanvasText 30%,transparent);border-radius:6px;background:Canvas;color:CanvasText}.toolbar button{cursor:pointer}.status{margin-left:auto;font-size:.9rem;opacity:.8}.table-wrap{overflow:auto;margin:1rem 0 2rem}table{border-collapse:collapse;width:100%;min-width:1000px}th,td{border:1px solid color-mix(in srgb,CanvasText 20%,transparent);padding:.4rem .55rem;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{background:color-mix(in srgb,Canvas 90%,CanvasText 10%);cursor:pointer;user-select:none;position:sticky;top:0;z-index:1}th:hover{background:color-mix(in srgb,Canvas 82%,#0969da 18%)}th::after{content:" \21C5";font-size:.75em;opacity:.5}th.sort-asc::after{content:" \25B2";opacity:1}th.sort-desc::after{content:" \25BC";opacity:1}tbody tr:nth-child(even){background:color-mix(in srgb,Canvas 96%,CanvasText 4%)}tbody tr:hover{background:color-mix(in srgb,Canvas 88%,#0969da 12%)}code{background:color-mix(in srgb,Canvas 90%,CanvasText 10%);padding:.1rem .25rem;border-radius:4px}.small{font-size:.9rem;opacity:.8}.hidden{display:none!important}
+</style>
+<script>
+(function(){
+  'use strict';
+  function text(el){ return String(el && (el.textContent || el.innerText) || '').trim(); }
+  function normalize(raw){
+    raw = String(raw == null ? '' : raw).trim();
+    if (raw === '') return {type:'text', value:''};
+    var low = raw.toLowerCase();
+    if (low === 'yes' || low === 'true' || low === 'ok') return {type:'number', value:1};
+    if (low === 'no' || low === 'false' || low === 'fail') return {type:'number', value:0};
+    var numeric = raw.replace(/,/g,'');
+    if (numeric !== '' && !isNaN(Number(numeric))) return {type:'number', value:Number(numeric)};
+    return {type:'text', value:low};
+  }
+  function sortTable(th){
+    var table = th.closest ? th.closest('table') : null;
+    if (!table) { var n=th; while(n && n.tagName !== 'TABLE') n=n.parentNode; table=n; }
+    if (!table || !table.tBodies.length) return;
+    var headers = Array.prototype.slice.call(th.parentNode.cells);
+    var col = headers.indexOf(th);
+    var same = table.getAttribute('data-sort-col') === String(col);
+    var dir = same && table.getAttribute('data-sort-dir') === 'desc' ? 'asc' : 'desc';
+    table.setAttribute('data-sort-col', String(col));
+    table.setAttribute('data-sort-dir', dir);
+    headers.forEach(function(h){ h.classList.remove('sort-asc','sort-desc'); });
+    th.classList.add(dir === 'desc' ? 'sort-desc' : 'sort-asc');
+    var rows = Array.prototype.slice.call(table.tBodies[0].rows);
+    rows.sort(function(a,b){
+      var av = normalize(a.cells[col] && (a.cells[col].getAttribute('data-sort') || text(a.cells[col])));
+      var bv = normalize(b.cells[col] && (b.cells[col].getAttribute('data-sort') || text(b.cells[col])));
+      var cmp = (av.type === 'number' && bv.type === 'number') ? av.value - bv.value : String(av.value).localeCompare(String(bv.value));
+      return dir === 'desc' ? -cmp : cmp;
+    });
+    rows.forEach(function(r){ table.tBodies[0].appendChild(r); });
+  }
+  function applyFilters(){
+    var q = document.getElementById('row-filter').value.toLowerCase().trim();
+    var system = document.getElementById('system-filter').value;
+    var clients = document.getElementById('clients-filter').value;
+    var tables = document.querySelectorAll('table[data-filterable="1"]');
+    var shown = 0, total = 0;
+    Array.prototype.forEach.call(tables,function(table){
+      Array.prototype.forEach.call(table.tBodies[0].rows,function(row){
+        total++;
+        var match = (!q || text(row).toLowerCase().indexOf(q) !== -1)
+          && (!system || row.getAttribute('data-system') === system)
+          && (!clients || row.getAttribute('data-clients') === clients);
+        row.classList.toggle('hidden', !match);
+        if (match) shown++;
+      });
+    });
+    document.getElementById('filter-status').textContent = shown + ' of ' + total + ' rows visible';
+  }
+  function resetFilters(){
+    document.getElementById('row-filter').value='';
+    document.getElementById('system-filter').value='';
+    document.getElementById('clients-filter').value='';
+    applyFilters();
+  }
+  window.addEventListener('DOMContentLoaded',function(){
+    Array.prototype.forEach.call(document.querySelectorAll('table.sortable th'),function(th){
+      th.tabIndex = 0;
+      th.title = 'Sort by ' + text(th);
+      th.addEventListener('click',function(){ sortTable(th); });
+      th.addEventListener('keydown',function(ev){ if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); sortTable(th); } });
+    });
+    ['row-filter','system-filter','clients-filter'].forEach(function(id){
+      document.getElementById(id).addEventListener(id === 'row-filter' ? 'input' : 'change', applyFilters);
+    });
+    document.getElementById('reset-filters').addEventListener('click', resetFilters);
+    applyFilters();
+  });
+})();
+</script></head><body>
+<h1>Strict same-work reactor comparison</h1>
+<p class="small">Offline report. Workload parameters and the full fairness contract are recorded in the companion JSON file. Click any column heading to sort. Use the controls below to filter both the summary and raw-repeat tables.</p>
 <div class="note"><strong>Fairness contract:</strong> all TCP connections are established and accepted before timing; all watchers are registered before timing; warmup finishes before counters/timing reset; every ranked server invokes the exact same Perl <code>echo_read()</code> body; every client has at most one request outstanding; clients remain connected after the last measured reply; teardown and EOF/RDHUP handling occur after timing; no framework timer watcher is active in the measured interval.</div>
-<h2>Median summary</h2><table><thead><tr><th>System</th><th>Clients</th><th>Repeats</th><th>median msg/s</th><th>mean msg/s</th><th>p50 us</th><th>p95 us</th><th>p99 us</th><th>CPU us/msg</th><th>CPU %</th><th>RSS KiB</th><th>iterations</th><th>read cb/msg</th><th>read syscalls/msg</th><th>write syscalls/msg</th></tr></thead><tbody>
+<div class="toolbar">
+<label>Search rows<input id="row-filter" type="search" placeholder="system, backend, value..."></label>
+<label>System<select id="system-filter"><option value="">All systems</option>
+HTML
+    for my $name (@system_names) {
+        printf {$fh} '<option value="%s">%s</option>\n', html_escape($name), html_escape($name);
+    }
+    print {$fh} <<'HTML';
+</select></label>
+<label>Clients<select id="clients-filter"><option value="">All client counts</option>
+HTML
+    for my $count (@client_counts) {
+        printf {$fh} '<option value="%d">%d</option>\n', $count, $count;
+    }
+    print {$fh} <<'HTML';
+</select></label>
+<button id="reset-filters" type="button">Reset</button><span id="filter-status" class="status"></span>
+</div>
+<h2>Median summary</h2><div class="table-wrap"><table class="sortable" data-filterable="1"><thead><tr><th>System</th><th>Backend</th><th>Clients</th><th>Repeats</th><th>median msg/s</th><th>mean msg/s</th><th>p50 us</th><th>p95 us</th><th>p99 us</th><th>CPU us/msg</th><th>CPU %</th><th>RSS KiB</th><th>iterations</th><th>read cb/msg</th><th>read syscalls/msg</th><th>write syscalls/msg</th></tr></thead><tbody>
 HTML
     for my $r (@$summary) {
-        printf {$fh} "<tr><td>%s</td><td>%d</td><td>%d</td><td>%.2f</td><td>%.2f</td><td>%.0f</td><td>%.0f</td><td>%.0f</td><td>%.3f</td><td>%.2f</td><td>%.0f</td><td>%.0f</td><td>%.4f</td><td>%.4f</td><td>%.4f</td></tr>\n",
-            $r->{system}, $r->{clients}, $r->{repeats},
-            $r->{median_messages_per_second}, $r->{mean_messages_per_second},
-            ($r->{median_lat_p50_us} // 0), ($r->{median_lat_p95_us} // 0), ($r->{median_lat_p99_us} // 0),
-            $r->{median_server_cpu_us_per_message}, $r->{median_server_cpu_percent},
-            $r->{median_max_rss_kb}, ($r->{median_reactor_iterations} // 0),
-            $r->{median_read_callbacks_per_message}, $r->{median_sysread_calls_per_message},
-            $r->{median_syswrite_calls_per_message};
+        my $system = $r->{system} // '';
+        my $clients = $r->{clients} // 0;
+        printf {$fh} '<tr data-system="%s" data-clients="%d">', html_escape($system), $clients;
+        print {$fh} join('',
+            html_td($system), html_td($r->{backend} // ''), html_td($clients), html_td($r->{repeats}),
+            html_td(sprintf('%.2f', $r->{median_messages_per_second})),
+            html_td(sprintf('%.2f', $r->{mean_messages_per_second})),
+            html_td(sprintf('%.0f', $r->{median_lat_p50_us} // 0)),
+            html_td(sprintf('%.0f', $r->{median_lat_p95_us} // 0)),
+            html_td(sprintf('%.0f', $r->{median_lat_p99_us} // 0)),
+            html_td(sprintf('%.3f', $r->{median_server_cpu_us_per_message})),
+            html_td(sprintf('%.2f', $r->{median_server_cpu_percent})),
+            html_td(sprintf('%.0f', $r->{median_max_rss_kb})),
+            html_td(defined $r->{median_reactor_iterations} ? sprintf('%.0f', $r->{median_reactor_iterations}) : 'n/a'),
+            html_td(sprintf('%.4f', $r->{median_read_callbacks_per_message})),
+            html_td(sprintf('%.4f', $r->{median_sysread_calls_per_message})),
+            html_td(sprintf('%.4f', $r->{median_syswrite_calls_per_message})),
+        );
+        print {$fh} "</tr>\n";
     }
-    print {$fh} "</tbody></table><h2>Raw repeats</h2><table><thead><tr><th>System</th><th>Clients</th><th>Repeat</th><th>OK</th><th>msg/s</th><th>elapsed s</th><th>CPU us/msg</th><th>p50 us</th><th>p99 us</th><th>iterations</th><th>read cb</th><th>sysread</th><th>syswrite</th><th>backend</th></tr></thead><tbody>\n";
+    print {$fh} <<'HTML';
+</tbody></table></div>
+<h2>Raw repeats</h2><div class="table-wrap"><table class="sortable" data-filterable="1"><thead><tr><th>System</th><th>Clients</th><th>Repeat</th><th>Order</th><th>OK</th><th>msg/s</th><th>elapsed s</th><th>CPU us/msg</th><th>CPU %</th><th>p50 us</th><th>p95 us</th><th>p99 us</th><th>RSS KiB</th><th>iterations</th><th>read cb</th><th>sysread</th><th>syswrite</th><th>backend</th></tr></thead><tbody>
+HTML
     for my $r (@$results) {
-        printf {$fh} "<tr><td>%s</td><td>%d</td><td>%d</td><td>%s</td><td>%s</td><td>%.6f</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
-            $r->{system}, $r->{clients}, $r->{repeat}, ($r->{ok} ? 'yes' : 'no'),
-            (defined $r->{messages_per_second} ? sprintf('%.2f', $r->{messages_per_second}) : ''),
-            ($r->{elapsed_seconds} // 0),
-            (defined $r->{server_cpu_us_per_message} ? sprintf('%.3f', $r->{server_cpu_us_per_message}) : ''),
-            ($r->{lat_p50_us} // ''), ($r->{lat_p99_us} // ''), ($r->{reactor_iterations} // ''),
-            ($r->{read_callbacks} // ''), ($r->{sysread_calls} // ''), ($r->{syswrite_calls} // ''),
-            ($r->{backend_runtime} // $r->{backend} // '');
+        my $system = $r->{system} // '';
+        my $clients = $r->{clients} // 0;
+        printf {$fh} '<tr data-system="%s" data-clients="%d">', html_escape($system), $clients;
+        print {$fh} join('',
+            html_td($system), html_td($clients), html_td($r->{repeat}),
+            html_td(defined $r->{execution_order_position} ? ($r->{execution_order_position} . '/' . ($r->{execution_order_width} // '')) : ''),
+            html_td($r->{ok} ? 'yes' : 'no'),
+            html_td(defined $r->{messages_per_second} ? sprintf('%.2f', $r->{messages_per_second}) : ''),
+            html_td(sprintf('%.6f', $r->{elapsed_seconds} // 0)),
+            html_td(defined $r->{server_cpu_us_per_message} ? sprintf('%.3f', $r->{server_cpu_us_per_message}) : ''),
+            html_td(defined $r->{server_cpu_percent} ? sprintf('%.2f', $r->{server_cpu_percent}) : ''),
+            html_td($r->{lat_p50_us} // ''), html_td($r->{lat_p95_us} // ''), html_td($r->{lat_p99_us} // ''),
+            html_td($r->{max_rss_kb} // ''),
+            html_td(defined $r->{reactor_iterations} ? $r->{reactor_iterations} : 'n/a'),
+            html_td($r->{read_callbacks} // ''), html_td($r->{sysread_calls} // ''), html_td($r->{syswrite_calls} // ''),
+            html_td($r->{backend_runtime} // $r->{backend} // ''),
+        );
+        print {$fh} "</tr>\n";
     }
-    print {$fh} "</tbody></table></body></html>\n";
+    print {$fh} "</tbody></table></div></body></html>\n";
     close $fh;
+}
+
+sub html_escape ($value) {
+    $value = '' unless defined $value;
+    $value = "$value";
+    $value =~ s/&/&amp;/g;
+    $value =~ s/</&lt;/g;
+    $value =~ s/>/&gt;/g;
+    $value =~ s/\"/&quot;/g;
+    $value =~ s/'/&#39;/g;
+    return $value;
+}
+
+sub html_td ($value) {
+    return '<td>' . html_escape($value) . '</td>';
 }

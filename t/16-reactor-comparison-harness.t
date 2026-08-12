@@ -13,7 +13,7 @@ my $json = "$tmp/result.json";
 my $html = "$tmp/result.html";
 
 my @cmd = (
-    $^X, "$root/bench/run-reactor-ceiling-comparison.pl",
+    $^X, "$root/bench/run-reactor-comparison.pl",
     '--systems', 'linuxevent',
     '--clients', '20',
     '--warmup', '1',

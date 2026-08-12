@@ -3,7 +3,7 @@ use Test::More;
 use Linux::Event::XSLoop;
 use IO::Handle;
 
-# Phase33B restores Phase32 terminal-event semantics: HUP/RDHUP dispatches
+# Terminal events keep error-before-read semantics: HUP/RDHUP dispatches
 # the error callback first, even when EPOLLIN is also present.
 pipe(my $r, my $w) or die $!;
 $r->blocking(0);

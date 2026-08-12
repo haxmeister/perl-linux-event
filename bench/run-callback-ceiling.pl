@@ -15,7 +15,7 @@ use File::Temp qw(tempdir);
 use FindBin qw($Bin);
 use lib "$Bin/../blib/lib", "$Bin/../blib/arch", "$Bin/../lib";
 
-my $systems = 'phase35-xs,phase35-empty,phase35-perl';
+my $systems = 'native,native-empty,perl';
 my $clients = '1000,5000,10000';
 my $messages = 10;
 my $warmup = 1;
@@ -25,8 +25,8 @@ my $timeout = 90;
 my $repeats = 5;
 my $client_workers = 4;
 my $build = 0;
-my $out = 'bench/results/phase35-ceiling.html';
-my $json_out = 'bench/results/phase35-ceiling.json';
+my $out = 'bench/results/callback-ceiling.html';
+my $json_out = 'bench/results/callback-ceiling.json';
 
 GetOptions(
     'systems=s' => \$systems,
@@ -44,7 +44,7 @@ GetOptions(
 
 my @systems = grep length, split /,/, $systems;
 my @clients = map { int($_) } grep length, split /,/, $clients;
-die "unknown Phase35 system\n" if grep { $_ ne 'phase35-xs' && $_ ne 'phase35-empty' && $_ ne 'phase35-perl' } @systems;
+die "unknown callback-ceiling system\n" if grep { $_ ne 'native' && $_ ne 'native-empty' && $_ ne 'perl' } @systems;
 die "messages must be > 0\n" unless $messages > 0;
 die "warmup must be >= 0\n" unless $warmup >= 0;
 die "bytes must be > 0\n" unless $bytes > 0;
@@ -96,24 +96,24 @@ print "wrote $out\n";
 sub usage {
     return <<'USAGE';
 Usage:
-  perl bench/run-phase35-ceiling.pl --build \
-    --systems phase35-xs,phase35-empty,phase35-perl \
+  perl bench/run-callback-ceiling.pl --build \
+    --systems native,native-empty,perl \
     --clients 1000,5000,10000,15000,20000 \
     --warmup 1 --messages 10 --bytes 64 \
     --client-workers 4 --repeats 5 --timeout 90 \
-    --out bench/results/phase35-ceiling.html \
-    --json bench/results/phase35-ceiling.json
+    --out bench/results/callback-ceiling.html \
+    --json bench/results/callback-ceiling.json
 
-Phase35 pre-connects and accepts all TCP clients before timing begins, resets
+This diagnostic pre-connects and accepts all TCP clients before timing begins, resets
 XS statistics, then releases all client workers into the unchanged serial
 request/reply echo protocol.
 
-A phase35-xs:
+A (native XS echo):
   native XS read/write echo, no Perl client read callback
-B phase35-empty:
+B (native echo + empty Perl callback):
   same native XS echo plus an empty Perl client read callback
-C phase35-perl:
-  current Phase33C Perl echo callback
+C (normal Perl echo body):
+  normal Perl echo callback
 
 B-A estimates Perl read-callback entry cost.
 C-B estimates the added cost of Perl-side echo I/O/accounting versus XS.
@@ -201,7 +201,7 @@ sub run_case ($system, $count, $repeat) {
         if ($pid == 0) {
             $SIG{PIPE} = 'IGNORE';
             $SIG{TERM} = sub { exit 143 };
-            phase35_client_worker($port, $worker_clients, $msg, $ready, $message_gate, $result);
+            ceiling_client_worker($port, $worker_clients, $msg, $ready, $message_gate, $result);
             exit 0;
         }
         push @pids, $pid;
@@ -245,7 +245,7 @@ sub run_case ($system, $count, $repeat) {
                     close $sock;
                 };
 
-                if ($system eq 'phase35-xs') {
+                if ($system eq 'native') {
                     $cw = $loop->watch_fd(
                         $fd,
                         fh => $sock,
@@ -255,7 +255,7 @@ sub run_case ($system, $count, $repeat) {
                         error => $on_error,
                     );
                 }
-                elsif ($system eq 'phase35-empty') {
+                elsif ($system eq 'native-empty') {
                     $cw = $loop->watch_fd(
                         $fd,
                         fh => $sock,
@@ -314,7 +314,7 @@ sub run_case ($system, $count, $repeat) {
     my $cs_after = context_switches();
 
     my $st = $loop->stats;
-    if ($system eq 'phase35-xs' || $system eq 'phase35-empty') {
+    if ($system eq 'native' || $system eq 'native-empty') {
         $c{echoed_bytes} = $st->{bench_native_echo_bytes_written} // 0;
         $c{bytes_read} = $st->{bench_native_echo_bytes_read} // 0;
         $c{bytes_written} = $st->{bench_native_echo_bytes_written} // 0;
@@ -440,7 +440,7 @@ sub run_case ($system, $count, $repeat) {
     return \%result;
 }
 
-sub phase35_client_worker ($port, $count, $msg, $ready_file, $message_gate, $out_file) {
+sub ceiling_client_worker ($port, $count, $msg, $ready_file, $message_gate, $out_file) {
     my $poll = IO::Poll->new;
     my %state;
     my $connected = 0;
@@ -641,14 +641,14 @@ sub echo_read ($fh, $c, $on_close) {
 }
 
 sub display_system ($system) {
-    return 'Phase35 A: XS native echo, no Perl client read callback' if $system eq 'phase35-xs';
-    return 'Phase35 B: XS native echo plus empty Perl client read callback' if $system eq 'phase35-empty';
-    return 'Phase35 C: current Phase33C Perl echo callback';
+    return 'A: XS native echo, no Perl client read callback' if $system eq 'native';
+    return 'B: XS native echo plus empty Perl client read callback' if $system eq 'native-empty';
+    return 'C: normal Perl echo callback';
 }
 
 sub summarize ($results) {
     my @summary;
-    for my $system ('phase35-xs', 'phase35-empty', 'phase35-perl') {
+    for my $system ('native', 'native-empty', 'perl') {
         for my $count (@clients) {
             my @r = grep { $_->{system_key} eq $system && $_->{clients} == $count && $_->{ok} } @$results;
             next unless @r;
@@ -724,13 +724,13 @@ sub write_html ($path, $results, $summary) {
     open my $fh, '>', $path or die "write $path: $!";
     print {$fh} <<'HTML';
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Linux::Event Phase35 callback ceiling</title>
+<html><head><meta charset="utf-8"><title>Linux::Event callback/I/O ceiling diagnostic</title>
 <style>
 body{font-family:system-ui,sans-serif;margin:2rem;line-height:1.35}table{border-collapse:collapse;width:100%;margin:1rem 0 2rem}th,td{border:1px solid #ccc;padding:.4rem .55rem;text-align:right}th:first-child,td:first-child{text-align:left}th{background:#f2f2f2}.note{background:#f6f8fa;border:1px solid #d0d7de;border-radius:8px;padding:1rem}
 </style></head><body>
-<h1>Linux::Event Phase35 callback ceiling</h1>
-<div class="note">All clients are connected and accepted before timing. XS stats are reset before the message gate opens. A is native XS echo without a Perl client read callback; B adds an empty Perl client read callback before the identical native echo; C is the current Phase33C Perl echo path. B-A estimates callback entry overhead; C-B estimates Perl-side echo/I/O overhead.</div>
-<h2>Median summary</h2><table><thead><tr><th>System</th><th>Clients</th><th>Repeats</th><th>msg/s</th><th>p50 us</th><th>p99 us</th><th>CPU %</th><th>callbacks</th><th>Phase35 empty read callbacks</th></tr></thead><tbody>
+<h1>Linux::Event callback/I/O ceiling diagnostic</h1>
+<div class="note">All clients are connected and accepted before timing. XS stats are reset before the message gate opens. A is native XS echo without a Perl client read callback; B adds an empty Perl client read callback before the identical native echo; C is the normal Perl echo path. B-A estimates callback entry overhead; C-B estimates Perl-side echo/I/O overhead.</div>
+<h2>Median summary</h2><table><thead><tr><th>System</th><th>Clients</th><th>Repeats</th><th>msg/s</th><th>p50 us</th><th>p99 us</th><th>CPU %</th><th>callbacks</th><th>empty-read callbacks</th></tr></thead><tbody>
 HTML
     for my $r (@$summary) {
         printf {$fh} "<tr><td>%s</td><td>%d</td><td>%d</td><td>%.2f</td><td>%.0f</td><td>%.0f</td><td>%.2f</td><td>%.0f</td><td>%.0f</td></tr>\n",

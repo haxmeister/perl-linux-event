@@ -7,7 +7,7 @@ use Getopt::Long qw(GetOptions);
 use JSON::PP qw(encode_json);
 use File::Path qw(make_path);
 use FindBin qw($Bin);
-use lib "$Bin/../blib/lib", "$Bin/../blib/arch", "$Bin/../lib";
+use lib "$Bin/../../blib/lib", "$Bin/../../blib/arch", "$Bin/../../lib";
 
 my $systems = 'phase29,phase31';
 my $watchers = '1000,5000,10000,20000';

@@ -5,7 +5,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME          => 'Linux::Event::XSLoop',
     VERSION_FROM  => 'lib/Linux/Event/XSLoop.pm',
-    ABSTRACT      => 'Experimental XS-first Linux::Event loop core',
+    ABSTRACT      => 'XS-first epoll reactor core for Linux::Event',
     AUTHOR        => 'Joshua S. Day <hax@cpan.org>',
     LICENSE       => 'perl_5',
     MIN_PERL_VERSION => '5.036000',

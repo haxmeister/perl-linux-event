@@ -5,7 +5,7 @@ use warnings;
 use Test::More;
 use FindBin qw($Bin);
 
-my $file = "$Bin/../bench/run-reactor-ceiling-comparison.pl";
+my $file = "$Bin/../bench/run-reactor-comparison.pl";
 open my $fh, '<', $file or die "open $file: $!";
 local $/;
 my $src = <$fh>;

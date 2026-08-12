@@ -22,12 +22,12 @@ sub make_pair {
         error => sub { },
     );
 
-    is(syswrite($client, 'phase35-a'), 9, 'mode A client write completed');
+    is(syswrite($client, 'native-a!'), 9, 'mode A client write completed');
     $loop->run_once(1000);
 
     my $n = sysread($client, my $buf, 64);
     is($n, 9, 'mode A echoed expected byte count');
-    is($buf, 'phase35-a', 'mode A native XS echo returned payload');
+    is($buf, 'native-a!', 'mode A native XS echo returned payload');
 
     my $stats = $loop->stats;
     is($stats->{read_callback_calls}, 0, 'mode A invokes no Perl read callback');
@@ -55,12 +55,12 @@ sub make_pair {
         error => sub { },
     );
 
-    is(syswrite($client, 'phase35-b'), 9, 'mode B client write completed');
+    is(syswrite($client, 'native-b!'), 9, 'mode B client write completed');
     $loop->run_once(1000);
 
     my $n = sysread($client, my $buf, 64);
     is($n, 9, 'mode B echoed expected byte count');
-    is($buf, 'phase35-b', 'mode B native XS echo returned payload');
+    is($buf, 'native-b!', 'mode B native XS echo returned payload');
     is($empty_calls, 1, 'mode B invokes one empty Perl read callback');
 
     my $stats = $loop->stats;

@@ -13,7 +13,7 @@ use File::Path qw(make_path);
 use File::Temp qw(tempdir);
 use Config;
 use FindBin qw($Bin);
-use lib "$Bin/../blib/lib", "$Bin/../blib/arch", "$Bin/../lib";
+use lib "$Bin/../../blib/lib", "$Bin/../../blib/arch", "$Bin/../../lib";
 
 my $systems  = 'phase35-xs,phase35-empty,phase35-perl';
 my $clients  = '1,10,50,100';

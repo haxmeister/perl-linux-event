@@ -1,3 +1,46 @@
+/*
+ * Linux::Event XS reactor core
+ * ============================
+ *
+ * This file contains the native implementation behind Linux::Event::XSLoop
+ * and Linux::Event::XSWatcher.  The design goal is a short readiness path:
+ *
+ *     epoll_wait()
+ *       -> epoll_event.data.ptr
+ *       -> le_watcher_t *
+ *       -> native dispatch
+ *       -> one Perl callback
+ *
+ * The fd-indexed registry is intentionally not used for hot-path lookup after
+ * epoll_wait(); it exists for registration, replacement, cancellation and
+ * lifecycle operations.  epoll_event.data.ptr points directly at the watcher.
+ *
+ * The core is a reactor, not a stream implementation.  It reports descriptor
+ * readiness and deliberately leaves sysread/syswrite/buffering policy to the
+ * caller.  Planned native buffering and write queues belong in a higher-level
+ * Stream object so the raw watcher API remains general.
+ *
+ * Lifetime invariant
+ * ------------------
+ * le_loop_t owns all native le_watcher_t records.  Perl XSWatcher objects are
+ * handles into loop-owned state.  Returned epoll batches may still contain a
+ * watcher pointer after EPOLL_CTL_DEL, so any optional reuse/reclaim path must
+ * not recycle a watcher until the current dispatch batch is finished.
+ *
+ * Callback invariant
+ * ------------------
+ * For one epoll event terminal/error readiness is handled before read and
+ * write readiness.  The watcher is re-checked after callbacks so a callback
+ * may cancel itself safely.  Plain coderefs are stored as direct CVs to avoid
+ * an extra RV layer on the hot call path.
+ *
+ * Profiling
+ * ---------
+ * Cheap counters are always available.  Nanosecond timing is opt-in because
+ * measuring each hot operation changes the workload.  Benchmark-only native
+ * echo code remains private and is explicitly marked below.
+ */
+
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
@@ -21,6 +64,13 @@
 typedef struct le_loop_s le_loop_t;
 typedef struct le_watcher_s le_watcher_t;
 
+/*
+ * Native watcher record.
+ *
+ * Callback SVs live here so readiness dispatch does not need a Perl hash or
+ * method lookup. Accessor references are optional: lean no-argument watchers
+ * can omit them when user code captures its state in the callback closure.
+ */
 struct le_watcher_s {
     le_watcher_t *next_free;
     int fd;
@@ -43,6 +93,13 @@ struct le_watcher_s {
     int bench_native_echo;
 };
 
+/*
+ * Native loop state.
+ *
+ * The reusable epoll event array and fd registry are allocated once and kept
+ * with the loop. Counters are colocated here so instrumentation does not need
+ * Perl-side bookkeeping.
+ */
 struct le_loop_s {
     int epoll_fd;
     int stop_flag;
@@ -117,6 +174,8 @@ struct le_loop_s {
     unsigned long long dispatch_ns;
 };
 
+/* ---- Cheap readiness and epoll instrumentation ----------------------- */
+
 static void le_note_epoll_batch(le_loop_t *loop, int n) {
     loop->epoll_wait_calls++;
     if (n == 0) loop->epoll_wait_empty_calls++;
@@ -160,6 +219,8 @@ static int le_epoll_ctl_timed(le_loop_t *loop, int op, int fd, struct epoll_even
     return rc;
 }
 
+/* ---- Perl object <-> native pointer conversion ---------------------- */
+
 static le_loop_t *le_loop_from_sv(SV *sv) {
     if (!sv_isobject(sv) || !SvROK(sv)) croak("not a loop object");
     return INT2PTR(le_loop_t *, SvIV((SV*)SvRV(sv)));
@@ -169,6 +230,8 @@ static le_watcher_t *le_watcher_from_sv(SV *sv) {
     if (!sv_isobject(sv) || !SvROK(sv)) croak("not a watcher object");
     return INT2PTR(le_watcher_t *, SvIV((SV*)SvRV(sv)));
 }
+
+/* ---- Native fd registry --------------------------------------------- */
 
 static void le_registry_grow(le_loop_t *loop, int fd) {
     if (fd < 0) croak("negative fd");
@@ -205,6 +268,8 @@ static SV *le_stored_callback_from_sv(SV *cb, int *direct_cv) {
     }
     return newSVsv(cb);
 }
+
+/* ---- Watcher allocation, ownership and safe deferred reuse ---------- */
 
 static void le_watcher_clear_refs(le_watcher_t *w) {
     if (!w) return;
@@ -295,6 +360,8 @@ static void le_loop_destroy(le_loop_t *loop) {
     free(loop);
 }
 
+/* ---- Perl callback dispatch ----------------------------------------- */
+
 static void le_count_callback(le_watcher_t *w, int one_arg, int direct_cv, unsigned long long t0) {
     if (!w || !w->loop) return;
     w->loop->callback_calls++;
@@ -306,11 +373,12 @@ static void le_count_callback(le_watcher_t *w, int one_arg, int direct_cv, unsig
 }
 
 /*
- * Phase33C callback fast path.
+ * Bounded Perl callback temporary scopes.
  *
- * The dispatch loop shares one ENTER/SAVETMPS scope across a bounded number
- * of Perl callbacks. Each callback still FREETMPS immediately. A limit of 0
- * means one scope for the whole epoll batch (the Phase33B experiment).
+ * ENTER/SAVETMPS setup is amortized across a bounded group of callbacks while
+ * FREETMPS still runs after every callback. The measured default is 128. A
+ * limit of zero intentionally means one scope for the complete epoll batch and
+ * is retained only as a diagnostic tuning mode.
  */
 static void le_call_watcher_cb_noarg(pTHX_ le_watcher_t *w, SV *cb, int direct_cv) {
     if (!cb || (!direct_cv && !SvOK(cb)) || !w || !w->active) return;
@@ -349,14 +417,13 @@ static void le_call_watcher_cb(pTHX_ le_watcher_t *w, SV *cb, int direct_cv) {
 }
 
 /*
- * Phase35 benchmark-only native echo path.
+ * Benchmark-only native echo path.
  *
- * This is deliberately not a public application feature. It lets the echo
- * benchmark keep the real TCP workload moving while removing Perl read-side
- * work. Mode 1 performs the native echo without a Perl read callback. Mode 2
- * invokes the configured empty Perl read callback and then performs the same
- * native echo. Terminal handling remains on the normal error callback path so
- * all Phase35 modes share connection-close behavior.
+ * NOT AN APPLICATION API. This diagnostic keeps the same real TCP workload
+ * while removing Perl read/write work, allowing the benchmark to separate
+ * callback entry from Perl sysread/buffer/syswrite cost. Mode 1 performs the
+ * native echo with no Perl read callback; mode 2 calls an empty Perl callback
+ * before the same native echo. Terminal handling remains on the normal path.
  */
 static void le_bench_native_echo_read(le_watcher_t *w) {
     char buf[8192];
@@ -410,6 +477,7 @@ static void le_bench_native_echo_read(le_watcher_t *w) {
     }
 }
 
+/* Apply the watcher's current logical interest mask back to epoll. */
 static int le_apply_mask(le_watcher_t *w) {
     struct epoll_event ev;
     memset(&ev, 0, sizeof(ev));
@@ -419,6 +487,14 @@ static int le_apply_mask(le_watcher_t *w) {
 }
 
 
+/*
+ * Dispatch one epoll batch.
+ *
+ * Every event already carries the watcher pointer in data.ptr. The watcher is
+ * validated against its active flag and owner loop before use. Reclaim/reuse
+ * is deferred until the batch ends so stale data.ptr values cannot refer to a
+ * newly repurposed watcher record.
+ */
 static void
 le_dispatch_batch(pTHX_ le_loop_t *loop, int n) {
     int i;
@@ -438,7 +514,7 @@ le_dispatch_batch(pTHX_ le_loop_t *loop, int n) {
         loop->dispatch_events++;
         le_note_ready_flags(loop, events);
 
-        /* Phase33C keeps the proven Phase32 terminal-event semantics. */
+        /* Terminal/error callbacks run before normal read/write readiness. */
         if (events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
             if (w->error_cb) {
                 if (loop->callback_scope_limit && scope_callbacks >= loop->callback_scope_limit) {
@@ -783,6 +859,7 @@ watch_fd(loop_obj, fd, ...)
         else if (strEQ(key, "no_accessor_refs")) {
             lean = SvTRUE(val) ? 1 : 0;
         }
+        /* Private benchmark diagnostic; deliberately underscore-prefixed. */
         else if (strEQ(key, "_bench_native_echo")) {
             bench_native_echo = (int)SvIV(val);
             if (bench_native_echo < 0 || bench_native_echo > 2) croak("_bench_native_echo must be 0, 1, or 2");
@@ -937,7 +1014,7 @@ void
 DESTROY(w_obj)
     SV *w_obj
   CODE:
-    /* Loop owns watcher lifetime in Phase18E. */
+    /* The loop owns native watcher lifetime; this Perl handle is non-owning. */
 
 int
 fd(w_obj)
