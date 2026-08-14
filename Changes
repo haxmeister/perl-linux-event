@@ -1,5 +1,13 @@
 Revision history for Linux-Event
 
+0.100_009  2026-08-13
+    - Add native inbound ASCII DecimalLength framing for wire forms such as
+      RFC 6587 octet-counted syslog: "5 HELLO".
+    - Support one configurable non-digit separator, include_prefix, max_frame,
+      shared definitions, Perl fallback, and Perl outbound frame()/send().
+    - Reject invalid, overlong, overflowing, and non-canonical decimal lengths.
+    - Extend native-framer tests, benchmarks, and the framer-selection guide.
+
 0.100_008  2026-08-13
     - Add canonical unsigned LEB128 Varint framing with native inbound parsing.
     - Preserve Perl outbound frame() compatibility and the custom-framer fallback.

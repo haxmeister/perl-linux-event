@@ -17,7 +17,7 @@ my $messages = 100;
 my $warmup = 10;
 my $bytes = 64;
 my $repeats = 6;
-my @framers = qw(delimiter fixed length u32be netstring varint);
+my @framers = qw(delimiter fixed length u32be netstring varint decimal);
 
 GetOptions(
     'clients=s'  => sub { @clients = split /,/, $_[1] },
@@ -33,7 +33,7 @@ die "warmup must be >= 0\n" if $warmup < 0;
 die "bytes must be > 0\n" if $bytes <= 0;
 die "repeats must be > 0\n" if $repeats <= 0;
 
-my %valid = map { $_ => 1 } qw(delimiter fixed length u32be netstring varint);
+my %valid = map { $_ => 1 } qw(delimiter fixed length u32be netstring varint decimal);
 die "unknown framer in --framers\n" if grep { !$valid{$_} } @framers;
 
 my @modes = qw(xs-perl xs);
@@ -99,6 +99,10 @@ sub framer_and_wire ($name, $payload) {
     }
     if ($name eq 'varint') {
         my $f = Linux::Event::Stream::Framer->varint;
+        return ($f, $f->frame($payload));
+    }
+    if ($name eq 'decimal') {
+        my $f = Linux::Event::Stream::Framer->decimal_length;
         return ($f, $f->frame($payload));
     }
     die "unknown framer $name\n";

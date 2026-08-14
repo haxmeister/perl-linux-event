@@ -81,12 +81,13 @@ geometrically when capacity must increase.
 
 Built-in framing definitions are normally created through `Linux::Event::Stream::Framer` and may be shared safely across Streams. Each Stream copies the definition into independent native parser state during construction.
 
-Built-in Delimiter, Fixed, LengthPrefix/U32BE, Netstring, and Varint framers inspect
+Built-in Delimiter, Fixed, LengthPrefix/U32BE, Netstring, Varint, and
+DecimalLength framers inspect
 this storage directly. Delimiter scanning remembers the earliest position that
 can still begin a cross-read delimiter; fixed and length-framed modes wait for
 the exact required byte count; Netstring validates its decimal length and
-terminator; Varint decodes a canonical unsigned LEB128 prefix without exposing
-storage to Perl.
+terminator; Varint decodes a canonical unsigned LEB128 prefix; DecimalLength
+decodes canonical ASCII lengths without exposing storage to Perl.
 
 Custom Perl framers use exactly the same native bytes through Framer::Buffer.
 Only explicit `peek()` calls copy header bytes into Perl.

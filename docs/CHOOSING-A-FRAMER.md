@@ -21,6 +21,7 @@ ends**.
 | "A fixed-width integer says how many payload bytes follow" | `->length_prefix(...)` | `[00 05][HELLO]` |
 | "The first four bytes are an unsigned big-endian payload length" | `->u32be` | `[00 00 00 05][HELLO]` |
 | "A compact base-128 integer says how many payload bytes follow" | `->varint` | `[05][HELLO]` |
+| "ASCII decimal length, separator, then payload" | `->decimal_length` | `5 HELLO` |
 | "Decimal length, colon, payload, comma" | `->netstring` | `5:HELLO,` |
 | None of these | custom framer | proprietary or stateful framing rule |
 
@@ -126,6 +127,23 @@ my $framer = Linux::Event::Stream::Framer->netstring;
 This is still length-based framing; the length is simply represented as ASCII
 instead of a binary integer.
 
+## Decimal length
+
+`decimal_length()` writes the payload size as ASCII digits followed by one
+separator byte. Its default form is used by RFC 6587 octet-counted syslog:
+
+```text
+5 HELLO
+```
+
+```perl
+my $framer = Linux::Event::Stream::Framer->decimal_length(
+    max_frame => 1_048_576,
+);
+```
+
+Use `separator => '|'` for a protocol whose wire form is `5|HELLO`.
+
 ## Reuse one built-in framer across connections
 
 Built-in framer objects describe the wire format; they do not store a
@@ -161,8 +179,9 @@ format and identify the boundary rule:
 3. Every packet the same size? -> `fixed`.
 4. A fixed-width binary length? -> `length_prefix` or `u32be`.
 5. An unsigned LEB128/base-128 length? -> `varint`.
-6. Written as `length:data,`? -> `netstring`.
-7. Otherwise, use a custom framer until an appropriate native built-in exists.
+6. ASCII digits plus a separator? -> `decimal_length`.
+7. Written specifically as `length:data,`? -> `netstring`.
+8. Otherwise, use a custom framer until an appropriate native built-in exists.
 
 ## Native versus custom
 

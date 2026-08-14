@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_008';
+our $VERSION = '0.100_009';
 
 sub delimiter ($class, $delimiter, %opt) {
     require Linux::Event::Stream::Framer::Delimiter;
@@ -40,6 +40,11 @@ sub netstring ($class, %opt) {
 sub varint ($class, %opt) {
     require Linux::Event::Stream::Framer::Varint;
     return Linux::Event::Stream::Framer::Varint->new(%opt);
+}
+
+sub decimal_length ($class, %opt) {
+    require Linux::Event::Stream::Framer::DecimalLength;
+    return Linux::Event::Stream::Framer::DecimalLength->new(%opt);
 }
 
 1;
@@ -127,6 +132,12 @@ Creates C<length:payload,> netstring framing.
 
 Creates unsigned canonical LEB128 variable-length prefix framing.
 
+=head2 decimal_length
+
+  my $framer = Linux::Event::Stream::Framer->decimal_length;
+
+Creates canonical ASCII decimal-length framing such as C<5 HELLO>.
+
 =head1 REUSING BUILT-IN FRAMERS
 
 A server normally uses one wire format for every connection, so a built-in
@@ -188,6 +199,10 @@ Use C<< Linux::Event::Stream::Framer->netstring >>.
 
 Use C<< Linux::Event::Stream::Framer->varint >>.
 
+=item * An ASCII decimal length and separator precede each payload
+
+Use C<< Linux::Event::Stream::Framer->decimal_length >>.
+
 =item * None of those rules describe the protocol
 
 Implement C<next_frame()> against L<Linux::Event::Stream::Framer::Buffer>. A
@@ -210,7 +225,8 @@ L<Linux::Event::Stream::Framer::Fixed>,
 L<Linux::Event::Stream::Framer::LengthPrefix>,
 L<Linux::Event::Stream::Framer::U32BE>,
 L<Linux::Event::Stream::Framer::Netstring>,
-L<Linux::Event::Stream::Framer::Varint>, and
+L<Linux::Event::Stream::Framer::Varint>,
+L<Linux::Event::Stream::Framer::DecimalLength>, and
 F<docs/CHOOSING-A-FRAMER.md>.
 
 =cut

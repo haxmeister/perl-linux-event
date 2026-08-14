@@ -13,5 +13,6 @@ use_ok('Linux::Event::Stream::Framer::LengthPrefix');
 use_ok('Linux::Event::Stream::Framer::U32BE');
 use_ok('Linux::Event::Stream::Framer::Netstring');
 use_ok('Linux::Event::Stream::Framer::Varint');
+use_ok('Linux::Event::Stream::Framer::DecimalLength');
 
 done_testing;

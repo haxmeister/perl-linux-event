@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_008';
+our $VERSION = '0.100_009';
 
 use Carp qw(croak);
 use Errno qw(EAGAIN EWOULDBLOCK EINTR);
@@ -132,6 +132,7 @@ sub new ($class, %opt) {
             Linux::Event::Stream::Framer::U32BE
             Linux::Event::Stream::Framer::Netstring
             Linux::Event::Stream::Framer::Varint
+            Linux::Event::Stream::Framer::DecimalLength
         );
         my $is_native_builtin = $native_builtin{ref($framer)} // 0;
         $framing_backend //= $read_backend eq 'perl' ? 'perl'
@@ -707,8 +708,8 @@ Linux::Event::Stream - buffered byte streams for Linux::Event
 
 This development version extends the XS-backed Stream rewrite with a native
 built-in framer family. Mechanical read/write transport and framed input storage
-are native, as are Delimiter, Fixed, LengthPrefix, U32BE, Netstring, and Varint
-framing.
+are native, as are Delimiter, Fixed, LengthPrefix, U32BE, Netstring, Varint,
+and DecimalLength framing.
 Custom Perl framers remain fully pluggable through a stable Buffer view backed
 by the same native input storage.
 

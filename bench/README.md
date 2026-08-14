@@ -136,4 +136,4 @@ built-in framer through
 the generic Perl `next_frame()` path and its native XS parser. Use this when
 adding or changing built-in framers so native acceleration is measured rather
 than assumed. The current matrix includes delimiter, fixed, fixed-width length,
-U32BE, netstring, and Varint framing.
+U32BE, netstring, Varint, and decimal-length framing.

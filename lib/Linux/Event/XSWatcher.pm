@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_008';
+our $VERSION = '0.100_009';
 
 # XS methods are installed by Linux::Event::XSLoop's bootstrap.
 

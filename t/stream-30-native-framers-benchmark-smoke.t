@@ -10,7 +10,7 @@ my $script = "$Bin/../bench/run-native-framers-microbench.pl";
 my @cmd = (
     $^X,
     $script,
-    '--framers=fixed,length,u32be,netstring,varint',
+    '--framers=fixed,length,u32be,netstring,varint,decimal',
     '--clients=1',
     '--warmup=1',
     '--messages=5',
@@ -35,5 +35,6 @@ like($output, qr/length\/xs\s+clients=1/, 'length native row ran');
 like($output, qr/u32be\/xs\s+clients=1/, 'u32be native row ran');
 like($output, qr/netstring\/xs\s+clients=1/, 'netstring native row ran');
 like($output, qr/varint\/xs\s+clients=1/, 'varint native row ran');
+like($output, qr/decimal\/xs\s+clients=1/, 'decimal-length native row ran');
 
 done_testing;

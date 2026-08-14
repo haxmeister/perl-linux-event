@@ -92,6 +92,7 @@
 #define LES_READ_LENGTH    4
 #define LES_READ_NETSTRING 5
 #define LES_READ_VARINT    6
+#define LES_READ_DECIMAL   7
 
 typedef struct les_write_seg_s {
     SV *sv;
@@ -810,6 +811,82 @@ les_process_varint(pTHX_ les_xsstate_t *st)
     }
 }
 
+/* ASCII decimal payload length followed by one configured separator byte. */
+static void
+les_process_decimal_length(pTHX_ les_xsstate_t *st)
+{
+    const unsigned char separator = (unsigned char)st->delimiter[0];
+
+    while (!st->closed && !st->read_paused && st->input_len > 0) {
+        const unsigned char *data = (const unsigned char *)les_input_data(st);
+        size_t i = 0;
+        size_t prefix;
+        UV payload_len = 0;
+        UV total_uv;
+        size_t total;
+        size_t offset;
+        size_t msglen;
+        SV *message;
+
+        while (i < st->input_len && data[i] != separator) {
+            unsigned char c = data[i];
+            if (c < '0' || c > '9') {
+                les_call_framing_error(aTHX_ st, "invalid decimal length");
+                return;
+            }
+            if (i >= 20) {
+                les_call_framing_error(aTHX_ st, "decimal length field too long");
+                return;
+            }
+            if (payload_len > ((UV)-1 - (UV)(c - '0')) / 10) {
+                les_call_framing_error(aTHX_ st, "decimal length overflow");
+                return;
+            }
+            payload_len = payload_len * 10 + (UV)(c - '0');
+            i++;
+        }
+
+        if (i == st->input_len) {
+            if (i > 20)
+                les_call_framing_error(aTHX_ st, "decimal length field too long");
+            return;
+        }
+        if (i == 0) {
+            les_call_framing_error(aTHX_ st, "invalid decimal length");
+            return;
+        }
+        if (i > 1 && data[0] == '0') {
+            les_call_framing_error(aTHX_ st, "invalid decimal length leading zero");
+            return;
+        }
+        if (st->has_max_frame && payload_len > st->max_frame) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "frame exceeds max_frame=%llu",
+                (unsigned long long)st->max_frame);
+            les_call_framing_error(aTHX_ st, msg);
+            return;
+        }
+
+        prefix = i + 1;
+        if (!les_frame_fits_buffer(aTHX_ st, (UV)prefix, payload_len))
+            return;
+        total_uv = (UV)prefix + payload_len;
+        if (total_uv > (UV)(size_t)-1) {
+            les_call_framing_error(aTHX_ st, "decimal frame length exceeds native size_t");
+            return;
+        }
+        total = (size_t)total_uv;
+        if (st->input_len < total)
+            return;
+
+        offset = st->include_prefix ? 0 : prefix;
+        msglen = st->include_prefix ? total : (size_t)payload_len;
+        message = sv_2mortal(newSVpvn((const char *)data + offset, (STRLEN)msglen));
+        les_input_consume(st, total);
+        les_call_message(aTHX_ st, message);
+    }
+}
+
 static void
 les_process_custom_framer(pTHX_ les_xsstate_t *st)
 {
@@ -833,6 +910,8 @@ les_process_buffered(pTHX_ les_xsstate_t *st)
         les_process_netstring(aTHX_ st);
     else if (st->read_mode == LES_READ_VARINT)
         les_process_varint(aTHX_ st);
+    else if (st->read_mode == LES_READ_DECIMAL)
+        les_process_decimal_length(aTHX_ st);
     else if (st->read_mode == LES_READ_PERL_FRAMER)
         les_process_custom_framer(aTHX_ st);
 }
@@ -1106,7 +1185,7 @@ new(CLASS, stream, fd, read_size, deliver_cb, eof_cb, read_error_cb, high_waterm
     if (read_size == 0) croak("read_size must be > 0");
     if (low_watermark > high_watermark)
         croak("low_watermark must be <= high_watermark");
-    if (read_mode < LES_READ_DELIVER || read_mode > LES_READ_VARINT)
+    if (read_mode < LES_READ_DELIVER || read_mode > LES_READ_DECIMAL)
         croak("invalid Stream native read mode");
 
     st = (les_xsstate_t *)calloc(1, sizeof(*st));
@@ -1150,7 +1229,7 @@ new(CLASS, stream, fd, read_size, deliver_cb, eof_cb, read_error_cb, high_waterm
     if (read_mode != LES_READ_DELIVER && !st->framing_error_cb)
         croak("framing error callback required for native buffered mode");
 
-    if (read_mode == LES_READ_DELIMITER) {
+    if (read_mode == LES_READ_DELIMITER || read_mode == LES_READ_DECIMAL) {
         STRLEN dlen;
         const char *dp;
         if (!delimiter_sv || !SvOK(delimiter_sv))
@@ -1158,6 +1237,8 @@ new(CLASS, stream, fd, read_size, deliver_cb, eof_cb, read_error_cb, high_waterm
         dp = SvPVbyte(delimiter_sv, dlen);
         if (dlen == 0)
             croak("delimiter must not be empty");
+        if (read_mode == LES_READ_DECIMAL && dlen != 1)
+            croak("separator must be exactly one byte for native decimal framing");
         if (!st->message_cb)
             croak("message callback required for native delimiter mode");
         st->delimiter = (char *)malloc((size_t)dlen);

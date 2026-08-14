@@ -35,6 +35,10 @@ isa_ok(
     Linux::Event::Stream::Framer->varint,
     'Linux::Event::Stream::Framer::Varint',
 );
+isa_ok(
+    Linux::Event::Stream::Framer->decimal_length,
+    'Linux::Event::Stream::Framer::DecimalLength',
+);
 
 socketpair(my $sa, my $ca, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 socketpair(my $sb, my $cb, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";

@@ -39,7 +39,7 @@ Linux::Event::XSLoop       generic fd readiness and timers
 - independent peer EOF and writable half-close
 - graceful `end()`, immediate `close()`, and ownership-transfer `detach()`
 - native framed input storage
-- native `Delimiter`, `Fixed`, `LengthPrefix`, `U32BE`, `Netstring`, and `Varint` framing
+- native `Delimiter`, `Fixed`, `LengthPrefix`, `U32BE`, `Netstring`, `Varint`, and `DecimalLength` framing
 - custom Perl framers through a stable native-backed Buffer view
 
 The raw reactor never performs application I/O automatically. Stream is the
@@ -101,6 +101,7 @@ my $binary = Linux::Event::Stream::Framer->length_prefix(
     bytes => 4, endian => 'big',
 );
 my $compact_binary = Linux::Event::Stream::Framer->varint;
+my $octet_counted = Linux::Event::Stream::Framer->decimal_length;
 ```
 
 Built-in framing definitions are safe to share across Streams; each Stream

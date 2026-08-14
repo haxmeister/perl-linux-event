@@ -133,6 +133,20 @@ bytes. The prefix describes payload bytes. `include_prefix` optionally includes
 the actual variable-width prefix in the delivered message. Overflowing,
 overlong, and non-canonical prefixes are framing errors.
 
+### Decimal length
+
+```perl
+my $framer = Linux::Event::Stream::Framer->decimal_length(
+    separator => ' ',
+    max_frame => 1_048_576,
+);
+```
+
+The payload length is written as canonical ASCII decimal digits followed by
+one non-digit separator byte. The default produces RFC 6587 octet-counted
+syslog framing such as `5 HELLO`. Invalid digits, leading zeroes, excessive
+length fields, and declared lengths above `max_frame` are framing errors.
+
 For benchmark decomposition the same built-in objects can still be forced
 through generic Perl `next_frame()` execution. These backend switches are
 private test machinery, not application API.
@@ -205,6 +219,6 @@ separator construction is material.
 ## Native versus custom framing
 
 The built-in family now covers arbitrary delimiter, fixed-size, configurable
-binary length prefix, U32BE, netstring, and Varint framing. Third-party Perl
-framers remain fully supported through `Framer::Buffer`; adding native
-built-ins does not change that plug-in contract.
+binary length prefix, U32BE, netstring, Varint, and decimal-length framing.
+Third-party Perl framers remain fully supported through `Framer::Buffer`;
+adding native built-ins does not change that plug-in contract.

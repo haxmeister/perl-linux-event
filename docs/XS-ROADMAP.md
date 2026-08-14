@@ -20,6 +20,7 @@ the same Linux::Event distribution. The guiding rule remains:
 - native U32BE framing
 - native Netstring framing
 - native Varint framing
+- native DecimalLength framing
 - custom Perl framers through the native-backed Buffer view
 
 These are permanent regression targets. New work must not trade them away

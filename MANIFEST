@@ -37,6 +37,7 @@ lib/Linux/Event/Stream.pm
 lib/Linux/Event/Stream/Error.pm
 lib/Linux/Event/Stream/Framer.pm
 lib/Linux/Event/Stream/Framer/Buffer.pm
+lib/Linux/Event/Stream/Framer/DecimalLength.pm
 lib/Linux/Event/Stream/Framer/Delimiter.pm
 lib/Linux/Event/Stream/Framer/Fixed.pm
 lib/Linux/Event/Stream/Framer/LengthPrefix.pm
@@ -108,6 +109,8 @@ t/stream-30-native-framers-benchmark-smoke.t
 t/stream-31-framer-factory-share.t
 t/stream-32-varint-framer.t
 t/stream-33-varint-native-contract.t
+t/stream-34-decimal-length-framer.t
+t/stream-35-decimal-length-contract.t
 xsloop/Makefile.PL
 xsloop/typemap
 xsloop/XSLoop.xs
