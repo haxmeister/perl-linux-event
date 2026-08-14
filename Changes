@@ -1,0 +1,24 @@
+Revision history for Linux-Event
+
+0.100_008  2026-08-13
+    - Add canonical unsigned LEB128 Varint framing with native inbound parsing.
+    - Preserve Perl outbound frame() compatibility and the custom-framer fallback.
+    - Reject overflowing, overlong, and non-canonical Varint prefixes.
+    - Extend native-framer benchmarks and simplify the framer-selection guide.
+
+0.100_007  2026-08-13
+    - Add named Loop watch(fh => ...) and watch(fd => ...) construction.
+    - Add Linux::Event::Stream::Framer factory methods for built-in framers.
+    - Document and test safe reuse of built-in framer definitions across Streams.
+    - Keep watch_fd and concrete Framer::* constructors available for low-level and subclass use.
+
+0.100_006  2026-08-13
+    - Merge Linux::Event::Stream into the main Linux::Event distribution.
+    - Build Linux::Event::XSLoop and Linux::Event::Stream native extensions from
+      one source distribution and one top-level build/test/install workflow.
+    - Keep the raw reactor and high-level Stream APIs as separate namespaces.
+    - Unify development package versions for the merged native ABI snapshot.
+    - Add a novice-oriented framer-selection guide in Markdown and POD.
+    - Preserve native Delimiter, Fixed, LengthPrefix, U32BE, and Netstring
+      framing plus the custom native-backed Buffer plug-in path.
+    - Preserve the reactor, Stream, framing, and native-framer benchmark tools.

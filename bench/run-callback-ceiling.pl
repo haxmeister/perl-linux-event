@@ -227,8 +227,7 @@ sub run_case ($system, $count, $repeat) {
 
     my $empty_cb = sub { };
     my $server_w;
-    $server_w = $loop->watch_fd(
-        fileno($server),
+    $server_w = $loop->watch(
         fh => $server,
         callback_args => 0,
         lean => 1,
@@ -236,7 +235,6 @@ sub run_case ($system, $count, $repeat) {
             while (my $sock = $server->accept) {
                 $c{accepted}++;
                 $sock->blocking(0);
-                my $fd = fileno($sock);
                 my $cw;
                 my $on_error = sub {
                     $c{error_callbacks}++;
@@ -246,8 +244,7 @@ sub run_case ($system, $count, $repeat) {
                 };
 
                 if ($system eq 'native') {
-                    $cw = $loop->watch_fd(
-                        $fd,
+                    $cw = $loop->watch(
                         fh => $sock,
                         callback_args => 0,
                         lean => 1,
@@ -256,8 +253,7 @@ sub run_case ($system, $count, $repeat) {
                     );
                 }
                 elsif ($system eq 'native-empty') {
-                    $cw = $loop->watch_fd(
-                        $fd,
+                    $cw = $loop->watch(
                         fh => $sock,
                         callback_args => 0,
                         lean => 1,
@@ -267,8 +263,7 @@ sub run_case ($system, $count, $repeat) {
                     );
                 }
                 else {
-                    $cw = $loop->watch_fd(
-                        $fd,
+                    $cw = $loop->watch(
                         fh => $sock,
                         callback_args => 0,
                         lean => 1,

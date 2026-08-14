@@ -1,0 +1,12 @@
+^\.git(?:/|$)
+^blib(?:/|$)
+^_build(?:/|$)
+^Makefile$
+^MYMETA\.(?:json|yml)$
+^(?:.*/)?pm_to_blib$
+^xsloop/(?:Makefile$|MYMETA\.(?:json|yml)$|XSLoop\.(?:c|o|bs)$|blib(?:/|$))
+^xsstream/(?:Makefile$|MYMETA\.(?:json|yml)$|XSStream\.(?:c|o)$|Stream\.bs$|blib(?:/|$))
+^Linux-Event-[^/]+\.tar\.gz$
+^\.prove$
+~$
+\.bak$

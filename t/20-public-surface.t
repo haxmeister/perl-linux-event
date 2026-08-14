@@ -14,9 +14,15 @@ for my $required (
     'docs/ARCHITECTURE.md',
     'docs/XS-ROADMAP.md',
     'docs/DEVELOPMENT-HISTORY.md',
+    'docs/STREAM-DESIGN.md',
+    'docs/CHOOSING-A-FRAMER.md',
+    'docs/FRAMING.md',
     'bench/README.md',
     'bench/run-reactor-comparison.pl',
     'bench/run-callback-ceiling.pl',
+    'bench/run-stream-microbench.pl',
+    'bench/run-framing-microbench.pl',
+    'bench/run-native-framers-microbench.pl',
     'bench/archive/README.md',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");
@@ -27,9 +33,15 @@ for my $live (
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
     'docs/XS-ROADMAP.md',
+    'docs/STREAM-DESIGN.md',
+    'docs/CHOOSING-A-FRAMER.md',
+    'docs/FRAMING.md',
     'bench/README.md',
     'bench/run-reactor-comparison.pl',
     'bench/run-callback-ceiling.pl',
+    'bench/run-stream-microbench.pl',
+    'bench/run-framing-microbench.pl',
+    'bench/run-native-framers-microbench.pl',
 ) {
     my $path = File::Spec->catfile($root, split m{/}, $live);
     open my $fh, '<', $path or die "open $path: $!";
@@ -42,7 +54,15 @@ for my $live (
 my @bench_root = sort map { s{^.*/}{}r }
     grep { -f $_ }
     glob(File::Spec->catfile($root, 'bench', '*'));
-my %allowed = map { $_ => 1 } qw(README.md run-reactor-comparison.pl run-callback-ceiling.pl);
+my %allowed = map { $_ => 1 } qw(
+    README.md
+    STREAM-COMPETITOR-PLAN.md
+    run-reactor-comparison.pl
+    run-callback-ceiling.pl
+    run-stream-microbench.pl
+    run-framing-microbench.pl
+    run-native-framers-microbench.pl
+);
 is_deeply([grep { !$allowed{$_} } @bench_root], [], 'bench root contains only current public files');
 
 done_testing;

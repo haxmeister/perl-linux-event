@@ -17,8 +17,8 @@
  *
  * The core is a reactor, not a stream implementation.  It reports descriptor
  * readiness and deliberately leaves sysread/syswrite/buffering policy to the
- * caller.  Planned native buffering and write queues belong in a higher-level
- * Stream object so the raw watcher API remains general.
+ * caller. Native buffering, write queues, and framing live in the higher-level
+ * Linux::Event::Stream layer so the raw watcher API remains general.
  *
  * Lifetime invariant
  * ------------------
@@ -52,6 +52,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
+#include <limits.h>
 
 #ifndef EPOLLRDHUP
 #define EPOLLRDHUP 0x2000
@@ -89,6 +90,7 @@ struct le_watcher_s {
     int write_cb_direct_cv;
     int error_cb_direct_cv;
     int callback_args;
+    int callback_arg_data;
     int lean;
     int bench_native_echo;
 };
@@ -402,7 +404,7 @@ static void le_call_watcher_cb_onearg(pTHX_ le_watcher_t *w, SV *cb, int direct_
     dSP;
     PUSHMARK(SP);
     EXTEND(SP, 1);
-    PUSHs(w->self_sv);
+    PUSHs(w->callback_arg_data && w->data_sv ? w->data_sv : w->self_sv);
     PUTBACK;
     call_sv(cb, G_DISCARD | G_VOID);
     FREETMPS;
@@ -602,6 +604,120 @@ le_dispatch_batch(pTHX_ le_loop_t *loop, int n) {
     if (!loop->in_dispatch_batch) le_watcher_promote_pending(loop);
 }
 
+
+
+typedef struct {
+    SV *fh;
+    SV *data;
+    SV *read_cb;
+    SV *write_cb;
+    SV *error_cb;
+    int oneshot;
+    int edge_triggered;
+    int callback_args;
+    int callback_arg_data;
+    int lean;
+    int bench_native_echo;
+} le_watch_opts_t;
+
+static void le_watch_opts_init(le_watch_opts_t *opt) {
+    memset(opt, 0, sizeof(*opt));
+    opt->callback_args = 1;
+}
+
+static int le_watch_parse_common_option(const char *key, SV *val, le_watch_opts_t *opt) {
+    if (strEQ(key, "data")) opt->data = val;
+    else if (strEQ(key, "read")) opt->read_cb = val;
+    else if (strEQ(key, "write")) opt->write_cb = val;
+    else if (strEQ(key, "error")) opt->error_cb = val;
+    else if (strEQ(key, "oneshot")) opt->oneshot = SvTRUE(val) ? 1 : 0;
+    else if (strEQ(key, "edge_triggered")) opt->edge_triggered = SvTRUE(val) ? 1 : 0;
+    else if (strEQ(key, "callback_args")) opt->callback_args = SvIV(val) ? 1 : 0;
+    else if (strEQ(key, "no_args")) {
+        if (SvTRUE(val)) opt->callback_args = 0;
+    }
+    else if (strEQ(key, "_callback_data_arg")) {
+        opt->callback_arg_data = SvTRUE(val) ? 1 : 0;
+        if (opt->callback_arg_data) opt->callback_args = 1;
+    }
+    else if (strEQ(key, "lean") || strEQ(key, "no_accessor_refs")) {
+        opt->lean = SvTRUE(val) ? 1 : 0;
+    }
+    else if (strEQ(key, "_bench_native_echo")) {
+        opt->bench_native_echo = (int)SvIV(val);
+        if (opt->bench_native_echo < 0 || opt->bench_native_echo > 2)
+            croak("_bench_native_echo must be 0, 1, or 2");
+    }
+    else return 0;
+    return 1;
+}
+
+static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opts_t *opt) {
+    le_watcher_t *w;
+    SV *watcher_sv;
+    struct epoll_event ev;
+
+    if (opt->callback_arg_data) {
+        opt->callback_args = 1;
+        if (!opt->data || !SvOK(opt->data)) croak("_callback_data_arg requires data");
+    }
+
+    le_registry_grow(loop, fd);
+    if (loop->registry[fd]) {
+        le_watcher_t *old = loop->registry[fd];
+        le_epoll_ctl_timed(loop, EPOLL_CTL_DEL, fd, NULL);
+        loop->registry[fd] = NULL;
+        old->active = 0;
+        le_watcher_destroy(old);
+    }
+
+    w = le_watcher_alloc(loop);
+    w->fd = fd;
+    w->loop = loop;
+    w->active = 1;
+    w->mask = le_mask_from_callbacks(opt->read_cb, opt->write_cb);
+    w->flags = (opt->oneshot ? EPOLLONESHOT : 0) | (opt->edge_triggered ? EPOLLET : 0);
+    w->callback_args = opt->callback_args ? 1 : 0;
+    w->callback_arg_data = opt->callback_arg_data ? 1 : 0;
+    w->bench_native_echo = opt->bench_native_echo;
+    if (w->bench_native_echo) w->mask |= EPOLLIN;
+    w->lean = (opt->lean && !w->callback_args) ? 1 : 0;
+    if (w->lean) loop->lean_watchers++;
+
+    watcher_sv = sv_setref_pv(newSV(0), "Linux::Event::XSWatcher", (void*)w);
+    if (!w->lean || (w->callback_args && !w->callback_arg_data))
+        w->self_sv = newSVsv(watcher_sv);
+    if (!w->lean) {
+        w->loop_sv = newSVsv(loop_obj);
+        if (opt->fh) w->fh_sv = newSVsv(opt->fh);
+        if (opt->data) w->data_sv = newSVsv(opt->data);
+    }
+    if (opt->read_cb) w->read_cb = le_stored_callback_from_sv(opt->read_cb, &w->read_cb_direct_cv);
+    if (opt->write_cb) w->write_cb = le_stored_callback_from_sv(opt->write_cb, &w->write_cb_direct_cv);
+    if (opt->error_cb) w->error_cb = le_stored_callback_from_sv(opt->error_cb, &w->error_cb_direct_cv);
+
+    memset(&ev, 0, sizeof(ev));
+    ev.events = le_epoll_events(w);
+    ev.data.ptr = (void *)w;
+    if (le_epoll_ctl_timed(loop, EPOLL_CTL_ADD, fd, &ev) < 0) {
+        int err = errno;
+        le_watcher_destroy(w);
+        croak("epoll_ctl ADD fd %d failed: %s", fd, strerror(err));
+    }
+    loop->registry[fd] = w;
+    return watcher_sv;
+}
+
+static int le_fd_from_fh(SV *fh) {
+    IO *io = sv_2io(fh);
+    PerlIO *fp = IoIFP(io);
+    int fd;
+    if (!fp) fp = IoOFP(io);
+    if (!fp) croak("watch(): fh has no file descriptor");
+    fd = PerlIO_fileno(fp);
+    if (fd < 0) croak("watch(): fh has no file descriptor");
+    return fd;
+}
 
 MODULE = Linux::Event::XSLoop    PACKAGE = Linux::Event::XSLoop
 PROTOTYPES: DISABLE
@@ -828,75 +944,77 @@ reset_stats(loop_obj)
     loop->dispatch_ns = 0;
 
 SV *
+watch(loop_obj, ...)
+    SV *loop_obj
+  PREINIT:
+    int i;
+    int fd = -1;
+    int has_fh = 0;
+    int has_fd = 0;
+    SV *fd_sv = NULL;
+    le_loop_t *loop;
+    le_watch_opts_t opt;
+  CODE:
+    loop = le_loop_from_sv(loop_obj);
+    if (items < 3 || ((items - 1) % 2) != 0)
+        croak("watch requires key/value pairs including exactly one of fh or fd");
+    le_watch_opts_init(&opt);
+    for (i = 1; i < items; i += 2) {
+        const char *key = SvPV_nolen(ST(i));
+        SV *val = ST(i + 1);
+        if (strEQ(key, "fh")) {
+            if (has_fh) croak("watch(): duplicate fh option");
+            opt.fh = val;
+            has_fh = 1;
+        }
+        else if (strEQ(key, "fd")) {
+            if (has_fd) croak("watch(): duplicate fd option");
+            fd_sv = val;
+            has_fd = 1;
+        }
+        else if (!le_watch_parse_common_option(key, val, &opt)) {
+            croak("unknown watch option '%s'", key);
+        }
+    }
+    if (has_fh == has_fd) croak("watch(): exactly one of fh or fd is required");
+    if (has_fh) {
+        fd = le_fd_from_fh(opt.fh);
+    } else {
+        IV iv;
+        NV nv;
+        if (!fd_sv || !SvOK(fd_sv) || !looks_like_number(fd_sv))
+            croak("watch(): fd must be a non-negative integer");
+        iv = SvIV(fd_sv);
+        nv = SvNV(fd_sv);
+        if (iv < 0 || iv > INT_MAX || (NV)iv != nv)
+            croak("watch(): fd must be a non-negative integer");
+        fd = (int)iv;
+    }
+    RETVAL = le_watch_register(loop_obj, loop, fd, &opt);
+  OUTPUT:
+    RETVAL
+
+SV *
 watch_fd(loop_obj, fd, ...)
     SV *loop_obj
     int fd
   PREINIT:
-    SV *fh = NULL; SV *data = NULL; SV *read_cb = NULL; SV *write_cb = NULL; SV *error_cb = NULL;
-    int i; le_watcher_t *w; SV *watcher_sv; struct epoll_event ev; le_loop_t *loop;
-    int oneshot = 0; int edge_triggered = 0; int callback_args = 1; int lean = 0; int bench_native_echo = 0;
+    int i;
+    le_loop_t *loop;
+    le_watch_opts_t opt;
   CODE:
     loop = le_loop_from_sv(loop_obj);
-    if (items < 2 || ((items - 2) % 2) != 0) croak("watch_fd requires fd plus key/value pairs");
+    if (items < 2 || ((items - 2) % 2) != 0)
+        croak("watch_fd requires fd plus key/value pairs");
+    le_watch_opts_init(&opt);
     for (i = 2; i < items; i += 2) {
-        const char *key = SvPV_nolen(ST(i)); SV *val = ST(i + 1);
-        if (strEQ(key, "fh")) fh = val;
-        else if (strEQ(key, "data")) data = val;
-        else if (strEQ(key, "read")) read_cb = val;
-        else if (strEQ(key, "write")) write_cb = val;
-        else if (strEQ(key, "error")) error_cb = val;
-        else if (strEQ(key, "oneshot")) oneshot = SvTRUE(val) ? 1 : 0;
-        else if (strEQ(key, "edge_triggered")) edge_triggered = SvTRUE(val) ? 1 : 0;
-        else if (strEQ(key, "callback_args")) {
-            callback_args = SvIV(val) ? 1 : 0;
-        }
-        else if (strEQ(key, "no_args")) {
-            if (SvTRUE(val)) callback_args = 0;
-        }
-        else if (strEQ(key, "lean")) {
-            lean = SvTRUE(val) ? 1 : 0;
-        }
-        else if (strEQ(key, "no_accessor_refs")) {
-            lean = SvTRUE(val) ? 1 : 0;
-        }
-        /* Private benchmark diagnostic; deliberately underscore-prefixed. */
-        else if (strEQ(key, "_bench_native_echo")) {
-            bench_native_echo = (int)SvIV(val);
-            if (bench_native_echo < 0 || bench_native_echo > 2) croak("_bench_native_echo must be 0, 1, or 2");
-        }
-        else croak("unknown watch_fd option '%s'", key);
+        const char *key = SvPV_nolen(ST(i));
+        SV *val = ST(i + 1);
+        if (strEQ(key, "fh")) opt.fh = val;
+        else if (!le_watch_parse_common_option(key, val, &opt))
+            croak("unknown watch_fd option '%s'", key);
     }
-    le_registry_grow(loop, fd);
-    if (loop->registry[fd]) {
-        le_watcher_t *old = loop->registry[fd];
-        le_epoll_ctl_timed(loop, EPOLL_CTL_DEL, fd, NULL);
-        loop->registry[fd] = NULL;
-        old->active = 0;
-        le_watcher_destroy(old);
-    }
-    w = le_watcher_alloc(loop);
-    w->fd = fd; w->loop = loop; w->active = 1;
-    w->mask = le_mask_from_callbacks(read_cb, write_cb);
-    w->flags = (oneshot ? EPOLLONESHOT : 0) | (edge_triggered ? EPOLLET : 0);
-    w->callback_args = callback_args ? 1 : 0;
-    w->bench_native_echo = bench_native_echo;
-    if (w->bench_native_echo) w->mask |= EPOLLIN;
-    w->lean = (lean && !w->callback_args) ? 1 : 0;
-    if (w->lean) loop->lean_watchers++;
-    watcher_sv = sv_setref_pv(newSV(0), "Linux::Event::XSWatcher", (void*)w);
-    if (!w->lean || w->callback_args) w->self_sv = newSVsv(watcher_sv);
-    if (!w->lean) {
-        w->loop_sv = newSVsv(loop_obj);
-        if (fh) w->fh_sv = newSVsv(fh);
-        if (data) w->data_sv = newSVsv(data);
-    }
-    if (read_cb) w->read_cb = le_stored_callback_from_sv(read_cb, &w->read_cb_direct_cv);
-    if (write_cb) w->write_cb = le_stored_callback_from_sv(write_cb, &w->write_cb_direct_cv);
-    if (error_cb) w->error_cb = le_stored_callback_from_sv(error_cb, &w->error_cb_direct_cv);
-    memset(&ev, 0, sizeof(ev)); ev.events = le_epoll_events(w); ev.data.ptr = (void *)w;
-    if (le_epoll_ctl_timed(loop, EPOLL_CTL_ADD, fd, &ev) < 0) { int err = errno; le_watcher_destroy(w); croak("epoll_ctl ADD fd %d failed: %s", fd, strerror(err)); }
-    loop->registry[fd] = w;
-    RETVAL = watcher_sv;
+    RETVAL = le_watch_register(loop_obj, loop, fd, &opt);
   OUTPUT:
     RETVAL
 

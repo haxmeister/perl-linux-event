@@ -118,3 +118,22 @@ It is a diagnostic tool, not the public competitor leaderboard.
 including capacity, watcher reclaim/reuse, older comparison harnesses, and EV /
 AnyEvent studies. They are retained to make the research reproducible but may
 refer to phase-era names and assumptions.
+
+## 3. Stream transport decomposition
+
+`run-stream-microbench.pl` compares the raw reactor path with Stream's historical
+Perl path, native read path, and native read/write path. It is a development
+microbenchmark rather than the public cross-runtime leaderboard.
+
+## 4. Framing decomposition
+
+`run-framing-microbench.pl` isolates Perl-buffer framing, native-buffer plus
+Perl framing, and fully native delimiter framing.
+
+`run-native-framers-microbench.pl` constructs built-ins through the public
+`Linux::Event::Stream::Framer` factory and compares each resulting exact
+built-in framer through
+the generic Perl `next_frame()` path and its native XS parser. Use this when
+adding or changing built-in framers so native acceleration is measured rather
+than assumed. The current matrix includes delimiter, fixed, fixed-width length,
+U32BE, netstring, and Varint framing.

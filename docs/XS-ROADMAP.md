@@ -1,135 +1,104 @@
 # XS Roadmap
 
-The generic reactor is now considered performance-stable. Future XS work should
-move **mechanical event and byte-stream work** below Perl while leaving
-**application decisions** in Perl.
-
-Guiding rule:
+The generic reactor and the first native Stream engine are now implemented in
+the same Linux::Event distribution. The guiding rule remains:
 
 > Perl should receive semantic events; XS should absorb repetitive mechanical
 > events whenever doing so preserves a clean, general API.
 
-## Priority 1 - Native Stream input path
+## Completed foundation
 
-Planned:
+- XS-first epoll loop and native watcher registry
+- direct native watcher dispatch
+- native Stream readable draining
+- reusable native framed-input storage
+- native immediate writes and segmented `writev()` queue draining
+- native backpressure byte accounting
+- native Delimiter framing
+- native Fixed framing
+- native configurable LengthPrefix framing
+- native U32BE framing
+- native Netstring framing
+- native Varint framing
+- custom Perl framers through the native-backed Buffer view
 
-- drain readable sockets in XS until EAGAIN
-- reusable native input buffer per stream
-- avoid repeated temporary Perl scalars for every kernel read
-- expose completed data to Perl only when the Stream API needs to notify user
-  code
+These are permanent regression targets. New work must not trade them away
+without benchmark evidence.
 
-Target path:
+## Priority 1 - Comprehensive native framing families
 
-```text
-epoll -> XS watcher -> XS read -> native buffer -> Perl Stream callback
-```
+Expand the built-in framing catalog while keeping one rule: exact built-ins may
+run natively; custom classes and subclasses remain authoritative Perl plug-ins.
 
-## Priority 2 - Native write queue and backpressure
+Near-term framing families include:
 
-Planned:
+- line-oriented convenience framing
+- variable-integer length prefixes
+- embedded/header length fields
+- escaped/stuffed serial framing such as SLIP and COBS
+- other general wire-framing families that can be expressed without embedding
+  application protocol semantics
 
-- attempt immediate writes in XS
-- retain unwritten remainder without Perl `substr`/offset bookkeeping
-- handle partial writes
-- enable EPOLLOUT only while output is blocked
-- drain the queue on writable readiness
-- disable EPOLLOUT automatically when the queue becomes empty
-- expose queue size/high-water information for application backpressure policy
+Keep protocol-specific state machines separate when the work is more than
+message-boundary detection.
 
-## Priority 3 - Native framing/codecs
+## Priority 2 - Native Stream watcher-state transitions
 
-Move byte-oriented scanning/parsing out of repeated Perl string operations.
-Initial candidates correspond to the existing Stream codec ideas:
+Reduce remaining Perl transitions for writable interest, read suspension,
+close, and half-close when profiling shows the boundary is material.
 
-- line delimiter scanning
-- netstring framing
-- U32BE length-prefixed frames
+## Priority 3 - Callback coalescing/batching
 
-The native layer should detect complete frames; Perl should receive complete
-application units rather than raw readiness notifications.
-
-## Priority 4 - Callback coalescing/batching
-
-Investigate delivering useful work with fewer Perl entries:
+Investigate fewer Perl entries without changing the ordinary one-message API:
 
 - drain multiple reads before notifying Perl
 - optionally deliver multiple complete frames together
-- preserve a simple one-message callback API as the normal interface
-- make batching explicit/optional where it changes application semantics
+- keep batching explicit where it changes application semantics
 
-## Priority 5 - Native Stream watcher-state transitions
-
-Once Stream owns its native read/write state, changes such as enabling writable
-interest, suspending reads for backpressure, closing, and half-closing should
-happen directly against the native watcher rather than bouncing through Perl
-methods.
-
-## Priority 6 - Native listener accept drain
+## Priority 4 - Native listener accept drain
 
 For high connection churn:
 
 - drain `accept4()` until EAGAIN
 - request `SOCK_NONBLOCK | SOCK_CLOEXEC` at accept time
-- create/register the native connection watcher efficiently
-- enter Perl for accepted-connection semantics, not for every mechanical setup
-  step
+- create/register connection state efficiently
+- enter Perl for accepted-connection semantics, not mechanical setup
 
-This does not affect the preconnected reactor benchmark, but matters for real
-server workloads.
+## Priority 5 - Native connect completion
 
-## Priority 7 - Native connect completion
-
-Move the nonblocking connect state machine below Perl:
+Move the nonblocking connect state machine below Perl where useful:
 
 - handle EINPROGRESS
 - wait for writable readiness
 - check `SO_ERROR`
 - transition watcher interest
-- cancel connection timeout state
+- cancel timeout state
 - notify Perl once with success or failure
 
-## Priority 8 - Linux fd drain helpers
+## Priority 6 - Linux fd drain helpers
 
-Profile before implementing, but likely candidates include native draining and
-aggregation for:
+Profile native draining/aggregation for Linux descriptors such as eventfd,
+signalfd, and pidfd so Perl receives meaningful aggregate events.
 
-- eventfd wakeups
-- signalfd records/counts
-- pidfd completion state
+## Priority 7 - Buffer representation experiments
 
-Perl should receive the meaningful aggregate result rather than participate in
-every low-level read.
+Only if profiling justifies them:
 
-## Priority 9 - Buffer representation experiments
-
-Only after the basic Stream path is working and benchmarked:
-
-- sliding native buffer with head/tail offsets
+- sliding-buffer refinements
 - ring-buffer alternatives
-- allocation reuse/slabs if profiling justifies them
+- allocation reuse or slabs
 
-Do not optimize memory allocation speculatively. Earlier watcher-reclaim work
-showed that reducing memory can easily cost throughput.
+Do not optimize allocation speculatively.
 
-## Priority 10 - Protocol acceleration above Stream
+## Priority 8 - Protocol acceleration above Stream
 
-After a stable Stream API exists, protocol-specific native parsing can be
-considered where it offers a clear reusable benefit. A likely future candidate
-is WebSocket frame parsing, relevant to the long-term Discord client/bot goal.
-Application protocol logic should remain Perl.
+After the generic framing catalog is broad, consider reusable protocol engines
+such as HTTP or WebSocket parsing. Application semantics remain Perl even when
+mechanical parsing moves native.
 
-## Benchmark plan for Stream work
+## Benchmark policy
 
-Keep the existing reactor comparison unchanged as the low-level regression
-standard. Add a separate stream/runtime suite comparing equivalent high-level
-abstractions, for example:
-
-- Linux::Event::Stream
-- AnyEvent::Handle
-- IO::Async::Stream
-- Mojo stream APIs
-- Node.js `net.Socket` / native Buffer path where the workload can be made fair
-
-This separation prevents native Stream I/O from being mistaken for a generic
-reactor advantage.
+Keep the reactor comparison as the low-level regression standard. Keep Stream
+transport and framing decomposition benchmarks separate. Cross-runtime Stream
+benchmarks compare high-level facilities and must continue to report exact
+fairness contracts, server CPU per message, throughput, latency, and memory.

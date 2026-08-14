@@ -525,8 +525,7 @@ sub setup_linuxevent ($sockets, $c, $phase) {
     my @watchers;
 
     for my $sock (@$sockets) {
-        my $w = $loop->watch_fd(
-            fileno($sock),
+        my $w = $loop->watch(
             fh => $sock,
             callback_args => 0,
             lean => 1,

@@ -38,6 +38,12 @@ lifetime management.
 
 The default event array capacity is 8192.
 
+Normal application registration uses `watch(fh => ...)` or `watch(fd => ...)`.
+That Perl-facing method resolves a handle to its integer fd once at construction
+and then enters the existing native registration path. It adds nothing to
+steady-state readiness dispatch. `watch_fd` remains the low-level positional
+entry point underneath it.
+
 ## Native watcher state
 
 `le_watcher_t` contains the fd, epoll mask/flags, owning loop pointer, callback

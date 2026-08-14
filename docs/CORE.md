@@ -1,8 +1,8 @@
 # Core Reactor Guide
 
-This document describes the current Linux::Event XS reactor only. The planned
-buffered Stream layer will receive its own documentation after that API is
-implemented and benchmarked.
+This document describes the low-level Linux::Event XS reactor. Applications
+that want owned buffered byte-stream I/O should use `Linux::Event::Stream` on
+top of this layer.
 
 ## Mental model
 
@@ -36,11 +36,12 @@ my $loop = Linux::Event::XSLoop->new;
 Each loop owns one epoll instance, an event buffer, a native fd-indexed watcher
 registry, and all native watcher records registered with it.
 
-## Registering an fd
+## Registering a handle
+
+Normal application code should label the watched resource explicitly:
 
 ```perl
-my $watcher = $loop->watch_fd(
-    fileno($fh),
+my $watcher = $loop->watch(
     fh    => $fh,
     data  => { connection_id => 42 },
     read  => sub ($watcher) { ... },
@@ -48,6 +49,33 @@ my $watcher = $loop->watch_fd(
     error => sub ($watcher) { ... },
 );
 ```
+
+When `fh` is supplied, Linux::Event resolves its integer file descriptor once at
+watcher construction and retains the handle for `$watcher->fh`.
+
+If an application has only a raw descriptor, use:
+
+```perl
+my $watcher = $loop->watch(
+    fd   => $fd,
+    read => sub ($watcher) { ... },
+);
+```
+
+Exactly one of `fh` or `fd` is required. Every watcher always has an integer fd,
+available through `$watcher->fd`. A watcher created from `fd` alone has no
+stored filehandle, so `$watcher->fh` is `undef`.
+
+The lower-level positional method remains available:
+
+```perl
+$loop->watch_fd($fd, read => sub ($watcher) { ... });
+```
+
+`watch_fd` is retained for low-level/internal code, compatibility, and unusual
+workloads where watcher-registration throughput itself has been measured as a
+bottleneck. Prefer `watch()` in normal application code. Both forms create the
+same native watcher and have the same readiness-dispatch hot path.
 
 Only the callbacks you need are required. Read interest is enabled when a read
 callback exists; write interest is enabled when a write callback exists.
@@ -96,9 +124,9 @@ read => sub ($watcher) {
 },
 ```
 
-This repeated Perl socket/buffer work is intentionally still visible in the raw
-reactor API. Moving it into native Stream machinery is the next optimization
-stage, not a change to watcher semantics.
+This repeated Perl socket/buffer work is intentionally visible in the raw
+reactor API. `Linux::Event::Stream` moves the mechanical read/write/buffering
+work into native code when that higher-level ownership model is desired.
 
 ## Writable interest
 
@@ -109,7 +137,7 @@ $watcher->enable_write;
 $watcher->disable_write;
 ```
 
-A future native Stream write queue will manage these transitions itself.
+Linux::Event::Stream manages these transitions in its native write queue.
 Applications using the core directly remain free to control them.
 
 ## Stopping and driving the loop
@@ -148,8 +176,8 @@ When a closure already captures everything it needs, the watcher argument can
 be omitted:
 
 ```perl
-my $watcher = $loop->watch_fd(
-    fileno($fh),
+my $watcher = $loop->watch(
+    fh      => $fh,
     read    => sub { drain_socket($fh) },
     no_args => 1,
     lean    => 1,
@@ -206,7 +234,7 @@ more aggressive watcher reclamation reduced memory while costing throughput.
 
 ## Edge-triggered and oneshot modes
 
-`watch_fd` accepts:
+`watch()` accepts:
 
 ```perl
 edge_triggered => 1
@@ -228,6 +256,6 @@ The raw reactor does not own:
 - application backpressure policy
 - protocol parsing
 
-Those are the responsibilities planned for the Stream layer. Keeping that
-separation gives Linux::Event both a low-level general reactor and a future
-high-level optimized networking path.
+Those responsibilities belong to `Linux::Event::Stream`. Keeping that
+separation gives Linux::Event both a low-level general reactor and a high-level
+native stream-processing path.

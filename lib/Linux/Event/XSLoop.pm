@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.001';
+our $VERSION = '0.100_008';
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -22,8 +22,7 @@ Linux::Event::XSLoop - XS-first epoll reactor core for Linux::Event
 
   my $loop = Linux::Event::XSLoop->new;
 
-  my $watcher = $loop->watch_fd(
-      fileno($fh),
+  my $watcher = $loop->watch(
       fh    => $fh,
       read  => sub ($watcher) {
           my $fh = $watcher->fh;
@@ -43,8 +42,8 @@ epoll file descriptor, native watcher records, the epoll event buffer, watcher
 registration, readiness dispatch, and the hot callback path.
 
 The reactor deliberately reports readiness rather than performing socket I/O
-for the application. Higher-level buffered stream behavior is planned as a
-separate layer so the core remains suitable for sockets, pipes, listeners,
+for the application. Higher-level buffered stream behavior is implemented by
+Linux::Event::Stream as a separate API layer so the core remains suitable for sockets, pipes, listeners,
 signalfd/eventfd/pidfd integrations, and other Linux descriptors.
 
 =head1 CORE API
@@ -55,9 +54,9 @@ signalfd/eventfd/pidfd integrations, and other Linux descriptors.
 
 Creates an epoll instance and the native loop state.
 
-=head2 watch_fd
+=head2 watch
 
-  my $watcher = $loop->watch_fd($fd,
+  my $watcher = $loop->watch(
       fh    => $fh,
       data  => $data,
       read  => sub ($watcher) { ... },
@@ -65,22 +64,46 @@ Creates an epoll instance and the native loop state.
       error => sub ($watcher) { ... },
   );
 
-Registers one native watcher for an integer file descriptor. Registering a new
-watcher for an fd replaces the previous watcher for that fd.
+For a raw integer descriptor instead:
+
+  my $watcher = $loop->watch(
+      fd   => $fd,
+      read => sub ($watcher) { ... },
+  );
+
+Exactly one of C<fh> or C<fd> is required. When C<fh> is supplied, its file
+descriptor is resolved once during watcher construction and the handle is
+retained for C<< $watcher-E<gt>fh >>. Every watcher always has an integer fd,
+available through C<< $watcher-E<gt>fd >>. Registering a new watcher for an fd
+replaces the previous watcher for that fd.
+
+=head2 watch_fd
+
+  my $watcher = $loop->watch_fd($fd, read => sub ($watcher) { ... });
+
+Low-level positional-fd entry point used internally and retained for advanced
+code, compatibility, and registration-rate-sensitive workloads. Normal
+application code should prefer C<watch()> so the watched resource is explicitly
+labeled with C<fh =E<gt>> or C<fd =E<gt>>. Both forms create the same native
+watcher and use the same readiness-dispatch hot path.
 
 C<read> is dispatched for C<EPOLLIN>. C<write> is dispatched for C<EPOLLOUT>.
 C<error> is dispatched for C<EPOLLERR>, C<EPOLLHUP>, or C<EPOLLRDHUP>.
 Terminal/error delivery occurs before read and write delivery for the same
 epoll event.
 
-Optional low-level flags include C<oneshot> and C<edge_triggered>. The normal
+For C<watch()> and C<watch_fd()>, optional low-level flags include C<oneshot> and C<edge_triggered>. The normal
 callback receives one C<Linux::Event::XSWatcher>. For carefully profiled hot
 paths, C<no_args =E<gt> 1> (or C<callback_args =E<gt> 0>) selects the no-argument
 callback fast path. C<lean =E<gt> 1> is meaningful only with no-argument
 callbacks and omits accessor references that such callbacks cannot use.
 
 Options beginning with C<_bench_> are benchmark diagnostics and are not public
-application APIs.
+application APIs. The core also has a private C<_callback_data_arg> extension
+hook used by higher-level XS-backed modules such as Linux::Event::Stream. It
+causes a one-argument watcher callback to receive the stored C<data> object
+directly instead of an C<XSWatcher> handle, avoiding a Perl C<< ->data >> lookup
+on hot extension paths. It is intentionally not part of the application API.
 
 =head2 unwatch_fd
 
