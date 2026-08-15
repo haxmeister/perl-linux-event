@@ -11,6 +11,16 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
 
+{
+    package Linux::Event::Bench::RawEchoStream;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) {
+        $stream->write($bytes)
+            or die "microbenchmark unexpectedly hit Stream backpressure\n";
+    }
+    sub on_error ($stream, $error) { die "Stream error: $error\n" }
+}
+
 my @clients = (1, 10, 100, 1000);
 my $messages = 100;
 my $warmup = 10;
@@ -30,7 +40,7 @@ die "warmup must be >= 0\n" if $warmup < 0;
 die "bytes must be > 0\n" if $bytes <= 0;
 die "repeats must be > 0\n" if $repeats <= 0;
 
-my @systems = ('raw', 'reference-stream', 'xs-read-stream', 'xs-rw-stream');
+my @systems = ('raw-reactor', 'subclass-stream');
 my @rows;
 
 for my $count (@clients) {
@@ -64,8 +74,8 @@ for my $count (@clients) {
 }
 
 say "\nThis is a same-process AF_UNIX development microbenchmark, not the final";
-say "cross-runtime Stream leaderboard. It isolates the raw reactor, the Perl";
-say "reference Stream, XS-read Stream, and XS read+write Stream implementation.";
+say "cross-runtime Stream leaderboard. It compares direct raw-reactor echo";
+say "with the canonical subclass-defined native Stream.";
 
 sub run_case ($system, $count) {
     my $loop = Linux::Event::XSLoop->new;
@@ -100,31 +110,17 @@ sub run_case ($system, $count) {
         push @server_fh, $server;
         push @client_fh, $client;
 
-        if ($system eq 'raw') {
+        if ($system eq 'raw-reactor') {
             my $w = $loop->watch(
                 fh => $server,
                 read => \&_raw_server_read,
             );
             push @server_obj, $w;
         } else {
-            my %stream_opt = (
+            my $s = Linux::Event::Bench::RawEchoStream->new(
                 loop => $loop,
                 fh   => $server,
-                on_data => sub ($stream, $chunk) {
-                    $stream->write($chunk)
-                        or die "microbenchmark unexpectedly hit Stream backpressure\n";
-                },
-                on_error => sub ($stream, $error) {
-                    die "Stream error: $error\n";
-                },
             );
-            if ($system eq 'reference-stream') {
-                $stream_opt{_read_backend}  = 'perl';
-                $stream_opt{_write_backend} = 'perl';
-            } elsif ($system eq 'xs-read-stream') {
-                $stream_opt{_write_backend} = 'perl';
-            }
-            my $s = Linux::Event::Stream->new(%stream_opt);
             push @server_obj, $s;
         }
 
@@ -162,7 +158,7 @@ sub run_case ($system, $count) {
 
     # Explicit cleanup; Stream owns server fhs, raw watcher cases do not.
     for my $obj (@server_obj) {
-        if ($system eq 'raw') {
+        if ($system eq 'raw-reactor') {
             $obj->cancel;
         } else {
             $obj->close if !$obj->is_closed;
@@ -170,7 +166,7 @@ sub run_case ($system, $count) {
     }
     $_->cancel for @client_watchers;
     close $_ for @client_fh;
-    if ($system eq 'raw') {
+    if ($system eq 'raw-reactor') {
         close $_ for @server_fh;
     }
 

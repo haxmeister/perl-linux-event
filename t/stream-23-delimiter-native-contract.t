@@ -5,58 +5,64 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::XSLoop;
-use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Delimiter;
 
-# include_delimiter is part of the public built-in contract and must survive
-# native acceleration.
+{
+    package T::IncludedDelimiterStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', '<X>', include_delimiter => 1;
+    sub on_message ($stream, $message) {
+        $stream->data->{got} = $message;
+        $stream->data->{loop}->stop;
+    }
+}
+
+{
+    package T::BangParentStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', '!';
+    sub on_message ($stream, $message) {
+        $stream->data->{got} = "parent:$message";
+        $stream->data->{loop}->stop;
+    }
+}
+
+{
+    package T::BangChildStream;
+    use parent -norequire, 'T::BangParentStream';
+    sub on_message ($stream, $message) {
+        $stream->data->{got} = "child:$message";
+        $stream->data->{loop}->stop;
+    }
+}
+
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
-my $got;
-my $s = Linux::Event::Stream->new(
-    loop => $loop,
-    fh => $a,
-    framer => Linux::Event::Stream::Framer::Delimiter->new(
-        delimiter => '<X>',
-        include_delimiter => 1,
-    ),
-    on_message => sub ($stream, $message) { $got = $message; $loop->stop },
+my $state = { loop => $loop };
+my $stream = T::IncludedDelimiterStream->new(
+    loop => $loop, fh => $a, data => $state,
 );
 syswrite($b, 'abc<X>');
 $loop->run;
-is($got, 'abc<X>', 'native delimiter honors include_delimiter');
-$s->close;
+is($state->{got}, 'abc<X>', 'native delimiter honors include_delimiter');
+$stream->close;
 close $b;
-
-# A subclass is a custom framer. Do not silently bypass an overridden
-# next_frame() merely because it inherits from the built-in Delimiter class.
-{
-    package T::DelimiterSubclass;
-    our @ISA = ('Linux::Event::Stream::Framer::Delimiter');
-    sub next_frame ($self, $buffer) {
-        my $pos = $buffer->index('!');
-        return if $pos < 0;
-        return (0, $pos, $pos + 1);
-    }
-}
 
 socketpair(my $c, my $d, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 my $loop2 = Linux::Event::XSLoop->new;
-my $sub = T::DelimiterSubclass->new(delimiter => '<IGNORED>');
-my $got2;
-my $s2 = Linux::Event::Stream->new(
-    loop => $loop2,
-    fh => $c,
-    framer => $sub,
-    on_message => sub ($stream, $message) { $got2 = $message; $loop2->stop },
+my $child_state = { loop => $loop2 };
+my $child = T::BangChildStream->new(
+    loop => $loop2, fh => $c, data => $child_state,
 );
-is($s2->{framing_backend}, 'xs-perl', 'Delimiter subclass stays on custom plug-in path');
-syswrite($d, 'custom!');
+syswrite($d, 'inherited!');
 $loop2->run;
-is($got2, 'custom', 'overridden next_frame remains authoritative');
-$s2->close;
+is($child_state->{got}, 'child:inherited',
+    'derived Stream inherits framing and overrides a named callback');
+is($child->{descriptor}{framer}{package},
+    'Linux::Event::Stream::Framer::Delimiter',
+    'descriptor resolves inherited framer declaration');
+$child->close;
 close $d;
 
 done_testing;

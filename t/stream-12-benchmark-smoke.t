@@ -14,11 +14,9 @@ my $cmd = join ' ',
     '2>&1';
 
 my $out = qx{$cmd};
-is($?, 0, 'reference microbenchmark exits successfully') or diag $out;
-like($out, qr/raw clients=1/, 'raw baseline ran');
-like($out, qr/reference-stream clients=1/, 'Perl reference Stream baseline ran');
-like($out, qr/xs-read-stream clients=1/, 'XS-read Stream ran');
-like($out, qr/xs-rw-stream clients=1/, 'XS read+write Stream ran');
+is($?, 0, 'Stream microbenchmark exits successfully') or diag $out;
+like($out, qr/raw-reactor clients=1/, 'raw reactor baseline ran');
+like($out, qr/subclass-stream clients=1/, 'subclass-defined Stream ran');
 like($out, qr/Median Stream microbenchmark/, 'summary emitted');
 
 done_testing;

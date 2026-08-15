@@ -1,5 +1,27 @@
 Revision history for Linux-Event
 
+0.100_011  2026-08-14
+    - Redesign Linux::Event::Stream as a subclass-defined API. Callbacks,
+      framing, and transport policy are class behavior; constructor state is
+      limited to loop, fh, and optional per-connection data.
+    - Resolve callbacks and framer/transport configuration once per concrete
+      subclass into a shared immutable XS descriptor, with independent mutable
+      parser and queue state for every connection.
+    - Replace the framer factory and per-connection framer objects with
+      declarative `use Linux::Event::Stream::Framer 'Name', @args` syntax.
+      Exact package-name resolution removes the duplicate keyword registry.
+    - Remove the arbitrary custom-framer object contract and
+      Linux::Event::Stream::Framer::Buffer. Application-specific protocols now
+      parse raw on_data bytes; generally useful families remain native built-ins.
+    - Add cached class-level stream_options for read size, watermarks, and
+      framed-buffer limits.
+    - Rewrite Stream/framer tests, benchmarks, POD, guides, architecture notes,
+      metadata, and examples for the canonical subclass-descriptor model.
+
+0.100_010  2026-08-14
+    - Add the versioned Stream lifecycle and retained-memory benchmark used to
+      capture the object-configured contract-1 baseline before the API redesign.
+
 0.100_009  2026-08-13
     - Add native inbound ASCII DecimalLength framing for wire forms such as
       RFC 6587 octet-counted syslog: "5 HELLO".

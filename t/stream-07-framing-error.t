@@ -8,37 +8,40 @@ use Linux::Event::XSLoop;
 use Linux::Event::Stream;
 
 {
-    package T::BadFramer;
-    use v5.36;
-    sub new ($class) { bless {}, $class }
-    sub next_frame ($self, $buffer) { die 'bad packet marker' }
+    package T::LimitedLineStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', "\n", max_frame => 4;
+    sub on_message ($stream, $message) {
+        Test::More::fail('oversized native frame must not emit a message');
+    }
+    sub on_error ($stream, $error) { $stream->data->{error} = $error }
+    sub on_close ($stream) {
+        my $state = $stream->data;
+        $state->{closed}++;
+        $state->{loop}->stop;
+    }
 }
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
-my ($error, $closed) = (undef, 0);
+my $state = { loop => $loop, error => undef, closed => 0 };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::LimitedLineStream->new(
     loop => $loop,
     fh   => $a,
-    framer => T::BadFramer->new,
-    on_message => sub ($s, $message) { fail('bad framer must not emit message') },
-    on_error => sub ($s, $err) {
-        $error = $err;
-    },
-    on_close => sub ($s) {
-        $closed++;
-        $loop->stop;
-    },
+    data => $state,
 );
 
-syswrite($b, 'x');
+eval { $stream->send('12345') };
+like($@, qr/exceeds max_frame=4/, 'outbound delimiter framing enforces max_frame');
+
+syswrite($b, "12345\n");
 $loop->run;
 
-isa_ok($error, 'Linux::Event::Stream::Error');
-is($error->type, 'framing', 'custom framer exception becomes framing error');
-like($error->message, qr/bad packet marker/, 'framing error preserves plugin message');
-is($closed, 1, 'framing failure closes stream exactly once');
+isa_ok($state->{error}, 'Linux::Event::Stream::Error');
+is($state->{error}->type, 'framing', 'native parser failure becomes framing error');
+like($state->{error}->message, qr/max_frame=4/, 'framing error preserves parser context');
+is($state->{closed}, 1, 'framing failure closes stream exactly once');
 ok($stream->is_closed, 'stream is closed');
 
 done_testing;

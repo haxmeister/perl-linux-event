@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_009';
+our $VERSION = '0.100_011';
 
 1;
 
@@ -24,12 +24,13 @@ Linux::Event - Linux-native event reactor and stream processing foundation
 
 Linux::Event is a Linux-only event and stream-processing distribution.  The
 low-level C<Linux::Event::XSLoop> reactor reports readiness through epoll, while
-C<Linux::Event::Stream> owns buffered byte-stream I/O, write backpressure, and
-pluggable framing.
+C<Linux::Event::Stream> subclasses own buffered byte-stream I/O, write
+backpressure, and optional native framing.
 
 The APIs deliberately remain layered.  Applications that need raw descriptor
 readiness can use the reactor directly.  Applications that want automatic
-socket reads, buffered writes, and message framing can use Stream on top.
+socket reads, buffered writes, and native message framing can use a Stream
+subclass on top.
 
 =head1 MAIN MODULES
 

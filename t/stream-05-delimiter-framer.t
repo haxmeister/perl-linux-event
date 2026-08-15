@@ -6,31 +6,35 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Delimiter;
+
+{
+    package T::EndDelimitedStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', '<END>';
+    sub on_message ($stream, $message) {
+        my $state = $stream->data;
+        push @{ $state->{messages} }, $message;
+        $state->{loop}->stop if @{ $state->{messages} } == 2;
+    }
+}
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
-my @messages;
+my $state = { loop => $loop, messages => [] };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::EndDelimitedStream->new(
     loop => $loop,
     fh   => $a,
-    framer => Linux::Event::Stream::Framer::Delimiter->new(
-        delimiter => '<END>',
-    ),
-    on_message => sub ($s, $message) {
-        push @messages, $message;
-        $loop->stop if @messages == 2;
-    },
+    data => $state,
 );
 
 syswrite($b, 'hello<EN');
 $loop->run_once(0);
-is_deeply(\@messages, [], 'delimiter split across reads is retained');
+is_deeply($state->{messages}, [], 'delimiter split across reads is retained');
 
 syswrite($b, 'D>world<END>tail');
 $loop->run;
-is_deeply(\@messages, ['hello', 'world'], 'multiple frames are emitted and delimiter stripped');
+is_deeply($state->{messages}, ['hello', 'world'], 'multiple frames are emitted and delimiter stripped');
 
 ok($stream->send('reply'), 'send uses outbound framing');
 my $wire = '';

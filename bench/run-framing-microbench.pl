@@ -10,7 +10,36 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer;
+
+{
+    package Linux::Event::Bench::RawDelimiterEcho;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) {
+        my $state = $stream->data;
+        $state->{buffer} .= $bytes;
+        while ((my $at = index($state->{buffer}, $state->{delimiter})) >= 0) {
+            my $message = substr($state->{buffer}, 0, $at, '');
+            substr($state->{buffer}, 0, length($state->{delimiter}), '');
+            die "framing payload mismatch\n" if $message ne $state->{payload};
+            $stream->write($state->{wire})
+                or die "framing benchmark unexpectedly hit backpressure\n";
+        }
+    }
+    sub on_error ($stream, $error) { die "Stream error: $error\n" }
+}
+
+{
+    package Linux::Event::Bench::NativeDelimiterEcho;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', "\x02END\x03";
+    sub on_message ($stream, $message) {
+        my $state = $stream->data;
+        die "framing payload mismatch\n" if $message ne $state->{payload};
+        $stream->write($state->{wire})
+            or die "framing benchmark unexpectedly hit backpressure\n";
+    }
+    sub on_error ($stream, $error) { die "Stream error: $error\n" }
+}
 
 my @clients = (1, 10, 100, 1000);
 my $messages = 100;
@@ -32,7 +61,7 @@ die "warmup must be >= 0\n" if $warmup < 0;
 die "bytes must be > 0\n" if $bytes <= 0;
 die "repeats must be > 0\n" if $repeats <= 0;
 
-my @systems = ('perl-buffer', 'xs-buffer-perl', 'xs-delimiter');
+my @systems = ('raw-on-data', 'native-delimiter');
 my @rows;
 
 for my $count (@clients) {
@@ -62,8 +91,8 @@ for my $count (@clients) {
     }
 }
 
-say "\nAll three paths use the same XS read/write transport and Delimiter object.";
-say "Only framed input storage/parser execution changes between rows.";
+say "\nBoth paths use the same XS read/write transport and wire format.";
+say "The raw row parses in on_data; the native row finds frame boundaries in XS.";
 
 sub run_case ($system, $count) {
     my $loop = Linux::Event::XSLoop->new;
@@ -96,22 +125,20 @@ sub run_case ($system, $count) {
         push @server_fh, $server;
         push @client_fh, $client;
 
-        my $framer = Linux::Event::Stream::Framer->delimiter($delimiter);
-        my %opt = (
+        my $state_data = {
+            payload => $payload,
+            wire => $wire,
+            delimiter => $delimiter,
+            buffer => '',
+        };
+        my $class = $system eq 'raw-on-data'
+            ? 'Linux::Event::Bench::RawDelimiterEcho'
+            : 'Linux::Event::Bench::NativeDelimiterEcho';
+        push @streams, $class->new(
             loop => $loop,
             fh => $server,
-            framer => $framer,
-            on_message => sub ($stream, $message) {
-                die "framing payload mismatch\n" if $message ne $payload;
-                $stream->write($wire)
-                    or die "framing benchmark unexpectedly hit backpressure\n";
-            },
-            on_error => sub ($stream, $error) { die "Stream error: $error\n" },
+            data => $state_data,
         );
-        $opt{_framing_backend} = 'perl' if $system eq 'perl-buffer';
-        $opt{_framing_backend} = 'xs-perl' if $system eq 'xs-buffer-perl';
-        $opt{_framing_backend} = 'xs' if $system eq 'xs-delimiter';
-        push @streams, Linux::Event::Stream->new(%opt);
 
         my $state = {
             bench => $bench,

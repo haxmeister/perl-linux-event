@@ -30,11 +30,11 @@ my $status = $?;
 my $output = $stdout . $stderr;
 
 is($status, 0, 'native-framers benchmark smoke exits successfully') or diag $output;
-like($output, qr/fixed\/xs\s+clients=1/, 'fixed native row ran');
-like($output, qr/length\/xs\s+clients=1/, 'length native row ran');
-like($output, qr/u32be\/xs\s+clients=1/, 'u32be native row ran');
-like($output, qr/netstring\/xs\s+clients=1/, 'netstring native row ran');
-like($output, qr/varint\/xs\s+clients=1/, 'varint native row ran');
-like($output, qr/decimal\/xs\s+clients=1/, 'decimal-length native row ran');
+like($output, qr/fixed\/native\s+clients=1/, 'fixed native row ran');
+like($output, qr/length\/native\s+clients=1/, 'length native row ran');
+like($output, qr/u32be\/native\s+clients=1/, 'u32be native row ran');
+like($output, qr/netstring\/native\s+clients=1/, 'netstring native row ran');
+like($output, qr/varint\/native\s+clients=1/, 'varint native row ran');
+like($output, qr/decimal\/native\s+clients=1/, 'decimal-length native row ran');
 
 done_testing;

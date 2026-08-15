@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_009';
+our $VERSION = '0.100_011';
 
 # XS methods are installed by Linux::Event::XSLoop's bootstrap.
 
@@ -50,9 +50,8 @@ Changes C<EPOLLIN> interest in place.
 
 =head2 enable_write / disable_write
 
-Changes C<EPOLLOUT> interest in place. This is the primitive that a future
-native write queue can use to enable writable notifications only while output
-is blocked.
+Changes C<EPOLLOUT> interest in place. Linux::Event::Stream uses this primitive
+to enable writable notifications only while native queued output is blocked.
 
 =head2 lean
 

@@ -6,34 +6,38 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Delimiter;
+
+{
+    package T::BinaryDelimiterStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', "\x02\xffEND\x00\x03";
+    sub on_message ($stream, $message) {
+        my $state = $stream->data;
+        push @{ $state->{messages} }, $message;
+        $state->{loop}->stop if @{ $state->{messages} } == 2;
+    }
+}
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
 my $delimiter = "\x02\xffEND\x00\x03";
-my @messages;
+my $state = { loop => $loop, messages => [] };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::BinaryDelimiterStream->new(
     loop => $loop,
     fh   => $a,
-    framer => Linux::Event::Stream::Framer::Delimiter->new(
-        delimiter => $delimiter,
-    ),
-    on_message => sub ($s, $message) {
-        push @messages, $message;
-        $loop->stop if @messages == 2;
-    },
+    data => $state,
 );
 
 my $wire = "alpha${delimiter}beta${delimiter}";
 my $cut = index($wire, $delimiter) + 3;
 syswrite($b, substr($wire, 0, $cut));
 $loop->run_once(0);
-is(scalar @messages, 0, 'binary delimiter may be split across reads');
+is(scalar @{ $state->{messages} }, 0, 'binary delimiter may be split across reads');
 
 syswrite($b, substr($wire, $cut));
 $loop->run;
-is_deeply(\@messages, ['alpha', 'beta'], 'arbitrary binary delimiter frames messages correctly');
+is_deeply($state->{messages}, ['alpha', 'beta'], 'arbitrary binary delimiter frames messages correctly');
 
 $stream->close;
 done_testing;

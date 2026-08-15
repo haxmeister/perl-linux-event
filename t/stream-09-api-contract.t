@@ -6,11 +6,38 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Delimiter;
 
-socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
+{
+    package T::API::Raw;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) { }
+}
+
+{
+    package T::API::Missing;
+    use parent 'Linux::Event::Stream';
+}
+
+{
+    package T::API::FramedMissing;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+}
+
+{
+    package T::API::FramedMixed;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    sub on_data ($stream, $bytes) { }
+    sub on_message ($stream, $message) { }
+}
+
 my $loop = Linux::Event::XSLoop->new;
-my $stream = Linux::Event::Stream->new(loop => $loop, fh => $a, data => { name => 'x' });
+socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+    or die "socketpair: $!";
+my $stream = T::API::Raw->new(
+    loop => $loop, fh => $a, data => { name => 'x' },
+);
 
 is($stream->data->{name}, 'x', 'optional user data retrieved explicitly');
 $stream->data({ name => 'y' });
@@ -22,22 +49,39 @@ my $ok = eval { $stream->write('late'); 1 };
 ok(!$ok, 'write after end is rejected');
 like($@, qr/writable side has ended/, 'write-after-end error is clear');
 $stream->close;
-
-socketpair(my $c, my $d, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $bad = eval {
-    Linux::Event::Stream->new(
-        loop => $loop,
-        fh => $c,
-        on_data => sub {},
-        framer => Linux::Event::Stream::Framer::Delimiter->new(delimiter => "\n"),
-        on_message => sub {},
-    );
-    1;
-};
-ok(!$bad, 'raw and framed callback modes cannot be mixed');
-like($@, qr/mutually exclusive/, 'mode error is clear');
-close $c;
-close $d;
 close $b;
+
+sub construction_error ($class, @extra) {
+    socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die "socketpair: $!";
+    my $made = eval { $class->new(loop => $loop, fh => $left, @extra); 1 };
+    my $error = $@;
+    close $left if defined fileno($left);
+    close $right;
+    return ($made, $error);
+}
+
+my ($made, $error) = construction_error('Linux::Event::Stream');
+ok(!$made, 'base Stream class cannot be constructed');
+like($error, qr/base class/, 'base-class error is clear');
+
+($made, $error) = construction_error('T::API::Missing');
+ok(!$made, 'raw subclass must define on_data');
+like($error, qr/must define on_data/, 'missing raw callback error is clear');
+
+($made, $error) = construction_error('T::API::FramedMissing');
+ok(!$made, 'framed subclass must define on_message');
+like($error, qr/does not define on_message/, 'missing framed callback error is clear');
+
+($made, $error) = construction_error('T::API::FramedMixed');
+ok(!$made, 'framed subclass cannot also define on_data');
+like($error, qr/cannot define on_data/, 'mixed-mode error is clear');
+
+($made, $error) = construction_error(
+    'T::API::Raw', on_data => sub { }, read_size => 1,
+);
+ok(!$made, 'old per-object callback and transport options are rejected');
+like($error, qr/unknown options: on_data, read_size/,
+    'constructor identifies removed object-configured options');
 
 done_testing;

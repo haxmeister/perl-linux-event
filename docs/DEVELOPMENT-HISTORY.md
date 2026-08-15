@@ -2,6 +2,20 @@
 
 This file preserves the benchmark/optimization phase notes that previously occupied the project README. It is historical material, not the current public API documentation.
 
+## Stream subclass-descriptor redesign (0.100_011)
+
+The object-configured Stream API was replaced after capturing a versioned
+constructor and retained-memory baseline. Stream behavior is now defined by
+ordinary subclasses with named callbacks. Each concrete type resolves one
+shared immutable XS descriptor, while connection objects retain only mutable
+I/O, parser, queue, lifecycle, and application `data` state.
+
+The same redesign removed factory-created and arbitrary custom framer objects.
+Native framers are declared by exact final package name; application-specific
+protocols parse raw `on_data` bytes. Current API details live in the README,
+`STREAM-DESIGN.md`, and `FRAMING.md`; the older material below remains only to
+document how the preceding reactor work was measured.
+
 # Linux::Event Phase33C Bounded Callback Scope Experiment
 
 XS-first Linux::Event loop core with Phase29-style performance defaults and experimental knobs kept out of the normal user-facing path.

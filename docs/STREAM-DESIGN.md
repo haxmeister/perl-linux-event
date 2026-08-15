@@ -1,153 +1,174 @@
-# Stream rewrite design contract
+# Stream design
 
-## Purpose
+`Linux::Event::Stream` is the owned buffered byte-stream layer above the generic
+`Linux::Event::XSLoop` reactor. It is intentionally Linux-only and uses native
+code for repetitive I/O, queue, buffer, and built-in framing work.
 
-`Linux::Event::Stream` is the byte-stream abstraction above the raw
-`Linux::Event::XSLoop` reactor. The reactor reports readiness. Stream owns the
-mechanical byte-transport and framing work and calls Perl for semantic events.
+## Type model
 
-The old 0.002 API is a design reference, not a compatibility constraint.
+`Linux::Event::Stream` is a base class. An application defines each stream type
+as an ordinary Perl package:
 
-## Public event model
+```perl
+package ChatStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::Stream::Framer 'Delimiter', "\n";
 
-Raw mode:
-
-```text
-epoll readiness
-  -> native read drain
-  -> on_data($stream, $bytes)
+sub on_message ($stream, $message) { ... }
+sub on_drain   ($stream)           { ... }
+sub on_eof     ($stream)           { ... }
+sub on_error   ($stream, $error)   { ... }
+sub on_close   ($stream)           { ... }
 ```
 
-Built-in framed mode:
+A package does not imply one global connection. It defines shared behavior.
+Each object remains a distinct connection and carries its application value in
+`data`:
 
-```text
-epoll readiness
-  -> read() directly into native input storage
-  -> native built-in frame boundary detection/consume
-  -> on_message($stream, $message)
+```perl
+my $stream = ChatStream->new(
+    loop => $loop,
+    fh   => $socket,
+    data => {
+        user_id    => $user_id,
+        permissions => $permissions,
+        rooms       => {},
+    },
+);
 ```
 
-Custom framed mode:
+## Class descriptor
+
+The first construction of each concrete subclass performs all class-level work
+once:
+
+1. resolve `on_data`, `on_message`, and optional lifecycle methods through the
+   class MRO;
+2. resolve the nearest inherited native framer declaration;
+3. call and validate `stream_options`;
+4. validate that the class is either raw or framed, never both;
+5. create one immutable XS descriptor holding parser config, transport policy,
+   and callback references.
+
+Subsequent construction retrieves that descriptor from the class cache. The
+Perl object and native connection state each retain a reference to it.
+
+Immutable descriptor state includes:
+
+- named callback CVs
+- native read mode and framing constants
+- delimiter or prefix policy where applicable
+- `read_size`
+- high and low output watermarks
+- framed `max_buffer`
+
+Per-connection native state includes:
+
+- fd and Stream reference
+- pause, EOF, close, and backpressure flags
+- native input bytes and parser scan state
+- segmented output queue and pending byte count
+- instrumentation counters
+
+Per-connection Perl state includes the loop, handle, watcher, optional `data`,
+and semantic lifecycle flags. It does not contain callback option hashes or a
+framer object.
+
+## Input paths
+
+### Raw subclass
 
 ```text
-epoll readiness
-  -> read() directly into native input storage
-  -> stable Framer::Buffer view
-  -> custom Perl next_frame()
-  -> native extract/consume
-  -> on_message($stream, $message)
+EPOLLIN -> XS read drain -> on_data($stream, $bytes)
 ```
 
-Write side:
+The reusable native read buffer is copied into a Perl byte scalar only after a
+successful read. XS continues until EAGAIN unless the callback pauses or closes
+the Stream.
+
+### Framed subclass
 
 ```text
-write($bytes)
-  -> native immediate write()
-  -> queue remainder on partial/EAGAIN
-  -> writable readiness
-  -> native writev() drain
+EPOLLIN -> XS read drain -> native input storage -> native parser
+        -> on_message($stream, $message)
 ```
 
-## Native Stream state
+Complete built-in frames are detected without delivering intermediate read
+chunks to Perl. Multiple messages can be emitted from one readiness event.
+Partial prefixes, delimiters, and payloads remain in connection-local native
+state. The loop rechecks pause and close state after every callback.
 
-`XSStream.xs` does not include Linux::Event private C structures. The core
-passes `Linux::Event::Stream::XSState` directly as watcher callback data.
-Native state contains:
+## Output path
 
-```text
-fd
-read size and read/eof/pause state
-native framed-input buffer
-custom-framer need(N) threshold
-native built-in framer configuration/state
-max-buffer/max-frame state
-Stream and semantic callback references
-native segmented output queue
-pending byte count
-high/low watermarks and blocked state
-read/write/framing instrumentation counters
+`write($bytes)` first attempts an immediate native write. Partial output or
+EAGAIN creates independent native queue segments. EPOLLOUT drains those segments
+with `writev()` without first concatenating them in Perl.
+
+Crossing `high_watermark` makes `write()` return false even though the bytes are
+accepted. When pending bytes reach `low_watermark` or less, XS clears the
+blocked state before calling `on_drain`, allowing reentrant writes to begin a
+new backpressure interval safely.
+
+`send($payload)` is framed-only. It applies the class's outbound built-in
+encoding and then uses `write()`.
+
+## Lifecycle
+
+- `pause_read` and `resume_read` change input interest while preserving state.
+- Peer EOF marks the readable half closed and invokes `on_eof` once.
+- `end` drains queued output before `shutdown(SHUT_WR)`.
+- The Stream closes automatically after both halves have ended.
+- `close` cancels immediately and may discard queued output.
+- `detach` cancels Stream ownership and returns the still-open filehandle;
+  `on_close` does not run because the resource was not closed.
+- I/O and framing failures create `Linux::Event::Stream::Error`, invoke
+  `on_error` if present, and close.
+
+Application callback exceptions propagate. They are not treated as transport
+or framing errors.
+
+## Class transport policy
+
+`stream_options` may return a key/value list or hash reference:
+
+```perl
+sub stream_options ($class) {
+    return {
+        read_size      => 65_536,
+        high_watermark => 1_048_576,
+        low_watermark  => 262_144,
+        max_buffer     => 8_388_608,
+    };
+}
 ```
 
-Normal readiness therefore avoids a Perl watcher lookup. Raw reads avoid Perl
-`sysread`; writes avoid Perl `syswrite`; framed reads avoid per-read Perl byte
-scalars whenever native input storage is selected.
+It runs once per concrete subclass. Unknown options, invalid integers, and a low
+watermark above the high watermark fail before connection registration.
 
-## Native input storage
+## Framing policy
 
-Framed data is stored as a native byte region with a logical start and length.
-Consuming a frame advances the logical start rather than immediately moving the
-remaining bytes. Storage compacts only when necessary to make room, and grows
-geometrically when capacity must increase.
+Native framing is declared by exact package name. No keyword registry, factory
+object, arbitrary `next_frame` object, or Buffer facade exists. This keeps the
+hot model singular: built-ins are native; application-specific rules use raw
+`on_data`.
 
-Built-in framing definitions are normally created through `Linux::Event::Stream::Framer` and may be shared safely across Streams. Each Stream copies the definition into independent native parser state during construction.
+A generally useful new family should add a named module and corresponding XS
+parser mode. The naming convention lets the loader find that package without a
+second list.
 
-Built-in Delimiter, Fixed, LengthPrefix/U32BE, Netstring, Varint, and
-DecimalLength framers inspect
-this storage directly. Delimiter scanning remembers the earliest position that
-can still begin a cross-read delimiter; fixed and length-framed modes wait for
-the exact required byte count; Netstring validates its decimal length and
-terminator; Varint decodes a canonical unsigned LEB128 prefix; DecimalLength
-decodes canonical ASCII lengths without exposing storage to Perl.
+## Performance consequences
 
-Custom Perl framers use exactly the same native bytes through Framer::Buffer.
-Only explicit `peek()` calls copy header bytes into Perl.
+The redesign improves construction and retained memory by moving immutable work
+from every object to one class descriptor. It removes per-connection callback
+hash entries, framer allocation, option parsing, repeated validation, and
+copies of native transport/framing configuration. Named callbacks also avoid
+fresh closure allocation and are invoked through cached CVs rather than method
+lookup.
 
-## Pluggable framing boundary
+It does not remove the intentional Perl crossing for semantic `on_data` or
+`on_message` work. It also does not make application state global: `data`, input
+storage, parser progress, output, and lifecycle remain connection-local.
 
-A custom framer returns only frame boundaries:
-
-```text
-(offset, length, consume)
-```
-
-It never owns Stream storage. Stream validates the boundaries, creates the
-semantic message, consumes the requested prefix, and invokes `on_message`.
-
-`need(N)` records a minimum total byte count in native state. The reactor can
-continue reading without re-entering the Perl framer until N bytes are present.
-
-Built-in framers may execute entirely in XS while preserving the same
-application-level `on_message` contract.
-
-## Native output queue
-
-When there is no queued output, `write()` makes one immediate native `write()`
-attempt. Partial/EAGAIN output enters independent native queue segments.
-Writable readiness builds an iovec over queued segments and calls `writev()`.
-
-The current queued representation copies only bytes that actually enter the
-queue. This guarantees ordinary value semantics if the caller later mutates
-its scalar. Retained-SV/COW output is a separate future benchmark experiment.
-
-## Backpressure
-
-`write($bytes)` returns false after queued bytes exceed the high watermark. The
-data has still been accepted. Once a blocked Stream drains to or below the low
-watermark, native state clears the blocked flag before `on_drain` runs.
-
-## Duplex lifetime
-
-- peer EOF -> `on_eof`; writing remains legal
-- `end()` -> drain output, then `shutdown(SHUT_WR)`
-- both directions ended -> close fd, `on_close`
-- `close()` -> immediate close
-- `detach()` -> transfer the still-open filehandle back to the application
-
-Pause/close state is checked after semantic callbacks, so callbacks may safely
-pause or close the Stream while native drains are active. Resuming a framed
-Stream immediately processes complete frames already present in native input;
-it does not require another kernel readiness event.
-
-## Private decomposition paths
-
-Development-only constructor switches preserve measurable historical paths:
-
-```text
-_read_backend       perl | xs
-_write_backend      perl | xs
-_framing_backend    perl | xs-perl | xs
-```
-
-They are not application API. Public construction chooses the fastest valid
-path automatically: built-in Delimiter uses native framing; third-party
-framers use native input storage plus the Perl plug-in contract.
+Use `bench/run-stream-lifecycle-bench.pl` for constructor and retained-memory
+effects, `bench/run-stream-microbench.pl` for raw transport overhead, and the
+framing benchmarks for parser work.

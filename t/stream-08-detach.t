@@ -7,28 +7,34 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
 
+{
+    package T::DetachStream;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) { $stream->data->{data_calls}++ }
+    sub on_close ($stream) { $stream->data->{close_calls}++ }
+}
+
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
-my ($data_calls, $close_calls) = (0, 0);
+my $state = { data_calls => 0, close_calls => 0 };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::DetachStream->new(
     loop => $loop,
     fh   => $a,
-    on_data => sub ($s, $bytes) { $data_calls++ },
-    on_close => sub ($s) { $close_calls++ },
+    data => $state,
 );
 
 my $fh = $stream->detach;
 ok(defined fileno($fh), 'detach returns an open filehandle');
 ok($stream->is_closed, 'Stream abstraction is no longer active');
-is($close_calls, 0, 'detach does not claim underlying resource was closed');
+is($state->{close_calls}, 0, 'detach does not claim underlying resource was closed');
 
 syswrite($b, 'still open');
 my $buf = '';
 is(sysread($fh, $buf, 1024), 10, 'detached handle remains usable');
 is($buf, 'still open', 'detached handle receives bytes');
 $loop->run_once(0);
-is($data_calls, 0, 'detached Stream watcher was cancelled');
+is($state->{data_calls}, 0, 'detached Stream watcher was cancelled');
 
 close $fh;
 close $b;

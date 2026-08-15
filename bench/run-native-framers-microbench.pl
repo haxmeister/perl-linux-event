@@ -10,7 +10,54 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer;
+
+{
+    package Linux::Event::Bench::NativeFramerBase;
+    use parent 'Linux::Event::Stream';
+    sub on_message ($stream, $message) {
+        my $state = $stream->data;
+        die "framing payload mismatch\n" if $message ne $state->{payload};
+        $stream->write($state->{wire})
+            or die "benchmark unexpectedly hit backpressure\n";
+    }
+    sub on_error ($stream, $error) { die "Stream error: $error\n" }
+}
+
+{
+    package Linux::Event::Bench::NativeDelimiter;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'Delimiter', "\x02END\x03";
+}
+
+{
+    package Linux::Event::Bench::NativeLength;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'LengthPrefix', bytes => 4, endian => 'big';
+}
+
+{
+    package Linux::Event::Bench::NativeU32BE;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'U32BE';
+}
+
+{
+    package Linux::Event::Bench::NativeNetstring;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'Netstring';
+}
+
+{
+    package Linux::Event::Bench::NativeVarint;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'Varint';
+}
+
+{
+    package Linux::Event::Bench::NativeDecimal;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'DecimalLength';
+}
 
 my @clients = (1, 10, 100, 1000);
 my $messages = 100;
@@ -36,82 +83,91 @@ die "repeats must be > 0\n" if $repeats <= 0;
 my %valid = map { $_ => 1 } qw(delimiter fixed length u32be netstring varint decimal);
 die "unknown framer in --framers\n" if grep { !$valid{$_} } @framers;
 
-my @modes = qw(xs-perl xs);
+eval qq{
+    package Linux::Event::Bench::NativeFixed;
+    use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
+    use Linux::Event::Stream::Framer 'Fixed', size => $bytes;
+    1;
+} or die "define fixed-size benchmark Stream: $@";
+
+my %stream_class = (
+    delimiter => 'Linux::Event::Bench::NativeDelimiter',
+    fixed     => 'Linux::Event::Bench::NativeFixed',
+    length    => 'Linux::Event::Bench::NativeLength',
+    u32be     => 'Linux::Event::Bench::NativeU32BE',
+    netstring => 'Linux::Event::Bench::NativeNetstring',
+    varint    => 'Linux::Event::Bench::NativeVarint',
+    decimal   => 'Linux::Event::Bench::NativeDecimal',
+);
 my @rows;
 
 for my $framer_name (@framers) {
     for my $count (@clients) {
         die "client count must be > 0\n" if $count <= 0;
         for my $repeat (1 .. $repeats) {
-            my @order = $repeat % 2 ? @modes : reverse @modes;
-            for my $mode (@order) {
-                my $r = run_case($framer_name, $mode, $count);
-                push @rows, $r;
-                printf "%s/%s clients=%d repeat=%d %.1f msg/s cpu=%.3f us/msg\n",
-                    $framer_name, $mode, $count, $repeat,
-                    $r->{messages_per_second}, $r->{cpu_us_per_message};
-            }
+            my $r = run_case($framer_name, $count);
+            push @rows, $r;
+            printf "%s/native clients=%d repeat=%d %.1f msg/s cpu=%.3f us/msg\n",
+                $framer_name, $count, $repeat,
+                $r->{messages_per_second}, $r->{cpu_us_per_message};
         }
     }
 }
 
 say "\nMedian native built-in framing microbenchmark";
-printf "%-10s %-8s %8s %14s %14s\n", 'framer', 'mode', 'clients', 'msg/s', 'cpu us/msg';
+printf "%-10s %8s %14s %14s\n", 'framer', 'clients', 'msg/s', 'cpu us/msg';
 for my $framer_name (@framers) {
     for my $count (@clients) {
-        for my $mode (@modes) {
-            my @set = grep {
-                $_->{framer} eq $framer_name
-                    && $_->{mode} eq $mode
-                    && $_->{clients} == $count
-            } @rows;
-            printf "%-10s %-8s %8d %14.1f %14.3f\n",
-                $framer_name, $mode, $count,
-                median(map { $_->{messages_per_second} } @set),
-                median(map { $_->{cpu_us_per_message} } @set);
-        }
+        my @set = grep {
+            $_->{framer} eq $framer_name && $_->{clients} == $count
+        } @rows;
+        printf "%-10s %8d %14.1f %14.3f\n",
+            $framer_name, $count,
+            median(map { $_->{messages_per_second} } @set),
+            median(map { $_->{cpu_us_per_message} } @set);
     }
 }
 
-say "\nCompare xs only against xs-perl within the same framer.";
-say "Both rows keep XS read/write transport and native input storage constant.";
+say "\nEach row uses a canonical Stream subclass and its native built-in parser.";
+say "Compare framers only within the same payload, client, and host settings.";
 
-sub framer_and_wire ($name, $payload) {
+sub wire_for ($name, $payload) {
     if ($name eq 'delimiter') {
-        my $f = Linux::Event::Stream::Framer->delimiter("\x02END\x03");
-        return ($f, $f->frame($payload));
+        return $payload . "\x02END\x03";
     }
     if ($name eq 'fixed') {
-        my $f = Linux::Event::Stream::Framer->fixed(size => length($payload));
-        return ($f, $f->frame($payload));
+        return $payload;
     }
     if ($name eq 'length') {
-        my $f = Linux::Event::Stream::Framer->length_prefix(bytes => 4, endian => 'big');
-        return ($f, $f->frame($payload));
+        return pack('N', length($payload)) . $payload;
     }
     if ($name eq 'u32be') {
-        my $f = Linux::Event::Stream::Framer->u32be;
-        return ($f, $f->frame($payload));
+        return pack('N', length($payload)) . $payload;
     }
     if ($name eq 'netstring') {
-        my $f = Linux::Event::Stream::Framer->netstring;
-        return ($f, $f->frame($payload));
+        return length($payload) . ':' . $payload . ',';
     }
     if ($name eq 'varint') {
-        my $f = Linux::Event::Stream::Framer->varint;
-        return ($f, $f->frame($payload));
+        my $value = length($payload);
+        my @prefix;
+        do {
+            my $byte = $value % 128;
+            $value = int($value / 128);
+            $byte |= 0x80 if $value;
+            push @prefix, $byte;
+        } while ($value);
+        return pack('C*', @prefix) . $payload;
     }
     if ($name eq 'decimal') {
-        my $f = Linux::Event::Stream::Framer->decimal_length;
-        return ($f, $f->frame($payload));
+        return length($payload) . ' ' . $payload;
     }
     die "unknown framer $name\n";
 }
 
-sub run_case ($framer_name, $mode, $count) {
+sub run_case ($framer_name, $count) {
     my $loop = Linux::Event::XSLoop->new;
     my $payload = 'x' x $bytes;
-    my ($sample_framer, $wire) = framer_and_wire($framer_name, $payload);
+    my $wire = wire_for($framer_name, $payload);
     my $wire_len = length($wire);
     my @client_fh;
     my @streams;
@@ -137,18 +193,11 @@ sub run_case ($framer_name, $mode, $count) {
         set_nonblocking($client);
         push @client_fh, $client;
 
-        my ($framer) = framer_and_wire($framer_name, $payload);
-        push @streams, Linux::Event::Stream->new(
+        my $class = $stream_class{$framer_name};
+        push @streams, $class->new(
             loop => $loop,
             fh => $server,
-            framer => $framer,
-            _framing_backend => $mode,
-            on_message => sub ($stream, $message) {
-                die "framing payload mismatch\n" if $message ne $payload;
-                $stream->write($wire)
-                    or die "benchmark unexpectedly hit backpressure\n";
-            },
-            on_error => sub ($stream, $error) { die "Stream error: $error\n" },
+            data => { payload => $payload, wire => $wire },
         );
 
         my $state = {
@@ -185,7 +234,7 @@ sub run_case ($framer_name, $mode, $count) {
 
     return {
         framer => $framer_name,
-        mode => $mode,
+        mode => 'native',
         clients => $count,
         messages_per_second => $total / $elapsed,
         cpu_us_per_message => ($cpu * 1_000_000) / $total,

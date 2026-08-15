@@ -6,35 +6,37 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Delimiter;
+
+{
+    package T::NativeDelimiterStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', "\x02END\x03";
+    sub stream_options ($class) { return read_size => 4 }
+    sub on_message ($stream, $message) {
+        my $state = $stream->data;
+        push @{ $state->{messages} }, $message;
+        $state->{loop}->stop if @{ $state->{messages} } == 2;
+    }
+}
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 
 my $loop = Linux::Event::XSLoop->new;
 my $delimiter = "\x02END\x03";
-my @messages;
+my $state = { loop => $loop, messages => [] };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::NativeDelimiterStream->new(
     loop => $loop,
     fh   => $a,
-    read_size => 4,
-    framer => Linux::Event::Stream::Framer::Delimiter->new(
-        delimiter => $delimiter,
-    ),
-    on_message => sub ($s, $message) {
-        push @messages, $message;
-        $loop->stop if @messages == 2;
-    },
+    data => $state,
 );
-
-is($stream->{framing_backend}, 'xs', 'built-in delimiter selects native framing by default');
 
 my $wire = "alpha${delimiter}beta${delimiter}tail";
 is(syswrite($b, $wire), length($wire), 'peer wrote framed bytes');
 $loop->run;
 
-is_deeply(\@messages, [qw(alpha beta)], 'native delimiter emits complete messages');
+is_deeply($state->{messages}, [qw(alpha beta)], 'native delimiter emits complete messages');
 
 my $stats = $stream->{xs_state}->stats;
 ok($stats->{input_appends} >= 2, 'small read_size appended multiple chunks directly to native input');

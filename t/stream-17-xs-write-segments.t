@@ -7,6 +7,25 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_SNDBUF);
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
 
+{
+    package T::SegmentReader;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) {
+        my $state = $stream->data;
+        $state->{received} .= $bytes;
+        $state->{loop}->stop if length($state->{received}) == $state->{expected_size};
+    }
+}
+
+{
+    package T::SegmentWriter;
+    use parent 'Linux::Event::Stream';
+    sub stream_options ($class) {
+        return high_watermark => 4096, low_watermark => 1024;
+    }
+    sub on_data ($stream, $bytes) { }
+}
+
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 setsockopt($a, SOL_SOCKET, SO_SNDBUF, pack('i', 4096))
@@ -17,22 +36,18 @@ my $first = 'A' x (1024 * 1024);
 my $second = 'B' x (64 * 1024);
 my $third = 'C' x (64 * 1024);
 my $expected = $first . $second . $third;
-my $received = '';
+my $state = { loop => $loop, expected_size => length($expected), received => '' };
 
-my $reader = Linux::Event::Stream->new(
+my $reader = T::SegmentReader->new(
     loop => $loop,
     fh   => $b,
-    on_data => sub ($s, $bytes) {
-        $received .= $bytes;
-        $loop->stop if length($received) == length($expected);
-    },
+    data => $state,
 );
 
-my $writer = Linux::Event::Stream->new(
+my $writer = T::SegmentWriter->new(
     loop => $loop,
     fh   => $a,
-    high_watermark => 4096,
-    low_watermark  => 1024,
+    data => $state,
 );
 
 ok(!$writer->write($first), 'first large write establishes queued output');
@@ -45,7 +60,7 @@ $second =~ tr/B/X/;
 $third  =~ tr/C/Y/;
 
 $loop->run;
-is($received, $expected, 'segmented native queue preserves ordering and values');
+is($state->{received}, $expected, 'segmented native queue preserves ordering and values');
 
 my $stats = $writer->{xs_state}->stats;
 ok($stats->{queued_segments} >= 3, 'multiple native segments were queued');

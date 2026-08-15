@@ -2,13 +2,13 @@
  * Linux::Event::Stream native I/O state
  * =====================================
  *
- * This file implements the second native stage of the Stream rewrite.  The
- * read path from the previous milestone is kept intact and the mechanical
- * write path moves beside it so one native state object now owns the hot I/O
- * machinery for a Stream.
+ * One immutable descriptor is built for each Perl Stream subclass. It owns
+ * resolved callback CVs, transport policy, and native framer configuration.
+ * Per-connection state references that descriptor and owns only mutable I/O,
+ * parser, queue, instrumentation, and lifetime state.
  *
  * Public Perl remains responsible for policy and semantic state such as
- * end(), close(), framing, and watcher ownership.  Native code is responsible
+ * end(), close(), outbound framing, and watcher ownership. Native code owns
  * for repetitive transport work:
  *
  *     EPOLLIN
@@ -35,7 +35,7 @@
  * byte segments and advances offsets.  writev() can flush several segments in
  * one syscall without concatenating them first.
  *
- * For this milestone queued segments own an independent SV copy.  That gives
+ * Queued segments own an independent SV copy. That gives
  * write() ordinary value semantics: callers may modify or release their input
  * scalar immediately after write() returns.  A later benchmark may test COW or
  * retained immutable SVs as a separate zero-copy optimization; it is not
@@ -56,8 +56,8 @@
  *
  * Callback and lifetime safety
  * ----------------------------
- * The Perl Stream owns this XSState object.  XSState holds strong references
- * to the Stream and callback CVs.  close()/detach() mark the native state
+ * The Perl Stream owns this XSState object. XSState holds strong references to
+ * the Stream and its shared class descriptor. close()/detach() mark native state
  * closed and clear queued SVs before the reactor watcher is cancelled.  User
  * callbacks may pause, close, end, or write reentrantly; native loops re-check
  * state after every Perl callback before continuing.
@@ -86,7 +86,6 @@
 #define LES_WRITE_QUEUED  0x02
 #define LES_IOV_MAX       64
 #define LES_READ_DELIVER   0
-#define LES_READ_PERL_FRAMER 1
 #define LES_READ_DELIMITER 2
 #define LES_READ_FIXED     3
 #define LES_READ_LENGTH    4
@@ -101,56 +100,58 @@ typedef struct les_write_seg_s {
     struct les_write_seg_s *next;
 } les_write_seg_t;
 
+typedef struct les_descriptor_s {
+    size_t read_size;
+    int read_mode;
+    UV max_buffer;
+
+    char *delimiter;
+    size_t delimiter_len;
+    int include_delimiter;
+    int has_max_frame;
+    UV max_frame;
+    UV fixed_size;
+    int prefix_bytes;
+    int prefix_little;
+    int include_prefix;
+
+    UV high_watermark;
+    UV low_watermark;
+
+    SV *deliver_cb;
+    SV *message_cb;
+    SV *drain_cb;
+    SV *eof_cb;
+    SV *read_error_cb;
+    SV *write_error_cb;
+    SV *write_empty_cb;
+    SV *framing_error_cb;
+} les_descriptor_t;
+
 typedef struct les_xsstate_s {
     int fd;
+    les_descriptor_t *descriptor;
+    SV *descriptor_sv;
 
     /* Read engine. */
-    size_t read_size;
     char *read_buffer;      /* raw/deliver mode scratch storage */
     int read_paused;
     int read_eof;
-    int read_mode;
 
     /* Native framed-input storage. Logical bytes are [input_start, input_start + input_len). */
     char *input_buffer;
     size_t input_start;
     size_t input_len;
     size_t input_cap;
-    UV input_needed;        /* custom Perl framer need(N) threshold */
-    UV max_buffer;          /* 0 means unlimited */
 
-    /* Built-in native delimiter framing configuration/state. */
-    char *delimiter;
-    size_t delimiter_len;
+    /* Per-connection delimiter scan state. */
     size_t delimiter_scan;
-    int include_delimiter;
-    int has_max_frame;
-    UV max_frame;
-
-    /* Other built-in native framing configuration. */
-    UV fixed_size;
-    int prefix_bytes;
-    int prefix_little;
-    int include_prefix;
 
     /* Shared lifetime. */
     int closed;
     SV *stream_sv;
 
-    /* Read/framing callbacks. */
-    SV *deliver_cb;         /* raw or legacy Perl-buffer delivery */
-    SV *framed_ready_cb;    /* custom Perl framer over native Buffer view */
-    SV *message_cb;         /* built-in native framer semantic delivery */
-    SV *framing_error_cb;
-    SV *eof_cb;
-    SV *read_error_cb;
-
-    /* Write callbacks/state. */
-    SV *drain_cb;          /* optional */
-    SV *write_error_cb;
-    SV *write_empty_cb;
-    UV high_watermark;
-    UV low_watermark;
+    /* Write state. */
     int write_blocked;
     les_write_seg_t *whead;
     les_write_seg_t *wtail;
@@ -168,7 +169,6 @@ typedef struct les_xsstate_s {
     unsigned long long input_appends;
     unsigned long long input_compactions;
     unsigned long long input_peak_bytes;
-    unsigned long long framing_ready_calls;
     unsigned long long delimiter_searches;
     unsigned long long frames_emitted;
     unsigned long long framing_error_count;
@@ -196,12 +196,23 @@ les_state_from_sv(SV *sv)
     return INT2PTR(les_xsstate_t *, SvIV((SV *)SvRV(sv)));
 }
 
+static les_descriptor_t *
+les_descriptor_from_sv(SV *sv)
+{
+    if (!sv_isobject(sv) || !SvROK(sv))
+        croak("not a Linux::Event::Stream::XSDescriptor object");
+    return INT2PTR(les_descriptor_t *, SvIV((SV *)SvRV(sv)));
+}
+
 static SV *
 les_store_cb(SV *cb, const char *name)
 {
+    SV *cv;
     if (!cb || !SvOK(cb) || !SvROK(cb) || SvTYPE(SvRV(cb)) != SVt_PVCV)
         croak("%s must be a coderef", name);
-    return newSVsv(cb);
+    cv = SvRV(cb);
+    SvREFCNT_inc(cv);
+    return cv;
 }
 
 static SV *
@@ -246,73 +257,64 @@ les_call_two(pTHX_ SV *cb, SV *a, SV *b)
 static void
 les_call_deliver(pTHX_ les_xsstate_t *st, SV *bytes)
 {
-    les_call_two(aTHX_ st->deliver_cb, st->stream_sv, bytes);
+    les_call_two(aTHX_ st->descriptor->deliver_cb, st->stream_sv, bytes);
     st->delivery_calls++;
-}
-
-static void
-les_call_framed_ready(pTHX_ les_xsstate_t *st)
-{
-    if (!st->framed_ready_cb)
-        return;
-    st->framing_ready_calls++;
-    les_call_one(aTHX_ st->framed_ready_cb, st->stream_sv);
 }
 
 static void
 les_call_message(pTHX_ les_xsstate_t *st, SV *message)
 {
-    if (!st->message_cb)
+    if (!st->descriptor->message_cb)
         return;
     st->frames_emitted++;
-    les_call_two(aTHX_ st->message_cb, st->stream_sv, message);
+    les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
 }
 
 static void
 les_call_framing_error(pTHX_ les_xsstate_t *st, const char *message)
 {
     SV *msg;
-    if (!st->framing_error_cb)
+    if (!st->descriptor->framing_error_cb)
         return;
     st->framing_error_count++;
     msg = sv_2mortal(newSVpv(message, 0));
-    les_call_two(aTHX_ st->framing_error_cb, st->stream_sv, msg);
+    les_call_two(aTHX_ st->descriptor->framing_error_cb, st->stream_sv, msg);
 }
 
 static void
 les_call_eof(pTHX_ les_xsstate_t *st)
 {
-    les_call_one(aTHX_ st->eof_cb, st->stream_sv);
+    les_call_one(aTHX_ st->descriptor->eof_cb, st->stream_sv);
 }
 
 static void
 les_call_read_error(pTHX_ les_xsstate_t *st, int err)
 {
     SV *errno_sv = sv_2mortal(newSViv(err));
-    les_call_two(aTHX_ st->read_error_cb, st->stream_sv, errno_sv);
+    les_call_two(aTHX_ st->descriptor->read_error_cb, st->stream_sv, errno_sv);
 }
 
 static void
 les_call_write_error(pTHX_ les_xsstate_t *st, int err)
 {
     SV *errno_sv = sv_2mortal(newSViv(err));
-    les_call_two(aTHX_ st->write_error_cb, st->stream_sv, errno_sv);
+    les_call_two(aTHX_ st->descriptor->write_error_cb, st->stream_sv, errno_sv);
 }
 
 static void
 les_call_drain(pTHX_ les_xsstate_t *st)
 {
-    if (!st->drain_cb)
+    if (!st->descriptor->drain_cb)
         return;
     st->drain_calls++;
-    les_call_one(aTHX_ st->drain_cb, st->stream_sv);
+    les_call_one(aTHX_ st->descriptor->drain_cb, st->stream_sv);
 }
 
 static void
 les_call_empty(pTHX_ les_xsstate_t *st)
 {
     st->empty_calls++;
-    les_call_one(aTHX_ st->write_empty_cb, st->stream_sv);
+    les_call_one(aTHX_ st->descriptor->write_empty_cb, st->stream_sv);
 }
 
 static void
@@ -395,7 +397,7 @@ les_maybe_drain_transition(pTHX_ les_xsstate_t *st)
 {
     if (!st->write_blocked)
         return;
-    if (st->pending_bytes > st->low_watermark)
+    if (st->pending_bytes > st->descriptor->low_watermark)
         return;
 
     st->write_blocked = 0;
@@ -459,7 +461,6 @@ les_input_consume(les_xsstate_t *st, size_t count)
         croak("internal Stream input consume exceeds buffered bytes");
     st->input_start += count;
     st->input_len -= count;
-    st->input_needed = 0;
     st->delimiter_scan = 0;
     if (st->input_len == 0)
         st->input_start = 0;
@@ -497,41 +498,43 @@ les_process_delimiter(pTHX_ les_xsstate_t *st)
         size_t pos;
 
         st->delimiter_searches++;
-        pos = les_find_bytes(data, st->input_len, st->delimiter,
-            st->delimiter_len, st->delimiter_scan);
+        pos = les_find_bytes(data, st->input_len, st->descriptor->delimiter,
+            st->descriptor->delimiter_len, st->delimiter_scan);
 
         if (pos == (size_t)-1) {
-            if (st->has_max_frame) {
-                unsigned long long allowed = (unsigned long long)st->max_frame
-                    + (unsigned long long)st->delimiter_len - 1ULL;
+            if (st->descriptor->has_max_frame) {
+                unsigned long long allowed = (unsigned long long)st->descriptor->max_frame
+                    + (unsigned long long)st->descriptor->delimiter_len - 1ULL;
                 if ((unsigned long long)st->input_len > allowed) {
                     char msg[128];
                     snprintf(msg, sizeof(msg),
                         "frame exceeds max_frame=%llu without delimiter",
-                        (unsigned long long)st->max_frame);
+                        (unsigned long long)st->descriptor->max_frame);
                     les_call_framing_error(aTHX_ st, msg);
                     return;
                 }
             }
 
-            if (st->delimiter_len > 1 && st->input_len >= st->delimiter_len - 1)
-                st->delimiter_scan = st->input_len - (st->delimiter_len - 1);
+            if (st->descriptor->delimiter_len > 1
+                && st->input_len >= st->descriptor->delimiter_len - 1)
+                st->delimiter_scan = st->input_len
+                    - (st->descriptor->delimiter_len - 1);
             else
                 st->delimiter_scan = 0;
             return;
         }
 
-        if (st->has_max_frame && (UV)pos > st->max_frame) {
+        if (st->descriptor->has_max_frame && (UV)pos > st->descriptor->max_frame) {
             char msg[128];
             snprintf(msg, sizeof(msg), "frame exceeds max_frame=%llu",
-                (unsigned long long)st->max_frame);
+                (unsigned long long)st->descriptor->max_frame);
             les_call_framing_error(aTHX_ st, msg);
             return;
         }
 
         {
-            size_t consume = pos + st->delimiter_len;
-            size_t msglen = st->include_delimiter ? consume : pos;
+            size_t consume = pos + st->descriptor->delimiter_len;
+            size_t msglen = st->descriptor->include_delimiter ? consume : pos;
             SV *message = sv_2mortal(newSVpvn(data, (STRLEN)msglen));
             les_input_consume(st, consume);
             les_call_message(aTHX_ st, message);
@@ -559,12 +562,12 @@ les_decode_prefix(const unsigned char *p, int bytes, int little)
 static int
 les_frame_fits_buffer(pTHX_ les_xsstate_t *st, UV prefix_bytes, UV payload_len)
 {
-    if (st->max_buffer && payload_len > st->max_buffer) {
+    if (st->descriptor->max_buffer && payload_len > st->descriptor->max_buffer) {
         char msg[160];
         snprintf(msg, sizeof(msg),
             "declared frame length=%llu exceeds max_buffer=%llu",
             (unsigned long long)payload_len,
-            (unsigned long long)st->max_buffer);
+            (unsigned long long)st->descriptor->max_buffer);
         les_call_framing_error(aTHX_ st, msg);
         return 0;
     }
@@ -572,12 +575,13 @@ les_frame_fits_buffer(pTHX_ les_xsstate_t *st, UV prefix_bytes, UV payload_len)
         les_call_framing_error(aTHX_ st, "frame length overflow");
         return 0;
     }
-    if (st->max_buffer && prefix_bytes + payload_len > st->max_buffer) {
+    if (st->descriptor->max_buffer
+        && prefix_bytes + payload_len > st->descriptor->max_buffer) {
         char msg[160];
         snprintf(msg, sizeof(msg),
             "framed message requires %llu bytes, exceeds max_buffer=%llu",
             (unsigned long long)(prefix_bytes + payload_len),
-            (unsigned long long)st->max_buffer);
+            (unsigned long long)st->descriptor->max_buffer);
         les_call_framing_error(aTHX_ st, msg);
         return 0;
     }
@@ -587,7 +591,7 @@ les_frame_fits_buffer(pTHX_ les_xsstate_t *st, UV prefix_bytes, UV payload_len)
 static void
 les_process_fixed(pTHX_ les_xsstate_t *st)
 {
-    size_t size = (size_t)st->fixed_size;
+    size_t size = (size_t)st->descriptor->fixed_size;
 
     while (!st->closed && !st->read_paused && st->input_len >= size) {
         const char *data = les_input_data(st);
@@ -600,7 +604,7 @@ les_process_fixed(pTHX_ les_xsstate_t *st)
 static void
 les_process_length(pTHX_ les_xsstate_t *st)
 {
-    const size_t prefix = (size_t)st->prefix_bytes;
+    const size_t prefix = (size_t)st->descriptor->prefix_bytes;
 
     while (!st->closed && !st->read_paused) {
         const char *data;
@@ -616,12 +620,13 @@ les_process_length(pTHX_ les_xsstate_t *st)
 
         data = les_input_data(st);
         payload_len = les_decode_prefix((const unsigned char *)data,
-            st->prefix_bytes, st->prefix_little);
+            st->descriptor->prefix_bytes, st->descriptor->prefix_little);
 
-        if (st->has_max_frame && payload_len > st->max_frame) {
+        if (st->descriptor->has_max_frame
+            && payload_len > st->descriptor->max_frame) {
             char msg[128];
             snprintf(msg, sizeof(msg), "frame exceeds max_frame=%llu",
-                (unsigned long long)st->max_frame);
+                (unsigned long long)st->descriptor->max_frame);
             les_call_framing_error(aTHX_ st, msg);
             return;
         }
@@ -637,8 +642,8 @@ les_process_length(pTHX_ les_xsstate_t *st)
         if (st->input_len < total)
             return;
 
-        offset = st->include_prefix ? 0 : prefix;
-        msglen = st->include_prefix ? total : (size_t)payload_len;
+        offset = st->descriptor->include_prefix ? 0 : prefix;
+        msglen = st->descriptor->include_prefix ? total : (size_t)payload_len;
         message = sv_2mortal(newSVpvn(data + offset, (STRLEN)msglen));
         les_input_consume(st, total);
         les_call_message(aTHX_ st, message);
@@ -694,10 +699,11 @@ les_process_netstring(pTHX_ les_xsstate_t *st)
             les_call_framing_error(aTHX_ st, "invalid netstring leading zero");
             return;
         }
-        if (st->has_max_frame && payload_len > st->max_frame) {
+        if (st->descriptor->has_max_frame
+            && payload_len > st->descriptor->max_frame) {
             char msg[128];
             snprintf(msg, sizeof(msg), "frame exceeds max_frame=%llu",
-                (unsigned long long)st->max_frame);
+                (unsigned long long)st->descriptor->max_frame);
             les_call_framing_error(aTHX_ st, msg);
             return;
         }
@@ -708,12 +714,12 @@ les_process_netstring(pTHX_ les_xsstate_t *st)
             return;
         }
         total_uv = payload_offset_uv + payload_len + 1;
-        if (st->max_buffer && total_uv > st->max_buffer) {
+        if (st->descriptor->max_buffer && total_uv > st->descriptor->max_buffer) {
             char msg[160];
             snprintf(msg, sizeof(msg),
                 "framed message requires %llu bytes, exceeds max_buffer=%llu",
                 (unsigned long long)total_uv,
-                (unsigned long long)st->max_buffer);
+                (unsigned long long)st->descriptor->max_buffer);
             les_call_framing_error(aTHX_ st, msg);
             return;
         }
@@ -784,10 +790,11 @@ les_process_varint(pTHX_ les_xsstate_t *st)
                 les_call_framing_error(aTHX_ st, "varint length prefix too long");
             return;
         }
-        if (st->has_max_frame && payload_len > st->max_frame) {
+        if (st->descriptor->has_max_frame
+            && payload_len > st->descriptor->max_frame) {
             char msg[128];
             snprintf(msg, sizeof(msg), "frame exceeds max_frame=%llu",
-                (unsigned long long)st->max_frame);
+                (unsigned long long)st->descriptor->max_frame);
             les_call_framing_error(aTHX_ st, msg);
             return;
         }
@@ -803,8 +810,8 @@ les_process_varint(pTHX_ les_xsstate_t *st)
         if (st->input_len < total)
             return;
 
-        offset = st->include_prefix ? 0 : prefix;
-        msglen = st->include_prefix ? total : (size_t)payload_len;
+        offset = st->descriptor->include_prefix ? 0 : prefix;
+        msglen = st->descriptor->include_prefix ? total : (size_t)payload_len;
         message = sv_2mortal(newSVpvn((const char *)data + offset, (STRLEN)msglen));
         les_input_consume(st, total);
         les_call_message(aTHX_ st, message);
@@ -815,7 +822,7 @@ les_process_varint(pTHX_ les_xsstate_t *st)
 static void
 les_process_decimal_length(pTHX_ les_xsstate_t *st)
 {
-    const unsigned char separator = (unsigned char)st->delimiter[0];
+    const unsigned char separator = (unsigned char)st->descriptor->delimiter[0];
 
     while (!st->closed && !st->read_paused && st->input_len > 0) {
         const unsigned char *data = (const unsigned char *)les_input_data(st);
@@ -859,10 +866,11 @@ les_process_decimal_length(pTHX_ les_xsstate_t *st)
             les_call_framing_error(aTHX_ st, "invalid decimal length leading zero");
             return;
         }
-        if (st->has_max_frame && payload_len > st->max_frame) {
+        if (st->descriptor->has_max_frame
+            && payload_len > st->descriptor->max_frame) {
             char msg[128];
             snprintf(msg, sizeof(msg), "frame exceeds max_frame=%llu",
-                (unsigned long long)st->max_frame);
+                (unsigned long long)st->descriptor->max_frame);
             les_call_framing_error(aTHX_ st, msg);
             return;
         }
@@ -879,8 +887,8 @@ les_process_decimal_length(pTHX_ les_xsstate_t *st)
         if (st->input_len < total)
             return;
 
-        offset = st->include_prefix ? 0 : prefix;
-        msglen = st->include_prefix ? total : (size_t)payload_len;
+        offset = st->descriptor->include_prefix ? 0 : prefix;
+        msglen = st->descriptor->include_prefix ? total : (size_t)payload_len;
         message = sv_2mortal(newSVpvn((const char *)data + offset, (STRLEN)msglen));
         les_input_consume(st, total);
         les_call_message(aTHX_ st, message);
@@ -888,32 +896,20 @@ les_process_decimal_length(pTHX_ les_xsstate_t *st)
 }
 
 static void
-les_process_custom_framer(pTHX_ les_xsstate_t *st)
-{
-    if (st->closed || st->read_paused || st->input_len == 0)
-        return;
-    if (st->input_needed && st->input_len < st->input_needed)
-        return;
-    les_call_framed_ready(aTHX_ st);
-}
-
-static void
 les_process_buffered(pTHX_ les_xsstate_t *st)
 {
-    if (st->read_mode == LES_READ_DELIMITER)
+    if (st->descriptor->read_mode == LES_READ_DELIMITER)
         les_process_delimiter(aTHX_ st);
-    else if (st->read_mode == LES_READ_FIXED)
+    else if (st->descriptor->read_mode == LES_READ_FIXED)
         les_process_fixed(aTHX_ st);
-    else if (st->read_mode == LES_READ_LENGTH)
+    else if (st->descriptor->read_mode == LES_READ_LENGTH)
         les_process_length(aTHX_ st);
-    else if (st->read_mode == LES_READ_NETSTRING)
+    else if (st->descriptor->read_mode == LES_READ_NETSTRING)
         les_process_netstring(aTHX_ st);
-    else if (st->read_mode == LES_READ_VARINT)
+    else if (st->descriptor->read_mode == LES_READ_VARINT)
         les_process_varint(aTHX_ st);
-    else if (st->read_mode == LES_READ_DECIMAL)
+    else if (st->descriptor->read_mode == LES_READ_DECIMAL)
         les_process_decimal_length(aTHX_ st);
-    else if (st->read_mode == LES_READ_PERL_FRAMER)
-        les_process_custom_framer(aTHX_ st);
 }
 
 static void
@@ -924,9 +920,9 @@ les_read_ready(pTHX_ les_xsstate_t *st)
 
     st->read_ready_calls++;
 
-    /* A paused custom framer can leave complete bytes buffered. Process those
-     * before requesting more kernel data when a new readiness event arrives. */
-    if (st->read_mode != LES_READ_DELIVER && st->input_len) {
+    /* A paused callback can leave complete frames buffered. Process those
+     * before requesting more kernel data on a later readiness event. */
+    if (st->descriptor->read_mode != LES_READ_DELIVER && st->input_len) {
         les_process_buffered(aTHX_ st);
         if (st->closed || st->read_paused || st->read_eof)
             return;
@@ -935,21 +931,21 @@ les_read_ready(pTHX_ les_xsstate_t *st)
     while (!st->closed && !st->read_paused && !st->read_eof) {
         ssize_t n;
         char *target;
-        size_t want = st->read_size;
+        size_t want = st->descriptor->read_size;
 
-        if (st->read_mode == LES_READ_DELIVER) {
+        if (st->descriptor->read_mode == LES_READ_DELIVER) {
             target = st->read_buffer;
         } else {
-            if (st->max_buffer) {
-                if (st->input_len >= st->max_buffer) {
+            if (st->descriptor->max_buffer) {
+                if (st->input_len >= st->descriptor->max_buffer) {
                     char msg[128];
                     snprintf(msg, sizeof(msg), "input buffer exceeds max_buffer=%llu",
-                        (unsigned long long)st->max_buffer);
+                        (unsigned long long)st->descriptor->max_buffer);
                     les_call_framing_error(aTHX_ st, msg);
                     return;
                 }
-                if ((UV)want > st->max_buffer - (UV)st->input_len)
-                    want = (size_t)(st->max_buffer - (UV)st->input_len);
+                if ((UV)want > st->descriptor->max_buffer - (UV)st->input_len)
+                    want = (size_t)(st->descriptor->max_buffer - (UV)st->input_len);
             }
             les_input_reserve(st, want);
             target = st->input_buffer + st->input_start + st->input_len;
@@ -961,7 +957,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         if (n > 0) {
             st->bytes_read += (unsigned long long)n;
 
-            if (st->read_mode == LES_READ_DELIVER) {
+            if (st->descriptor->read_mode == LES_READ_DELIVER) {
                 SV *bytes = sv_2mortal(newSVpvn(st->read_buffer, (STRLEN)n));
                 les_call_deliver(aTHX_ st, bytes);
             } else {
@@ -1067,7 +1063,8 @@ les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv)
     if (!st->closed && off < len)
         les_queue_bytes(st, data + off, len - off);
 
-    if (!st->write_blocked && st->pending_bytes > st->high_watermark)
+    if (!st->write_blocked
+        && st->pending_bytes > st->descriptor->high_watermark)
         st->write_blocked = 1;
 
     return (st->write_blocked ? 0 : LES_WRITE_FLOW_OK)
@@ -1149,116 +1146,162 @@ les_write_ready(pTHX_ les_xsstate_t *st)
     }
 }
 
-MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSState
+MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, stream, fd, read_size, deliver_cb, eof_cb, read_error_cb, high_watermark, low_watermark, drain_cb, write_error_cb, write_empty_cb, read_mode, framed_ready_cb, message_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, max_buffer, fixed_size, prefix_bytes, prefix_little, include_prefix)
+new(CLASS, read_size, high_watermark, low_watermark, max_buffer, read_mode, deliver_cb, message_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix)
     const char *CLASS
-    SV *stream
-    int fd
     UV read_size
-    SV *deliver_cb
-    SV *eof_cb
-    SV *read_error_cb
     UV high_watermark
     UV low_watermark
+    UV max_buffer
+    int read_mode
+    SV *deliver_cb
+    SV *message_cb
     SV *drain_cb
+    SV *eof_cb
+    SV *read_error_cb
     SV *write_error_cb
     SV *write_empty_cb
-    int read_mode
-    SV *framed_ready_cb
-    SV *message_cb
     SV *framing_error_cb
     SV *delimiter_sv
     int include_delimiter
     SV *max_frame_sv
-    UV max_buffer
     UV fixed_size
     int prefix_bytes
     int prefix_little
     int include_prefix
   PREINIT:
-    les_xsstate_t *st;
+    les_descriptor_t *descriptor;
+    STRLEN delimiter_len = 0;
+    const char *delimiter = NULL;
   CODE:
-    if (fd < 0) croak("fd must be >= 0");
     if (read_size == 0) croak("read_size must be > 0");
     if (low_watermark > high_watermark)
         croak("low_watermark must be <= high_watermark");
-    if (read_mode < LES_READ_DELIVER || read_mode > LES_READ_DECIMAL)
+    if (read_mode != LES_READ_DELIVER
+        && (read_mode < LES_READ_DELIMITER || read_mode > LES_READ_DECIMAL))
         croak("invalid Stream native read mode");
-
-    st = (les_xsstate_t *)calloc(1, sizeof(*st));
-    if (!st) croak("calloc XSState failed");
-
-    st->fd = fd;
-    st->read_size = (size_t)read_size;
-    st->read_mode = read_mode;
-    st->max_buffer = max_buffer;
-    st->include_delimiter = include_delimiter ? 1 : 0;
-    st->fixed_size = fixed_size;
-    st->prefix_bytes = prefix_bytes;
-    st->prefix_little = prefix_little ? 1 : 0;
-    st->include_prefix = include_prefix ? 1 : 0;
-
-    if (read_mode == LES_READ_DELIVER) {
-        st->read_buffer = (char *)malloc(st->read_size);
-        if (!st->read_buffer) {
-            free(st);
-            croak("malloc XSState read buffer failed");
-        }
-    }
-
-    st->stream_sv = newSVsv(stream);
-    st->deliver_cb = les_store_optional_cb(deliver_cb, "deliver callback");
-    st->framed_ready_cb = les_store_optional_cb(framed_ready_cb, "framed ready callback");
-    st->message_cb = les_store_optional_cb(message_cb, "message callback");
-    st->framing_error_cb = les_store_optional_cb(framing_error_cb, "framing error callback");
-    st->eof_cb = les_store_cb(eof_cb, "EOF callback");
-    st->read_error_cb = les_store_cb(read_error_cb, "read error callback");
-    st->drain_cb = les_store_optional_cb(drain_cb, "drain callback");
-    st->write_error_cb = les_store_cb(write_error_cb, "write error callback");
-    st->write_empty_cb = les_store_cb(write_empty_cb, "write empty callback");
-    st->high_watermark = high_watermark;
-    st->low_watermark = low_watermark;
-
-    if (read_mode == LES_READ_DELIVER && !st->deliver_cb)
-        croak("deliver callback required for raw/deliver mode");
-    if (read_mode == LES_READ_PERL_FRAMER && !st->framed_ready_cb)
-        croak("framed ready callback required for custom framer mode");
-    if (read_mode != LES_READ_DELIVER && !st->framing_error_cb)
-        croak("framing error callback required for native buffered mode");
-
-    if (read_mode == LES_READ_DELIMITER || read_mode == LES_READ_DECIMAL) {
-        STRLEN dlen;
-        const char *dp;
-        if (!delimiter_sv || !SvOK(delimiter_sv))
-            croak("delimiter required for native delimiter mode");
-        dp = SvPVbyte(delimiter_sv, dlen);
-        if (dlen == 0)
-            croak("delimiter must not be empty");
-        if (read_mode == LES_READ_DECIMAL && dlen != 1)
-            croak("separator must be exactly one byte for native decimal framing");
-        if (!st->message_cb)
-            croak("message callback required for native delimiter mode");
-        st->delimiter = (char *)malloc((size_t)dlen);
-        if (!st->delimiter)
-            croak("malloc native delimiter failed");
-        memcpy(st->delimiter, dp, (size_t)dlen);
-        st->delimiter_len = (size_t)dlen;
-    }
-
-    if (read_mode >= LES_READ_DELIMITER && !st->message_cb)
-        croak("message callback required for native built-in framing mode");
-    if (max_frame_sv && SvOK(max_frame_sv)) {
-        st->has_max_frame = 1;
-        st->max_frame = SvUV(max_frame_sv);
-    }
+    if (read_mode == LES_READ_DELIVER
+        && (!deliver_cb || !SvOK(deliver_cb)))
+        croak("on_data callback required for raw Stream descriptor");
+    if (read_mode != LES_READ_DELIVER
+        && (!message_cb || !SvOK(message_cb)))
+        croak("on_message callback required for framed Stream descriptor");
+    if (read_mode != LES_READ_DELIVER
+        && (!framing_error_cb || !SvOK(framing_error_cb)))
+        croak("framing error callback required for framed Stream descriptor");
     if (read_mode == LES_READ_FIXED && fixed_size == 0)
         croak("fixed_size must be > 0 for native fixed framing");
     if (read_mode == LES_READ_LENGTH
         && prefix_bytes != 1 && prefix_bytes != 2 && prefix_bytes != 4)
         croak("prefix_bytes must be 1, 2, or 4 for native length framing");
+
+    if (read_mode == LES_READ_DELIMITER || read_mode == LES_READ_DECIMAL) {
+        if (!delimiter_sv || !SvOK(delimiter_sv))
+            croak("delimiter required for native delimiter mode");
+        delimiter = SvPVbyte(delimiter_sv, delimiter_len);
+        if (delimiter_len == 0)
+            croak("delimiter must not be empty");
+        if (read_mode == LES_READ_DECIMAL && delimiter_len != 1)
+            croak("separator must be exactly one byte for native decimal framing");
+    }
+
+    descriptor = (les_descriptor_t *)calloc(1, sizeof(*descriptor));
+    if (!descriptor) croak("calloc XSDescriptor failed");
+
+    descriptor->read_size = (size_t)read_size;
+    descriptor->high_watermark = high_watermark;
+    descriptor->low_watermark = low_watermark;
+    descriptor->max_buffer = max_buffer;
+    descriptor->read_mode = read_mode;
+    descriptor->include_delimiter = include_delimiter ? 1 : 0;
+    descriptor->fixed_size = fixed_size;
+    descriptor->prefix_bytes = prefix_bytes;
+    descriptor->prefix_little = prefix_little ? 1 : 0;
+    descriptor->include_prefix = include_prefix ? 1 : 0;
+    if (max_frame_sv && SvOK(max_frame_sv)) {
+        descriptor->has_max_frame = 1;
+        descriptor->max_frame = SvUV(max_frame_sv);
+    }
+    if (delimiter_len) {
+        descriptor->delimiter = (char *)malloc((size_t)delimiter_len);
+        if (!descriptor->delimiter) {
+            free(descriptor);
+            croak("malloc native descriptor delimiter failed");
+        }
+        memcpy(descriptor->delimiter, delimiter, (size_t)delimiter_len);
+        descriptor->delimiter_len = (size_t)delimiter_len;
+    }
+
+    descriptor->deliver_cb = les_store_optional_cb(deliver_cb, "on_data callback");
+    descriptor->message_cb = les_store_optional_cb(message_cb, "on_message callback");
+    descriptor->drain_cb = les_store_optional_cb(drain_cb, "on_drain callback");
+    descriptor->eof_cb = les_store_cb(eof_cb, "EOF callback");
+    descriptor->read_error_cb = les_store_cb(read_error_cb, "read error callback");
+    descriptor->write_error_cb = les_store_cb(write_error_cb, "write error callback");
+    descriptor->write_empty_cb = les_store_cb(write_empty_cb, "write empty callback");
+    descriptor->framing_error_cb = les_store_cb(framing_error_cb, "framing error callback");
+
+    RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)descriptor);
+  OUTPUT:
+    RETVAL
+
+void
+DESTROY(descriptor_obj)
+    SV *descriptor_obj
+  PREINIT:
+    les_descriptor_t *descriptor;
+  CODE:
+    descriptor = les_descriptor_from_sv(descriptor_obj);
+    if (descriptor) {
+        if (descriptor->deliver_cb) SvREFCNT_dec(descriptor->deliver_cb);
+        if (descriptor->message_cb) SvREFCNT_dec(descriptor->message_cb);
+        if (descriptor->drain_cb) SvREFCNT_dec(descriptor->drain_cb);
+        if (descriptor->eof_cb) SvREFCNT_dec(descriptor->eof_cb);
+        if (descriptor->read_error_cb) SvREFCNT_dec(descriptor->read_error_cb);
+        if (descriptor->write_error_cb) SvREFCNT_dec(descriptor->write_error_cb);
+        if (descriptor->write_empty_cb) SvREFCNT_dec(descriptor->write_empty_cb);
+        if (descriptor->framing_error_cb) SvREFCNT_dec(descriptor->framing_error_cb);
+        free(descriptor->delimiter);
+        free(descriptor);
+        sv_setiv(SvRV(descriptor_obj), 0);
+    }
+
+MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSState
+PROTOTYPES: DISABLE
+
+SV *
+new(CLASS, stream, fd, descriptor_obj)
+    const char *CLASS
+    SV *stream
+    int fd
+    SV *descriptor_obj
+  PREINIT:
+    les_xsstate_t *st;
+    les_descriptor_t *descriptor;
+  CODE:
+    if (fd < 0) croak("fd must be >= 0");
+    descriptor = les_descriptor_from_sv(descriptor_obj);
+    if (!descriptor) croak("Stream descriptor is closed");
+
+    st = (les_xsstate_t *)calloc(1, sizeof(*st));
+    if (!st) croak("calloc XSState failed");
+    st->fd = fd;
+    st->descriptor = descriptor;
+    st->descriptor_sv = newSVsv(descriptor_obj);
+    st->stream_sv = newSVsv(stream);
+
+    if (descriptor->read_mode == LES_READ_DELIVER) {
+        st->read_buffer = (char *)malloc(descriptor->read_size);
+        if (!st->read_buffer) {
+            SvREFCNT_dec(st->descriptor_sv);
+            SvREFCNT_dec(st->stream_sv);
+            free(st);
+            croak("malloc XSState read buffer failed");
+        }
+    }
 
     RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)st);
   OUTPUT:
@@ -1274,21 +1317,9 @@ DESTROY(state_obj)
     if (st) {
         les_clear_write_queue(st);
         if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
-        if (st->deliver_cb) SvREFCNT_dec(st->deliver_cb);
-        if (st->framed_ready_cb) SvREFCNT_dec(st->framed_ready_cb);
-        if (st->message_cb) SvREFCNT_dec(st->message_cb);
-        if (st->framing_error_cb) SvREFCNT_dec(st->framing_error_cb);
-        if (st->eof_cb) SvREFCNT_dec(st->eof_cb);
-        if (st->read_error_cb) SvREFCNT_dec(st->read_error_cb);
-        if (st->drain_cb) SvREFCNT_dec(st->drain_cb);
-        if (st->write_error_cb) SvREFCNT_dec(st->write_error_cb);
-        if (st->write_empty_cb) SvREFCNT_dec(st->write_empty_cb);
+        if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
         free(st->read_buffer);
-        st->read_buffer = NULL;
         free(st->input_buffer);
-        st->input_buffer = NULL;
-        free(st->delimiter);
-        st->delimiter = NULL;
         free(st);
         sv_setiv(SvRV(state_obj), 0);
     }
@@ -1338,7 +1369,7 @@ _resume(state_obj)
     st = les_state_from_sv(state_obj);
     if (!st->closed && !st->read_eof) {
         st->read_paused = 0;
-        if (st->read_mode != LES_READ_DELIVER && st->input_len)
+        if (st->descriptor->read_mode != LES_READ_DELIVER && st->input_len)
             les_process_buffered(aTHX_ st);
     }
 
@@ -1354,108 +1385,7 @@ _close(state_obj)
         les_clear_write_queue(st);
         st->input_start = 0;
         st->input_len = 0;
-        st->input_needed = 0;
     }
-
-UV
-_input_length(state_obj)
-    SV *state_obj
-  CODE:
-    RETVAL = (UV)les_state_from_sv(state_obj)->input_len;
-  OUTPUT:
-    RETVAL
-
-IV
-_input_index(state_obj, needle, start = 0)
-    SV *state_obj
-    SV *needle
-    UV start
-  PREINIT:
-    les_xsstate_t *st;
-    STRLEN nlen;
-    const char *np;
-    size_t pos;
-  CODE:
-    st = les_state_from_sv(state_obj);
-    np = SvPVbyte(needle, nlen);
-    if (nlen == 0) {
-        RETVAL = start <= st->input_len ? (IV)start : -1;
-    } else {
-        pos = les_find_bytes(les_input_data(st), st->input_len, np, (size_t)nlen, (size_t)start);
-        RETVAL = pos == (size_t)-1 ? -1 : (IV)pos;
-    }
-  OUTPUT:
-    RETVAL
-
-SV *
-_input_byte(state_obj, offset)
-    SV *state_obj
-    UV offset
-  PREINIT:
-    les_xsstate_t *st;
-  CODE:
-    st = les_state_from_sv(state_obj);
-    if (offset >= st->input_len)
-        RETVAL = &PL_sv_undef;
-    else
-        RETVAL = newSVuv((unsigned char)les_input_data(st)[offset]);
-  OUTPUT:
-    RETVAL
-
-SV *
-_input_peek(state_obj, offset, length)
-    SV *state_obj
-    UV offset
-    UV length
-  PREINIT:
-    les_xsstate_t *st;
-  CODE:
-    st = les_state_from_sv(state_obj);
-    if (offset > st->input_len || length > st->input_len - offset)
-        croak("peek range exceeds available buffer");
-    RETVAL = newSVpvn(les_input_data(st) + offset, (STRLEN)length);
-  OUTPUT:
-    RETVAL
-
-void
-_input_need(state_obj, minimum)
-    SV *state_obj
-    UV minimum
-  CODE:
-    les_state_from_sv(state_obj)->input_needed = minimum;
-
-UV
-_input_needed(state_obj)
-    SV *state_obj
-  CODE:
-    RETVAL = les_state_from_sv(state_obj)->input_needed;
-  OUTPUT:
-    RETVAL
-
-void
-_input_clear_need(state_obj)
-    SV *state_obj
-  CODE:
-    les_state_from_sv(state_obj)->input_needed = 0;
-
-SV *
-_input_extract_consume(state_obj, offset, length, consume)
-    SV *state_obj
-    UV offset
-    UV length
-    UV consume
-  PREINIT:
-    les_xsstate_t *st;
-    const char *data;
-  CODE:
-    st = les_state_from_sv(state_obj);
-    if (consume == 0 || consume > st->input_len || offset > consume || length > consume - offset)
-        croak("invalid native frame extraction boundaries");
-    data = les_input_data(st);
-    RETVAL = newSVpvn(data + offset, (STRLEN)length);
-    les_input_consume(st, (size_t)consume);
-  OUTPUT:
-    RETVAL
 
 int
 is_read_eof(state_obj)
@@ -1503,7 +1433,6 @@ stats(state_obj)
     hv_stores(hv, "input_compactions", newSVuv(st->input_compactions));
     hv_stores(hv, "input_peak_bytes", newSVuv(st->input_peak_bytes));
     hv_stores(hv, "input_buffered_bytes", newSVuv(st->input_len));
-    hv_stores(hv, "framing_ready_calls", newSVuv(st->framing_ready_calls));
     hv_stores(hv, "delimiter_searches", newSVuv(st->delimiter_searches));
     hv_stores(hv, "frames_emitted", newSVuv(st->frames_emitted));
     hv_stores(hv, "framing_error_count", newSVuv(st->framing_error_count));

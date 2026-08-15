@@ -1,201 +1,148 @@
 # Choosing a Stream framer
 
-TCP delivers an ordered stream of bytes. It does **not** preserve your
-application's message boundaries. A framer is the rule that turns those bytes
-back into complete messages.
+TCP and Unix stream sockets deliver bytes, not messages. Choose framing from
+the protocol's wire format, then declare that framing once in the Stream
+subclass.
 
-Normal application code only needs to remember one factory:
+## Quick selection table
 
-```perl
-use Linux::Event::Stream::Framer;
-```
-
-The easiest way to choose a framer is to ask **how the protocol says a message
-ends**.
-
-| What the wire format says | Factory method | Example |
+| Wire pattern | Declaration name | Typical use |
 |---|---|---|
-| "Each message ends with newline" | `->line` | `HELLO\n` |
-| "Read until these bytes appear" | `->delimiter($bytes)` | CRLF, NUL, `\x02END\x03` |
-| "Every record is exactly N bytes" | `->fixed(size => N)` | 32-byte device records |
-| "A fixed-width integer says how many payload bytes follow" | `->length_prefix(...)` | `[00 05][HELLO]` |
-| "The first four bytes are an unsigned big-endian payload length" | `->u32be` | `[00 00 00 05][HELLO]` |
-| "A compact base-128 integer says how many payload bytes follow" | `->varint` | `[05][HELLO]` |
-| "ASCII decimal length, separator, then payload" | `->decimal_length` | `5 HELLO` |
-| "Decimal length, colon, payload, comma" | `->netstring` | `5:HELLO,` |
-| None of these | custom framer | proprietary or stateful framing rule |
+| payload followed by a marker | `Delimiter` | lines, CRLF records, sentinel protocols |
+| every message is exactly N bytes | `Fixed` | fixed binary records |
+| 1/2/4-byte unsigned payload length | `LengthPrefix` | configurable binary protocols |
+| 4-byte network-order payload length | `U32BE` | common binary message convention |
+| `length:payload,` | `Netstring` | canonical self-delimiting records |
+| unsigned LEB128 length plus payload | `Varint` | compact binary protocols |
+| ASCII digits, separator, payload | `DecimalLength` | RFC 6587 octet-counted syslog |
+| none of these | no framer; use `on_data` | application-specific parsing |
 
-## Newline-delimited messages
-
-For the common newline case:
-
-```perl
-my $framer = Linux::Event::Stream::Framer->line;
-```
-
-Incoming `\n` is stripped from the delivered message and `send()` appends it on
-output.
+Names are case-sensitive and are the exact final package components under
+`Linux::Event::Stream::Framer`.
 
 ## Delimiter
 
-`delimiter()` searches for a specific byte sequence. Everything before the
-marker is one message unless `include_delimiter` is requested.
+Use this when a non-empty byte sequence ends each message:
 
 ```perl
-my $framer = Linux::Event::Stream::Framer->delimiter("\r\n");
+package CRLFStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::Stream::Framer 'Delimiter', "\r\n",
+    max_frame => 1_048_576;
+
+sub on_message ($stream, $message) { ... }
 ```
 
-Use it when the protocol talks about **terminators**, **separators**, **line
-endings**, or **sentinel bytes**. The marker may be binary and may cross socket
-read boundaries.
+The delimiter may contain arbitrary bytes and may cross socket reads.
+`include_delimiter => 1` includes it in inbound messages. `send($payload)`
+appends it.
+
+There is deliberately no separate `line` alias. A line protocol states its
+actual wire delimiter directly, such as `"\n"` or `"\r\n"`.
 
 ## Fixed
 
-`fixed()` waits until exactly the configured number of bytes are available and
-emits that many bytes as one message.
+Use this only when every message has exactly the same byte length:
 
 ```perl
-my $framer = Linux::Event::Stream::Framer->fixed(size => 32);
+use Linux::Event::Stream::Framer 'Fixed', size => 32;
 ```
 
-Use it for fixed-width records, device telemetry packets, or file-like binary
-records whose size never changes.
+`send()` rejects payloads that are not exactly `size` bytes.
 
-## Length prefix
+## LengthPrefix
 
-`length_prefix()` reads an unsigned integer from the beginning of the frame,
-then waits for that many payload bytes.
-
-```text
-00 05  H E L L O
-^^^^^  ^^^^^^^^^
-length payload
-```
+Use this for a one-, two-, or four-byte unsigned payload length:
 
 ```perl
-my $framer = Linux::Event::Stream::Framer->length_prefix(
-    bytes     => 2,
-    endian    => 'big',
-    max_frame => 1_048_576,
-);
+use Linux::Event::Stream::Framer 'LengthPrefix',
+    bytes          => 2,
+    endian         => 'big',
+    include_prefix => 0,
+    max_frame      => 1_048_576;
 ```
 
-Use it when protocol documentation says **length field**, **payload length**,
-**message size**, or **record size** near the start of each message.
+`bytes` defaults to 4 and `endian` defaults to `big`. The encoded value is the
+payload length, not the prefix-plus-payload length.
 
 ## U32BE
 
-`u32be()` is the common special case of a four-byte unsigned big-endian length
-prefix.
+Use this convenience family for an unsigned four-byte network-order payload
+length:
 
 ```perl
-my $framer = Linux::Event::Stream::Framer->u32be;
+use Linux::Event::Stream::Framer 'U32BE',
+    max_frame => 16 * 1024 * 1024;
 ```
 
-Use it when the protocol explicitly describes a **32-bit network-order** or
-**unsigned big-endian 32-bit** payload length.
-
-## Varint
-
-`varint()` is length-prefix framing where small lengths use fewer prefix bytes.
-It uses canonical unsigned LEB128, also called an unsigned base-128 varint.
-
-```perl
-my $framer = Linux::Event::Stream::Framer->varint(
-    max_frame => 1_048_576,
-);
-```
-
-Use it only when the protocol explicitly says **unsigned LEB128**, **base-128
-varint**, or documents the same low-seven-bits plus continuation-bit encoding.
-It is not interchangeable with every format that happens to be called a
-“varint.”
+It has the same wire form as `LengthPrefix` with `bytes => 4` and
+`endian => 'big'`.
 
 ## Netstring
 
-A netstring writes the payload length in decimal text, then `:`, the payload,
-and `,`.
-
-```text
-5:HELLO,
-```
+Use this for canonical netstrings:
 
 ```perl
-my $framer = Linux::Event::Stream::Framer->netstring;
+use Linux::Event::Stream::Framer 'Netstring',
+    max_frame => 1_048_576;
 ```
 
-This is still length-based framing; the length is simply represented as ASCII
-instead of a binary integer.
+`send('hello')` emits `5:hello,`. The parser rejects malformed decimal lengths,
+leading zeroes other than the canonical zero, and a missing trailing comma.
 
-## Decimal length
+## Varint
 
-`decimal_length()` writes the payload size as ASCII digits followed by one
-separator byte. Its default form is used by RFC 6587 octet-counted syslog:
-
-```text
-5 HELLO
-```
+Use this when the payload length is an unsigned LEB128 integer:
 
 ```perl
-my $framer = Linux::Event::Stream::Framer->decimal_length(
-    max_frame => 1_048_576,
-);
+use Linux::Event::Stream::Framer 'Varint',
+    include_prefix => 0,
+    max_frame      => 1_048_576;
 ```
 
-Use `separator => '|'` for a protocol whose wire form is `5|HELLO`.
+Small messages use fewer prefix bytes. The parser rejects non-canonical,
+overlong, or overflowing prefixes.
 
-## Reuse one built-in framer across connections
+## DecimalLength
 
-Built-in framer objects describe the wire format; they do not store a
-connection's partial bytes or scan position. A server can therefore construct
-one and reuse it safely:
+Use this when ASCII decimal digits state the payload length:
 
 ```perl
-my $lines = Linux::Event::Stream::Framer->line;
+use Linux::Event::Stream::Framer 'DecimalLength',
+    separator      => ' ',
+    include_prefix => 0,
+    max_frame      => 1_048_576;
+```
 
-for my $socket (@sockets) {
-    Linux::Event::Stream->new(
-        loop       => $loop,
-        fh         => $socket,
-        framer     => $lines,
-        on_message => sub ($stream, $message) { ... },
-    );
+The separator must be one non-digit byte. The default wire form for `HELLO` is
+`5 HELLO`, which matches RFC 6587 octet-counted syslog.
+
+## If no built-in matches
+
+Do not force a protocol into the wrong framing family. Define a raw Stream and
+buffer or parse in `on_data`:
+
+```perl
+package ProprietaryStream;
+use parent 'Linux::Event::Stream';
+
+sub on_data ($stream, $bytes) {
+    my $state = $stream->data;
+    $state->{buffer} .= $bytes;
+    # Parse as many complete application records as are available.
 }
 ```
 
-Each Stream still owns independent native parser state. Reuse saves duplicate
-framer/configuration objects and does not add a per-message method call.
+This keeps application-specific state and policy in Perl without requiring a
+per-connection framer-object protocol. If a framing rule is broadly useful and
+profiling justifies it, add it to Linux::Event as a native built-in.
 
-Custom framers may keep arbitrary Perl state and should only be shared when the
-custom implementation itself is designed to be share-safe.
+## Safety limits
 
-## What if I do not know the name?
+Set `max_frame` for untrusted framed input. Stream also has a class-level
+`max_buffer` transport limit, defaulting to 8 MiB. The parser reports violations
+as `Linux::Event::Stream::Error` objects with type `framing`, invokes
+`on_error` when defined, and closes the Stream.
 
-Do not start by looking for a framer class name. Read the protocol's packet
-format and identify the boundary rule:
-
-1. Newline? -> `line`.
-2. Another terminating marker? -> `delimiter`.
-3. Every packet the same size? -> `fixed`.
-4. A fixed-width binary length? -> `length_prefix` or `u32be`.
-5. An unsigned LEB128/base-128 length? -> `varint`.
-6. ASCII digits plus a separator? -> `decimal_length`.
-7. Written specifically as `length:data,`? -> `netstring`.
-8. Otherwise, use a custom framer until an appropriate native built-in exists.
-
-## Native versus custom
-
-Factory methods return the exact built-in classes recognized by Stream, so
-incoming boundary detection runs in XS directly against Stream's native input
-buffer. The factory call occurs only when the framing definition is created;
-it is not part of the message hot path.
-
-Outbound `send()` calls the built-in's Perl `frame()` method, then queues the
-result through the native write engine. “Native framer” currently refers to the
-incoming parser.
-
-Custom Perl framers use the same native storage through
-`Linux::Event::Stream::Framer::Buffer`, so unusual protocols remain possible
-without exposing internal pointers or buffer representation.
-
-See `docs/FRAMING.md` for the custom-framer API contract.
+See [`FRAMING.md`](FRAMING.md) for the complete declaration and extension
+contract.

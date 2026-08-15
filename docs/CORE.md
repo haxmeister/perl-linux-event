@@ -1,8 +1,8 @@
 # Core Reactor Guide
 
 This document describes the low-level Linux::Event XS reactor. Applications
-that want owned buffered byte-stream I/O should use `Linux::Event::Stream` on
-top of this layer.
+that want owned buffered byte-stream I/O should use a
+`Linux::Event::Stream` subclass on top of this layer.
 
 ## Mental model
 
@@ -125,8 +125,9 @@ read => sub ($watcher) {
 ```
 
 This repeated Perl socket/buffer work is intentionally visible in the raw
-reactor API. `Linux::Event::Stream` moves the mechanical read/write/buffering
-work into native code when that higher-level ownership model is desired.
+reactor API. A `Linux::Event::Stream` subclass moves the mechanical
+read/write/buffering work into native code when that higher-level ownership
+model is desired.
 
 ## Writable interest
 
@@ -137,7 +138,8 @@ $watcher->enable_write;
 $watcher->disable_write;
 ```
 
-Linux::Event::Stream manages these transitions in its native write queue.
+Linux::Event::Stream subclasses manage these transitions in the native write
+queue.
 Applications using the core directly remain free to control them.
 
 ## Stopping and driving the loop
@@ -256,6 +258,6 @@ The raw reactor does not own:
 - application backpressure policy
 - protocol parsing
 
-Those responsibilities belong to `Linux::Event::Stream`. Keeping that
-separation gives Linux::Event both a low-level general reactor and a high-level
-native stream-processing path.
+Those responsibilities belong to `Linux::Event::Stream` subclasses. Keeping
+that separation gives Linux::Event both a low-level general reactor and a
+high-level native stream-processing path.

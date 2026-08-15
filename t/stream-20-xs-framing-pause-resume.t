@@ -6,32 +6,36 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Delimiter;
+
+{
+    package T::PausableFramedStream;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Delimiter', '|';
+    sub on_message ($stream, $message) {
+        my $state = $stream->data;
+        push @{ $state->{got} }, $message;
+        if (@{ $state->{got} } == 1) {
+            $stream->pause_read;
+        }
+        $state->{loop}->stop;
+    }
+}
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
-my @got;
-my $stream = Linux::Event::Stream->new(
+my $state = { loop => $loop, got => [] };
+my $stream = T::PausableFramedStream->new(
     loop => $loop,
     fh   => $a,
-    framer => Linux::Event::Stream::Framer::Delimiter->new(delimiter => '|'),
-    on_message => sub ($s, $message) {
-        push @got, $message;
-        if (@got == 1) {
-            $s->pause_read;
-            $loop->stop;
-        } else {
-            $loop->stop;
-        }
-    },
+    data => $state,
 );
 
 syswrite($b, 'one|two|');
 $loop->run;
-is_deeply(\@got, ['one'], 'pause inside native on_message stops buffered frame dispatch');
+is_deeply($state->{got}, ['one'], 'pause inside native on_message stops buffered frame dispatch');
 $stream->resume_read;
-is_deeply(\@got, ['one', 'two'], 'resume immediately dispatches already-buffered complete frame');
+is_deeply($state->{got}, ['one', 'two'], 'resume immediately dispatches already-buffered complete frame');
 
 $stream->close;
 close $b;

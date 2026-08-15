@@ -22,6 +22,7 @@ bench/run-callback-ceiling.pl
 bench/run-framing-microbench.pl
 bench/run-native-framers-microbench.pl
 bench/run-reactor-comparison.pl
+bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/STREAM-COMPETITOR-PLAN.md
 Changes
@@ -36,7 +37,6 @@ lib/Linux/Event.pm
 lib/Linux/Event/Stream.pm
 lib/Linux/Event/Stream/Error.pm
 lib/Linux/Event/Stream/Framer.pm
-lib/Linux/Event/Stream/Framer/Buffer.pm
 lib/Linux/Event/Stream/Framer/DecimalLength.pm
 lib/Linux/Event/Stream/Framer/Delimiter.pm
 lib/Linux/Event/Stream/Framer/Fixed.pm
@@ -81,7 +81,7 @@ t/stream-02-pause-resume.t
 t/stream-03-half-close.t
 t/stream-04-backpressure.t
 t/stream-05-delimiter-framer.t
-t/stream-06-custom-framer.t
+t/stream-06-raw-protocol-parser.t
 t/stream-07-framing-error.t
 t/stream-08-detach.t
 t/stream-09-api-contract.t
@@ -89,12 +89,12 @@ t/stream-10-end-drain.t
 t/stream-11-binary-delimiter.t
 t/stream-12-benchmark-smoke.t
 t/stream-13-xs-read-engine.t
-t/stream-14-reference-read-backend.t
+t/stream-14-class-options.t
 t/stream-15-xs-read-callback-state.t
 t/stream-16-xs-write-engine.t
 t/stream-17-xs-write-segments.t
 t/stream-18-xs-native-delimiter.t
-t/stream-19-xs-custom-framer-buffer.t
+t/stream-19-class-descriptor-sharing.t
 t/stream-20-xs-framing-pause-resume.t
 t/stream-21-xs-delimiter-errors.t
 t/stream-22-framing-benchmark-smoke.t
@@ -106,11 +106,12 @@ t/stream-27-netstring-framer.t
 t/stream-28-native-builtins-contract.t
 t/stream-29-error-stringify.t
 t/stream-30-native-framers-benchmark-smoke.t
-t/stream-31-framer-factory-share.t
+t/stream-31-framer-declaration.t
 t/stream-32-varint-framer.t
-t/stream-33-varint-native-contract.t
+t/stream-33-varint-state-sharing.t
 t/stream-34-decimal-length-framer.t
-t/stream-35-decimal-length-contract.t
+t/stream-35-decimal-length-state-sharing.t
+t/stream-36-lifecycle-benchmark-smoke.t
 xsloop/Makefile.PL
 xsloop/typemap
 xsloop/XSLoop.xs

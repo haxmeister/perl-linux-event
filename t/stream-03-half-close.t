@@ -7,36 +7,42 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SHUT_WR);
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
 
+{
+    package T::HalfCloseStream;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) { $stream->data->{request} .= $bytes }
+    sub on_eof ($stream) {
+        my $state = $stream->data;
+        $state->{eof_calls}++;
+        Test::More::ok($stream->is_read_eof, 'read EOF state set before callback');
+        Test::More::ok(!$stream->is_write_ended, 'writable side still open at peer EOF');
+        Test::More::ok($stream->write('response'), 'write remains legal after peer EOF');
+        $stream->end;
+    }
+    sub on_close ($stream) {
+        my $state = $stream->data;
+        $state->{close_calls}++;
+        $state->{loop}->stop;
+    }
+}
+
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 my $loop = Linux::Event::XSLoop->new;
-my ($request, $eof_calls, $close_calls) = ('', 0, 0);
+my $state = { loop => $loop, request => '', eof_calls => 0, close_calls => 0 };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::HalfCloseStream->new(
     loop => $loop,
     fh   => $a,
-    on_data => sub ($s, $bytes) {
-        $request .= $bytes;
-    },
-    on_eof => sub ($s) {
-        $eof_calls++;
-        ok($s->is_read_eof, 'read EOF state set before callback');
-        ok(!$s->is_write_ended, 'writable side still open at peer EOF');
-        ok($s->write('response'), 'write remains legal after peer EOF');
-        $s->end;
-    },
-    on_close => sub ($s) {
-        $close_calls++;
-        $loop->stop;
-    },
+    data => $state,
 );
 
 syswrite($b, 'request');
 shutdown($b, SHUT_WR) or die "shutdown peer: $!";
 $loop->run;
 
-is($request, 'request', 'data is drained before EOF completion');
-is($eof_calls, 1, 'on_eof fires once');
-is($close_calls, 1, 'stream closes after both directions end');
+is($state->{request}, 'request', 'data is drained before EOF completion');
+is($state->{eof_calls}, 1, 'on_eof fires once');
+is($state->{close_calls}, 1, 'stream closes after both directions end');
 ok($stream->is_write_ended, 'local writable side ended');
 ok($stream->is_closed, 'stream closed after full duplex completion');
 

@@ -1,224 +1,156 @@
-# Pluggable framing contract
+# Native framing declarations
 
-If you are not sure which built-in applies to a protocol, start with
-[`CHOOSING-A-FRAMER.md`](CHOOSING-A-FRAMER.md).
+## Public model
 
-Framing answers one question: **where does one message end and the next begin?**
-It is separate from serialization such as JSON, MessagePack, or application
-object construction.
-
-## Stable Buffer view
-
-Custom framers receive `Linux::Event::Stream::Framer::Buffer`, never the
-Stream's storage scalar or native pointer.
+A framed Stream is a subclass with one declarative import and a named
+`on_message` callback:
 
 ```perl
-$buffer->length;
-$buffer->index($needle, $start);
-$buffer->byte($offset);
-$buffer->peek($offset, $length);
-$buffer->need($minimum_total_bytes);
-```
+package MessageStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::Stream::Framer 'LengthPrefix',
+    bytes => 4, endian => 'big', max_frame => 16 * 1024 * 1024;
 
-The normal implementation now backs this object with native input storage. A
-private reference path still backs it with a Perl scalar. Framer code is
-identical in both cases.
-
-`peek()` copies only the requested range into Perl. `length`, `index`, `byte`,
-and `need` operate against native storage without exposing ownership.
-
-## `next_frame` contract
-
-A custom framer implements:
-
-```perl
-sub next_frame ($self, $buffer) { ... }
-```
-
-It has three outcomes:
-
-1. Return no values: not enough data yet.
-2. Return `(offset, length, consume)`: one complete frame exists.
-3. `die`: invalid input; Stream converts it to a framing error.
-
-`offset` and `length` select the bytes delivered to `on_message`. `consume`
-specifies how many bytes Stream removes from the front afterward.
-
-## `need(N)`
-
-A framer can say that it cannot make progress until N total bytes are present:
-
-```perl
-return $buffer->need(4) if $buffer->length < 4;
-```
-
-The threshold is stored in native Stream state. Linux::Event can continue
-reading without calling the Perl framer again until that threshold is reached.
-
-## Native built-in framers
-
-The normal user-facing factory is `Linux::Event::Stream::Framer`. Its methods
-return the exact built-in classes recognized by Stream, so message boundary
-detection still executes directly in XS. They all use the same native input storage
-and deliver only complete semantic messages to Perl. A subclass is deliberately
-not treated as a built-in fast path: its `next_frame()` remains authoritative.
-
-### Arbitrary delimiter
-
-```perl
-my $framer = Linux::Event::Stream::Framer->delimiter(
-    "\x02END-OF-MESSAGE\x03",
-);
-```
-
-Delimiters may cross reads, multiple frames may arrive in one read, and
-incomplete trailing bytes remain in native storage. `include_delimiter` and
-`max_frame` are supported.
-
-### Fixed-size records
-
-```perl
-my $framer = Linux::Event::Stream::Framer->fixed(size => 32);
-```
-
-Every 32 bytes is one message. `send()` requires an exactly 32-byte payload.
-
-### Configurable length prefix
-
-```perl
-my $framer = Linux::Event::Stream::Framer->length_prefix(
-    bytes     => 2,
-    endian    => 'big',
-    max_frame => 1_048_576,
-);
-```
-
-Unsigned 1-, 2-, and 4-byte prefixes are supported in big- or little-endian
-order. The prefix describes payload bytes. `include_prefix` optionally includes
-the prefix in the delivered message.
-
-### U32BE
-
-```perl
-my $framer = Linux::Event::Stream::Framer->u32be(
-    max_frame => 16 * 1024 * 1024,
-);
-```
-
-This is the common four-byte unsigned big-endian length prefix as a dedicated
-convenience class.
-
-### Netstring
-
-```perl
-my $framer = Linux::Event::Stream::Framer->netstring(
-    max_frame => 1_048_576,
-);
-```
-
-Canonical `length:payload,` netstrings are parsed natively. Invalid decimal
-lengths, noncanonical leading zeroes, excessive declared lengths, and missing
-comma terminators are framing errors.
-
-### Varint length prefix
-
-```perl
-my $framer = Linux::Event::Stream::Framer->varint(
-    max_frame => 1_048_576,
-);
-```
-
-The payload length is a canonical unsigned LEB128 integer occupying one to ten
-bytes. The prefix describes payload bytes. `include_prefix` optionally includes
-the actual variable-width prefix in the delivered message. Overflowing,
-overlong, and non-canonical prefixes are framing errors.
-
-### Decimal length
-
-```perl
-my $framer = Linux::Event::Stream::Framer->decimal_length(
-    separator => ' ',
-    max_frame => 1_048_576,
-);
-```
-
-The payload length is written as canonical ASCII decimal digits followed by
-one non-digit separator byte. The default produces RFC 6587 octet-counted
-syslog framing such as `5 HELLO`. Invalid digits, leading zeroes, excessive
-length fields, and declared lengths above `max_frame` are framing errors.
-
-For benchmark decomposition the same built-in objects can still be forced
-through generic Perl `next_frame()` execution. These backend switches are
-private test machinery, not application API.
-
-## Reusing built-in framing definitions
-
-Built-in framers are configuration objects and are safe to reuse across
-Streams. The changing parser state remains per Stream in native storage. During
-Stream construction the built-in configuration is copied into that Stream's XS
-state, so reuse adds no Perl method dispatch to the frame-processing hot path.
-
-```perl
-my $lines = Linux::Event::Stream::Framer->line;
-
-my $a = Linux::Event::Stream->new(
-    loop => $loop, fh => $socket_a, framer => $lines,
-    on_message => sub ($stream, $message) { ... },
-);
-
-my $b = Linux::Event::Stream->new(
-    loop => $loop, fh => $socket_b, framer => $lines,
-    on_message => sub ($stream, $message) { ... },
-);
-```
-
-Custom framers may contain arbitrary mutable Perl state and therefore are only
-share-safe when their own implementation guarantees it.
-
-## Custom length-prefix example
-
-```perl
-package My::U32Frame;
-
-sub new ($class) { bless {}, $class }
-
-sub next_frame ($self, $buffer) {
-    return $buffer->need(4) if $buffer->length < 4;
-
-    my $length = unpack('N', $buffer->peek(0, 4));
-    die "frame too large" if $length > 16 * 1024 * 1024;
-
-    my $total = 4 + $length;
-    return $buffer->need($total) if $buffer->length < $total;
-
-    return (4, $length, $total);
+sub on_message ($stream, $message) {
+    ...
 }
 ```
 
-No XS knowledge is required to define a proprietary framing format.
+The declaration must appear after `use parent`, making both inheritance and the
+protocol rule visible to readers. The import records immutable class metadata;
+it does not construct a framer object.
 
-## Outbound framing
+The first Stream construction resolves the declaration and inherited callback
+methods into a cached descriptor. Every connection of that class references
+the same descriptor while retaining independent input, scan, output-queue, and
+lifecycle state.
 
-A framer may implement:
+## Name resolution
 
-```perl
-sub frame ($self, $payload) { ... }
+The name is validated as a single Perl package component and expanded as:
+
+```text
+Linux::Event::Stream::Framer::<Name>
 ```
 
-Then applications may use:
+For example, `Delimiter` loads
+`Linux::Event::Stream::Framer::Delimiter`. There is no central keyword or alias
+table to keep synchronized. Misspelled or incorrectly cased names fail when the
+class is compiled.
+
+## Built-in wire contracts
+
+| Name | Native input | Outbound `send($payload)` |
+|---|---|---|
+| `Delimiter` | payload through configured delimiter | appends delimiter |
+| `Fixed` | exactly `size` bytes | requires exactly `size` bytes |
+| `LengthPrefix` | unsigned 1/2/4-byte payload length | prepends configured binary length |
+| `U32BE` | unsigned 4-byte network-order payload length | prepends network-order length |
+| `Netstring` | canonical `length:payload,` | emits canonical netstring |
+| `Varint` | canonical unsigned LEB128 payload length | prepends canonical LEB128 length |
+| `DecimalLength` | ASCII length plus one separator byte | prepends decimal length and separator |
+
+All lengths and limits describe bytes. Inbound boundary detection and parser
+state machines run in XS. Outbound encoding is a named built-in function called
+by `send()`, after which bytes enter the native write engine.
+
+## Common options
+
+Framers that accept `max_frame` reject larger inbound and outbound payloads.
+Length-prefix families may accept `include_prefix`; `Delimiter` accepts
+`include_delimiter`. These options change the message delivered to
+`on_message`, not the bytes consumed from the wire.
+
+The class-level Stream option `max_buffer` is an additional hard bound on
+framed input storage. Its default is 8 MiB:
 
 ```perl
-$stream->send($payload);
+sub stream_options ($class) {
+    return max_buffer => 32 * 1024 * 1024;
+}
 ```
 
-Serialization remains separate. Built-in `frame()` methods produce their wire
-representation in Perl and then use the same native Stream write engine.
-Outbound framing can move lower later if profiling demonstrates that prefix or
-separator construction is material.
+Choose explicit limits for untrusted protocols rather than relying only on
+available process memory.
 
-## Native versus custom framing
+## Raw mode for application-specific protocols
 
-The built-in family now covers arbitrary delimiter, fixed-size, configurable
-binary length prefix, U32BE, netstring, Varint, and decimal-length framing.
-Third-party Perl framers remain fully supported through `Framer::Buffer`;
-adding native built-ins does not change that plug-in contract.
+A subclass without a framer must define `on_data`. It receives byte chunks as
+the native read engine drains them:
+
+```perl
+package RawProtocolStream;
+use parent 'Linux::Event::Stream';
+
+sub on_data ($stream, $bytes) {
+    my $state = $stream->data;
+    $state->{input} .= $bytes;
+    ...
+}
+```
+
+Chunk boundaries are not protocol boundaries. The callback must retain partial
+state and may emit as many complete application records as are available.
+
+Arbitrary `next_frame` objects and the former native-backed Buffer view are not
+part of the API. This avoids a second framing contract, per-connection parser
+objects, repeated dynamic dispatch, and XS-to-Perl boundary crossings merely to
+ask where the next frame ends.
+
+## Inheritance
+
+A derived Stream inherits its nearest ancestor's framer declaration through
+normal Perl method resolution order. It may inherit or override named
+callbacks:
+
+```perl
+package AuditedMessageStream;
+use parent 'MessageStream';
+
+sub on_message ($stream, $message) {
+    audit($stream->data, $message);
+    ...
+}
+```
+
+Each concrete subclass gets its own cached descriptor, so its resolved callback
+set is stable. It does not get a copy of immutable framing data per connection.
+A class may not declare two framers or combine `on_data` with framed mode.
+
+## Adding a native built-in
+
+The public declaration loader derives the implementation package from its name,
+so adding a family does not require editing a keyword list. A complete built-in
+still requires both sides:
+
+1. a `Linux::Event::Stream::Framer::<Name>` module that validates declaration
+   arguments and provides immutable native config plus outbound encoding;
+2. a corresponding XS parser mode that handles partial input, multiple frames,
+   limits, errors, pause/close reentrancy, and instrumentation;
+3. contract tests for wire encoding, split input, invalid input, limits,
+   independent per-connection state, and `send()`;
+4. a row in `bench/run-native-framers-microbench.pl`.
+
+The module's internal builder interface is distribution-internal and may change.
+Copying a module without implementing its native parser semantics is not a new
+framing family. Applications should use raw `on_data`; contributors should add
+generally useful families to Linux::Event with the XS implementation and tests.
+
+## Error behavior
+
+Malformed or oversized input becomes a `Linux::Event::Stream::Error` with type
+`framing`. Stream stores it in `last_error`, invokes the cached `on_error`
+callback when present, and closes. Application callback exceptions are not
+silently converted or swallowed.
+
+## Performance model
+
+The descriptor stores immutable parser config and resolved named CVs once per
+class. XS appends bytes directly to per-connection native storage, finds every
+complete built-in frame available, and crosses into Perl only to deliver
+semantic messages or lifecycle errors. This removes per-read chunk scalars for
+framed mode and removes per-frame parser calls whose only result would be a
+boundary tuple.
+
+Measure changes with `bench/run-framing-microbench.pl`,
+`bench/run-native-framers-microbench.pl`, and the versioned lifecycle benchmark.

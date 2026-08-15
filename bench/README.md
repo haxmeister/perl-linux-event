@@ -1,8 +1,9 @@
 # Benchmark Guide
 
-The benchmark directory has two current entry points. Older optimization
+The benchmark directory contains current reactor, callback, Stream transport,
+framing, native-framer, and lifecycle measurements. Older optimization
 experiments are preserved under `bench/archive/` and are not the recommended
-way to measure the current core.
+way to measure the current implementation.
 
 ## 1. Permanent reactor comparison
 
@@ -119,21 +120,86 @@ including capacity, watcher reclaim/reuse, older comparison harnesses, and EV /
 AnyEvent studies. They are retained to make the research reproducible but may
 refer to phase-era names and assumptions.
 
-## 3. Stream transport decomposition
+## 3. Stream transport comparison
 
-`run-stream-microbench.pl` compares the raw reactor path with Stream's historical
-Perl path, native read path, and native read/write path. It is a development
-microbenchmark rather than the public cross-runtime leaderboard.
+`run-stream-microbench.pl` compares direct raw-reactor echo with a raw
+subclass-defined Stream using the same AF_UNIX request/reply workload. It
+measures the cost and benefit of owned native Stream transport above readiness
+dispatch; it is not the public cross-runtime leaderboard.
 
-## 4. Framing decomposition
+```bash
+perl -Mblib bench/run-stream-microbench.pl \
+  --clients=1,10,100,1000 --warmup=10 --messages=100 \
+  --bytes=64 --repeats=8
+```
 
-`run-framing-microbench.pl` isolates Perl-buffer framing, native-buffer plus
-Perl framing, and fully native delimiter framing.
+## 4. Framing measurements
 
-`run-native-framers-microbench.pl` constructs built-ins through the public
-`Linux::Event::Stream::Framer` factory and compares each resulting exact
-built-in framer through
-the generic Perl `next_frame()` path and its native XS parser. Use this when
-adding or changing built-in framers so native acceleration is measured rather
-than assumed. The current matrix includes delimiter, fixed, fixed-width length,
-U32BE, netstring, Varint, and decimal-length framing.
+`run-framing-microbench.pl` compares two canonical Stream subclasses on the
+same delimiter wire protocol:
+
+- `raw-on-data` buffers and searches for boundaries in the named Perl callback
+- `native-delimiter` uses the built-in native Delimiter parser
+
+Both use the same XS read/write engine. This isolates the practical reason to
+add a general framing family natively while preserving raw `on_data` as the
+fallback for application-specific protocols.
+
+`run-native-framers-microbench.pl` measures each canonical native built-in
+through a declarative Stream subclass. The current matrix is Delimiter, Fixed,
+LengthPrefix, U32BE, Netstring, Varint, and DecimalLength. There is no custom
+Perl parser mode or factory-object row in the current API.
+
+```bash
+perl -Mblib bench/run-native-framers-microbench.pl \
+  --framers=delimiter,fixed,length,u32be,netstring,varint,decimal \
+  --clients=1,10,100 --warmup=10 --messages=100 --bytes=64 --repeats=6
+```
+
+Compare framer rows only at identical payload sizes, client counts, host load,
+and build flags. Different wire formats have different prefix sizes and parser
+work.
+
+## 5. Stream lifecycle and retained memory
+
+`run-stream-lifecycle-bench.pl` is the versioned before/after measurement for
+the subclass-descriptor redesign. It reports:
+
+- construction/detach operations per second and process CPU microseconds per
+  operation over pre-created socketpairs
+- retained RSS delta for live objects in fresh child processes after socket,
+  loop, and retention-vector setup
+
+Benchmark contract 1 preserves the object-configured baseline workloads. The
+current adapter is `subclass-descriptor`; `framed-full-named` is the primary
+comparable case. `watcher` is an internal registration-shaped floor, not a
+Stream feature-equivalence claim.
+
+Build, raise the file-descriptor limit, and run the after snapshot with the same
+settings used for the baseline:
+
+```bash
+perl Makefile.PL
+make
+ulimit -n 100000
+perl -Mblib bench/run-stream-lifecycle-bench.pl \
+  --api-style=subclass-descriptor \
+  --iterations=100000 \
+  --pool=256 \
+  --live=1000,10000,20000 \
+  --warmup=1000 \
+  --repeats=7 \
+  --memory-repeats=3 \
+  --json=bench/results/stream-lifecycle-after.json
+```
+
+The old source revision produced the matching baseline with
+`--api-style=object-configured`. Do not try to pass that label to the redesigned
+source: the constructor no longer exists. Compare the two JSON files only when
+`benchmark_contract_version`, `workload`, case list, iteration counts, live
+counts, Perl, compiler flags, and machine are equivalent.
+
+For `framed-full-named`, compare median CPU time per operation first, then
+operations/second and retained bytes/object. RSS is page-granular, so the larger
+live counts are the meaningful memory samples. Each socketpair consumes two
+file descriptors; increase `ulimit -n` or lower `--live` if creation fails.

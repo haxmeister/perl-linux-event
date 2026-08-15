@@ -3,13 +3,17 @@ use v5.36;
 use strict;
 use warnings;
 
-use parent 'Linux::Event::Stream::Framer::LengthPrefix';
 use Carp qw(croak);
+use Linux::Event::Stream::Framer::LengthPrefix ();
 
-sub new ($class, %opt) {
+sub _build_definition ($class, @args) {
+    croak 'U32BE options must be key/value pairs' if @args % 2;
+    my %opt = @args;
     croak 'bytes is fixed at 4 for U32BE' if exists $opt{bytes};
     croak 'endian is fixed at big for U32BE' if exists $opt{endian};
-    return $class->SUPER::new(%opt, bytes => 4, endian => 'big');
+    return Linux::Event::Stream::Framer::LengthPrefix->_build_definition(
+        %opt, bytes => 4, endian => 'big'
+    );
 }
 
 1;
@@ -18,25 +22,18 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Stream::Framer::U32BE - 32-bit big-endian length-prefix framing
+Linux::Event::Stream::Framer::U32BE - native 32-bit big-endian framing declaration
 
 =head1 SYNOPSIS
 
-  use Linux::Event::Stream::Framer;
-
-  my $framer = Linux::Event::Stream::Framer->u32be;
+  package MessageStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Stream::Framer 'U32BE',
+      max_frame => 16 * 1024 * 1024;
 
 =head1 DESCRIPTION
 
-The normal user-facing constructor is provided by L<Linux::Event::Stream::Framer>. This concrete class remains available for subclassing and direct implementation-level use.
-
-Convenience built-in for the common wire format consisting of a 4-byte unsigned
-big-endian payload length followed by that many payload bytes. It shares the
-native length-prefix implementation with C<LengthPrefix>.
-
-=head1 OPTIONS
-
-Supports C<include_prefix> and C<max_frame> from
-L<Linux::Event::Stream::Framer::LengthPrefix>. Width and byte order are fixed.
+Convenience declaration for a four-byte unsigned network-order payload length.
+It accepts C<include_prefix> and C<max_frame>; width and byte order are fixed.
 
 =cut

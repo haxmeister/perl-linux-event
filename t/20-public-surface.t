@@ -20,6 +20,7 @@ for my $required (
     'bench/README.md',
     'bench/run-reactor-comparison.pl',
     'bench/run-callback-ceiling.pl',
+    'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
@@ -39,6 +40,7 @@ for my $live (
     'bench/README.md',
     'bench/run-reactor-comparison.pl',
     'bench/run-callback-ceiling.pl',
+    'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
@@ -59,6 +61,7 @@ my %allowed = map { $_ => 1 } qw(
     STREAM-COMPETITOR-PLAN.md
     run-reactor-comparison.pl
     run-callback-ceiling.pl
+    run-stream-lifecycle-bench.pl
     run-stream-microbench.pl
     run-framing-microbench.pl
     run-native-framers-microbench.pl

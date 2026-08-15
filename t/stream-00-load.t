@@ -5,8 +5,7 @@ use Test::More;
 
 use_ok('Linux::Event::Stream');
 use_ok('Linux::Event::Stream::Error');
-use_ok('Linux::Event::Stream::Framer');
-use_ok('Linux::Event::Stream::Framer::Buffer');
+require_ok('Linux::Event::Stream::Framer');
 use_ok('Linux::Event::Stream::Framer::Delimiter');
 use_ok('Linux::Event::Stream::Framer::Fixed');
 use_ok('Linux::Event::Stream::Framer::LengthPrefix');

@@ -7,28 +7,35 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Linux::Event::XSLoop;
 use Linux::Event::Stream;
 
+{
+    package T::SmallReadStream;
+    use parent 'Linux::Event::Stream';
+    sub stream_options ($class) { return read_size => 4 }
+    sub on_data ($stream, $bytes) {
+        my $state = $stream->data;
+        $state->{got} .= $bytes;
+        $state->{loop}->stop if length($state->{got}) >= 10;
+    }
+}
+
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 
 my $loop = Linux::Event::XSLoop->new;
-my $got = '';
+my $state = { loop => $loop, got => '' };
 
-my $stream = Linux::Event::Stream->new(
+my $stream = T::SmallReadStream->new(
     loop => $loop,
     fh   => $a,
-    read_size => 4,
-    on_data => sub ($s, $bytes) {
-        $got .= $bytes;
-        $loop->stop if length($got) >= 10;
-    },
+    data => $state,
 );
 
 isa_ok($stream->{xs_state}, 'Linux::Event::Stream::XSState');
-is($stream->{read_backend}, 'xs', 'XS read backend is the default');
+isa_ok($stream->{descriptor}{xs}, 'Linux::Event::Stream::XSDescriptor');
 
 is(syswrite($b, 'abcdefghij'), 10, 'peer wrote test bytes');
 $loop->run;
-is($got, 'abcdefghij', 'native read engine drains and delivers bytes');
+is($state->{got}, 'abcdefghij', 'native read engine drains and delivers bytes');
 
 my $stats = $stream->{xs_state}->stats;
 ok($stats->{read_ready_calls} >= 1, 'native readiness handler ran');

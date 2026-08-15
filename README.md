@@ -1,20 +1,12 @@
 # Linux::Event
 
 Linux::Event is a Linux-only event and stream-processing foundation for Perl.
-It combines an XS-first `epoll` reactor with a high-level native buffered Stream
-layer in one distribution.
+It combines an XS-first `epoll` reactor with a native buffered Stream layer in
+one distribution.
 
-The layers remain deliberately separate:
-
-```text
-application / protocol
-        |
-Linux::Event::Stream       buffered reads, writes, backpressure, framing
-        |
-Linux::Event::XSLoop       generic fd readiness and timers
-        |
-      epoll
-```
+The layers remain deliberately separate: `Linux::Event::XSLoop` reports generic
+descriptor readiness, while `Linux::Event::Stream` owns byte-stream reads,
+writes, buffering, backpressure, lifecycle, and optional message framing.
 
 ## Current capabilities
 
@@ -27,20 +19,20 @@ Linux::Event::XSLoop       generic fd readiness and timers
 - level-triggered operation with optional edge-triggered/oneshot flags
 - no-argument callback fast path and bounded callback scopes
 - runtime read/write interest changes
-- profiling/statistics support
+- profiling and statistics support
 
 ### Stream
 
-- native read draining
-- native immediate writes and segmented queued output
-- `writev()` queue draining
+- subclass-defined behavior with one cached descriptor per Stream type
+- named callback CVs resolved once and called directly
+- native read draining and framed-input storage
+- native immediate writes and segmented `writev()` queue draining
 - high/low-watermark backpressure with `on_drain`
 - pause/resume reads
 - independent peer EOF and writable half-close
 - graceful `end()`, immediate `close()`, and ownership-transfer `detach()`
-- native framed input storage
-- native `Delimiter`, `Fixed`, `LengthPrefix`, `U32BE`, `Netstring`, `Varint`, and `DecimalLength` framing
-- custom Perl framers through a stable native-backed Buffer view
+- native `Delimiter`, `Fixed`, `LengthPrefix`, `U32BE`, `Netstring`, `Varint`,
+  and `DecimalLength` framing
 
 The raw reactor never performs application I/O automatically. Stream is the
 higher-level layer for applications that want owned byte-stream I/O.
@@ -53,77 +45,127 @@ make
 make test
 ```
 
-Both native extensions are built by the same distribution and placed in the
-same `blib` tree.
-
-To use the just-built copy without installing it:
+Both native extensions are built into the same `blib` tree. To use that copy
+without installing it:
 
 ```bash
 export PERL5LIB="$PWD/blib/lib:$PWD/blib/arch"
 ```
 
-## Minimal Stream example
+## Raw Stream example
+
+A Stream type is an ordinary package. It may live in the same file as the rest
+of the program.
 
 ```perl
 use v5.36;
 use Linux::Event::XSLoop;
-use Linux::Event::Stream;
 
+package EchoStream;
+use parent 'Linux::Event::Stream';
+
+sub on_data ($stream, $bytes) {
+    $stream->write($bytes);
+}
+
+sub on_error ($stream, $error) {
+    warn "$error\n";
+}
+
+package main;
 my $loop = Linux::Event::XSLoop->new;
-
-my $watcher = $loop->watch(
-    fh   => $listener,
-    read => sub ($watcher) { ... },
-);
-
-my $stream = Linux::Event::Stream->new(
+my $stream = EchoStream->new(
     loop => $loop,
     fh   => $socket,
-    on_data => sub ($stream, $bytes) {
-        $stream->write($bytes);
-    },
+    data => { user_id => 42 },
 );
-
 $loop->run;
 ```
 
-## Framing
+`data` is the optional per-connection application value. It is the natural
+place for a user record, permissions, room membership, parser state for a raw
+protocol, or other connection-specific state.
 
-Framing turns TCP's byte stream into complete application messages. Built-in
-framers execute their boundary detection in XS. Construct them through the
-user-facing factory:
+## Framed Stream example
+
+Framing turns a byte stream into complete messages. A framed type adds one
+declaration after `use parent` and implements `on_message`:
 
 ```perl
-use Linux::Event::Stream::Framer;
+package LineEchoStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::Stream::Framer 'Delimiter', "\n";
 
-my $lines = Linux::Event::Stream::Framer->line;
-my $binary = Linux::Event::Stream::Framer->length_prefix(
-    bytes => 4, endian => 'big',
-);
-my $compact_binary = Linux::Event::Stream::Framer->varint;
-my $octet_counted = Linux::Event::Stream::Framer->decimal_length;
+sub on_message ($stream, $message) {
+    $stream->send($message);
+}
 ```
 
-Built-in framing definitions are safe to share across Streams; each Stream
-keeps independent native parser state.
+The declaration name is the exact final component below
+`Linux::Event::Stream::Framer`. There is no alias table or per-connection
+framer object. Examples:
 
-“Native framing” here means incoming boundary detection. `send()` uses the
-built-in's Perl `frame()` method, then hands the framed bytes to the native
-Stream write engine.
+```perl
+use Linux::Event::Stream::Framer 'Fixed', size => 32;
+use Linux::Event::Stream::Framer 'LengthPrefix',
+    bytes => 4, endian => 'big', max_frame => 16 * 1024 * 1024;
+use Linux::Event::Stream::Framer 'U32BE',
+    max_frame => 16 * 1024 * 1024;
+use Linux::Event::Stream::Framer 'Netstring', max_frame => 1_048_576;
+use Linux::Event::Stream::Framer 'Varint', max_frame => 1_048_576;
+use Linux::Event::Stream::Framer 'DecimalLength',
+    separator => ' ', max_frame => 1_048_576;
+```
 
-If you know what a protocol's wire format looks like but not the framer name,
-start with [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md).
+Built-in boundary detection runs in XS. `send()` applies the declared outbound
+wire encoding and hands the result to the native write engine. Every instance
+has independent parser and queue state even though immutable configuration and
+callbacks are shared through its class descriptor.
 
-Detailed framing internals and the custom-framer contract are in
-[`docs/FRAMING.md`](docs/FRAMING.md).
+Protocols without a suitable built-in should define a raw `on_data` Stream and
+parse there. Arbitrary Perl framer objects are intentionally not accepted.
+Generally useful framing families can be added as native built-ins without
+adding a duplicate keyword registry.
+
+## Class transport options
+
+Transport policy also belongs to the Stream type and is cached once:
+
+```perl
+sub stream_options ($class) {
+    return (
+        read_size      => 32_768,
+        high_watermark => 2 * 1024 * 1024,
+        low_watermark  => 512 * 1024,
+        max_buffer     => 16 * 1024 * 1024,
+    );
+}
+```
+
+The base `Linux::Event::Stream` class is not directly constructible. The old
+constructor callback, framer-object, and per-object transport options were
+removed by design.
+
+## Why subclass descriptors
+
+The first construction of a Stream subclass resolves its callback methods,
+framer declaration, native parser configuration, and transport settings into
+one immutable Perl/XS descriptor. Each connection refers to that descriptor
+and allocates only mutable I/O and lifecycle state. This removes repeated
+callback hashes, framer objects, option parsing, validation, and native config
+copies from connection construction. Hot dispatch calls cached named CVs rather
+than performing method lookup.
+
+Use `bench/run-stream-lifecycle-bench.pl` to measure construction and retained
+memory against the versioned object-configured baseline.
 
 ## Documentation
 
 - [`docs/CORE.md`](docs/CORE.md) - raw reactor API and watcher lifecycle
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor architecture
-- [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream contract and design
-- [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - novice-friendly framer selection
-- [`docs/FRAMING.md`](docs/FRAMING.md) - framing plug-in contract and native built-ins
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor and Stream architecture
+- [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
+- [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
+- [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy
 - [`docs/XS-ROADMAP.md`](docs/XS-ROADMAP.md) - remaining native work
 - [`bench/README.md`](bench/README.md) - reactor and Stream benchmarks
 - [`docs/DEVELOPMENT-HISTORY.md`](docs/DEVELOPMENT-HISTORY.md) - historical optimization notes
@@ -131,8 +173,8 @@ Detailed framing internals and the custom-framer contract are in
 ## Project direction
 
 Linux::Event intentionally targets Linux rather than carrying a portability
-layer. The core principle is to keep mechanical event, byte, buffer, and framing
-work native while delivering semantic events to ordinary Perl application code.
+layer. Mechanical event, byte, buffer, queue, and framing work belongs in
+native code; ordinary named Perl callbacks receive semantic events.
 
 ## License
 

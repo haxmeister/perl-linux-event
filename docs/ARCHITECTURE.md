@@ -1,4 +1,4 @@
-# XS Reactor Architecture
+# Native architecture
 
 ## Hot path
 
@@ -102,3 +102,25 @@ The XS source still contains a private native echo diagnostic used to decompose
 callback entry from Perl `sysread`/buffer/`syswrite` work. It is deliberately
 prefixed `_bench_` and is not an application API. Its result is what motivated
 the next Stream work: the larger remaining cost is above the reactor.
+
+## Stream class descriptors
+
+The higher-level Stream extension has a separate native state model. The first
+construction of a concrete `Linux::Event::Stream` subclass creates one immutable
+XS descriptor containing resolved named callbacks, read size, output
+watermarks, framed-buffer limit, and native parser configuration.
+
+Every connection's XS state retains that descriptor and owns only mutable fd,
+input/parser, output-queue, lifecycle, and counter state. A framed connection
+therefore does not copy callbacks, delimiters, prefix policy, or transport
+settings into every allocation.
+
+Raw input drains into a reusable native read buffer and crosses into Perl for
+`on_data`. Framed input drains directly into native connection storage, runs
+the built-in parser there, and crosses into Perl only for complete
+`on_message` values or semantic errors. Both paths recheck pause and close state
+after callbacks.
+
+The Stream extension does not include private reactor headers. XSLoop passes
+watcher data directly to Stream's private readiness entry points, preserving a
+generic readiness core and an independently testable buffered Stream layer.

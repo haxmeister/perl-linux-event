@@ -4,39 +4,27 @@ use strict;
 use warnings;
 
 use Carp qw(croak);
+use bytes ();
 
-sub new ($class, %opt) {
+sub _build_definition ($class, @args) {
+    croak 'Fixed options must be key/value pairs' if @args != 1 && @args % 2;
+    my %opt = @args == 1 ? (size => $args[0]) : @args;
     my $size = delete $opt{size};
-    croak 'new(): missing size' if !defined $size;
-    croak 'new(): size must be a positive integer'
+    croak 'Fixed requires size' if !defined $size;
+    croak 'size must be a positive integer'
         if $size !~ /\A\d+\z/ || $size <= 0;
-    croak 'unknown options: ' . join(', ', sort keys %opt) if %opt;
+    croak 'unknown Fixed options: ' . join(', ', sort keys %opt) if %opt;
 
-    return bless { size => 0 + $size }, $class;
+    my $native = { read_mode => 3, fixed_size => 0 + $size };
+    return { native => $native, frame => \&_frame };
 }
 
-sub _native_config ($self) {
-    return {
-        read_mode  => 3,
-        fixed_size => $self->{size},
-    };
-}
-
-sub frame ($self, $payload) {
+sub _frame ($config, $payload) {
     $payload = '' if !defined $payload;
-    my $length = length($payload);
-    croak "frame(): payload length $length does not equal fixed size $self->{size}"
-        if $length != $self->{size};
+    my $length = bytes::length($payload);
+    croak "send(): payload length $length does not equal fixed size $config->{fixed_size}"
+        if $length != $config->{fixed_size};
     return $payload;
-}
-
-sub next_frame ($self, $buffer) {
-    my $size = $self->{size};
-    if ($buffer->length < $size) {
-        $buffer->need($size);
-        return;
-    }
-    return (0, $size, $size);
 }
 
 1;
@@ -45,31 +33,17 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Stream::Framer::Fixed - fixed-size binary message framing
+Linux::Event::Stream::Framer::Fixed - native fixed-size framing declaration
 
 =head1 SYNOPSIS
 
-  use Linux::Event::Stream::Framer;
-
-  my $framer = Linux::Event::Stream::Framer->fixed(size => 32);
+  package RecordStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Stream::Framer 'Fixed', size => 32;
 
 =head1 DESCRIPTION
 
-The normal user-facing constructor is provided by L<Linux::Event::Stream::Framer>. This concrete class remains available for subclassing and direct implementation-level use.
-
-Frames a byte stream into messages of exactly C<size> bytes. The exact built-in
-class uses the native Stream framing path. Subclasses remain ordinary custom
-Perl framers so overridden behavior is never bypassed.
-
-=head1 OPTIONS
-
-=head2 size
-
-Required positive frame size in bytes.
-
-=head1 OUTBOUND FRAMING
-
-C<frame($payload)> accepts only payloads whose length exactly matches C<size>.
-C<send($payload)> therefore preserves the fixed-size wire contract.
+Emits exactly C<size> bytes per message. C<send> rejects payloads whose byte
+length differs from the configured positive size.
 
 =cut

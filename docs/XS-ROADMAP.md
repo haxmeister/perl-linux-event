@@ -21,27 +21,33 @@ the same Linux::Event distribution. The guiding rule remains:
 - native Netstring framing
 - native Varint framing
 - native DecimalLength framing
-- custom Perl framers through the native-backed Buffer view
+- one immutable callback/framer/transport descriptor per Stream subclass
+- lightweight per-connection references to shared descriptors
+- exact-name declarative loading without a duplicate framer keyword registry
+- raw `on_data` fallback for application-specific protocols
 
 These are permanent regression targets. New work must not trade them away
 without benchmark evidence.
 
 ## Priority 1 - Comprehensive native framing families
 
-Expand the built-in framing catalog while keeping one rule: exact built-ins may
-run natively; custom classes and subclasses remain authoritative Perl plug-ins.
+Expand the built-in framing catalog while keeping one rule: built-in boundary
+detection is native, while application-specific protocols parse raw `on_data`
+bytes. Do not reintroduce a second arbitrary framer-object contract.
 
 Near-term framing families include:
 
-- line-oriented convenience framing
-- variable-integer length prefixes
+- delimiter configurations for line-oriented protocols
+- additional standardized variable-integer length prefixes
 - embedded/header length fields
 - escaped/stuffed serial framing such as SLIP and COBS
 - other general wire-framing families that can be expressed without embedding
   application protocol semantics
 
 Keep protocol-specific state machines separate when the work is more than
-message-boundary detection.
+message-boundary detection. A new general family needs a declarative module,
+corresponding XS parser mode, wire-contract tests, and a native-framer benchmark
+row. Its exact package name becomes the declaration name automatically.
 
 ## Priority 2 - Native Stream watcher-state transitions
 
@@ -100,6 +106,7 @@ mechanical parsing moves native.
 ## Benchmark policy
 
 Keep the reactor comparison as the low-level regression standard. Keep Stream
-transport and framing decomposition benchmarks separate. Cross-runtime Stream
+transport, framing, and lifecycle/retained-memory benchmarks separate.
+Cross-runtime Stream
 benchmarks compare high-level facilities and must continue to report exact
 fairness contracts, server CPU per message, throughput, latency, and memory.

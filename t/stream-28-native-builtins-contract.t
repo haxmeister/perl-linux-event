@@ -2,37 +2,77 @@ use v5.36;
 use strict;
 use warnings;
 use Test::More;
-use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
+use FindBin qw($Bin);
+use File::Spec;
 
-use Linux::Event::XSLoop;
 use Linux::Event::Stream;
-use Linux::Event::Stream::Framer::Fixed;
 
-{
-    package T::FixedSubclass;
-    our @ISA = ('Linux::Event::Stream::Framer::Fixed');
-    sub next_frame ($self, $buffer) {
-        my $pos = $buffer->index('!');
-        return if $pos < 0;
-        return (0, $pos, $pos + 1);
-    }
+for my $package (qw(
+    Linux::Event::Stream::Framer::Delimiter
+    Linux::Event::Stream::Framer::Fixed
+    Linux::Event::Stream::Framer::LengthPrefix
+    Linux::Event::Stream::Framer::U32BE
+    Linux::Event::Stream::Framer::Netstring
+    Linux::Event::Stream::Framer::Varint
+    Linux::Event::Stream::Framer::DecimalLength
+)) {
+    (my $file = "$package.pm") =~ s{::}{/}g;
+    require $file;
+    ok(!$package->can('new'), "$package has no per-connection object constructor");
 }
 
-socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
-    or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
-my $got;
-my $stream = Linux::Event::Stream->new(
-    loop => $loop,
-    fh => $a,
-    framer => T::FixedSubclass->new(size => 4),
-    on_message => sub ($s, $message) { $got = $message; $loop->stop },
+eval q{
+    package T::DeclarationWithoutParent;
+    use Linux::Event::Stream::Framer 'Fixed', size => 4;
+    1;
+};
+like($@, qr/must inherit from Linux::Event::Stream/,
+    'framer declaration requires explicit Stream inheritance first');
+
+eval q{
+    package T::LowercaseDeclaration;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'delimiter', "\n";
+    sub on_message { }
+    1;
+};
+like($@, qr/cannot declare framer 'delimiter'/,
+    'framer name is the exact final package component');
+
+eval q{
+    package T::InvalidDeclarationName;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer '../Delimiter', "\n";
+    sub on_message { }
+    1;
+};
+like($@, qr/invalid framer name/,
+    'unsafe package fragments are rejected before loading');
+
+eval q{
+    package T::DuplicateDeclaration;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Fixed', size => 4;
+    use Linux::Event::Stream::Framer 'Fixed', size => 4;
+    sub on_message { }
+    1;
+};
+like($@, qr/already declares a framer/, 'a Stream type declares exactly one framer');
+
+eval q{
+    package T::BadFixedDeclaration;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::Stream::Framer 'Fixed', size => 0;
+    sub on_message { }
+    1;
+};
+like($@, qr/size must be a positive integer/,
+    'built-in declaration arguments are validated at class definition time');
+
+my $buffer_module = File::Spec->catfile(
+    $Bin, '..', qw(lib Linux Event Stream Framer Buffer.pm),
 );
-is($stream->{framing_backend}, 'xs-perl', 'built-in subclass stays on custom framer path');
-syswrite($b, 'custom!');
-$loop->run;
-is($got, 'custom', 'subclass next_frame remains authoritative');
-$stream->close;
-close $b;
+ok(!-e $buffer_module,
+    'obsolete custom-framer Buffer module is absent from the distribution');
 
 done_testing;
