@@ -12,7 +12,7 @@ my @cmd = (
     "-I$Bin/../blib/lib",
     "-I$Bin/../blib/arch",
     $script,
-    '--api-style=subclass-descriptor',
+    '--api-style=watcher-add',
     '--iterations=20',
     '--pool=2',
     '--live=8',
@@ -36,7 +36,7 @@ my $output = $stdout . $stderr;
 is($status, 0, 'Stream lifecycle benchmark smoke exits successfully')
     or diag $output;
 like($output, qr/watcher repeat=1 .* ops\/s/, 'watcher lifecycle row ran');
-like($output, qr/contract=1 api_style=subclass-descriptor/,
+like($output, qr/contract=1 api_style=watcher-add/,
     'benchmark contract and API adapter are identified');
 like($output, qr/raw-named repeat=1 .* ops\/s/, 'raw Stream lifecycle row ran');
 like($output, qr/framed-full-named repeat=1 .* ops\/s/,

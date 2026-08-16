@@ -1,13 +1,14 @@
 # Linux::Event
 
 Linux::Event is a Linux-only event and stream-processing foundation for Perl.
-It combines an XS-first `epoll` reactor with outbound connection acquisition,
-a native buffered Stream layer, and an OpenSSL TLS transport in one
-distribution.
+It combines an XS-first `epoll` reactor with inbound and outbound connection
+acquisition, a native buffered Stream layer, and an OpenSSL TLS transport in
+one distribution.
 
-The layers remain deliberately separate: `Linux::Event::XSLoop` reports generic
-descriptor readiness, while `Linux::Event::Stream` owns byte-stream reads,
-writes, buffering, backpressure, lifecycle, and optional message framing.
+The public model is deliberately uniform: `Linux::Event::Loop` owns Watchers.
+Raw IO, Streams, Listeners, and Connectors are Watcher types. Native epoll
+registrations remain internal, so a composite Watcher may own several kernel
+event sources without creating extra public objects.
 
 ## Current capabilities
 
@@ -22,7 +23,14 @@ writes, buffering, backpressure, lifecycle, and optional message framing.
 - runtime read/write interest changes
 - profiling and statistics support
 
-### Connect
+### Watcher lifecycle
+
+- detached construction followed by explicit `$loop->add($watcher)`
+- strict one-Loop, one-attachment ownership
+- raw `watch()` convenience returning an already-attached `Linux::Event::IO`
+- no generic Perl dispatch layer in the readiness hot path
+
+### Connector
 
 - subclass-defined `on_connect` and `on_error` behavior cached per type
 - IPv4, IPv6, Unix stream, and caller-packed address modes
@@ -32,6 +40,16 @@ writes, buffering, backpressure, lifecycle, and optional message framing.
 - loop-dispatched immediate outcomes and silent cancellation
 - generic connected-filehandle ownership transfer; Stream is optional
 - one-`MOD` watcher replacement when the consumer registers the same fd
+
+### Listener
+
+- TCP, Unix, and adopted listening stream sockets
+- socket creation, options, bind, listen, and cleanup owned by one object
+- native `accept4` draining with atomic nonblocking and close-on-exec flags
+- bounded level-triggered batches for listener fairness
+- lazy peer-address conversion and typed runtime errors
+- generic accepted-filehandle transfer; Stream is optional
+- no temporary per-connection watcher before Stream construction
 
 ### Stream
 
@@ -61,7 +79,7 @@ make
 make test
 ```
 
-All four native extensions are built into the same `blib` tree. Building TLS
+All five native extensions are built into the same `blib` tree. Building TLS
 requires OpenSSL 1.1.1 or newer, including its development headers and
 libraries. To use that copy
 without installing it:
@@ -72,40 +90,62 @@ export PERL5LIB="$PWD/blib/lib:$PWD/blib/arch"
 
 ## Outbound connection example
 
-Connect acquires a socket; the success method decides what owns it next:
+The same Stream object exists before, during, and after connection setup:
 
 ```perl
-package GatewayConnect;
-use parent 'Linux::Event::Connect';
+package GatewayStream;
+use parent 'Linux::Event::Stream';
 
-sub on_connect ($request, $fh) {
-    GatewayStream->new(
-        loop      => $request->loop,
-        fh        => $fh,
-        data      => $request->data,
-        transport => Linux::Event::TLS->client(
-            server_name => $request->host,
-        ),
-    );
+sub on_ready ($stream) {
+    $stream->write("GET / HTTP/1.1\r\nHost: gateway.discord.gg\r\n\r\n");
 }
 
-sub on_error ($request, $error) {
-    warn "connect failed: $error\n";
-}
+package main;
+use Linux::Event::Loop;
+use Linux::Event::TLS;
 
-my $request = GatewayConnect->new(
-    loop    => $loop,
+my $loop = Linux::Event::Loop->new;
+my $stream = $loop->add(GatewayStream->connect(
     host    => 'gateway.discord.gg',
     port    => 443,
     timeout => 10,
-    data    => $state,
-);
+    transport => Linux::Event::TLS->client(
+        server_name => 'gateway.discord.gg',
+    ),
+));
+$loop->run;
 ```
 
-Callbacks always run from the loop after construction returns. The connected
-filehandle can instead be registered directly or handed to another protocol
-engine. Hostname resolution is still synchronous in this release; asynchronous
-Resolver and Happy Eyeballs are the next connection-layer work.
+`on_ready` means application-ready: TCP is connected and, when configured, the
+TLS handshake and verification are complete. `send()` or `write()` may be
+called before readiness; bounded output is retained on the Stream and flushed
+after connection establishment. Hostname resolution is still synchronous in
+this release.
+
+## Line echo server
+
+Listener owns socket setup and automatically constructs the framed Stream.
+There is no application-level socket or accepted-filehandle plumbing:
+
+```perl
+package EchoStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::Stream::Framer 'Delimiter', "\n";
+
+sub on_message ($stream, $line) { $stream->send($line) }
+
+package main;
+use Linux::Event::Loop;
+my $loop = Linux::Event::Loop->new;
+my $server = $loop->add(
+    EchoStream->listen(host => '0.0.0.0', port => 9999)
+);
+$loop->run;
+```
+
+Runnable versions are
+[`examples/line-echo-server.pl`](examples/line-echo-server.pl) and
+[`examples/line-echo-client.pl`](examples/line-echo-client.pl).
 
 ## Raw Stream example
 
@@ -114,7 +154,7 @@ of the program.
 
 ```perl
 use v5.36;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 package EchoStream;
 use parent 'Linux::Event::Stream';
@@ -128,12 +168,11 @@ sub on_error ($stream, $error) {
 }
 
 package main;
-my $loop = Linux::Event::XSLoop->new;
-my $stream = EchoStream->new(
-    loop => $loop,
+my $loop = Linux::Event::Loop->new;
+my $stream = $loop->add(EchoStream->new(
     fh   => $socket,
     data => { user_id => 42 },
-);
+));
 $loop->run;
 ```
 
@@ -261,6 +300,7 @@ memory against the versioned object-configured baseline.
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - plain transport and TLS provider contract
 - [`docs/CONNECT-DESIGN.md`](docs/CONNECT-DESIGN.md) - outbound acquisition, ownership, and future resolver contract
+- [`docs/LISTEN-DESIGN.md`](docs/LISTEN-DESIGN.md) - inbound acquisition, accept policy, and ownership transfer
 - [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
 - [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy
 - [`docs/XS-ROADMAP.md`](docs/XS-ROADMAP.md) - remaining native work

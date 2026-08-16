@@ -698,7 +698,7 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
     w->lean = (opt->lean && !w->callback_args) ? 1 : 0;
     if (w->lean) loop->lean_watchers++;
 
-    watcher_sv = sv_setref_pv(newSV(0), "Linux::Event::XSWatcher", (void*)w);
+    watcher_sv = sv_setref_pv(newSV(0), "Linux::Event::IO", (void*)w);
     if (!w->lean || (w->callback_args && !w->callback_arg_data))
         w->self_sv = newSVsv(watcher_sv);
     if (!w->lean) {
@@ -714,7 +714,9 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
     ev.events = le_epoll_events(w);
     ev.data.ptr = (void *)w;
     operation = old ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
-    if (le_epoll_ctl_timed(loop, operation, fd, &ev) < 0) {
+    if (le_epoll_ctl_timed(loop, operation, fd, &ev) < 0
+        && !(old && errno == ENOENT
+            && le_epoll_ctl_timed(loop, EPOLL_CTL_ADD, fd, &ev) == 0)) {
         int err = errno;
         le_watcher_destroy(w);
         croak("epoll_ctl %s fd %d failed: %s",

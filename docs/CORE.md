@@ -12,7 +12,7 @@ Linux::Event separates **readiness** from **I/O policy**:
 kernel epoll
     |
     v
-Linux::Event::XSLoop
+Linux::Event::Loop
     |
     v
 native watcher
@@ -29,12 +29,14 @@ operation appropriate to that descriptor.
 ## Constructing a loop
 
 ```perl
-use Linux::Event::XSLoop;
-my $loop = Linux::Event::XSLoop->new;
+use Linux::Event::Loop;
+my $loop = Linux::Event::Loop->new;
 ```
 
 Each loop owns one epoll instance, an event buffer, a native fd-indexed watcher
-registry, and all native watcher records registered with it.
+registry, and its attached Watchers. High-level Watchers attach through
+`$loop->add($watcher)`; `watch()` is the immediate-attachment convenience for
+raw IO.
 
 ## Registering a handle
 
@@ -49,6 +51,9 @@ my $watcher = $loop->watch(
     error => sub ($watcher) { ... },
 );
 ```
+
+The returned object is a `Linux::Event::IO`, which is a
+`Linux::Event::Watcher` with the native raw-descriptor methods.
 
 When `fh` is supplied, Linux::Event resolves its integer file descriptor once at
 watcher construction and retains the handle for `$watcher->fh`.

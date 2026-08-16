@@ -1,5 +1,61 @@
 Revision history for Linux-Event
 
+0.100_024  2026-08-16
+    - Introduce Linux::Event::Watcher as the public lifecycle contract and
+      Linux::Event::Loop as the canonical XS-first loop name.
+    - Add Loop->add() for detached high-level Watchers while retaining watch()
+      as the immediate raw-IO registration convenience.
+    - Return Linux::Event::IO objects from raw watch/watch_fd registration;
+      XSWatcher remains their compatibility native-method base.
+    - Make Stream, Connect, and Listen Watchers with detached construction and
+      temporary loop-constructor compatibility.
+    - Add MyStream->connect(), preserving one Stream identity through outbound
+      connection, optional verified TLS negotiation, established I/O, and
+      terminal close. Writes before readiness use the bounded Stream queue.
+    - Add MyStream->listen() and Linux::Event::Listener, which construct and
+      attach accepted Stream subclasses without application socket plumbing.
+    - Add the noun-named Connector and Listener error/peer public aliases while
+      retaining Connect and Listen as advanced compatibility layers.
+    - Expand lifecycle tests through automatic plain and TLS client/server
+      paths, strict Watcher attachment, raw IO typing, and stable identity.
+    - Harden the Connect lifecycle benchmark with balanced order, abortive
+      teardown, configurable deadlines, correctness checks, and JSON output;
+      add integrated Stream and automatic Listener comparison rows.
+
+0.100_023  2026-08-16
+    - Split the Listen benchmark's previous manual-to-raw gap with a handoff
+      row that constructs the same Perl filehandle and lazy Peer representation
+      without invoking Listen control or subclass callback machinery.
+    - Remove an avoidable array shift from Listen's accepted-batch traversal.
+    - Use eight rotating repeats by default so all four benchmark modes occupy
+      every execution position equally.
+
+0.100_022  2026-08-16
+    - Use equal abortive client teardown in every Listen benchmark mode so
+      large matrices do not exhaust ephemeral ports through TIME_WAIT buildup.
+      The complete default 540,000-connection matrix now runs without later
+      rows failing from state accumulated by earlier rows.
+
+0.100_021  2026-08-16
+    - Add a manual XSLoop/native-accept baseline to the permanent Listen
+      lifecycle benchmark, separating Listen handoff cost from Stream cost.
+    - Rotate benchmark mode order across repeats to reduce execution-order
+      bias and print the tested Linux::Event version in the report.
+    - Replace the overly aggressive hardcoded two-second connection deadline
+      with a configurable --timeout option that defaults to 30 seconds.
+
+0.100_020  2026-08-16
+    - Add Linux::Event::Listen as the inbound stream-socket acquisition layer.
+    - Create TCP and Unix listeners or adopt an existing listening handle.
+    - Drain accept4 in XS with atomic nonblocking and close-on-exec flags.
+    - Add bounded level-triggered accept fairness and safe edge-trigger rules.
+    - Add lazy peer addresses, typed failures, resource-error pause/recovery,
+      ownership-aware close/detach behavior, and direct Stream handoff.
+    - Add a runnable line-delimited echo server and permanent Listen lifecycle
+      microbenchmark under the distribution examples and bench directories.
+    - Recover from watched descriptor-number reuse by falling back from epoll
+      MOD/ENOENT to ADD during same-fd watcher replacement.
+
 0.100_019  2026-08-15
     - Merge a redesigned Linux::Event::Connect into the main distribution.
       Concrete subclasses define cached on_connect and on_error methods while

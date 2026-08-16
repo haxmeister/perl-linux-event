@@ -1,11 +1,23 @@
-# Connect design
+# Connector design
 
-`Linux::Event::Connect` acquires client-side connected stream sockets. It does
+The common client API is `MyStream->connect(...)`. It returns one detached
+Stream, and `$loop->add($stream)` starts acquisition. The same Stream identity
+survives TCP connection, optional TLS negotiation, established I/O, and close.
+Output written before readiness stays in the Stream's bounded output queue.
+
+`Linux::Event::Connector` is the advanced standalone socket-acquisition
+Watcher. `Linux::Event::Connect` remains its compatibility implementation for
+applications that intentionally transfer a connected handle to something other
+than Stream.
+
+The Connector engine acquires client-side connected stream sockets. It does
 not read application bytes, perform TLS, construct Stream, or own application
 protocol policy.
 
 ```text
-Resolver -> Connect -> connected filehandle -> chosen consumer
+Resolver -> Connector -> connected filehandle -> chosen consumer
+
+MyStream->connect -> internal Connector -> same MyStream becomes ready
                                       |-> Stream
                                       |-> Stream + TLS
                                       |-> raw Loop watcher

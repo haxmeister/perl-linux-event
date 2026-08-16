@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_019';
+our $VERSION = '0.100_024';
 
 use Carp qw(croak);
 use Errno ();
@@ -16,7 +16,8 @@ use Socket qw(
     pack_sockaddr_in pack_sockaddr_in6 pack_sockaddr_un
 );
 
-use Linux::Event::Connect::Error;
+use parent 'Linux::Event::Watcher';
+use Linux::Event::Connector::Error;
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -38,6 +39,7 @@ sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} = {
         on_connect => $on_connect,
         on_error   => $on_error,
+        callback_target_data => $class->can('_callback_target_data') ? 1 : 0,
     };
 }
 
@@ -61,7 +63,7 @@ sub _target_error_fields ($self) {
 }
 
 sub _error ($self, %arg) {
-    return Linux::Event::Connect::Error->new(
+    return Linux::Event::Connector::Error->new(
         _target_error_fields($self),
         %arg,
     );
@@ -75,9 +77,10 @@ sub _system_message ($errno) {
 sub new ($class, %opt) {
     croak 'new(): must be called as a class method' if ref $class;
     my $descriptor = _descriptor_for($class);
-    my $loop = delete $opt{loop} // croak 'new(): missing loop';
-    croak 'new(): loop must be an object implementing watch() and watch_fd()'
-        if !ref($loop) || !$loop->can('watch') || !$loop->can('watch_fd');
+    my $loop = delete $opt{loop};
+    croak 'new(): loop must be an object implementing add(), watch(), and watch_fd()'
+        if defined($loop) && (!ref($loop) || !$loop->can('add')
+            || !$loop->can('watch') || !$loop->can('watch_fd'));
     my $data = delete $opt{data};
     my $timeout = _timeout(delete $opt{timeout});
 
@@ -126,7 +129,7 @@ sub new ($class, %opt) {
 
     my $self = bless {
         descriptor    => $descriptor,
-        loop          => $loop,
+        loop          => undef,
         data          => $data,
         timeout       => $timeout,
         host          => $host,
@@ -134,7 +137,7 @@ sub new ($class, %opt) {
         unix          => $unix,
         sockaddr      => $sockaddr,
         family        => $family,
-        state         => 'pending',
+        state         => 'detached',
         error         => undef,
         candidates    => [],
         candidate_at  => 0,
@@ -150,10 +153,7 @@ sub new ($class, %opt) {
     }, $class;
 
     $self->_resolve_candidates;
-    if ($self->{state} eq 'pending' && !$self->{pending_result}) {
-        $self->_arm_timeout if $timeout > 0;
-        $self->_attempt_next;
-    }
+    $self->_attach_to_loop($loop) if $loop;
     return $self;
 }
 
@@ -167,7 +167,27 @@ sub state      ($self) { $self->{state} }
 sub error      ($self) { $self->{error} }
 sub attempts   ($self) { $self->{attempt_count} }
 sub is_pending ($self) { $self->{state} eq 'pending' }
-sub is_done    ($self) { $self->{state} ne 'pending' }
+sub is_done    ($self) {
+    return $self->{state} eq 'connected' || $self->{state} eq 'failed'
+        || $self->{state} eq 'cancelled';
+}
+sub is_terminal ($self) { $self->is_done }
+
+sub _attach_to_loop ($self, $loop) {
+    croak 'add(): Connect request is not detached'
+        if $self->{state} ne 'detached' || $self->{loop};
+    $self->{loop} = $loop;
+    $self->{state} = 'pending';
+    if ($self->{pending_result}) {
+        my $fd = $self->_ensure_timer;
+        $self->{timer_role} = 'dispatch';
+        __PACKAGE__->_timerfd_arm($fd, 0.000000001);
+    } else {
+        $self->_arm_timeout if $self->{timeout} > 0;
+        $self->_attempt_next;
+    }
+    return $self;
+}
 
 sub data ($self, @arg) {
     $self->{data} = $arg[0] if @arg;
@@ -175,7 +195,7 @@ sub data ($self, @arg) {
 }
 
 sub cancel ($self) {
-    return 0 if $self->{state} ne 'pending';
+    return 0 if $self->is_done;
     $self->{state} = 'cancelled';
     $self->{pending_result} = undef;
     $self->_close_attempts;
@@ -377,8 +397,10 @@ sub _arm_timeout ($self) {
 }
 
 sub _queue_success ($self, $attempt) {
-    return if $self->{state} ne 'pending' || $self->{pending_result};
+    return if ($self->{state} ne 'pending' && $self->{state} ne 'detached')
+        || $self->{pending_result};
     $self->{pending_result} = [ success => $attempt ];
+    return if !$self->{loop};
     my $fd = $self->_ensure_timer;
     $self->{timer_role} = 'dispatch';
     __PACKAGE__->_timerfd_arm($fd, 0.000000001);
@@ -386,8 +408,10 @@ sub _queue_success ($self, $attempt) {
 }
 
 sub _queue_error ($self, $error) {
-    return if $self->{state} ne 'pending' || $self->{pending_result};
+    return if ($self->{state} ne 'pending' && $self->{state} ne 'detached')
+        || $self->{pending_result};
     $self->{pending_result} = [ error => $error ];
+    return if !$self->{loop};
     my $fd = $self->_ensure_timer;
     $self->{timer_role} = 'dispatch';
     __PACKAGE__->_timerfd_arm($fd, 0.000000001);
@@ -461,8 +485,10 @@ sub _finish_success ($self, $attempt) {
     delete $self->{attempts}{ $attempt->{id} };
     $attempt->{request} = undef;
 
-    my $callback = $self->{descriptor}{on_connect};
-    my $ok = eval { $callback->($self, $fh); 1 };
+    my $descriptor = $self->{descriptor};
+    my $callback = $descriptor->{on_connect};
+    my $target = $descriptor->{callback_target_data} ? $self->{data} : $self;
+    my $ok = eval { $callback->($target, $fh); 1 };
     my $callback_error = $@;
 
     # If the callback registered Stream or another watcher for this fd, the
@@ -480,8 +506,10 @@ sub _finish_error ($self, $error) {
     $self->{pending_result} = undef;
     $self->_close_attempts;
     $self->_close_timer;
-    my $callback = $self->{descriptor}{on_error};
-    $callback->($self, $error);
+    my $descriptor = $self->{descriptor};
+    my $callback = $descriptor->{on_error};
+    my $target = $descriptor->{callback_target_data} ? $self->{data} : $self;
+    $callback->($target, $error);
     return;
 }
 
@@ -511,12 +539,12 @@ Linux::Event::Connect - nonblocking outbound stream-socket acquisition
   }
 
   my $request = MyConnect->new(
-      loop    => $loop,
       host    => '127.0.0.1',
       port    => 443,
       timeout => 10,
       data    => $application_state,
   );
+  $loop->add($request);
 
 =head1 DESCRIPTION
 
@@ -534,12 +562,13 @@ C<on_error>; their resolved CVs are cached once per subclass.
 
   my $request = MyConnect->new(%options);
 
-Construction validates arguments and starts immediately. Argument and setup
+Construction validates arguments and returns a detached Watcher. Attachment
+with C<< $loop->add($request) >> starts connection attempts. Argument and setup
 errors throw synchronously. Network success and failure callbacks are always
-delivered from the event loop after C<new> returns, including immediate Unix
-socket success and immediate operational failure.
+delivered from the event loop after attachment returns, including immediate
+Unix socket success and immediate operational failure.
 
-Required options are C<loop> and exactly one address mode:
+Exactly one address mode is required:
 
   host => $hostname_or_literal, port => $integer
 
@@ -553,6 +582,10 @@ of seconds, defaults to 10, and may be zero to disable the connection deadline.
 Hostnames currently use synchronous C<getaddrinfo>. IP literals and packed
 addresses bypass resolution. A future Linux::Event::Resolver will replace the
 synchronous hostname path without changing this constructor.
+
+The former C<loop =E<gt> $loop> constructor option remains compatibility syntax
+and attaches the request before C<new> returns. New application code should use
+L<Linux::Event::Connector>, or normally C<< MyStream->connect >>.
 
 =head1 SUBCLASS METHODS
 
@@ -572,8 +605,9 @@ after the callback; it cannot remove the replacement watcher.
 
   sub on_error ($request, $error) { ... }
 
-Required. Receives a Linux::Event::Connect::Error after all request resources
-have been released.
+Required. Receives a L<Linux::Event::Connector::Error> after all request
+resources have been released. The canonical error class inherits
+C<Linux::Event::Connect::Error> for compatibility.
 
 =head1 METHODS
 
@@ -593,11 +627,11 @@ Return the applicable normalized constructor values.
 
 =head2 state
 
-Returns C<pending>, C<connected>, C<failed>, or C<cancelled>.
+Returns C<detached>, C<pending>, C<connected>, C<failed>, or C<cancelled>.
 
 =head2 error
 
-Returns the terminal Linux::Event::Connect::Error after failure.
+Returns the terminal L<Linux::Event::Connector::Error> after failure.
 
 =head2 attempts
 

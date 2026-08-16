@@ -2,6 +2,41 @@
 
 This file preserves the benchmark/optimization phase notes that previously occupied the project README. It is historical material, not the current public API documentation.
 
+## Unified Watcher lifecycle (0.100_024)
+
+The public model now names every loop-owned activity a Watcher. The canonical
+`Linux::Event::Loop` owns raw `Linux::Event::IO`, Stream, Listener, Connector,
+and future composite Watchers through `add()`. Watcher is a lifecycle/type
+contract only; native concrete dispatch remains direct.
+
+Stream now represents outbound acquisition itself. `MyStream->connect()`
+preserves one object identity through connect, TLS readiness, message I/O, and
+close, including bounded writes issued before readiness. `MyStream->listen()`
+returns a Listener that creates and attaches accepted Stream instances without
+application socket plumbing. Connect, Listen, XSLoop, and XSWatcher remain
+compatibility/advanced implementation names during the migration.
+
+## Inbound Listen integration (0.100_020)
+
+The earlier callback-configured listener design was replaced by
+`Linux::Event::Listen` subclasses with cached `on_accept` and `on_error`
+methods. Listen now owns TCP and filesystem Unix socket setup or validates an
+adopted listening handle. Each accepted nonblocking, close-on-exec handle is
+generic and may be handed directly to Stream, a raw watcher, or another
+consumer.
+
+A separate native extension drains `accept4`, while XSLoop continues to own
+readiness and Stream continues to own established byte transport. Bounded
+level-triggered batches preserve fairness; resource exhaustion pauses accept
+readiness before error notification. A permanent lifecycle benchmark compares
+raw accepted-handle disposal with listener-to-Stream construction.
+
+That benchmark exposed descriptor reuse inside Connect callbacks: closing a
+watched transferred handle can remove its file description from epoll before
+the old watcher record is cancelled, and a new socket may immediately reuse
+the number. Same-fd watcher replacement now retries `ADD` when `MOD` reports
+`ENOENT`, preserving safe ownership transfer for this reuse case.
+
 ## Outbound Connect integration and watcher transfer (0.100_019)
 
 The earlier callback-configured Linux::Event::Connect distribution was

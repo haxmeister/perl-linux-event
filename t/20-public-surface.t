@@ -16,11 +16,14 @@ for my $required (
     'docs/DEVELOPMENT-HISTORY.md',
     'docs/STREAM-DESIGN.md',
     'docs/TRANSPORT-BOUNDARY.md',
+    'docs/WATCHER-LIFECYCLE.md',
     'docs/CONNECT-DESIGN.md',
+    'docs/LISTEN-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
     'bench/run-connect-microbench.pl',
+    'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
@@ -31,13 +34,27 @@ for my $required (
     'bench/run-native-framers-microbench.pl',
     'bench/archive/README.md',
     'lib/Linux/Event/TLS.pm',
+    'lib/Linux/Event/Watcher.pm',
+    'lib/Linux/Event/Loop.pm',
+    'lib/Linux/Event/IO.pm',
+    'lib/Linux/Event/Connector.pm',
+    'lib/Linux/Event/Connector/Error.pm',
+    'lib/Linux/Event/Listener.pm',
+    'lib/Linux/Event/Listener/Error.pm',
+    'lib/Linux/Event/Listener/Peer.pm',
     'lib/Linux/Event/Connect.pm',
     'lib/Linux/Event/Connect/Error.pm',
+    'lib/Linux/Event/Listen.pm',
+    'lib/Linux/Event/Listen/Error.pm',
+    'lib/Linux/Event/Listen/Peer.pm',
     'xstls/Makefile.PL',
     'xstls/TLS.xs',
     'xstls/check_openssl.c',
     'xsconnect/Makefile.PL',
     'xsconnect/Connect.xs',
+    'xslisten/Makefile.PL',
+    'xslisten/Listen.xs',
+    'examples/line-echo-server.pl',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");
 }
@@ -49,11 +66,14 @@ for my $live (
     'docs/XS-ROADMAP.md',
     'docs/STREAM-DESIGN.md',
     'docs/TRANSPORT-BOUNDARY.md',
+    'docs/WATCHER-LIFECYCLE.md',
     'docs/CONNECT-DESIGN.md',
+    'docs/LISTEN-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
     'bench/run-connect-microbench.pl',
+    'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
@@ -78,6 +98,7 @@ my %allowed = map { $_ => 1 } qw(
     README.md
     STREAM-COMPETITOR-PLAN.md
     run-connect-microbench.pl
+    run-listen-microbench.pl
     run-reactor-comparison.pl
     run-callback-ceiling.pl
     run-stream-lifecycle-bench.pl

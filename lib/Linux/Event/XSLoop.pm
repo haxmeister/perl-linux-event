@@ -3,10 +3,22 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_019';
+our $VERSION = '0.100_024';
+
+use Carp qw(croak);
+use Scalar::Util qw(blessed);
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
+
+require Linux::Event::IO;
+
+sub add ($self, $watcher) {
+    croak 'add(): a Linux::Event::Watcher object is required'
+        if !blessed($watcher) || !$watcher->isa('Linux::Event::Watcher');
+    $watcher->_attach_to_loop($self);
+    return $watcher;
+}
 
 1;
 
@@ -37,8 +49,9 @@ Linux::Event::XSLoop - XS-first epoll reactor core for Linux::Event
 
 =head1 DESCRIPTION
 
-C<Linux::Event::XSLoop> is the current XS-first Linux reactor core. It owns the
-epoll file descriptor, native watcher records, the epoll event buffer, watcher
+C<Linux::Event::XSLoop> is the compatibility name for the XS-first Linux
+reactor core exposed publicly as L<Linux::Event::Loop>. It owns the epoll file
+descriptor, native watcher records, the epoll event buffer, watcher
 registration, readiness dispatch, and the hot callback path.
 
 The reactor deliberately reports readiness rather than performing socket I/O
@@ -93,7 +106,8 @@ Terminal/error delivery occurs before read and write delivery for the same
 epoll event.
 
 For C<watch()> and C<watch_fd()>, optional low-level flags include C<oneshot> and C<edge_triggered>. The normal
-callback receives one C<Linux::Event::XSWatcher>. For carefully profiled hot
+callback receives one L<Linux::Event::IO>, which inherits the native methods
+from C<Linux::Event::XSWatcher>. For carefully profiled hot
 paths, C<no_args =E<gt> 1> (or C<callback_args =E<gt> 0>) selects the no-argument
 callback fast path. C<lean =E<gt> 1> is meaningful only with no-argument
 callbacks and omits accessor references that such callbacks cannot use.

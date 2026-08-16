@@ -3,7 +3,9 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_019';
+our $VERSION = '0.100_024';
+
+use parent 'Linux::Event::Watcher';
 
 # XS methods are installed by Linux::Event::XSLoop's bootstrap.
 
@@ -13,11 +15,13 @@ __END__
 
 =head1 NAME
 
-Linux::Event::XSWatcher - native watcher handle used by Linux::Event::XSLoop
+Linux::Event::XSWatcher - compatibility base for native IO watcher handles
 
 =head1 DESCRIPTION
 
-C<Linux::Event::XSWatcher> is returned by C<Linux::Event::XSLoop-E<gt>watch>. The low-level C<watch_fd> entry point returns the same watcher type.
+C<Linux::Event::XSWatcher> retains the native methods used by
+L<Linux::Event::IO>. New code should treat the object returned by
+C<< $loop->watch >> as a C<Linux::Event::IO> Watcher.
 The loop owns the underlying native watcher record; this Perl object is a handle
 used by callbacks and application code.
 

@@ -43,4 +43,47 @@ $new->cancel;
 close $read_fh;
 close $write_fh;
 
+# Closing a watched file description removes it from epoll immediately. Linux
+# may reuse the descriptor number inside that callback before the old watcher
+# is cancelled. Registry replacement must then recover from MOD/ENOENT with
+# ADD, while preserving the same inert-old-handle semantics.
+pipe(my $reuse_read, my $reuse_write) or die "pipe: $!";
+my $reuse_loop = Linux::Event::XSLoop->new;
+my $old_fd = fileno($reuse_read);
+my ($replacement, $replacement_read, $replacement_write);
+my $replacement_calls = 0;
+my $reuse_old = $reuse_loop->watch(
+    fh => $reuse_read,
+    read => sub ($watcher) {
+        sysread($reuse_read, my $byte, 1);
+        close $reuse_read;
+        pipe($replacement_read, $replacement_write) or die "pipe: $!";
+        is(fileno($replacement_read), $old_fd,
+            'kernel reuses watched descriptor number inside callback');
+        $replacement = $reuse_loop->watch(
+            fh => $replacement_read,
+            read => sub ($new_watcher) {
+                sysread($replacement_read, my $bytes, 1);
+                $replacement_calls++;
+                $reuse_loop->stop;
+            },
+        );
+        syswrite($replacement_write, 'y');
+    },
+);
+$reuse_loop->reset_stats;
+syswrite($reuse_write, 'x');
+$reuse_loop->run;
+my $reuse_stats = $reuse_loop->stats;
+is($reuse_stats->{epoll_ctl_mod_calls}, 1,
+    'descriptor reuse first attempts registry replacement with MOD');
+is($reuse_stats->{epoll_ctl_add_calls}, 1,
+    'MOD ENOENT falls back to ADD for the reused file description');
+is($replacement_calls, 1, 'replacement watcher receives readiness');
+$reuse_old->cancel;
+$replacement->cancel;
+close $reuse_write;
+close $replacement_read;
+close $replacement_write;
+
 done_testing;

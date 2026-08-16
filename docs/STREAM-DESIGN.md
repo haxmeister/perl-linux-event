@@ -1,7 +1,7 @@
 # Stream design
 
-`Linux::Event::Stream` is the owned buffered byte-stream layer above the generic
-`Linux::Event::XSLoop` reactor. It is intentionally Linux-only and uses native
+`Linux::Event::Stream` is an owned buffered byte-stream Watcher above the
+`Linux::Event::Loop` reactor. It is intentionally Linux-only and uses native
 code for repetitive I/O, queue, buffer, and built-in framing work.
 
 ## Type model
@@ -26,15 +26,14 @@ Each object remains a distinct connection and carries its application value in
 `data`:
 
 ```perl
-my $stream = ChatStream->new(
-    loop => $loop,
+my $stream = $loop->add(ChatStream->new(
     fh   => $socket,
     data => {
         user_id    => $user_id,
         permissions => $permissions,
         rooms       => {},
     },
-);
+));
 ```
 
 ## Class descriptor

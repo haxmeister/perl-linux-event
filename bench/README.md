@@ -5,6 +5,37 @@ framing, native-framer, and lifecycle measurements. Older optimization
 experiments are preserved under `bench/archive/` and are not the recommended
 way to measure the current implementation.
 
+## Listen lifecycle microbenchmark
+
+Run the permanent inbound connection benchmark from the distribution root:
+
+```bash
+perl -Mblib bench/run-listen-microbench.pl \
+  --clients=1,10,100 \
+  --connections=10000 \
+  --repeats=10 \
+  --timeout=30
+```
+
+All rows create loopback clients through `Linux::Event::Connect`. The `manual`
+row uses explicit socket setup, a raw XSLoop watcher, and native descriptor
+close. `handoff` adds the Perl filehandle and lazy Peer object required for a
+generic ownership transfer, but no Listen object or callback. The `raw` row
+accepts through `Linux::Event::Listen` and closes the callback's transferred
+handle. The `stream` row additionally constructs and closes a minimal Stream.
+The `automatic` row uses `MyStream->listen`, `Loop->add`, automatic Stream
+construction, and `on_ready` close.
+The consecutive gaps therefore expose representation, Listen control/callback,
+and Stream lifecycle cost separately. Execution order rotates across repeats,
+so use a repeat count divisible by five for a balanced run.
+The script reports median accepts per second and process CPU microseconds per
+accepted connection. The timeout is a per-request catastrophic safeguard, not
+the duration of a benchmark row; increase it on a heavily loaded host rather
+than allowing deadline failures to truncate the workload. Every row uses the
+same abortive client-close policy. This is intentional: hundreds of thousands
+of short sequential TCP connections would otherwise accumulate client-side
+`TIME_WAIT` sockets and make later rows measure ephemeral-port exhaustion.
+
 ## Connect lifecycle microbenchmark
 
 Run the permanent outbound connection benchmark from the distribution root:
@@ -13,16 +44,23 @@ Run the permanent outbound connection benchmark from the distribution root:
 perl -Mblib bench/run-connect-microbench.pl \
   --clients=1,10,100 \
   --connections=10000 \
-  --repeats=5
+  --repeats=6 \
+  --timeout=30 \
+  --json=bench/results/connect-lifecycle.json
 ```
 
 It uses loopback TCP and reports median connections per second plus process CPU
 microseconds per completed connection. The `raw` row closes the transferred
 filehandle directly. The `stream` row constructs and closes the same minimal
 Stream subclass, including Connect-to-Stream watcher replacement when TCP
-completion is reported by epoll. Connection setup and teardown are timed; this
+completion is reported by epoll. The `integrated` row constructs one connecting
+Stream before acquisition and closes that same object from `on_ready`.
+Connection setup and teardown are timed; this
 is intentionally separate from the established-connection Stream and TLS
-message benchmark.
+message benchmark. Both rows use abortive connected-client teardown to avoid
+TIME_WAIT exhaustion. Their order rotates across repeats; use a repeat count
+divisible by three for balanced execution order. The timeout is a per-request catastrophic
+deadline rather than a benchmark-row duration.
 
 ## 1. Permanent reactor comparison
 
@@ -213,10 +251,10 @@ the subclass-descriptor redesign. It reports:
 - retained RSS delta for live objects in fresh child processes after socket,
   loop, and retention-vector setup
 
-Benchmark contract 1 preserves the object-configured baseline workloads. The
-current adapter is `subclass-descriptor`; `framed-full-named` is the primary
-comparable case. `watcher` is an internal registration-shaped floor, not a
-Stream feature-equivalence claim.
+Benchmark contract 1 preserves the same workloads across API adapters. The
+current default is `watcher-add`; `framed-full-named` is the primary comparable
+case. `watcher` is an internal registration-shaped floor, not a Stream
+feature-equivalence claim.
 
 Build, raise the file-descriptor limit, and run the after snapshot with the same
 settings used for the baseline:
@@ -226,7 +264,7 @@ perl Makefile.PL
 make
 ulimit -n 100000
 perl -Mblib bench/run-stream-lifecycle-bench.pl \
-  --api-style=subclass-descriptor \
+  --api-style=watcher-add \
   --iterations=100000 \
   --pool=256 \
   --live=1000,10000,20000 \
@@ -236,9 +274,11 @@ perl -Mblib bench/run-stream-lifecycle-bench.pl \
   --json=bench/results/stream-lifecycle-after.json
 ```
 
-The old source revision produced the matching baseline with
-`--api-style=object-configured`. Do not try to pass that label to the redesigned
-source: the constructor no longer exists. Compare the two JSON files only when
+`watcher-add` measures detached Stream construction followed by `Loop->add()`.
+The `subclass-descriptor` adapter retains the temporary `loop =>` compatibility
+path and is the direct comparison with 0.100_023. An older historical source
+revision produced the original matching baseline with
+`--api-style=object-configured`; that constructor no longer exists. Compare JSON files only when
 `benchmark_contract_version`, `workload`, case list, iteration counts, live
 counts, Perl, compiler flags, and machine are equivalent.
 

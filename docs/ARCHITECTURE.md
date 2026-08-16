@@ -38,7 +38,7 @@ lifetime management.
 
 The default event array capacity is 8192.
 
-Normal application registration uses `watch(fh => ...)` or `watch(fd => ...)`.
+Normal raw registration uses `watch(fh => ...)` or `watch(fd => ...)`.
 That Perl-facing method resolves a handle to its integer fd once at construction
 and then enters the existing native registration path. It adds nothing to
 steady-state readiness dispatch. `watch_fd` remains the low-level positional
@@ -154,7 +154,20 @@ The Stream extension does not include private reactor headers. XSLoop passes
 watcher data directly to Stream's private readiness entry points, preserving a
 generic readiness core and an independently testable buffered Stream layer.
 
-## Connect acquisition layer
+## Watcher ownership layer
+
+`Linux::Event::Loop->add()` accepts only `Linux::Event::Watcher` objects.
+Watcher is a construction-time type and lifecycle contract, not a new hot-path
+dispatcher. Raw readiness objects are `Linux::Event::IO` Watchers. Streams,
+Listeners, and Connectors retain their concrete cached callbacks and private
+native registrations.
+
+A Watcher is one logical activity rather than one fd. A connecting Stream owns
+an internal Connector and deadline registration until connection completes,
+then retains the same public Stream identity while its established socket is
+registered with the native Stream engine.
+
+## Connector acquisition layer
 
 `Linux::Event::Connect` owns outbound socket acquisition, not established
 socket I/O. The Perl request object validates address modes, caches subclass
@@ -167,15 +180,34 @@ failure is delivered from the loop rather than reentrantly inside the
 constructor. The attempt engine is intentionally a cold Perl path until
 profiling demonstrates a reason to move it.
 
-During epoll-reported success, the Connect watcher remains active but the
-request is terminal before `on_connect` runs. If the callback constructs a
-Stream or raw watcher for the same fd, normal same-fd replacement performs one
-epoll `MOD`. Connect then cancels its inactive old handle. If the callback does
-not register a consumer, Connect removes its own registration after returning;
-ownership of the connected filehandle still belongs to the callback.
+The advanced standalone Connector still supports generic socket transfer. The
+common `MyStream->connect()` path creates one detached Stream and uses the same
+connector engine internally. During success, the Stream binds its native state
+to the connected fd and replaces the temporary writable registration. The
+application-visible object is never replaced.
 
 Hostname resolution currently uses synchronous `getaddrinfo`, and candidates
 are attempted sequentially. The request stores candidates separately from
 attempt records so a future asynchronous Resolver and staggered Happy Eyeballs
 policy can replace those mechanics without changing the callback or ownership
 contract.
+
+## Listener acquisition layer
+
+`Linux::Event::Listener` owns inbound stream-socket acquisition. It creates TCP
+or filesystem Unix listeners, or adopts a caller-provided listening handle,
+then registers one read watcher for that listening descriptor. It never
+creates a watcher for an accepted connection.
+
+Readiness enters a separate Listen XS extension that drains `accept4()` with
+atomic `SOCK_NONBLOCK | SOCK_CLOEXEC`. Descriptor and packed-sockaddr pairs
+return to Perl for the cached subclass `on_accept` method. Address text remains
+lazy through `Linux::Event::Listen::Peer`; applications that do not inspect a
+peer avoid formatting it.
+
+The canonical Listener constructs its configured Stream subclass, attaches the
+Stream to the same Loop, and then reports it ready. The compatibility
+`Linux::Event::Listen` layer retains generic filehandle transfer for advanced
+non-Stream consumers. Neither path creates a temporary accepted-socket watcher.
+Resource accept errors pause listener readiness before the typed error callback
+so a readable backlog cannot create an error spin.

@@ -50,7 +50,7 @@ my %known_case = map { $_ => 1 } @all_cases;
 my @default_cases = @all_cases;
 
 my $contract_version = 1;
-my $api_style        = 'subclass-descriptor';
+my $api_style        = 'watcher-add';
 my $iterations     = 100_000;
 my $pool_size      = 256;
 my @live_counts    = (1_000, 10_000, 20_000);
@@ -78,7 +78,7 @@ GetOptions(
 
 usage(0) if $help;
 die "api-style '$api_style' is not implemented by this source revision\n"
-    if $api_style ne 'subclass-descriptor';
+    if $api_style ne 'subclass-descriptor' && $api_style ne 'watcher-add';
 die "iterations must be > 0\n" if $iterations <= 0;
 die "pool must be > 0\n" if $pool_size <= 0;
 die "warmup must be >= 0\n" if $warmup < 0;
@@ -280,6 +280,8 @@ sub create_object ($case, $loop, $fh, $token) {
 
     return create_subclass_descriptor($case, $loop, $fh)
         if $api_style eq 'subclass-descriptor';
+    return create_watcher_add($case, $loop, $fh)
+        if $api_style eq 'watcher-add';
 
     die "unimplemented api-style adapter: $api_style\n";
 }
@@ -302,6 +304,18 @@ sub create_subclass_descriptor ($case, $loop, $fh) {
     }
 
     die "unimplemented case: $case\n";
+}
+
+sub create_watcher_add ($case, $loop, $fh) {
+    my $class = $case eq 'raw-named'
+        ? 'Linux::Event::Bench::RawNamed'
+        : $case eq 'framed-minimal'
+            ? 'Linux::Event::Bench::FramedMinimal'
+            : $case eq 'framed-full-named'
+                ? 'Linux::Event::Bench::FramedFullNamed'
+                : die "unimplemented case: $case\n";
+    my $stream = $class->new(fh => $fh);
+    return $loop->add($stream);
 }
 
 sub run_memory_child ($case, $count, $repeat) {
@@ -449,7 +463,7 @@ sub usage ($status) {
     print {$fh} <<'USAGE';
 Usage: perl bench/run-stream-lifecycle-bench.pl [options]
 
-  --api-style=NAME     constructor adapter (current: subclass-descriptor)
+  --api-style=NAME     watcher-add (default) or subclass-descriptor compatibility
   --iterations=N       lifecycle operations per case/repeat (default 100000)
   --pool=N             pre-created socketpairs reused by lifecycle cases (256)
   --live=N,N           retained object counts (1000,10000,20000)

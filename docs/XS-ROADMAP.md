@@ -33,6 +33,18 @@ the same Linux::Event distribution. The guiding rule remains:
 These are permanent regression targets. New work must not trade them away
 without benchmark evidence.
 
+## Completed - unified Watcher lifecycle
+
+`Linux::Event::Loop` now owns high-level `Linux::Event::Watcher` objects through
+`add()`, while `watch()` creates an immediately attached raw
+`Linux::Event::IO`. Stream, Listener, and Connector are Watcher types; one
+logical Watcher may own several internal epoll registrations.
+
+`MyStream->connect()` keeps one Stream identity through outbound acquisition
+and optional TLS readiness. `MyStream->listen()` creates the Listener that
+constructs accepted Streams. The public hierarchy adds no generic Perl call to
+steady-state native readiness dispatch.
+
 ## Completed - initial TLS provider implementation
 
 HTTPS, secure WebSocket, and Discord require TLS. TLS is a byte transport
@@ -69,6 +81,19 @@ The policy/state machine remains in cold Perl code. A small native timerfd
 helper supplies monotonic deadlines and deferred dispatch. Same-fd watcher
 replacement now uses one `EPOLL_CTL_MOD`, allowing the successful Connect
 watcher to become a Stream or raw consumer registration without a DEL/ADD pair.
+
+## Completed - native inbound Listen layer
+
+`Linux::Event::Listen` now creates or adopts listening stream sockets and
+transfers generic accepted filehandles through cached subclass callbacks. A
+small native extension drains `accept4()` with atomic nonblocking and
+close-on-exec flags and retains packed peer addresses for lazy conversion.
+
+The default level-triggered fairness cap is safe because epoll reports a
+remaining backlog again. Edge-triggered listeners require an unlimited drain.
+No per-connection watcher is created before the application optionally hands
+the handle to Stream. Resource exhaustion pauses readiness before typed error
+delivery.
 
 ## Priority 2 - Asynchronous Resolver and Happy Eyeballs
 
@@ -118,16 +143,7 @@ Investigate fewer Perl entries without changing the ordinary one-message API:
 - optionally deliver multiple complete frames together
 - keep batching explicit where it changes application semantics
 
-## Priority 6 - Native listener accept drain
-
-For high connection churn:
-
-- drain `accept4()` until EAGAIN
-- request `SOCK_NONBLOCK | SOCK_CLOEXEC` at accept time
-- create/register connection state efficiently
-- enter Perl for accepted-connection semantics, not mechanical setup
-
-## Priority 7 - Native connect attempt completion
+## Priority 6 - Native connect attempt completion
 
 Profile before moving the remaining attempt state machine below Perl. If
 high-churn connection workloads justify it, native code may:
@@ -142,12 +158,12 @@ high-churn connection workloads justify it, native code may:
 The public Connect contract must not change merely to eliminate a few cold Perl
 calls.
 
-## Priority 8 - Linux fd drain helpers
+## Priority 7 - Linux fd drain helpers
 
 Profile native draining/aggregation for Linux descriptors such as eventfd,
 signalfd, and pidfd so Perl receives meaningful aggregate events.
 
-## Priority 9 - Buffer representation experiments
+## Priority 8 - Buffer representation experiments
 
 Only if profiling justifies them:
 
@@ -157,7 +173,7 @@ Only if profiling justifies them:
 
 Do not optimize allocation speculatively.
 
-## Priority 10 - Protocol acceleration above Stream
+## Priority 9 - Protocol acceleration above Stream
 
 After the generic framing catalog is broad, consider reusable protocol engines
 such as HTTP or WebSocket parsing. Application semantics remain Perl even when

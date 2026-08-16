@@ -1,7 +1,10 @@
 use v5.36;
 use Test::More;
 use_ok('Linux::Event');
+use_ok('Linux::Event::Watcher');
+use_ok('Linux::Event::Loop');
+use_ok('Linux::Event::IO');
 use_ok('Linux::Event::XSLoop');
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 ok($loop, 'created loop');
 done_testing;
