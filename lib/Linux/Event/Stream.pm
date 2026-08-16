@@ -3,12 +3,12 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_011';
+our $VERSION = '0.100_019';
 
 use Carp qw(croak);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use mro ();
-use Socket qw(SHUT_WR SOL_SOCKET SO_ERROR);
+use Socket qw(SOL_SOCKET SO_ERROR);
 
 use Linux::Event::Stream::Error;
 
@@ -39,10 +39,11 @@ sub _framer_for ($class) {
 
 sub _stream_options_for ($class) {
     my %option = (
-        high_watermark => 1_048_576,
-        low_watermark  =>   262_144,
-        read_size      =>    65_536,
-        max_buffer     => 8_388_608,
+        high_watermark   => 1_048_576,
+        low_watermark    =>   262_144,
+        max_pending_bytes =>         0,
+        read_size        =>    65_536,
+        max_buffer       => 8_388_608,
     );
 
     if (my $configure = $class->can('stream_options')) {
@@ -67,6 +68,8 @@ sub _stream_options_for ($class) {
         if $option{low_watermark} !~ /\A\d+\z/;
     croak "$class low_watermark must be <= high_watermark"
         if $option{low_watermark} > $option{high_watermark};
+    croak "$class max_pending_bytes must be a non-negative integer"
+        if $option{max_pending_bytes} !~ /\A\d+\z/;
     croak "$class read_size must be a positive integer"
         if $option{read_size} !~ /\A\d+\z/ || $option{read_size} <= 0;
     croak "$class max_buffer must be a positive integer"
@@ -84,7 +87,8 @@ sub _descriptor_for ($class) {
 
     my $framer = _framer_for($class);
     my %callback = map { $_ => scalar $class->can($_) }
-        qw(on_data on_message on_drain on_eof on_error on_close);
+        qw(on_data on_message on_drain on_eof on_error on_close
+           on_transport_ready);
 
     if ($framer) {
         croak "$class declares a framer but does not define on_message()"
@@ -105,6 +109,7 @@ sub _descriptor_for ($class) {
         $option->{read_size},
         $option->{high_watermark},
         $option->{low_watermark},
+        $option->{max_pending_bytes},
         $option->{max_buffer},
         $native->{read_mode},
         $callback{on_data},
@@ -113,6 +118,7 @@ sub _descriptor_for ($class) {
         \&_xs_read_eof,
         \&_xs_read_error,
         \&_xs_write_error,
+        \&_xs_output_limit,
         \&_xs_write_empty,
         \&_xs_framing_error,
         $native->{delimiter},
@@ -158,10 +164,68 @@ sub _xs_write_error ($self, $errno) {
     return;
 }
 
+sub _xs_output_limit ($self, $pending_bytes, $limit) {
+    my $error = Linux::Event::Stream::Error->new(
+        type          => 'output_limit',
+        operation     => 'write',
+        message       => "pending output would exceed $limit bytes",
+        pending_bytes => $pending_bytes,
+        limit         => $limit,
+    );
+    $self->_fail($error);
+    return;
+}
+
 sub _xs_write_empty ($self) {
     return if $self->{closed};
     $self->{watcher}->disable_write if $self->{watcher};
     $self->_finish_write_side if $self->{write_ending} && !$self->{write_ended};
+    return;
+}
+
+sub _xs_transport_event ($self, $status, $operation, $message) {
+    return if $self->{closed};
+
+    if ($status == 2) {
+        $self->{watcher}->enable_read if $self->{watcher};
+        return;
+    }
+    if ($status == 3) {
+        $self->{watcher}->enable_write if $self->{watcher};
+        return;
+    }
+    if ($status == 5) {
+        my $error = Linux::Event::Stream::Error->new(
+            type      => $self->transport_name // 'transport',
+            operation => $operation,
+            message   => $message || 'transport error',
+        );
+        $self->_fail($error);
+        return;
+    }
+
+    if ($self->{xs_state} && $self->{xs_state}->transport_ready
+        && !$self->{transport_ready_fired}++) {
+        if ($self->{transport}
+            && $self->{transport}->can('_stream_transport_ready')) {
+            $self->{transport}->_stream_transport_ready($self);
+        }
+        if ($self->{read_paused} && $self->{watcher}) {
+            $self->{watcher}->disable_read;
+        }
+        if (my $callback = $self->{descriptor}{callbacks}{on_transport_ready}) {
+            $callback->($self);
+        }
+    }
+    if (($status == 0 || $status == 1) && $self->{write_ending}
+        && !$self->pending_bytes) {
+        $self->_finish_write_side;
+        return if $self->{closed};
+    }
+    if ($self->{watcher} && !$self->pending_bytes
+        && !$self->{write_ending}) {
+        $self->{watcher}->disable_write;
+    }
     return;
 }
 
@@ -175,7 +239,11 @@ sub new ($class, %opt) {
     my $loop = delete $opt{loop} // croak 'new(): missing loop';
     my $fh   = delete $opt{fh}   // croak 'new(): missing fh';
     my $data = delete $opt{data};
+    my $transport = delete $opt{transport};
     croak 'new(): unknown options: ' . join(', ', sort keys %opt) if %opt;
+    croak 'new(): transport must be an object implementing _stream_transport_bind()'
+        if defined($transport)
+        && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = _descriptor_for($class);
     _set_nonblocking($fh);
@@ -186,6 +254,7 @@ sub new ($class, %opt) {
         fh          => $fh,
         watcher     => undef,
         data        => $data,
+        transport   => $transport,
         xs_state    => undef,
         read_paused => 0,
         read_eof    => 0,
@@ -195,6 +264,9 @@ sub new ($class, %opt) {
         detached     => 0,
         close_fired  => 0,
         last_error   => undef,
+        transport_ready_fired => 0,
+        transport_deadline_watcher => undef,
+        transport_shutdown_started => 0,
     }, $class;
 
     my $xs_state = Linux::Event::Stream::XSState->new(
@@ -203,6 +275,27 @@ sub new ($class, %opt) {
         $descriptor->{xs},
     );
     $self->{xs_state} = $xs_state;
+
+    my $initial_interest = 0x01;
+    if (defined $transport) {
+        my @binding;
+        my $attached = eval {
+            @binding = $transport->_stream_transport_bind(fileno($fh));
+            $xs_state->_attach_transport(
+                $transport, @binding[0, 1, 2],
+            );
+            1;
+        };
+        if (!$attached) {
+            my $error = $@ || 'transport attachment failed';
+            $xs_state->_close;
+            $self->{xs_state} = undef;
+            CORE::close($fh);
+            $self->{fh} = undef;
+            die $error;
+        }
+        $initial_interest = $binding[3] // 0;
+    }
 
     my $watcher = $loop->watch_fd(
         fileno($fh),
@@ -214,13 +307,23 @@ sub new ($class, %opt) {
         _callback_data_arg => 1,
     );
     $self->{watcher} = $watcher;
-    $watcher->disable_write;
+    $watcher->disable_write if !($initial_interest & 0x02);
+    $watcher->disable_read if !($initial_interest & 0x01);
+    if ($transport && $transport->can('_stream_transport_start')) {
+        my $started = eval { $transport->_stream_transport_start($self); 1 };
+        if (!$started) {
+            my $error = $@ || 'transport startup failed';
+            $self->_close_now(1);
+            die $error;
+        }
+    }
     return $self;
 }
 
 sub fh ($self) { $self->{fh} }
 sub loop ($self) { $self->{loop} }
 sub last_error ($self) { $self->{last_error} }
+sub transport ($self) { $self->{transport} }
 sub is_closed ($self) { !!$self->{closed} }
 sub is_read_paused ($self) { !!$self->{read_paused} }
 sub is_read_eof ($self) { !!$self->{read_eof} }
@@ -237,6 +340,16 @@ sub data ($self, @arg) {
 
 sub pending_bytes ($self) {
     return $self->{xs_state}->pending_bytes if $self->{xs_state};
+    return 0;
+}
+
+sub transport_name ($self) {
+    return $self->{xs_state}->transport_name if $self->{xs_state};
+    return undef;
+}
+
+sub is_transport_ready ($self) {
+    return !!$self->{xs_state}->transport_ready if $self->{xs_state};
     return 0;
 }
 
@@ -283,6 +396,33 @@ sub resume_read ($self) {
     return $self;
 }
 
+sub transition_to ($self, $class, %opt) {
+    croak 'transition_to(): stream is closed' if $self->{closed};
+    croak 'transition_to(): target class is required'
+        if !defined($class) || ref($class) || $class eq '';
+    croak "transition_to(): $class is already active"
+        if ref($self) eq $class;
+
+    my $input = delete $opt{input};
+    croak 'transition_to(): input must be a byte string'
+        if defined($input) && ref($input);
+    croak 'transition_to(): unknown options: ' . join(', ', sort keys %opt)
+        if %opt;
+
+    my $descriptor = _descriptor_for($class);
+    my $xs_state = $self->{xs_state}
+        // croak 'transition_to(): stream has no native state';
+
+    # XS validates and swaps the immutable descriptor without invoking a
+    # callback. Update the Perl object's type before buffered input is allowed
+    # to enter the new callback set.
+    $xs_state->_transition($descriptor->{xs}, $input);
+    $self->{descriptor} = $descriptor;
+    bless $self, $class;
+    $xs_state->_transition_ready;
+    return $self;
+}
+
 sub close ($self) {
     $self->_close_now(1);
     return $self;
@@ -290,6 +430,8 @@ sub close ($self) {
 
 sub detach ($self) {
     croak 'detach(): stream is already closed' if $self->{closed};
+    croak 'detach(): cannot detach a non-plain transport'
+        if ($self->transport_name // 'plain') ne 'plain';
     my $fh = $self->{fh};
     if (my $xs_state = delete $self->{xs_state}) {
         $xs_state->_close;
@@ -324,16 +466,91 @@ sub _finish_write_side ($self) {
     return if $self->{closed} || $self->{write_ended};
     return if $self->pending_bytes > 0;
 
-    my $ok = shutdown($self->{fh}, SHUT_WR);
-    if (!$ok) {
-        my $errno = 0 + $!;
+    if (!$self->{transport_shutdown_started}++ && $self->{transport}
+        && $self->{transport}->can('_stream_transport_begin_shutdown')) {
+        my $started = eval {
+            $self->{transport}->_stream_transport_begin_shutdown($self);
+            1;
+        };
+        if (!$started) {
+            my $error = Linux::Event::Stream::Error->new(
+                type      => $self->transport_name,
+                operation => 'shutdown',
+                message   => $@ || 'transport shutdown setup failed',
+            );
+            $self->_fail($error);
+            return;
+        }
+    }
+
+    my ($status, $errno, $message) = $self->{xs_state}->_shutdown_write;
+    if ($status == 2) {
+        $self->{watcher}->enable_read if $self->{watcher};
+        return;
+    }
+    if ($status == 3) {
+        $self->{watcher}->enable_write if $self->{watcher};
+        return;
+    }
+    if ($status == 5) {
+        if (($self->transport_name // 'plain') ne 'plain') {
+            my $error = Linux::Event::Stream::Error->new(
+                type      => $self->transport_name,
+                operation => 'shutdown',
+                message   => $message || 'transport shutdown failed',
+            );
+            $self->_fail($error);
+            return;
+        }
+        local $! = $errno;
         $self->_fail_io('shutdown', $errno);
         return;
     }
 
     $self->{write_ending} = 0;
     $self->{write_ended} = 1;
+    $self->_clear_transport_deadline;
     $self->_close_now(1) if $self->{read_eof};
+}
+
+sub _set_transport_deadline_watcher ($self, $watcher) {
+    return if $self->{transport_deadline_watcher};
+    $self->{transport_deadline_watcher} = $watcher;
+    return;
+}
+
+sub _has_transport_deadline_watcher ($self) {
+    return !!$self->{transport_deadline_watcher};
+}
+
+sub _clear_transport_deadline ($self) {
+    if ($self->{transport}
+        && $self->{transport}->can('_stream_transport_cancel_deadline')) {
+        $self->{transport}->_stream_transport_cancel_deadline;
+    }
+    return;
+}
+
+sub _destroy_transport_deadline ($self) {
+    if (my $watcher = delete $self->{transport_deadline_watcher}) {
+        $watcher->cancel;
+    }
+    if ($self->{transport}
+        && $self->{transport}->can('_stream_transport_close_deadline')) {
+        $self->{transport}->_stream_transport_close_deadline;
+    }
+    return;
+}
+
+sub _transport_deadline_expired ($self, $operation, $message) {
+    return if $self->{closed};
+    my $error = Linux::Event::Stream::Error->new(
+        type      => $self->transport_name // 'transport',
+        operation => $operation,
+        message   => $message,
+    );
+    $self->_fail($error);
+    return;
 }
 
 sub _mark_eof ($self) {
@@ -379,6 +596,7 @@ sub _fail ($self, $error) {
 sub _close_now ($self, $close_fh) {
     return if $self->{closed};
     $self->{closed} = 1;
+    $self->_destroy_transport_deadline;
 
     if (my $xs_state = delete $self->{xs_state}) {
         $xs_state->_close;
@@ -482,14 +700,17 @@ cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
-=head2 new(loop => $loop, fh => $fh, data => $value)
+=head2 new(loop => $loop, fh => $fh, data => $value, transport => $provider)
 
 C<loop> and C<fh> are required. Stream takes ownership of the filehandle and
-sets it nonblocking. C<data> is the only optional per-connection value. Use
-C<detach> to transfer the still-open handle back to the application.
+sets it nonblocking. C<data> is optional per-connection state. C<transport> is
+an optional native byte-transport provider such as C<Linux::Event::TLS>. The
+provider is bound to the established descriptor and retained for the Stream's
+lifetime. Use C<detach> to transfer a still-open plain handle back to the
+application; non-plain transports cannot be detached.
 
-Callbacks, framing, and transport defaults are class behavior and are not
-accepted as constructor options.
+Callbacks, framing, and buffer policy are class behavior and are not accepted
+as constructor options.
 
 =head1 CLASS TRANSPORT OPTIONS
 
@@ -499,15 +720,18 @@ per connection:
 
   sub stream_options ($class) {
       return (
-          read_size      => 32_768,
-          high_watermark => 2 * 1024 * 1024,
-          low_watermark  => 512 * 1024,
-          max_buffer     => 16 * 1024 * 1024,
+          read_size         => 32_768,
+          high_watermark    => 2 * 1024 * 1024,
+          low_watermark     => 512 * 1024,
+          max_pending_bytes => 8 * 1024 * 1024,
+          max_buffer        => 16 * 1024 * 1024,
       );
   }
 
 The defaults are 65,536 bytes per read, a 1 MiB high watermark, a 256 KiB low
-watermark, and an 8 MiB maximum framed input buffer.
+watermark, no hard pending-output limit, and an 8 MiB maximum framed input
+buffer. Set C<max_pending_bytes> to a positive byte count to impose a hard
+limit; zero keeps the default unlimited policy.
 
 =head1 CALLBACKS
 
@@ -519,11 +743,15 @@ Subclasses may define these ordinary named methods:
   sub on_eof     ($stream)           { ... }
   sub on_error   ($stream, $error)   { ... }
   sub on_close   ($stream)           { ... }
+  sub on_transport_ready ($stream)   { ... }
 
 The resolved CVs are cached and invoked directly; readiness dispatch does not
 perform Perl method lookup. Inheritance works normally, so a derived Stream type
 may reuse callbacks and framing from its parent. Per-user or per-connection
 permissions belong in C<data>, which callbacks access through C<< $stream->data >>.
+C<on_transport_ready> is called once after an asynchronous non-plain transport
+becomes usable. Ordinary plain Streams are ready at construction and do not
+invoke it.
 
 Application callback exceptions are not swallowed.
 
@@ -533,7 +761,16 @@ Application callback exceptions are not swallowed.
 
 Writes immediately when possible and queues any remainder. Returns false after
 queued bytes exceed the high watermark; the bytes were still accepted. Wait for
-C<on_drain> before producing more when bounded memory is required.
+C<on_drain> before producing more.
+
+When C<max_pending_bytes> is nonzero, a write whose unsent remainder would put
+the native queue above that limit is not queued. Stream reports an
+C<output_limit> L<Linux::Event::Stream::Error> through C<on_error> and closes.
+The error's C<pending_bytes> and C<limit> accessors describe the attempted
+queue size and configured bound. An immediate kernel write may already have
+sent a prefix before its remainder is found to exceed the limit; Stream never
+adds that remainder to its queue. The ordinary false return remains reserved
+for accepted cooperative backpressure.
 
 =head2 send($payload)
 
@@ -544,9 +781,47 @@ wire framing and then uses C<write>. Serialization remains separate.
 
 Disable and re-enable input readiness without destroying the Stream.
 
+=head2 transition_to($class, input => $bytes)
+
+Changes a live connection to another loaded C<Linux::Event::Stream> subclass.
+The same object is reblessed into C<$class>, and the same filehandle, watcher,
+native connection state, output queue, backpressure state, lifecycle state, and
+C<data> are retained. Future callbacks, C<send> framing, parser rules, and class
+transport policy come from the target subclass's cached descriptor.
+
+Unread bytes already held by a framed parser are preserved and reinterpreted by
+the target parser. A raw C<on_data> callback may pass the unconsumed suffix of
+its current chunk with C<< input => $bytes >>:
+
+  sub on_data ($stream, $bytes) {
+      my ($request, $remaining) = parse_upgrade($bytes);
+      return if !$request;
+      $stream->write(upgrade_response());
+      $stream->transition_to('My::WebSocketStream', input => $remaining);
+      return;
+  }
+
+Existing native input is ordered before the explicit C<input> suffix. Complete
+target frames may be delivered before C<transition_to> returns when the method
+is called outside input dispatch. During C<on_data> or C<on_message>, target
+dispatch begins after the old callback returns. Code should normally return
+immediately after requesting a transition.
+
+Read pause is retained and continues to gate preserved input. Queued output
+keeps its original byte ordering; only later C<send> calls use the new outbound
+framing. If preserved input exceeds the target class's C<max_buffer>, or
+existing queued output exceeds its nonzero C<max_pending_bytes>, the transition
+fails atomically and the old type remains active. Transitioning to the
+already-active class is rejected.
+
+This method changes Stream protocol behavior; it does not replace the active
+byte transport. In particular, a TLS Stream remains TLS across protocol
+transitions.
+
 =head2 end($final_bytes = undef)
 
-Drains queued output and performs C<shutdown(SHUT_WR)>. Peer EOF and the local
+Drains queued output and ends the transport's writable side. Plain Streams use
+C<shutdown(SHUT_WR)>; TLS providers send C<close_notify>. Peer EOF and the local
 writable half-close remain independent.
 
 =head2 close
@@ -556,12 +831,20 @@ may be lost.
 
 =head2 detach
 
-Cancels Stream ownership and returns the still-open filehandle. C<on_close> is
-not called because the underlying resource remains open.
+Cancels Stream ownership and returns the still-open filehandle for the plain
+transport. C<on_close> is not called because the underlying resource remains
+open. Non-plain transports reject detach because the descriptor carries
+provider-owned wire state rather than application plaintext.
 
 =head2 pending_bytes / is_write_blocked
 
 Report native output-queue and flow-control state.
+
+=head2 transport / transport_name / is_transport_ready
+
+Returns the configured provider object, active native byte transport name, and
+whether its asynchronous setup has completed. Ordinary filehandle-backed
+Streams have no provider object, report C<plain>, and are immediately ready.
 
 =head2 is_read_paused / is_read_eof / is_write_ended / is_closed
 

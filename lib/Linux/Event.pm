@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_011';
+our $VERSION = '0.100_019';
 
 1;
 
@@ -16,6 +16,7 @@ Linux::Event - Linux-native event reactor and stream processing foundation
 =head1 SYNOPSIS
 
   use Linux::Event::XSLoop;
+  use Linux::Event::Connect;
   use Linux::Event::Stream;
 
   my $loop = Linux::Event::XSLoop->new;
@@ -47,6 +48,14 @@ Native watcher handles returned by the reactor.
 =item * L<Linux::Event::Stream>
 
 High-level buffered byte streams with native read/write engines.
+
+=item * L<Linux::Event::Connect>
+
+Nonblocking outbound stream-socket acquisition with deadlines and typed errors.
+
+=item * L<Linux::Event::TLS>
+
+OpenSSL client/server transport provider for Stream.
 
 =item * L<Linux::Event::Stream::Framer>
 

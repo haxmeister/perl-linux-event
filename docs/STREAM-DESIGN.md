@@ -60,11 +60,13 @@ Immutable descriptor state includes:
 - delimiter or prefix policy where applicable
 - `read_size`
 - high and low output watermarks
+- optional hard `max_pending_bytes`
 - framed `max_buffer`
 
 Per-connection native state includes:
 
 - fd and Stream reference
+- active native transport operations and provider context
 - pause, EOF, close, and backpressure flags
 - native input bytes and parser scan state
 - segmented output queue and pending byte count
@@ -75,6 +77,10 @@ and semantic lifecycle flags. It does not contain callback option hashes or a
 framer object.
 
 ## Input paths
+
+All mechanical byte movement enters through the native transport boundary.
+The current `plain` provider specializes directly to fd syscalls; the parser
+and queue do not depend on that provider identity.
 
 ### Raw subclass
 
@@ -109,8 +115,65 @@ accepted. When pending bytes reach `low_watermark` or less, XS clears the
 blocked state before calling `on_drain`, allowing reentrant writes to begin a
 new backpressure interval safely.
 
+`max_pending_bytes` is a separate optional safety policy. Zero means unlimited.
+For a positive limit, XS checks the unsent remainder before allocating its
+queue segment. If the resulting pending count would exceed the limit, Stream
+does not queue the remainder, creates an `output_limit` error, calls `on_error`,
+and closes. A direct kernel write may have sent a prefix before a partial result
+reveals that the remainder is too large; the native queue itself never exceeds
+the configured limit. The error records both the attempted `pending_bytes` and
+the `limit`.
+
+This does not change cooperative flow control. A false `write()` return still
+means all bytes were accepted and `on_drain` will end that blocked interval.
+Limit overflow is terminal and is distinguishable by its typed error.
+
 `send($payload)` is framed-only. It applies the class's outbound built-in
-encoding and then uses `write()`.
+encoding and then uses `write()`. Writable half-close also belongs to the
+transport contract. Consequently `end()` expresses one lifecycle operation
+whether a provider maps it to socket `shutdown(SHUT_WR)` or a multi-step TLS
+close-notify exchange.
+
+## Protocol transitions
+
+`transition_to($class, input => $bytes)` changes the protocol type of a live
+connection without reconstructing it. The Perl object is reblessed and its
+native state swaps one retained class descriptor reference for another. These
+connection-local resources remain unchanged:
+
+- fd, filehandle, watcher, and XSState identity
+- application `data`
+- output segments, byte ordering, and pending byte count
+- read pause, peer EOF, local half-close, and closed state
+- native input storage and instrumentation counters
+
+The target descriptor supplies subsequent callbacks, parser configuration,
+read size, watermarks, hard output limit, input limit, and outbound `send()`
+framing. Existing queued output is already encoded and remains unchanged.
+
+Native input storage is deliberately retained. A framed-to-framed transition
+reinterprets the unread suffix with the new native parser. A framed-to-raw
+transition delivers that suffix as one raw chunk. Raw callbacks receive their
+current kernel-read chunk directly, so they pass their unconsumed suffix with
+`input => $bytes`; it is appended after any native suffix.
+
+Every native parser snapshots its descriptor before invoking `on_message`. If
+the callback transitions, that parser returns immediately. The input driver
+then resumes under the new descriptor without issuing another `read()`. This
+prevents old parser constants from being used after a reentrant descriptor
+swap and supports clients that pipeline new-protocol bytes with an upgrade
+request.
+
+Transition validation and replacement are atomic. The new raw scratch buffer
+and optional preserved-input storage are allocated before live state changes.
+The target `max_buffer` is checked against existing plus explicit input. A
+nonzero target `max_pending_bytes` is also checked against existing queued
+output. On failure, the old Perl type, descriptor, and buffers remain active.
+
+When called during `on_data` or `on_message`, target input callbacks are delayed
+until the old callback returns; callers should return immediately after the
+transition. Outside input dispatch, already-complete target input may be
+delivered before `transition_to()` returns. Pause state always gates delivery.
 
 ## Lifecycle
 
@@ -121,7 +184,12 @@ encoding and then uses `write()`.
 - `close` cancels immediately and may discard queued output.
 - `detach` cancels Stream ownership and returns the still-open filehandle;
   `on_close` does not run because the resource was not closed.
-- I/O and framing failures create `Linux::Event::Stream::Error`, invoke
+- `transition_to` changes protocol behavior while preserving ownership and
+  connection-local lifecycle state.
+- `transport`, `transport_name`, and `is_transport_ready` expose provider
+  identity and asynchronous setup state (`plain` is immediately ready).
+- I/O, framing, and hard output-limit failures create
+  `Linux::Event::Stream::Error`, invoke
   `on_error` if present, and close.
 
 Application callback exceptions propagate. They are not treated as transport
@@ -134,16 +202,18 @@ or framing errors.
 ```perl
 sub stream_options ($class) {
     return {
-        read_size      => 65_536,
-        high_watermark => 1_048_576,
-        low_watermark  => 262_144,
-        max_buffer     => 8_388_608,
+        read_size         => 65_536,
+        high_watermark    => 1_048_576,
+        low_watermark     => 262_144,
+        max_pending_bytes => 0,
+        max_buffer        => 8_388_608,
     };
 }
 ```
 
 It runs once per concrete subclass. Unknown options, invalid integers, and a low
-watermark above the high watermark fail before connection registration.
+watermark above the high watermark fail before connection registration. The
+hard output limit is a non-negative byte count; zero disables it.
 
 ## Framing policy
 
@@ -170,5 +240,9 @@ It does not remove the intentional Perl crossing for semantic `on_data` or
 storage, parser progress, output, and lifecycle remain connection-local.
 
 Use `bench/run-stream-lifecycle-bench.pl` for constructor and retained-memory
-effects, `bench/run-stream-microbench.pl` for raw transport overhead, and the
-framing benchmarks for parser work.
+effects, `bench/run-stream-microbench.pl` for raw transport overhead and the
+cost of enabling a hard output limit, and the framing benchmarks for parser
+work.
+
+The provider contract and the bundled TLS implementation are specified in
+`TRANSPORT-BOUNDARY.md`.

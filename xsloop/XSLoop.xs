@@ -74,6 +74,7 @@ typedef struct le_watcher_s le_watcher_t;
  */
 struct le_watcher_s {
     le_watcher_t *next_free;
+    le_watcher_t *next_retired;
     int fd;
     uint32_t mask;
     uint32_t flags;
@@ -166,6 +167,7 @@ struct le_loop_s {
     int in_dispatch_batch;
     le_watcher_t *watcher_freelist;
     le_watcher_t *watcher_pending;
+    le_watcher_t *watcher_retired;
     int profile_enabled;
     unsigned long long epoll_wait_ns;
     unsigned long long epoll_ctl_add_ns;
@@ -316,15 +318,29 @@ static void le_watcher_push_list(le_watcher_t **list, le_watcher_t *w) {
 static void le_watcher_recycle_or_destroy(le_watcher_t *w) {
     if (!w) return;
     le_loop_t *loop = w->loop;
-    if (!loop || !loop->watcher_reclaim_enabled) return;
-    le_watcher_clear_refs(w);
+    if (!loop) {
+        le_watcher_destroy(w);
+        return;
+    }
     w->active = 0;
+    if (!loop->watcher_reclaim_enabled) {
+        /*
+         * Perl watcher handles contain the native watcher address. Keep an
+         * inactive record stable until loop destruction so cancel() remains
+         * harmless after replacement. This is also required when a callback
+         * replaces its own watcher while its epoll event is being dispatched.
+         */
+        w->next_retired = loop->watcher_retired;
+        loop->watcher_retired = w;
+        return;
+    }
     w->fd = -1;
     loop->watcher_recycle_calls++;
     if (loop->in_dispatch_batch) {
         le_watcher_push_list(&loop->watcher_pending, w);
     }
     else {
+        le_watcher_clear_refs(w);
         le_watcher_push_list(&loop->watcher_freelist, w);
         loop->watcher_freelist_depth++;
         if (loop->watcher_freelist_depth > loop->watcher_freelist_max_depth) loop->watcher_freelist_max_depth = loop->watcher_freelist_depth;
@@ -336,6 +352,7 @@ static void le_watcher_promote_pending(le_loop_t *loop) {
     if (!loop) return;
     while ((w = loop->watcher_pending) != NULL) {
         loop->watcher_pending = w->next_free;
+        le_watcher_clear_refs(w);
         le_watcher_push_list(&loop->watcher_freelist, w);
         loop->watcher_freelist_depth++;
         if (loop->watcher_freelist_depth > loop->watcher_freelist_max_depth) loop->watcher_freelist_max_depth = loop->watcher_freelist_depth;
@@ -357,6 +374,7 @@ static void le_loop_destroy(le_loop_t *loop) {
     }
     while (loop->watcher_pending) { le_watcher_t *w = loop->watcher_pending; loop->watcher_pending = w->next_free; le_watcher_destroy(w); }
     while (loop->watcher_freelist) { le_watcher_t *w = loop->watcher_freelist; loop->watcher_freelist = w->next_free; le_watcher_destroy(w); }
+    while (loop->watcher_retired) { le_watcher_t *w = loop->watcher_retired; loop->watcher_retired = w->next_retired; le_watcher_destroy(w); }
     if (loop->events) free(loop->events);
     if (loop->epoll_fd >= 0) close(loop->epoll_fd);
     free(loop);
@@ -654,8 +672,10 @@ static int le_watch_parse_common_option(const char *key, SV *val, le_watch_opts_
 
 static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opts_t *opt) {
     le_watcher_t *w;
+    le_watcher_t *old;
     SV *watcher_sv;
     struct epoll_event ev;
+    int operation;
 
     if (opt->callback_arg_data) {
         opt->callback_args = 1;
@@ -663,13 +683,7 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
     }
 
     le_registry_grow(loop, fd);
-    if (loop->registry[fd]) {
-        le_watcher_t *old = loop->registry[fd];
-        le_epoll_ctl_timed(loop, EPOLL_CTL_DEL, fd, NULL);
-        loop->registry[fd] = NULL;
-        old->active = 0;
-        le_watcher_destroy(old);
-    }
+    old = loop->registry[fd];
 
     w = le_watcher_alloc(loop);
     w->fd = fd;
@@ -699,10 +713,16 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
     memset(&ev, 0, sizeof(ev));
     ev.events = le_epoll_events(w);
     ev.data.ptr = (void *)w;
-    if (le_epoll_ctl_timed(loop, EPOLL_CTL_ADD, fd, &ev) < 0) {
+    operation = old ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
+    if (le_epoll_ctl_timed(loop, operation, fd, &ev) < 0) {
         int err = errno;
         le_watcher_destroy(w);
-        croak("epoll_ctl ADD fd %d failed: %s", fd, strerror(err));
+        croak("epoll_ctl %s fd %d failed: %s",
+            old ? "MOD" : "ADD", fd, strerror(err));
+    }
+    if (old) {
+        old->active = 0;
+        le_watcher_recycle_or_destroy(old);
     }
     loop->registry[fd] = w;
     return watcher_sv;

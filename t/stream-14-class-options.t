@@ -66,7 +66,7 @@ is_deeply(
     $first->{descriptor}{options},
     {
         read_size => 8, high_watermark => 1234,
-        low_watermark => 123, max_buffer => 4096,
+        low_watermark => 123, max_pending_bytes => 0, max_buffer => 4096,
     },
     'hashref class options are validated and cached',
 );

@@ -81,6 +81,12 @@ EPOLLOUT
 The watcher is re-checked after each callback so cancellation takes effect
 within the same returned epoll batch.
 
+Registering a new watcher for an already registered fd uses one
+`EPOLL_CTL_MOD`, changes `epoll_event.data.ptr` to the new native watcher, and
+marks the old handle inactive. Cancelling that old handle is then harmless and
+cannot remove the replacement. This is the ownership-transfer path used when
+Connect hands an established socket to Stream or another watcher consumer.
+
 ## Watcher lifetime
 
 The loop owns native watcher records. `cancel`/`unwatch_fd` removes the epoll
@@ -108,12 +114,35 @@ the next Stream work: the larger remaining cost is above the reactor.
 The higher-level Stream extension has a separate native state model. The first
 construction of a concrete `Linux::Event::Stream` subclass creates one immutable
 XS descriptor containing resolved named callbacks, read size, output
-watermarks, framed-buffer limit, and native parser configuration.
+watermarks, optional hard pending-output limit, framed-buffer limit, and native
+parser configuration.
 
 Every connection's XS state retains that descriptor and owns only mutable fd,
 input/parser, output-queue, lifecycle, and counter state. A framed connection
 therefore does not copy callbacks, delimiters, prefix policy, or transport
 settings into every allocation.
+
+The retained descriptor reference may be replaced explicitly by
+`transition_to()` while the mutable connection state stays in place. Parser
+loops snapshot their starting descriptor and stop after a callback changes it.
+The input driver then reinterprets the unread native suffix with the target
+descriptor. Raw targets receive the suffix as bytes; framed targets continue
+native boundary detection. This gives protocol upgrades a safe point without
+re-registering the fd or copying the output queue.
+
+The connection state also holds a native transport operations table and
+provider context. The default `plain` identity is checked once per operation,
+then XS issues the original fd syscall directly. Non-plain providers can later
+map the same read, write, vectored-write, retry-direction, error, and writable
+shutdown operations to another byte transport. This keeps parsers, queues, and
+backpressure independent of encryption while avoiding a Perl callback or
+indirect function call on the ordinary syscall path.
+
+The segmented write queue checks a nonzero `max_pending_bytes` before copying a
+new unsent remainder. Overflow enters Perl only for the semantic typed-error
+and close transition; no over-limit segment is allocated. The zero/default
+case is one predictable native branch and otherwise follows the unchanged
+write path.
 
 Raw input drains into a reusable native read buffer and crosses into Perl for
 `on_data`. Framed input drains directly into native connection storage, runs
@@ -124,3 +153,29 @@ after callbacks.
 The Stream extension does not include private reactor headers. XSLoop passes
 watcher data directly to Stream's private readiness entry points, preserving a
 generic readiness core and an independently testable buffered Stream layer.
+
+## Connect acquisition layer
+
+`Linux::Event::Connect` owns outbound socket acquisition, not established
+socket I/O. The Perl request object validates address modes, caches subclass
+callbacks, stores candidate/attempt lifecycle, and checks `SO_ERROR` after
+writable readiness. Sockets are created with `SOCK_NONBLOCK | SOCK_CLOEXEC`.
+
+A small adjacent XS extension owns only timerfd mechanics. It gives pending
+requests monotonic deadlines and ensures immediate success or operational
+failure is delivered from the loop rather than reentrantly inside the
+constructor. The attempt engine is intentionally a cold Perl path until
+profiling demonstrates a reason to move it.
+
+During epoll-reported success, the Connect watcher remains active but the
+request is terminal before `on_connect` runs. If the callback constructs a
+Stream or raw watcher for the same fd, normal same-fd replacement performs one
+epoll `MOD`. Connect then cancels its inactive old handle. If the callback does
+not register a consumer, Connect removes its own registration after returning;
+ownership of the connected filehandle still belongs to the callback.
+
+Hostname resolution currently uses synchronous `getaddrinfo`, and candidates
+are attempted sequentially. The request stores candidates separately from
+attempt records so a future asynchronous Resolver and staggered Happy Eyeballs
+policy can replace those mechanics without changing the callback or ownership
+contract.

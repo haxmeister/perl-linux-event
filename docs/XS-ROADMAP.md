@@ -14,6 +14,8 @@ the same Linux::Event distribution. The guiding rule remains:
 - reusable native framed-input storage
 - native immediate writes and segmented `writev()` queue draining
 - native backpressure byte accounting
+- optional hard native pending-output limits with typed terminal errors
+- native transport operation contract with a specialized plain-fd fast path
 - native Delimiter framing
 - native Fixed framing
 - native configurable LengthPrefix framing
@@ -25,11 +27,65 @@ the same Linux::Event distribution. The guiding rule remains:
 - lightweight per-connection references to shared descriptors
 - exact-name declarative loading without a duplicate framer keyword registry
 - raw `on_data` fallback for application-specific protocols
+- in-place raw/framed protocol transitions that retain unread native input,
+  queued output, watcher identity, lifecycle, and application state
 
 These are permanent regression targets. New work must not trade them away
 without benchmark evidence.
 
-## Priority 1 - Comprehensive native framing families
+## Completed - initial TLS provider implementation
+
+HTTPS, secure WebSocket, and Discord require TLS. TLS is a byte transport
+transform, not a message framer. The internal native operation boundary and
+plain provider now exist. The bundled `Linux::Event::TLS` provider attaches
+without adding OpenSSL policy or calls to XSLoop or the plain Stream path.
+
+The design must cover handshake readiness, encrypted and plaintext buffering,
+certificate/hostname errors, shutdown, deadlines, ALPN, and transitions such as
+STARTTLS without putting TLS policy into XSLoop. Initial client/server TLS,
+verification, ALPN, cross-direction readiness, and close notification landed
+with the 0.100_015 transport ABI. Version 0.100_016 added provider-owned
+deadline-watcher lifecycle and the original external Linux::Event::TLS 0.002
+added default handshake and shutdown deadlines, clean/unclean EOF
+classification, native counters, and a same-Stream plain-versus-TLS benchmark.
+Version 0.100_017 merged that provider into the main distribution without
+merging its OpenSSL implementation into XSStream.
+
+The released attachment exact-versions the common ABI, retains provider
+lifetime, and implements cross-direction readiness (`SSL_read` wanting write
+and `SSL_write` wanting read). Deadlines, richer shutdown diagnostics, provider
+bounded-buffer observability and live transport replacement remain follow-up
+work.
+
+## Completed - initial outbound Connect layer
+
+`Linux::Event::Connect` now ships in the main distribution with subclass-cached
+terminal callbacks, strict IPv4/IPv6/Unix/packed address modes, typed errors,
+silent cancellation, and a default connection deadline. Socket creation uses
+`SOCK_NONBLOCK | SOCK_CLOEXEC` atomically. Immediate results are deferred so
+network callbacks never run inside the constructor.
+
+The policy/state machine remains in cold Perl code. A small native timerfd
+helper supplies monotonic deadlines and deferred dispatch. Same-fd watcher
+replacement now uses one `EPOLL_CTL_MOD`, allowing the successful Connect
+watcher to become a Stream or raw consumer registration without a DEL/ADD pair.
+
+## Priority 2 - Asynchronous Resolver and Happy Eyeballs
+
+The current hostname path still calls `getaddrinfo` synchronously and attempts
+returned candidates sequentially. Replace it with:
+
+- a native resolver worker that never blocks the reactor thread
+- eventfd delivery of complete candidate collections
+- request cancellation that safely discards late resolver completion
+- staggered IPv6/IPv4 attempts following Happy Eyeballs policy
+- first-success ownership transfer and deterministic loser cleanup
+- resolver, fallback-latency, concurrent-connect, and cancellation benchmarks
+
+Keep resolution mechanically separate from Connect policy. Literal and packed
+addresses must continue to bypass the resolver entirely.
+
+## Priority 3 - General native framing families
 
 Expand the built-in framing catalog while keeping one rule: built-in boundary
 detection is native, while application-specific protocols parse raw `on_data`
@@ -37,9 +93,9 @@ bytes. Do not reintroduce a second arbitrary framer-object contract.
 
 Near-term framing families include:
 
-- delimiter configurations for line-oriented protocols
+- a configurable `HeaderLength` family with header size, field offset/width,
+  byte order, length adjustment, header inclusion, and frame limit
 - additional standardized variable-integer length prefixes
-- embedded/header length fields
 - escaped/stuffed serial framing such as SLIP and COBS
 - other general wire-framing families that can be expressed without embedding
   application protocol semantics
@@ -49,12 +105,12 @@ message-boundary detection. A new general family needs a declarative module,
 corresponding XS parser mode, wire-contract tests, and a native-framer benchmark
 row. Its exact package name becomes the declaration name automatically.
 
-## Priority 2 - Native Stream watcher-state transitions
+## Priority 4 - Native Stream watcher-state transitions
 
 Reduce remaining Perl transitions for writable interest, read suspension,
 close, and half-close when profiling shows the boundary is material.
 
-## Priority 3 - Callback coalescing/batching
+## Priority 5 - Callback coalescing/batching
 
 Investigate fewer Perl entries without changing the ordinary one-message API:
 
@@ -62,7 +118,7 @@ Investigate fewer Perl entries without changing the ordinary one-message API:
 - optionally deliver multiple complete frames together
 - keep batching explicit where it changes application semantics
 
-## Priority 4 - Native listener accept drain
+## Priority 6 - Native listener accept drain
 
 For high connection churn:
 
@@ -71,23 +127,27 @@ For high connection churn:
 - create/register connection state efficiently
 - enter Perl for accepted-connection semantics, not mechanical setup
 
-## Priority 5 - Native connect completion
+## Priority 7 - Native connect attempt completion
 
-Move the nonblocking connect state machine below Perl where useful:
+Profile before moving the remaining attempt state machine below Perl. If
+high-churn connection workloads justify it, native code may:
 
 - handle EINPROGRESS
 - wait for writable readiness
 - check `SO_ERROR`
-- transition watcher interest
+- coordinate concurrent attempt readiness
 - cancel timeout state
 - notify Perl once with success or failure
 
-## Priority 6 - Linux fd drain helpers
+The public Connect contract must not change merely to eliminate a few cold Perl
+calls.
+
+## Priority 8 - Linux fd drain helpers
 
 Profile native draining/aggregation for Linux descriptors such as eventfd,
 signalfd, and pidfd so Perl receives meaningful aggregate events.
 
-## Priority 7 - Buffer representation experiments
+## Priority 9 - Buffer representation experiments
 
 Only if profiling justifies them:
 
@@ -97,7 +157,7 @@ Only if profiling justifies them:
 
 Do not optimize allocation speculatively.
 
-## Priority 8 - Protocol acceleration above Stream
+## Priority 10 - Protocol acceleration above Stream
 
 After the generic framing catalog is broad, consider reusable protocol engines
 such as HTTP or WebSocket parsing. Application semantics remain Perl even when
@@ -106,7 +166,8 @@ mechanical parsing moves native.
 ## Benchmark policy
 
 Keep the reactor comparison as the low-level regression standard. Keep Stream
-transport, framing, and lifecycle/retained-memory benchmarks separate.
+transport/output-limit, framing, protocol-transition, and
+lifecycle/retained-memory benchmarks separate.
 Cross-runtime Stream
 benchmarks compare high-level facilities and must continue to report exact
 fairness contracts, server CPU per message, throughput, latency, and memory.

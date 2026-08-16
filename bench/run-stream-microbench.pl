@@ -21,11 +21,17 @@ use Linux::Event::Stream;
     sub on_error ($stream, $error) { die "Stream error: $error\n" }
 }
 
+{
+    package Linux::Event::Bench::CappedRawEchoStream;
+    use parent -norequire, 'Linux::Event::Bench::RawEchoStream';
+    sub stream_options ($class) { return max_pending_bytes => 16 * 1024 * 1024 }
+}
+
 my @clients = (1, 10, 100, 1000);
 my $messages = 100;
 my $warmup = 10;
 my $bytes = 64;
-my $repeats = 8;
+my $repeats = 6;
 
 GetOptions(
     'clients=s'  => sub { @clients = split /,/, $_[1] },
@@ -40,14 +46,14 @@ die "warmup must be >= 0\n" if $warmup < 0;
 die "bytes must be > 0\n" if $bytes <= 0;
 die "repeats must be > 0\n" if $repeats <= 0;
 
-my @systems = ('raw-reactor', 'subclass-stream');
+my @systems = ('raw-reactor', 'subclass-stream', 'subclass-stream-capped');
 my @rows;
 
 for my $count (@clients) {
     die "client count must be > 0\n" if $count <= 0;
 
     for my $repeat (1 .. $repeats) {
-        # Balanced cyclic rotation. With four systems, any multiple of four
+        # Balanced cyclic rotation. Any multiple of the system count
         # repeats places each implementation in each execution position equally.
         my $shift = ($repeat - 1) % @systems;
         my @order = (@systems[$shift .. $#systems], @systems[0 .. $shift - 1]);
@@ -75,7 +81,7 @@ for my $count (@clients) {
 
 say "\nThis is a same-process AF_UNIX development microbenchmark, not the final";
 say "cross-runtime Stream leaderboard. It compares direct raw-reactor echo";
-say "with the canonical subclass-defined native Stream.";
+say "with uncapped and hard-capped subclass-defined native Streams.";
 
 sub run_case ($system, $count) {
     my $loop = Linux::Event::XSLoop->new;
@@ -117,7 +123,10 @@ sub run_case ($system, $count) {
             );
             push @server_obj, $w;
         } else {
-            my $s = Linux::Event::Bench::RawEchoStream->new(
+            my $class = $system eq 'subclass-stream-capped'
+                ? 'Linux::Event::Bench::CappedRawEchoStream'
+                : 'Linux::Event::Bench::RawEchoStream';
+            my $s = $class->new(
                 loop => $loop,
                 fh   => $server,
             );

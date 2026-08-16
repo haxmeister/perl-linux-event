@@ -20,6 +20,11 @@ subclass.
 Names are case-sensitive and are the exact final package components under
 `Linux::Event::Stream::Framer`.
 
+A connection whose wire format changes after a handshake or upgrade may use
+different Stream subclasses at different stages. Use `transition_to()` rather
+than forcing every stage into one parser; unread native bytes are preserved,
+and a raw stage can pass its unconsumed chunk suffix with `input => $bytes`.
+
 ## Delimiter
 
 Use this when a non-empty byte sequence ends each message:

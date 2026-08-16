@@ -1,5 +1,104 @@
 Revision history for Linux-Event
 
+0.100_019  2026-08-15
+    - Merge a redesigned Linux::Event::Connect into the main distribution.
+      Concrete subclasses define cached on_connect and on_error methods while
+      each request stores only target, lifecycle, and application data.
+    - Transfer a generic connected nonblocking filehandle rather than requiring
+      or constructing Linux::Event::Stream. Stream, TLS, raw watchers, and
+      specialized protocol engines remain independent consumers.
+    - Add typed Linux::Event::Connect::Error failures, a default 10-second
+      connection deadline, silent idempotent cancellation, strict address-mode
+      validation, and loop-dispatched callbacks for immediate outcomes.
+    - Create sockets atomically with SOCK_NONBLOCK and SOCK_CLOEXEC. A small
+      native timerfd helper supplies connection deadlines and deferred terminal
+      delivery while candidate policy remains in the cold Perl control path.
+    - Replace same-fd watchers through one EPOLL_CTL_MOD instead of DEL plus ADD.
+      Old watcher handles remain inert, so Connect can hand a socket to Stream
+      during on_connect and safely cancel only its original registration.
+    - Retain synchronous getaddrinfo and sequential fallback as documented
+      initial limitations. The public contract and internal attempt collection
+      are prepared for a later asynchronous Resolver and Happy Eyeballs.
+
+0.100_018  2026-08-15
+    - Prevent OpenSSL socket writes from delivering SIGPIPE when a TLS peer
+      closes abruptly. The TLS extension now uses a non-owning custom socket
+      BIO whose writes use Linux MSG_NOSIGNAL.
+    - Preserve application signal policy: TLS does not install a process-wide
+      SIGPIPE handler or add per-operation signal-mask syscalls.
+
+0.100_017  2026-08-15
+    - Merge Linux::Event::TLS into the Linux-Event distribution so the reactor,
+      Stream, and OpenSSL transport build and test with one top-level command.
+    - Keep TLS in its own native extension and preserve Stream's specialized
+      plain fast path; plain operations still make no OpenSSL calls.
+    - Remove the duplicate transport ABI header and build the TLS provider
+      against the canonical header owned by XSStream.
+    - Move TLS integration, deadline, EOF, and certificate fixtures into the
+      main test suite and simplify the TLS microbenchmark to use one blib tree.
+    - Add an OpenSSL 1.1.1 configuration probe with a direct diagnostic for
+      missing development headers or libraries.
+
+0.100_016  2026-08-15
+    - Add generic cold-path transport lifecycle hooks used by adjacent
+      providers to install, disarm, reuse, and destroy deadline watchers.
+    - Preserve Stream/XSLoop layering: the core still knows no OpenSSL policy,
+      while transport timeout failures use the existing typed error lifecycle.
+    - Keep ordinary plain Streams free of auxiliary watchers and provider-hook
+      calls in their read/write syscall paths.
+    - Add the permanent top-level run-tls-microbench.pl same-Stream comparison
+      for specialized plain and adjacent OpenSSL transports.
+
+0.100_015  2026-08-15
+    - Publish transport => $provider construction for established descriptors
+      through an exact-version native Stream transport ABI.
+    - Retain provider lifetime in XS and coordinate cross-direction readiness
+      for nonblocking handshakes, reads, writes, and transport shutdown.
+    - Add transport(), is_transport_ready(), and the optional cached
+      on_transport_ready callback while preserving the specialized plain path.
+    - Reject detach() for non-plain transports because an encrypted descriptor
+      cannot safely be returned as an application plaintext handle.
+    - Support the adjacent Linux::Event::TLS OpenSSL provider without adding an
+      OpenSSL dependency to the Linux-Event distribution.
+
+0.100_014  2026-08-15
+    - Introduce an internal native transport operation contract beneath Stream
+      buffering, framing, backpressure, and lifecycle semantics.
+    - Route read, write, writev queue draining, retry classification, errors,
+      EOF, and writable shutdown through the connection's transport provider.
+    - Keep the ordinary plain-fd provider on a specialized direct-syscall path
+      with no Perl callback or indirect function call per syscall.
+    - Distinguish WANT_READ and WANT_WRITE in the native result contract for a
+      future nonblocking OpenSSL provider.
+    - Add transport_name(), plain-provider contract tests, regression benchmark
+      coverage, and a detailed TLS/provider/STARTTLS boundary specification.
+
+0.100_013  2026-08-14
+    - Add the optional class-level max_pending_bytes safety limit while keeping
+      the existing high/low-watermark write() return contract unchanged.
+    - Enforce the bound in XS before allocating an unsent queue segment, so the
+      native pending-output queue never grows beyond its configured limit.
+    - Report overflow as a typed output_limit Stream error with attempted
+      pending_bytes and limit details, invoke on_error, and close the Stream.
+    - Reject protocol transitions atomically when existing queued output exceeds
+      the target class's nonzero max_pending_bytes policy.
+    - Add deterministic output-limit tests, native overflow instrumentation,
+      documentation, and capped/uncapped Stream transport benchmark rows.
+
+0.100_012  2026-08-14
+    - Add in-place Stream protocol transitions through transition_to(). A live
+      connection may change to another Stream subclass without replacing its
+      filehandle, watcher, XSState, output queue, lifecycle, or application data.
+    - Preserve unread native input across raw/framed protocol boundaries and
+      accept an explicit raw-callback suffix through input => $bytes.
+    - Stop the old native parser immediately after an input callback changes
+      descriptors, then reinterpret remaining bytes with the new descriptor
+      without waiting for another readiness event.
+    - Make transition validation atomic, including target max_buffer checks,
+      and retain pause, EOF, backpressure, queued-output, and instrumentation state.
+    - Add transition contract tests, native transition counters, a dedicated
+      transition benchmark, benchmark smoke coverage, and protocol-upgrade docs.
+
 0.100_011  2026-08-14
     - Redesign Linux::Event::Stream as a subclass-defined API. Callbacks,
       framing, and transport policy are class behavior; constructor state is

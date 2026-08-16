@@ -11,5 +11,7 @@ my $error = Linux::Event::Stream::Error->new(
     message => 'bad frame',
 );
 is("$error", 'frame: bad frame', 'Stream::Error string overload accepts Perl overload call convention');
+ok(!defined $error->pending_bytes, 'non-limit errors have no pending byte detail');
+ok(!defined $error->limit, 'non-limit errors have no hard-limit detail');
 
 done_testing;

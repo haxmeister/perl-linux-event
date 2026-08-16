@@ -117,6 +117,31 @@ Each concrete subclass gets its own cached descriptor, so its resolved callback
 set is stable. It does not get a copy of immutable framing data per connection.
 A class may not declare two framers or combine `on_data` with framed mode.
 
+## Changing framing on a live connection
+
+Negotiated and upgraded protocols may move between raw and framed Stream
+subclasses with `transition_to()`:
+
+```perl
+$stream->transition_to('BinaryMessageStream', input => $remaining);
+```
+
+Unread bytes already stored by a native framer are preserved automatically and
+reinterpreted under the target descriptor. The explicit `input` value is for a
+raw callback's unconsumed suffix. Native buffered bytes, when present, come
+first. This ordering supports a final old-protocol message followed immediately
+by pipelined new-protocol bytes in the same kernel read.
+
+The old native parser stops after the callback that changes the descriptor.
+Complete target frames are then emitted without waiting for another readiness
+event. Read pause survives the transition and postpones this delivery until
+`resume_read()`.
+
+The target class's `max_buffer` applies to all preserved bytes. An oversized
+transition fails atomically instead of partially replacing the parser.
+Existing queued output is not reframed; later `send()` calls use the target
+framer, preserving protocol-response ordering across an upgrade.
+
 ## Adding a native built-in
 
 The public declaration loader derives the implementation package from its name,

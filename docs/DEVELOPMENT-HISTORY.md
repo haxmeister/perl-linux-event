@@ -2,6 +2,105 @@
 
 This file preserves the benchmark/optimization phase notes that previously occupied the project README. It is historical material, not the current public API documentation.
 
+## Outbound Connect integration and watcher transfer (0.100_019)
+
+The earlier callback-configured Linux::Event::Connect distribution was
+redesigned and merged into Linux-Event. Concrete subclasses now provide cached
+`on_connect` and `on_error` methods, while each request owns only target,
+candidate, attempt, deadline, error, and application state. Success transfers a
+generic connected filehandle and does not require Stream.
+
+Sockets request nonblocking and close-on-exec behavior atomically. A small
+Connect-native timerfd helper implements the default deadline and defers
+immediate terminal outcomes until loop dispatch. Same-fd watcher replacement
+was changed from DEL plus ADD to one MOD with an inert old handle, allowing a
+success callback to construct Stream without a registration gap or a later
+Connect cancellation removing the new watcher.
+
+Synchronous hostname resolution and sequential candidate fallback remain
+explicit initial limitations. Candidate storage is separate from attempt state
+so asynchronous Resolver and Happy Eyeballs can follow without another public
+API change.
+
+## TLS SIGPIPE isolation (0.100_018)
+
+OpenSSL's default socket BIO may use a signal-generating write after an abrupt
+peer close. The TLS provider now supplies a non-owning socket BIO backed by
+Linux `recv()` and `send(MSG_NOSIGNAL)`. Broken connections therefore enter
+the existing typed Stream error lifecycle without installing a process-wide
+signal handler or adding signal-mask syscalls to every TLS operation.
+
+## Integrated TLS packaging (0.100_017)
+
+The previously adjacent Linux::Event::TLS distribution moved into the main
+Linux-Event release. One top-level configuration now builds XSLoop, XSStream,
+and the separate TLS native extension, and one test run covers all three. TLS
+uses XSStream's canonical transport ABI header rather than a duplicate copy.
+This packaging change makes TLS a supported part of Linux::Event without
+putting OpenSSL calls or state into XSLoop, XSStream, or ordinary plain Streams.
+
+## Transport deadline lifecycle (0.100_016)
+
+Cold-path provider lifecycle hooks let an adjacent transport register one
+deadline watcher, disarm it after setup, reuse it for writable shutdown, and
+destroy it with the Stream. This supports real stalled-handshake and stalled-
+shutdown deadlines without putting timerfd or OpenSSL policy into Stream's
+native parser/write engine or XSLoop.
+
+## External transport attachment (0.100_015)
+
+Stream published an exact-version native ABI and `transport => $provider`
+construction for established descriptors. Provider lifetime is retained by
+native connection state, and readiness can cross directions during handshake,
+I/O, and shutdown without changing XSLoop or parser semantics. The adjacent
+`Linux::Event::TLS` distribution is the first provider: it links OpenSSL and
+implements secure client defaults, server mode, SNI, hostname verification,
+ALPN, nonblocking handshake, and `close_notify`.
+
+## Native transport boundary foundation (0.100_014)
+
+Direct fd reads, writes, vectored queue drains, retry classification, and
+writable shutdown moved behind one connection-local native operation contract.
+The ordinary `plain` provider remains specialized: XS checks its identity and
+issues the original syscall directly, avoiding a Perl callback and avoiding an
+indirect function call on every plain operation.
+
+The result model distinguishes `WANT_READ` and `WANT_WRITE`, which ordinary
+EAGAIN does not need but a nonblocking TLS provider does. This release does not
+publish provider attachment or add an OpenSSL dependency. The complete
+handshake, verification, ALPN, buffering, shutdown, deadline, and STARTTLS
+requirements are recorded in `TRANSPORT-BOUNDARY.md` before the adjacent
+`Linux::Event::TLS` implementation froze the first exact-version ABI in the
+following release.
+
+## Hard pending-output limits (0.100_013)
+
+Class transport policy gained the optional `max_pending_bytes` hard boundary.
+High and low watermarks remain cooperative: false from `write()` still means
+the bytes were accepted. When an unsent remainder would exceed the hard limit,
+XS does not allocate its queue segment and reports a typed `output_limit` error
+before Stream closes. The error retains the attempted pending count and limit.
+
+The zero default keeps the previous unlimited behavior. The existing Stream
+transport benchmark now runs otherwise identical capped and uncapped classes
+to expose the cost of enabling the native check. Protocol transitions also
+validate existing queued output against the target descriptor before changing
+any live state.
+
+## In-place protocol transitions (0.100_012)
+
+The subclass descriptor became replaceable on a live connection without making
+configuration per-object again. `transition_to()` retains the connection's fd,
+watcher, XSState, output queue, lifecycle, application data, counters, and
+unread native input while changing the Perl type and shared descriptor.
+
+Native parser loops stop when a callback changes descriptors, then the input
+driver resumes under the target parser. This specifically supports handshake
+and upgrade traffic where bytes from the new protocol are already present in
+the same kernel read. Raw callbacks can transfer their unconsumed suffix with
+the explicit `input` option. A separate contract-1 benchmark measures live
+descriptor changes without mixing them into construction results.
+
 ## Stream subclass-descriptor redesign (0.100_011)
 
 The object-configured Stream API was replaced after capturing a versioned

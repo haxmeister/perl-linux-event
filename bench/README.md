@@ -5,6 +5,25 @@ framing, native-framer, and lifecycle measurements. Older optimization
 experiments are preserved under `bench/archive/` and are not the recommended
 way to measure the current implementation.
 
+## Connect lifecycle microbenchmark
+
+Run the permanent outbound connection benchmark from the distribution root:
+
+```bash
+perl -Mblib bench/run-connect-microbench.pl \
+  --clients=1,10,100 \
+  --connections=10000 \
+  --repeats=5
+```
+
+It uses loopback TCP and reports median connections per second plus process CPU
+microseconds per completed connection. The `raw` row closes the transferred
+filehandle directly. The `stream` row constructs and closes the same minimal
+Stream subclass, including Connect-to-Stream watcher replacement when TCP
+completion is reported by epoll. Connection setup and teardown are timed; this
+is intentionally separate from the established-connection Stream and TLS
+message benchmark.
+
 ## 1. Permanent reactor comparison
 
 `run-reactor-comparison.pl` is the canonical same-work comparison.
@@ -122,16 +141,40 @@ refer to phase-era names and assumptions.
 
 ## 3. Stream transport comparison
 
-`run-stream-microbench.pl` compares direct raw-reactor echo with a raw
-subclass-defined Stream using the same AF_UNIX request/reply workload. It
-measures the cost and benefit of owned native Stream transport above readiness
-dispatch; it is not the public cross-runtime leaderboard.
+`run-stream-microbench.pl` compares direct raw-reactor echo with raw
+subclass-defined Streams using the same AF_UNIX request/reply workload. The
+Stream rows run both the default unlimited output queue and an otherwise
+identical class with a 16 MiB `max_pending_bytes` limit. Their comparison is
+the regression check that the optional hard-limit branch does not materially
+tax normal writes. The same benchmark guards the specialized `plain` provider
+path as the native transport contract evolves. This is not the public
+cross-runtime leaderboard.
 
 ```bash
 perl -Mblib bench/run-stream-microbench.pl \
   --clients=1,10,100,1000 --warmup=10 --messages=100 \
-  --bytes=64 --repeats=8
+  --bytes=64 --repeats=6
 ```
+
+Use a repeat count divisible by three so every implementation occupies every
+execution position equally.
+
+`run-tls-microbench.pl` is the permanent established-connection comparison
+between the same subclass-defined Stream using its specialized `plain`
+transport and the OpenSSL `Linux::Event::TLS` provider. Construction
+and handshake occur before timing; the measured interval covers equal 64-byte
+request/reply messages. The provider is part of the main build:
+
+```bash
+perl Makefile.PL && make
+perl -Mblib bench/run-tls-microbench.pl \
+  --clients=1,10,100 --messages=1000 --warmup=100 --repeats=6 \
+  --json=bench/results/stream-plain-vs-tls.json
+```
+
+The repository test certificate is the default identity. A packaged benchmark
+outside this checkout can use `--cert-file` and `--key-file` to supply an
+equivalent localhost certificate and private key.
 
 ## 4. Framing measurements
 
@@ -203,3 +246,31 @@ For `framed-full-named`, compare median CPU time per operation first, then
 operations/second and retained bytes/object. RSS is page-granular, so the larger
 live counts are the meaningful memory samples. Each socketpair consumes two
 file descriptors; increase `ulimit -n` or lower `--live` if creation fails.
+
+## 6. Live protocol transitions
+
+`run-stream-transition-bench.pl` measures descriptor changes on already-live
+Streams. Every timed operation calls `transition_to()` and retains the same fd,
+watcher, XSState, output queue, lifecycle, and application data. No bytes are
+injected, so this benchmark isolates shared-descriptor replacement and the raw
+scratch-buffer allocation required by the target mode.
+
+The contract-1 cases are:
+
+- `raw-raw`: both target classes use raw delivery
+- `framed-framed`: Delimiter and Fixed native parsers
+- `raw-framed`: alternates raw scratch allocation and release
+
+```bash
+perl -Mblib bench/run-stream-transition-bench.pl \
+  --iterations=1000000 \
+  --pool=256 \
+  --warmup=10000 \
+  --repeats=7 \
+  --json=bench/results/stream-transition.json
+```
+
+Transitions are normally rare semantic operations, so this is primarily a
+regression and architecture benchmark rather than a throughput leaderboard.
+Compare CPU microseconds per transition first and keep the contract, cases,
+pool size, Perl, compiler flags, and host identical.

@@ -6,6 +6,8 @@
 ^(?:.*/)?pm_to_blib$
 ^xsloop/(?:Makefile$|MYMETA\.(?:json|yml)$|XSLoop\.(?:c|o|bs)$|blib(?:/|$))
 ^xsstream/(?:Makefile$|MYMETA\.(?:json|yml)$|XSStream\.(?:c|o)$|Stream\.bs$|blib(?:/|$))
+^xstls/(?:Makefile$|MYMETA\.(?:json|yml)$|TLS\.(?:c|o|bs)$|blib(?:/|$)|check_openssl(?:\.o)?$)
+^xsconnect/(?:Makefile$|MYMETA\.(?:json|yml)$|Connect\.(?:c|o|bs)$|blib(?:/|$))
 ^Linux-Event-[^/]+(?:/|\.tar(?:\.gz)?$)
 ^\.prove$
 ~$
