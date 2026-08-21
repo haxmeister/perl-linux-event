@@ -19,6 +19,7 @@ for my $required (
     'docs/OBJECT-LIFECYCLE.md',
     'docs/STREAM-CONNECTIONS.md',
     'docs/LISTENER-DESIGN.md',
+    'docs/TIMER-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
@@ -33,6 +34,7 @@ for my $required (
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
+    'bench/run-timer-microbench.pl',
     'bench/archive/README.md',
     'lib/Linux/Event.pm',
     'lib/Linux/Event/Address.pm',
@@ -51,6 +53,7 @@ for my $required (
     'lib/Linux/Event/Listener/_Engine.pm',
     'lib/Linux/Event/Stream.pm',
     'lib/Linux/Event/Stream/_Connection.pm',
+    'lib/Linux/Event/Timer.pm',
     'xstls/Makefile.PL',
     'xstls/TLS.xs',
     'xstls/check_openssl.c',
@@ -73,6 +76,7 @@ for my $live (
     'docs/OBJECT-LIFECYCLE.md',
     'docs/STREAM-CONNECTIONS.md',
     'docs/LISTENER-DESIGN.md',
+    'docs/TIMER-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
@@ -87,6 +91,7 @@ for my $live (
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
+    'bench/run-timer-microbench.pl',
 ) {
     my $path = File::Spec->catfile($root, split m{/}, $live);
     open my $fh, '<', $path or die "open $path: $!";
@@ -113,6 +118,7 @@ my %allowed = map { $_ => 1 } qw(
     run-framing-microbench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
+    run-timer-microbench.pl
 );
 is_deeply([grep { !$allowed{$_} } @bench_root], [], 'bench root contains only current public files');
 ok(!-d File::Spec->catdir($root, 'tls'),

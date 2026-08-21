@@ -156,15 +156,33 @@ generic readiness core and an independently testable buffered Stream layer.
 ## Public ownership layer
 
 `Linux::Event::Loop->add()` accepts distribution objects that implement Loop
-attachment, currently Stream and Listener. There is no public Watcher or IO
+attachment, currently Stream, Listener, and Timer. There is no public Watcher or IO
 base class and no generic Perl dispatcher. Raw `watch()` returns an opaque
-native handle. Stream and Listener retain their concrete cached callbacks and
+native handle. Stream, Listener, and Timer retain their concrete cached callbacks and
 private registrations.
 
 An application object is one logical activity rather than one fd. A connecting
 Stream can own attempt and deadline registrations until connection completes,
 then retains the same public identity while its established socket is
 registered with the native Stream engine.
+
+## Timer scheduler layer
+
+Every Loop lazily creates one nonblocking, close-on-exec timerfd when its first
+Timer is attached. All active Timers on that Loop share the descriptor. An
+indexed native minimum heap orders nanosecond monotonic deadlines and permits
+O(log n) insertion, cancellation, and arbitrary rescheduling.
+
+Each Timer subclass contributes one immutable descriptor containing its
+resolved `on_timer` CV. Instances hold only mutable schedule, heap position,
+application data, lifecycle, and expiration count. The Loop retains active
+instances, so dropping an application reference does not cancel work.
+
+The timerfd watcher enters a specialized native dispatch path. Equal deadlines
+use schedule sequence for FIFO order. Fixed-rate recurring timers advance from
+their previous deadline, coalescing missed intervals into one callback.
+Dispatch is capped at 1024 callbacks per batch, and immediate work created from
+inside a Timer callback is deferred to a later Loop turn.
 
 ## Stream acquisition layer
 
@@ -179,6 +197,10 @@ requests monotonic deadlines and ensures immediate success or operational
 failure is delivered from the loop rather than reentrantly inside the
 constructor. The attempt engine is intentionally a cold Perl path until
 profiling demonstrates a reason to move it.
+
+This private connection deadline helper remains separate from the public Timer
+scheduler in this release. Migrating connection and TLS deadlines to Timer is
+a later lifecycle change, not part of the Timer API itself.
 
 `MyStream->connect()` creates one Stream and the private engine reports directly
 to it. During success, Stream binds native state to the connected fd. The

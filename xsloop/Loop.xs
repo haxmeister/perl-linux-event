@@ -46,8 +46,10 @@
 #include "XSUB.h"
 
 #include <sys/epoll.h>
+#include <sys/timerfd.h>
 #include <unistd.h>
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -61,9 +63,51 @@
 #define LE_INITIAL_EVENTS 8192
 #define LE_INITIAL_REGISTRY 1024
 #define LE_CALLBACK_SCOPE_DEFAULT 128
+#define LE_INITIAL_TIMER_HEAP 64
+#define LE_TIMER_CALLBACK_BATCH 1024
+#define LE_HEAP_NONE ((size_t)-1)
+#define LE_WATCHER_USER 0
+#define LE_WATCHER_TIMER 1
+
+#define LE_TIMER_UNATTACHED 0
+#define LE_TIMER_ACTIVE 1
+#define LE_TIMER_FIRING 2
+#define LE_TIMER_EXPIRED 3
+#define LE_TIMER_CANCELLED 4
 
 typedef struct le_loop_s le_loop_t;
 typedef struct le_watcher_s le_watcher_t;
+typedef struct le_timer_s le_timer_t;
+typedef struct le_timer_descriptor_s le_timer_descriptor_t;
+
+struct le_timer_descriptor_s {
+    SV *callback_cv;
+    int callback_direct_cv;
+};
+
+/*
+ * One public Timer object owns one native record. Active records are retained
+ * by self_sv while the Loop's indexed heap stores their native pointers.
+ * Callback behavior is shared through one immutable descriptor per subclass.
+ */
+struct le_timer_s {
+    le_loop_t *loop;
+    le_timer_descriptor_t *descriptor;
+    SV *descriptor_sv;
+    SV *self_sv;
+    SV *loop_sv;
+    SV *data_sv;
+    unsigned long long deadline_ns;
+    unsigned long long interval_ns;
+    unsigned long long initial_ns;
+    unsigned long long sequence;
+    unsigned long long expirations;
+    size_t heap_index;
+    int initial_absolute;
+    int state;
+    int in_callback;
+    int cleanup_pending;
+};
 
 /*
  * Native watcher record.
@@ -94,6 +138,7 @@ struct le_watcher_s {
     int callback_arg_data;
     int lean;
     int bench_native_echo;
+    int kind;
 };
 
 /*
@@ -168,6 +213,22 @@ struct le_loop_s {
     le_watcher_t *watcher_freelist;
     le_watcher_t *watcher_pending;
     le_watcher_t *watcher_retired;
+    int timer_fd;
+    le_watcher_t *timer_source;
+    le_timer_t **timer_heap;
+    size_t timer_heap_size;
+    size_t timer_heap_cap;
+    unsigned long long timer_sequence;
+    unsigned long long timerfd_create_calls;
+    unsigned long long timerfd_settime_calls;
+    unsigned long long timer_schedule_calls;
+    unsigned long long timer_reschedule_calls;
+    unsigned long long timer_cancel_calls;
+    unsigned long long timer_callback_calls;
+    unsigned long long timer_expired_calls;
+    unsigned long long timer_coalesced_expirations;
+    unsigned long long timer_heap_max_size;
+    int in_timer_dispatch;
     int profile_enabled;
     unsigned long long epoll_wait_ns;
     unsigned long long epoll_ctl_add_ns;
@@ -233,6 +294,17 @@ static le_loop_t *le_loop_from_sv(SV *sv) {
 static le_watcher_t *le_watcher_from_sv(SV *sv) {
     if (!sv_isobject(sv) || !SvROK(sv)) croak("not a watcher object");
     return INT2PTR(le_watcher_t *, SvIV((SV*)SvRV(sv)));
+}
+
+static le_timer_t *le_timer_from_sv(SV *sv) {
+    if (!sv_isobject(sv) || !SvROK(sv)) croak("not a Timer object");
+    return INT2PTR(le_timer_t *, SvIV((SV*)SvRV(sv)));
+}
+
+static le_timer_descriptor_t *le_timer_descriptor_from_sv(SV *sv) {
+    if (!sv_isobject(sv) || !SvROK(sv))
+        croak("not a Timer descriptor object");
+    return INT2PTR(le_timer_descriptor_t *, SvIV((SV*)SvRV(sv)));
 }
 
 /* ---- Native fd registry --------------------------------------------- */
@@ -359,8 +431,414 @@ static void le_watcher_promote_pending(le_loop_t *loop) {
     }
 }
 
+/* ---- Shared native Timer scheduler ---------------------------------- */
+
+static int le_timer_less(const le_timer_t *a, const le_timer_t *b) {
+    if (a->deadline_ns != b->deadline_ns)
+        return a->deadline_ns < b->deadline_ns;
+    return a->sequence < b->sequence;
+}
+
+static void le_timer_heap_swap(le_loop_t *loop, size_t a, size_t b) {
+    le_timer_t *temporary = loop->timer_heap[a];
+    loop->timer_heap[a] = loop->timer_heap[b];
+    loop->timer_heap[b] = temporary;
+    loop->timer_heap[a]->heap_index = a;
+    loop->timer_heap[b]->heap_index = b;
+}
+
+static void le_timer_heap_reserve(le_loop_t *loop) {
+    size_t capacity;
+    le_timer_t **heap;
+    if (loop->timer_heap_size < loop->timer_heap_cap) return;
+    capacity = loop->timer_heap_cap
+        ? loop->timer_heap_cap * 2 : LE_INITIAL_TIMER_HEAP;
+    if (capacity < loop->timer_heap_cap)
+        croak("Timer heap capacity overflow");
+    heap = (le_timer_t **)realloc(
+        loop->timer_heap, capacity * sizeof(le_timer_t *));
+    if (!heap) croak("realloc Timer heap failed");
+    loop->timer_heap = heap;
+    loop->timer_heap_cap = capacity;
+}
+
+static void le_timer_heap_up(le_loop_t *loop, size_t at) {
+    while (at > 0) {
+        size_t parent = (at - 1) / 2;
+        if (!le_timer_less(loop->timer_heap[at], loop->timer_heap[parent]))
+            break;
+        le_timer_heap_swap(loop, at, parent);
+        at = parent;
+    }
+}
+
+static void le_timer_heap_down(le_loop_t *loop, size_t at) {
+    while (1) {
+        size_t left = at * 2 + 1;
+        size_t right = left + 1;
+        size_t smallest = at;
+        if (left < loop->timer_heap_size
+            && le_timer_less(loop->timer_heap[left],
+                loop->timer_heap[smallest]))
+            smallest = left;
+        if (right < loop->timer_heap_size
+            && le_timer_less(loop->timer_heap[right],
+                loop->timer_heap[smallest]))
+            smallest = right;
+        if (smallest == at) break;
+        le_timer_heap_swap(loop, at, smallest);
+        at = smallest;
+    }
+}
+
+static void le_timer_heap_insert(le_loop_t *loop, le_timer_t *timer) {
+    size_t at;
+    le_timer_heap_reserve(loop);
+    at = loop->timer_heap_size++;
+    loop->timer_heap[at] = timer;
+    timer->heap_index = at;
+    le_timer_heap_up(loop, at);
+    if ((unsigned long long)loop->timer_heap_size
+        > loop->timer_heap_max_size)
+        loop->timer_heap_max_size
+            = (unsigned long long)loop->timer_heap_size;
+}
+
+static void le_timer_heap_remove(le_loop_t *loop, le_timer_t *timer) {
+    size_t at;
+    size_t last;
+    if (!loop || !timer || timer->heap_index == LE_HEAP_NONE) return;
+    at = timer->heap_index;
+    if (at >= loop->timer_heap_size || loop->timer_heap[at] != timer)
+        croak("Timer heap index corrupted");
+    last = --loop->timer_heap_size;
+    timer->heap_index = LE_HEAP_NONE;
+    if (at == last) return;
+    loop->timer_heap[at] = loop->timer_heap[last];
+    loop->timer_heap[at]->heap_index = at;
+    if (at > 0 && le_timer_less(loop->timer_heap[at],
+        loop->timer_heap[(at - 1) / 2]))
+        le_timer_heap_up(loop, at);
+    else
+        le_timer_heap_down(loop, at);
+}
+
+static unsigned long long le_seconds_to_ns(double seconds,
+    int allow_zero, const char *name) {
+    double maximum = (double)ULLONG_MAX / 1000000000.0;
+    unsigned long long nanoseconds;
+    if (!isfinite(seconds) || seconds < 0.0
+        || (!allow_zero && seconds == 0.0))
+        croak("%s must be a %sfinite number of seconds", name,
+            allow_zero ? "non-negative " : "positive ");
+    if (seconds >= maximum) croak("%s is too large", name);
+    nanoseconds = (unsigned long long)(seconds * 1000000000.0);
+    if (!allow_zero && nanoseconds == 0)
+        croak("%s is below the one-nanosecond scheduler resolution", name);
+    return nanoseconds;
+}
+
+static void le_timer_rearm(le_loop_t *loop) {
+    struct itimerspec specification;
+    unsigned long long deadline;
+    if (!loop || loop->timer_fd < 0) return;
+    memset(&specification, 0, sizeof(specification));
+    if (loop->timer_heap_size) {
+        deadline = loop->timer_heap[0]->deadline_ns;
+        if (deadline == 0) deadline = 1;
+        specification.it_value.tv_sec = (time_t)(deadline / 1000000000ULL);
+        specification.it_value.tv_nsec = (long)(deadline % 1000000000ULL);
+    }
+    loop->timerfd_settime_calls++;
+    if (timerfd_settime(loop->timer_fd, TFD_TIMER_ABSTIME,
+        &specification, NULL) != 0)
+        croak("timerfd_settime failed: %s", strerror(errno));
+}
+
+static void le_timer_maybe_rearm(le_loop_t *loop,
+    unsigned long long old_first) {
+    unsigned long long next_first = loop->timer_heap_size
+        ? loop->timer_heap[0]->deadline_ns : 0;
+    if (!loop->in_timer_dispatch && old_first != next_first)
+        le_timer_rearm(loop);
+}
+
+static void le_timer_source_ensure(le_loop_t *loop) {
+    le_watcher_t *source;
+    le_watcher_t *old;
+    struct epoll_event event;
+    int operation;
+    int fd;
+    if (loop->timer_fd >= 0) return;
+    fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    if (fd < 0) croak("timerfd_create failed: %s", strerror(errno));
+    loop->timerfd_create_calls++;
+    le_registry_grow(loop, fd);
+    old = loop->registry[fd];
+    source = le_watcher_alloc(loop);
+    source->fd = fd;
+    source->loop = loop;
+    source->active = 1;
+    source->mask = EPOLLIN | EPOLLERR | EPOLLHUP;
+    source->kind = LE_WATCHER_TIMER;
+    memset(&event, 0, sizeof(event));
+    event.events = source->mask;
+    event.data.ptr = (void *)source;
+    operation = old ? EPOLL_CTL_MOD : EPOLL_CTL_ADD;
+    if (le_epoll_ctl_timed(loop, operation, fd, &event) < 0
+        && !(old && errno == ENOENT
+            && le_epoll_ctl_timed(loop, EPOLL_CTL_ADD, fd, &event) == 0)) {
+        int error = errno;
+        source->loop = NULL;
+        le_watcher_destroy(source);
+        close(fd);
+        croak("epoll_ctl Timer fd failed: %s", strerror(error));
+    }
+    if (old) {
+        old->active = 0;
+        le_watcher_recycle_or_destroy(old);
+    }
+    loop->registry[fd] = source;
+    loop->timer_fd = fd;
+    loop->timer_source = source;
+}
+
+static void le_timer_release_refs(le_timer_t *timer) {
+    SV *descriptor_sv;
+    SV *data_sv;
+    SV *loop_sv;
+    SV *self_sv;
+    if (!timer) return;
+    descriptor_sv = timer->descriptor_sv;
+    data_sv = timer->data_sv;
+    loop_sv = timer->loop_sv;
+    self_sv = timer->self_sv;
+    timer->descriptor = NULL;
+    timer->descriptor_sv = NULL;
+    timer->data_sv = NULL;
+    timer->loop_sv = NULL;
+    timer->self_sv = NULL;
+    timer->loop = NULL;
+    timer->cleanup_pending = 0;
+    if (descriptor_sv) SvREFCNT_dec(descriptor_sv);
+    if (data_sv) SvREFCNT_dec(data_sv);
+    if (loop_sv) SvREFCNT_dec(loop_sv);
+    /* This may destroy the Timer and free its native record. */
+    if (self_sv) SvREFCNT_dec(self_sv);
+}
+
+static void le_timer_finish_terminal(le_timer_t *timer) {
+    if (!timer) return;
+    if (timer->in_callback) {
+        timer->cleanup_pending = 1;
+        return;
+    }
+    le_timer_release_refs(timer);
+}
+
+static void le_timer_cancel_native(le_timer_t *timer) {
+    le_loop_t *loop;
+    unsigned long long old_first = 0;
+    if (!timer || timer->state == LE_TIMER_CANCELLED
+        || timer->state == LE_TIMER_EXPIRED)
+        return;
+    loop = timer->loop;
+    if (loop && loop->timer_heap_size)
+        old_first = loop->timer_heap[0]->deadline_ns;
+    if (loop && timer->heap_index != LE_HEAP_NONE)
+        le_timer_heap_remove(loop, timer);
+    timer->state = LE_TIMER_CANCELLED;
+    if (loop) {
+        loop->timer_cancel_calls++;
+        le_timer_maybe_rearm(loop, old_first);
+    }
+    le_timer_finish_terminal(timer);
+}
+
+static void le_timer_activate(SV *timer_obj, le_timer_t *timer,
+    SV *loop_obj, le_loop_t *loop) {
+    unsigned long long now;
+    unsigned long long deadline;
+    unsigned long long old_first;
+    if (timer->state != LE_TIMER_UNATTACHED || timer->loop)
+        croak("add(): Timer is not unattached");
+    le_timer_source_ensure(loop);
+    now = le_now_ns();
+    if (timer->initial_absolute) {
+        deadline = timer->initial_ns;
+    }
+    else {
+        if (timer->initial_ns > ULLONG_MAX - now)
+            croak("Timer deadline overflow");
+        deadline = now + timer->initial_ns;
+    }
+    old_first = loop->timer_heap_size
+        ? loop->timer_heap[0]->deadline_ns : 0;
+    timer->loop = loop;
+    timer->loop_sv = newSVsv(loop_obj);
+    if (SvROK(timer->loop_sv)) sv_rvweaken(timer->loop_sv);
+    timer->self_sv = newSVsv(timer_obj);
+    timer->deadline_ns = deadline;
+    timer->sequence = ++loop->timer_sequence;
+    timer->state = LE_TIMER_ACTIVE;
+    le_timer_heap_insert(loop, timer);
+    loop->timer_schedule_calls++;
+    le_timer_maybe_rearm(loop, old_first);
+}
+
+static void le_timer_reschedule_native(le_timer_t *timer, int absolute,
+    unsigned long long first_ns, unsigned long long interval_ns) {
+    le_loop_t *loop;
+    unsigned long long now;
+    unsigned long long deadline;
+    unsigned long long old_first;
+    if (!timer || !timer->loop
+        || (timer->state != LE_TIMER_ACTIVE
+            && timer->state != LE_TIMER_FIRING))
+        croak("reschedule(): Timer is not active");
+    loop = timer->loop;
+    now = le_now_ns();
+    if (absolute) {
+        deadline = first_ns;
+    }
+    else {
+        if (first_ns > ULLONG_MAX - now)
+            croak("Timer deadline overflow");
+        deadline = now + first_ns;
+    }
+    old_first = loop->timer_heap_size
+        ? loop->timer_heap[0]->deadline_ns : 0;
+    if (timer->heap_index != LE_HEAP_NONE)
+        le_timer_heap_remove(loop, timer);
+    timer->initial_absolute = absolute ? 1 : 0;
+    timer->initial_ns = first_ns;
+    timer->interval_ns = interval_ns;
+    timer->deadline_ns = deadline;
+    timer->expirations = 0;
+    timer->sequence = ++loop->timer_sequence;
+    timer->state = LE_TIMER_ACTIVE;
+    le_timer_heap_insert(loop, timer);
+    loop->timer_reschedule_calls++;
+    le_timer_maybe_rearm(loop, old_first);
+}
+
+static SV *le_timer_call(pTHX_ le_timer_t *timer) {
+    SV *error = NULL;
+    unsigned long long started = 0;
+    le_loop_t *loop = timer->loop;
+    le_timer_descriptor_t *descriptor = timer->descriptor;
+    if (!descriptor || !descriptor->callback_cv)
+        croak("Timer callback descriptor is unavailable");
+    if (loop && loop->profile_enabled) started = le_now_ns();
+    ENTER;
+    SAVETMPS;
+    {
+        dSP;
+        PUSHMARK(SP);
+        EXTEND(SP, 1);
+        PUSHs(timer->self_sv);
+        PUTBACK;
+        call_sv(descriptor->callback_cv, G_DISCARD | G_VOID | G_EVAL);
+        SPAGAIN;
+        if (SvTRUE(ERRSV)) {
+            error = newSVsv(ERRSV);
+            sv_setsv(ERRSV, &PL_sv_undef);
+        }
+        PUTBACK;
+    }
+    FREETMPS;
+    LEAVE;
+    if (loop) {
+        loop->callback_calls++;
+        loop->callback_onearg_calls++;
+        loop->callback_direct_cv_calls++;
+        loop->timer_callback_calls++;
+        if (loop->profile_enabled) loop->callback_ns += le_now_ns() - started;
+    }
+    return error;
+}
+
+static void le_timer_source_ready(pTHX_ le_loop_t *loop) {
+    unsigned long long kernel_expirations;
+    unsigned long long batch_now;
+    unsigned long long cutoff_sequence;
+    unsigned int callbacks = 0;
+    ssize_t count;
+    SV *callback_error = NULL;
+    if (!loop || loop->timer_fd < 0) return;
+    do {
+        count = read(loop->timer_fd, &kernel_expirations,
+            sizeof(kernel_expirations));
+    } while (count < 0 && errno == EINTR);
+    if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+        croak("read timerfd failed: %s", strerror(errno));
+    if (count >= 0 && count != (ssize_t)sizeof(kernel_expirations))
+        croak("short read from timerfd");
+
+    batch_now = le_now_ns();
+    cutoff_sequence = loop->timer_sequence;
+    loop->in_timer_dispatch++;
+    while (callbacks < LE_TIMER_CALLBACK_BATCH && loop->timer_heap_size) {
+        le_timer_t *timer = loop->timer_heap[0];
+        unsigned long long due;
+        unsigned long long represented = 1;
+        if (timer->deadline_ns > batch_now
+            || timer->sequence > cutoff_sequence)
+            break;
+        due = timer->deadline_ns;
+        le_timer_heap_remove(loop, timer);
+        if (timer->state != LE_TIMER_ACTIVE) continue;
+        if (timer->interval_ns) {
+            represented += (batch_now - due) / timer->interval_ns;
+            if (represented > 1)
+                loop->timer_coalesced_expirations += represented - 1;
+            if (represented > (ULLONG_MAX - due) / timer->interval_ns)
+                timer->deadline_ns = ULLONG_MAX;
+            else
+                timer->deadline_ns = due
+                    + represented * timer->interval_ns;
+            timer->expirations = represented;
+            timer->sequence = ++loop->timer_sequence;
+            timer->state = LE_TIMER_ACTIVE;
+            le_timer_heap_insert(loop, timer);
+        }
+        else {
+            timer->expirations = 1;
+            timer->state = LE_TIMER_FIRING;
+        }
+
+        timer->in_callback = 1;
+        callback_error = le_timer_call(aTHX_ timer);
+        timer->in_callback = 0;
+        callbacks++;
+
+        if (timer->state == LE_TIMER_FIRING) {
+            timer->state = LE_TIMER_EXPIRED;
+            loop->timer_expired_calls++;
+            timer->cleanup_pending = 1;
+        }
+        if (timer->cleanup_pending)
+            le_timer_release_refs(timer);
+        if (callback_error || loop->stop_flag) break;
+    }
+    loop->in_timer_dispatch--;
+    le_timer_rearm(loop);
+    if (callback_error) croak_sv(callback_error);
+}
+
+static void le_timer_loop_cancel_all(le_loop_t *loop) {
+    while (loop && loop->timer_heap_size) {
+        le_timer_t *timer = loop->timer_heap[0];
+        le_timer_heap_remove(loop, timer);
+        timer->state = LE_TIMER_CANCELLED;
+        timer->loop = NULL;
+        le_timer_release_refs(timer);
+    }
+}
+
 static void le_loop_destroy(le_loop_t *loop) {
     if (!loop) return;
+    le_timer_loop_cancel_all(loop);
     if (loop->registry) {
         for (size_t i = 0; i < loop->reg_cap; i++) {
             le_watcher_t *w = loop->registry[i];
@@ -375,6 +853,8 @@ static void le_loop_destroy(le_loop_t *loop) {
     while (loop->watcher_pending) { le_watcher_t *w = loop->watcher_pending; loop->watcher_pending = w->next_free; le_watcher_destroy(w); }
     while (loop->watcher_freelist) { le_watcher_t *w = loop->watcher_freelist; loop->watcher_freelist = w->next_free; le_watcher_destroy(w); }
     while (loop->watcher_retired) { le_watcher_t *w = loop->watcher_retired; loop->watcher_retired = w->next_retired; le_watcher_destroy(w); }
+    if (loop->timer_heap) free(loop->timer_heap);
+    if (loop->timer_fd >= 0) close(loop->timer_fd);
     if (loop->events) free(loop->events);
     if (loop->epoll_fd >= 0) close(loop->epoll_fd);
     free(loop);
@@ -533,6 +1013,15 @@ le_dispatch_batch(pTHX_ le_loop_t *loop, int n) {
         if (!w || !w->active || w->loop != loop) continue;
         loop->dispatch_events++;
         le_note_ready_flags(loop, events);
+
+        if (w->kind == LE_WATCHER_TIMER) {
+            if (events & (EPOLLERR | EPOLLHUP))
+                croak("Timer event source failed");
+            if (events & EPOLLIN)
+                le_timer_source_ready(aTHX_ loop);
+            if (loop->stop_flag) break;
+            continue;
+        }
 
         /* Terminal/error callbacks run before normal read/write readiness. */
         if (events & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
@@ -750,6 +1239,7 @@ new(CLASS)
   CODE:
     le_loop_t *loop = (le_loop_t *)calloc(1, sizeof(le_loop_t));
     if (!loop) croak("calloc loop failed");
+    loop->timer_fd = -1;
     loop->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if (loop->epoll_fd < 0) { int err = errno; free(loop); croak("epoll_create1 failed: %s", strerror(err)); }
     loop->event_cap = LE_INITIAL_EVENTS;
@@ -816,6 +1306,16 @@ stats(loop_obj)
     hv_stores(hv, "run_once_calls", newSVuv(loop->run_once_calls));
     hv_stores(hv, "run_calls", newSVuv(loop->run_calls));
     hv_stores(hv, "run_for_calls", newSVuv(loop->run_for_calls));
+    hv_stores(hv, "active_timers", newSVuv(loop->timer_heap_size));
+    hv_stores(hv, "timerfd_create_calls", newSVuv(loop->timerfd_create_calls));
+    hv_stores(hv, "timerfd_settime_calls", newSVuv(loop->timerfd_settime_calls));
+    hv_stores(hv, "timer_schedule_calls", newSVuv(loop->timer_schedule_calls));
+    hv_stores(hv, "timer_reschedule_calls", newSVuv(loop->timer_reschedule_calls));
+    hv_stores(hv, "timer_cancel_calls", newSVuv(loop->timer_cancel_calls));
+    hv_stores(hv, "timer_callback_calls", newSVuv(loop->timer_callback_calls));
+    hv_stores(hv, "timer_expired_calls", newSVuv(loop->timer_expired_calls));
+    hv_stores(hv, "timer_coalesced_expirations", newSVuv(loop->timer_coalesced_expirations));
+    hv_stores(hv, "timer_heap_max_size", newSVuv(loop->timer_heap_max_size));
     hv_stores(hv, "bench_native_echo_read_events", newSVuv(loop->bench_native_echo_read_events));
     hv_stores(hv, "bench_native_echo_perl_read_callbacks", newSVuv(loop->bench_native_echo_perl_read_callbacks));
     hv_stores(hv, "bench_native_echo_sysread_calls", newSVuv(loop->bench_native_echo_sysread_calls));
@@ -940,6 +1440,15 @@ reset_stats(loop_obj)
     loop->run_once_calls = 0;
     loop->run_calls = 0;
     loop->run_for_calls = 0;
+    loop->timerfd_create_calls = 0;
+    loop->timerfd_settime_calls = 0;
+    loop->timer_schedule_calls = 0;
+    loop->timer_reschedule_calls = 0;
+    loop->timer_cancel_calls = 0;
+    loop->timer_callback_calls = 0;
+    loop->timer_expired_calls = 0;
+    loop->timer_coalesced_expirations = 0;
+    loop->timer_heap_max_size = (unsigned long long)loop->timer_heap_size;
     loop->bench_native_echo_read_events = 0;
     loop->bench_native_echo_perl_read_callbacks = 0;
     loop->bench_native_echo_sysread_calls = 0;
@@ -1146,6 +1655,231 @@ run_for(loop_obj, seconds)
         le_dispatch_batch(aTHX_ loop, n);
         if (loop->profile_enabled) loop->dispatch_ns += le_now_ns() - dispatch_t0;
     }
+
+MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::Timer::_Descriptor
+PROTOTYPES: DISABLE
+
+SV *
+new(CLASS, callback)
+    const char *CLASS
+    SV *callback
+  CODE:
+    le_timer_descriptor_t *descriptor;
+    if (!SvROK(callback) || SvTYPE(SvRV(callback)) != SVt_PVCV)
+        croak("Timer on_timer must resolve to a coderef");
+    descriptor = (le_timer_descriptor_t *)calloc(1, sizeof(*descriptor));
+    if (!descriptor) croak("calloc Timer descriptor failed");
+    descriptor->callback_cv = le_stored_callback_from_sv(
+        callback, &descriptor->callback_direct_cv);
+    RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)descriptor);
+  OUTPUT:
+    RETVAL
+
+void
+DESTROY(descriptor_obj)
+    SV *descriptor_obj
+  CODE:
+    le_timer_descriptor_t *descriptor
+        = le_timer_descriptor_from_sv(descriptor_obj);
+    if (descriptor) {
+        if (descriptor->callback_cv)
+            SvREFCNT_dec(descriptor->callback_cv);
+        free(descriptor);
+        sv_setiv(SvRV(descriptor_obj), 0);
+    }
+
+MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::Timer
+PROTOTYPES: DISABLE
+
+SV *
+_new_native(CLASS, descriptor_obj, absolute, first_seconds, interval_seconds, data)
+    const char *CLASS
+    SV *descriptor_obj
+    int absolute
+    double first_seconds
+    double interval_seconds
+    SV *data
+  CODE:
+    le_timer_t *timer;
+    le_timer_descriptor_t *descriptor
+        = le_timer_descriptor_from_sv(descriptor_obj);
+    if (!descriptor || !descriptor->callback_cv)
+        croak("Timer descriptor is closed");
+    timer = (le_timer_t *)calloc(1, sizeof(*timer));
+    if (!timer) croak("calloc Timer failed");
+    timer->heap_index = LE_HEAP_NONE;
+    timer->state = LE_TIMER_UNATTACHED;
+    timer->descriptor = descriptor;
+    timer->descriptor_sv = newSVsv(descriptor_obj);
+    timer->data_sv = SvOK(data) ? newSVsv(data) : NULL;
+    timer->initial_absolute = absolute ? 1 : 0;
+    timer->initial_ns = le_seconds_to_ns(
+        first_seconds, 1, absolute ? "at" : "after");
+    timer->interval_ns = interval_seconds == 0.0
+        ? 0 : le_seconds_to_ns(interval_seconds, 0, "every");
+    RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)timer);
+  OUTPUT:
+    RETVAL
+
+void
+DESTROY(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    if (timer) {
+        if (timer->state == LE_TIMER_ACTIVE
+            || timer->state == LE_TIMER_FIRING)
+            le_timer_cancel_native(timer);
+        if (timer->descriptor_sv || timer->data_sv || timer->loop_sv)
+            le_timer_release_refs(timer);
+        free(timer);
+        sv_setiv(SvRV(timer_obj), 0);
+    }
+
+SV *
+_attach_to_loop(timer_obj, loop_obj)
+    SV *timer_obj
+    SV *loop_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    le_loop_t *loop = le_loop_from_sv(loop_obj);
+    le_timer_activate(timer_obj, timer, loop_obj, loop);
+    RETVAL = newSVsv(timer_obj);
+  OUTPUT:
+    RETVAL
+
+SV *
+_reschedule_native(timer_obj, absolute, first_seconds, interval_seconds)
+    SV *timer_obj
+    int absolute
+    double first_seconds
+    double interval_seconds
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    unsigned long long first_ns = le_seconds_to_ns(
+        first_seconds, 1, absolute ? "at" : "after");
+    unsigned long long interval_ns = interval_seconds == 0.0
+        ? 0 : le_seconds_to_ns(interval_seconds, 0, "every");
+    le_timer_reschedule_native(timer, absolute, first_ns, interval_ns);
+    RETVAL = newSVsv(timer_obj);
+  OUTPUT:
+    RETVAL
+
+SV *
+cancel(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_cancel_native(le_timer_from_sv(timer_obj));
+    RETVAL = newSVsv(timer_obj);
+  OUTPUT:
+    RETVAL
+
+SV *
+data(timer_obj, ...)
+    SV *timer_obj
+  PREINIT:
+    le_timer_t *timer;
+  CODE:
+    timer = le_timer_from_sv(timer_obj);
+    if (items > 2) croak("data() accepts at most one value");
+    if (items == 2) {
+        if (timer->state == LE_TIMER_CANCELLED
+            || timer->state == LE_TIMER_EXPIRED)
+            croak("data(): Timer is terminal");
+        if (timer->data_sv) SvREFCNT_dec(timer->data_sv);
+        timer->data_sv = SvOK(ST(1)) ? newSVsv(ST(1)) : NULL;
+    }
+    RETVAL = timer->data_sv ? newSVsv(timer->data_sv) : newSV(0);
+  OUTPUT:
+    RETVAL
+
+SV *
+loop(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    RETVAL = timer->loop_sv && SvOK(timer->loop_sv)
+        ? newSVsv(timer->loop_sv) : newSV(0);
+  OUTPUT:
+    RETVAL
+
+SV *
+deadline(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    if (timer->state == LE_TIMER_ACTIVE
+        || timer->state == LE_TIMER_FIRING)
+        RETVAL = newSVnv((NV)timer->deadline_ns / 1000000000.0);
+    else if (timer->state == LE_TIMER_UNATTACHED
+        && timer->initial_absolute)
+        RETVAL = newSVnv((NV)timer->initial_ns / 1000000000.0);
+    else
+        RETVAL = newSV(0);
+  OUTPUT:
+    RETVAL
+
+double
+interval(timer_obj)
+    SV *timer_obj
+  CODE:
+    RETVAL = (double)le_timer_from_sv(timer_obj)->interval_ns
+        / 1000000000.0;
+  OUTPUT:
+    RETVAL
+
+UV
+expirations(timer_obj)
+    SV *timer_obj
+  CODE:
+    RETVAL = (UV)le_timer_from_sv(timer_obj)->expirations;
+  OUTPUT:
+    RETVAL
+
+SV *
+state(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    const char *name = "unattached";
+    if (timer->state == LE_TIMER_ACTIVE || timer->state == LE_TIMER_FIRING)
+        name = "active";
+    else if (timer->state == LE_TIMER_EXPIRED)
+        name = "expired";
+    else if (timer->state == LE_TIMER_CANCELLED)
+        name = "cancelled";
+    RETVAL = newSVpv(name, 0);
+  OUTPUT:
+    RETVAL
+
+int
+is_active(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    RETVAL = timer->state == LE_TIMER_ACTIVE
+        || timer->state == LE_TIMER_FIRING;
+  OUTPUT:
+    RETVAL
+
+int
+is_terminal(timer_obj)
+    SV *timer_obj
+  CODE:
+    le_timer_t *timer = le_timer_from_sv(timer_obj);
+    RETVAL = timer->state == LE_TIMER_EXPIRED
+        || timer->state == LE_TIMER_CANCELLED;
+  OUTPUT:
+    RETVAL
+
+double
+now(CLASS)
+    const char *CLASS
+  CODE:
+    PERL_UNUSED_ARG(CLASS);
+    RETVAL = (double)le_now_ns() / 1000000000.0;
+  OUTPUT:
+    RETVAL
 
 MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::_Registration
 PROTOTYPES: DISABLE

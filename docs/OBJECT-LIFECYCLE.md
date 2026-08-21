@@ -18,6 +18,10 @@ my $stream = ClientStream->connect(
 my $listener = ServerStream->listen(
     loop => $loop, host => '0.0.0.0', port => 9999,
 );
+
+my $timer = SessionTimer->new(
+    loop => $loop, after => 30, data => $session,
+);
 ```
 
 An object may instead be constructed detached and passed to `add()`:
@@ -29,6 +33,10 @@ my $stream = $loop->add(ClientStream->connect(
 
 my $listener = $loop->add(ServerStream->listen(
     host => '0.0.0.0', port => 9999,
+));
+
+my $timer = $loop->add(SessionTimer->new(
+    after => 30, data => $session,
 ));
 ```
 
@@ -47,6 +55,9 @@ different parts of an application.
   until `close()`, `detach()`, or destruction.
 - Listener owns sockets it creates. An adopted listener is closed only when
   `owns_socket => 1` was requested.
+- Loop retains an active Timer even when the application drops its reference.
+  A one-shot Timer releases its `data` after callback completion; recurring
+  Timers retain it until cancellation or Loop destruction.
 - `add()` returns the exact object it received; it does not wrap or replace it.
 
 Violations are rejected synchronously. This makes the Loop registry and native
@@ -61,6 +72,11 @@ registration. The application continues to hold one Stream object throughout.
 
 Listener similarly owns its listening registration and creates Stream objects
 for accepted sockets. These native registrations are implementation details.
+
+Timer is also a logical object rather than a timerfd wrapper. All active Timers
+on one Loop share one lazily created timerfd and live in a native indexed heap.
+Cancellation is terminal and idempotent. Rescheduling is allowed while active
+or from inside `on_timer`, but an expired or cancelled Timer cannot be revived.
 
 ## Raw descriptor registrations
 
@@ -84,3 +100,8 @@ Explicit `close()` is recommended because it makes application intent and
 callback timing clear. Destructors are a safety net. Stream fires `on_close`
 once when it closes an owned connection, but `detach()` deliberately does not:
 the resource remains open and ownership transfers to the caller.
+
+For Timer, explicit `cancel()` is the corresponding terminal operation. Loop
+destruction cancels every remaining Timer and releases its retained data. If a
+Timer cancels itself during `on_timer`, cleanup is deferred until the callback
+returns so callback-local access remains safe.

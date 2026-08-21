@@ -29,16 +29,23 @@ the same Linux::Event distribution. The guiding rule remains:
 - raw `on_data` fallback for application-specific protocols
 - in-place raw/framed protocol transitions that retain unread native input,
   queued output, registration identity, lifecycle, and application state
+- one shared timerfd plus an indexed native deadline heap per Loop
+- cached subclass callbacks, fixed-rate recurrence, coalescing, and bounded
+  dispatch for public Timer objects
 
 These are permanent regression targets. New work must not trade them away
 without benchmark evidence.
 
 ## Completed - unified object lifecycle
 
-`Linux::Event::Loop` owns high-level Stream and Listener objects through
+`Linux::Event::Loop` owns high-level Stream, Listener, and Timer objects through
 `add()`, while `watch()` creates an immediately attached opaque native
 registration. There is no public Watcher or IO base class. One logical object
 may own several internal epoll registrations.
+
+Timer uses that same attachment contract without adding Loop-specific factory
+methods. The abstract public Timer class caches `on_timer` once per subclass;
+active instances live entirely in the Loop's native scheduler.
 
 `MyStream->connect()` keeps one Stream identity through outbound acquisition
 and optional TLS readiness. `MyStream->listen()` creates the Listener that
@@ -94,7 +101,7 @@ remaining backlog again. Edge-triggered listeners require an unlimited drain.
 No temporary accepted-socket registration is created before Stream attachment.
 Resource exhaustion pauses readiness before typed error delivery.
 
-## Priority 2 - Asynchronous Resolver and Happy Eyeballs
+## Priority 1 - Asynchronous Resolver and Happy Eyeballs
 
 The current hostname path still calls `getaddrinfo` synchronously and attempts
 returned candidates sequentially. Replace it with:
@@ -109,7 +116,7 @@ returned candidates sequentially. Replace it with:
 Keep resolution mechanically separate from Stream connection policy. Literal and packed
 addresses must continue to bypass the resolver entirely.
 
-## Priority 3 - General native framing families
+## Priority 2 - General native framing families
 
 Expand the built-in framing catalog while keeping one rule: built-in boundary
 detection is native, while application-specific protocols parse raw `on_data`
@@ -129,12 +136,12 @@ message-boundary detection. A new general family needs a declarative module,
 corresponding XS parser mode, wire-contract tests, and a native-framer benchmark
 row. Its exact package name becomes the declaration name automatically.
 
-## Priority 4 - Native Stream watcher-state transitions
+## Priority 3 - Native Stream watcher-state transitions
 
 Reduce remaining Perl transitions for writable interest, read suspension,
 close, and half-close when profiling shows the boundary is material.
 
-## Priority 5 - Callback coalescing/batching
+## Priority 4 - Callback coalescing/batching
 
 Investigate fewer Perl entries without changing the ordinary one-message API:
 
@@ -142,7 +149,7 @@ Investigate fewer Perl entries without changing the ordinary one-message API:
 - optionally deliver multiple complete frames together
 - keep batching explicit where it changes application semantics
 
-## Priority 6 - Native connect attempt completion
+## Priority 5 - Native connect attempt completion
 
 Profile before moving the remaining attempt state machine below Perl. If
 high-churn connection workloads justify it, native code may:
@@ -157,12 +164,12 @@ high-churn connection workloads justify it, native code may:
 The public Stream connection contract must not change merely to eliminate a
 few cold Perl calls.
 
-## Priority 7 - Linux fd drain helpers
+## Priority 6 - Linux fd drain helpers
 
 Profile native draining/aggregation for Linux descriptors such as eventfd,
 signalfd, and pidfd so Perl receives meaningful aggregate events.
 
-## Priority 8 - Buffer representation experiments
+## Priority 7 - Buffer representation experiments
 
 Only if profiling justifies them:
 
@@ -172,7 +179,7 @@ Only if profiling justifies them:
 
 Do not optimize allocation speculatively.
 
-## Priority 9 - Protocol acceleration above Stream
+## Priority 8 - Protocol acceleration above Stream
 
 After the generic framing catalog is broad, consider reusable protocol engines
 such as HTTP or WebSocket parsing. Application semantics remain Perl even when

@@ -1,5 +1,25 @@
 Revision history for Linux-Event
 
+0.100_026  2026-08-21
+    - Add Linux::Event::Timer as an abstract subclass-defined public object
+      with cached on_timer callbacks and the same Loop->add attachment contract
+      as Stream and Listener.
+    - Support relative, absolute monotonic, and fixed-rate recurring schedules,
+      including distinct first deadlines, in-callback rescheduling, and
+      idempotent terminal cancellation.
+    - Give each Loop one lazy timerfd and one indexed native minimum heap for
+      every active Timer, with FIFO equal-deadline order and nanosecond internal
+      deadlines.
+    - Coalesce missed recurring ticks, retain fixed-rate phase, bound callback
+      batches for descriptor fairness, and defer zero-delay callbacks to a
+      later Loop turn.
+    - Define deterministic ownership and cleanup: Loop retains active Timers;
+      final expiration, cancellation, and Loop destruction release application
+      data safely, including cancellation during a callback.
+    - Extend statistics, lifecycle/API/scheduling tests, the release regression
+      contract, and a dedicated scaling benchmark for Timer lifecycle,
+      rescheduling, and expiration delivery.
+
 0.100_025  2026-08-21
     - Simplify the public hierarchy to Linux::Event::Loop, Stream, Listener,
       TLS, Framer, Error, and Address. Remove the public Watcher, IO, Connect,

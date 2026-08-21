@@ -28,6 +28,7 @@ bench/run-reactor-comparison.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/run-stream-transition-bench.pl
+bench/run-timer-microbench.pl
 bench/run-tls-microbench.pl
 bench/STREAM-COMPETITOR-PLAN.md
 Changes
@@ -40,6 +41,7 @@ docs/LISTENER-DESIGN.md
 docs/OBJECT-LIFECYCLE.md
 docs/STREAM-CONNECTIONS.md
 docs/STREAM-DESIGN.md
+docs/TIMER-DESIGN.md
 docs/TRANSPORT-BOUNDARY.md
 docs/XS-ROADMAP.md
 examples/line-echo-client.pl
@@ -60,6 +62,7 @@ lib/Linux/Event/Listener/_Engine.pm
 lib/Linux/Event/Loop.pm
 lib/Linux/Event/Stream.pm
 lib/Linux/Event/Stream/_Connection.pm
+lib/Linux/Event/Timer.pm
 lib/Linux/Event/TLS.pm
 Makefile.PL
 MANIFEST
@@ -93,6 +96,10 @@ t/22-watch-named.t
 t/23-watcher-replace.t
 t/24-loop-add.t
 t/25-performance-regression-benchmark-smoke.t
+t/26-timer-api.t
+t/27-timer-scheduling.t
+t/28-timer-lifecycle.t
+t/29-timer-benchmark-smoke.t
 t/connect-13-benchmark-smoke.t
 t/listener-00-api.t
 t/listener-10-tcp.t

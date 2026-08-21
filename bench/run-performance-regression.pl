@@ -22,6 +22,8 @@ use lib "$Bin/../blib/lib", "$Bin/../blib/arch", "$Bin/../lib";
 
 my @all_workloads = qw(
     registration-lifecycle
+    timer-lifecycle
+    timer-expiration
     raw-stream-lifecycle
     framed-stream-lifecycle
     raw-stream-throughput
@@ -30,7 +32,7 @@ my @all_workloads = qw(
 );
 my %known_workload = map { $_ => 1 } @all_workloads;
 
-my $contract_version = 1;
+my $contract_version = 2;
 my $quick = 0;
 my $repeats;
 my $iterations;
@@ -122,6 +124,7 @@ die "threshold-percent must be non-negative\n" if $threshold_percent < 0;
 require Linux::Event;
 require Linux::Event::Loop;
 require Linux::Event::Stream;
+require Linux::Event::Timer;
 define_benchmark_classes();
 
 my %configuration = (
@@ -184,6 +187,8 @@ my $report = {
     notes => [
         'Each summary value is the median of rotated-order repeats.',
         'Lifecycle socketpairs are allocated outside timed regions.',
+        'Timer lifecycle measures attach plus cancellation on one shared timerfd.',
+        'Timer expiration measures zero-delay delivery through the native heap.',
         'Throughput workloads use one outstanding message per client.',
         'The connection workload measures the complete public connect/listen handoff.',
         'Compare only reports with the same contract and configuration.',
@@ -267,6 +272,10 @@ sub define_benchmark_classes () {
         sub on_message (\$stream, \$message) { \$stream->send(\$message) }
         sub on_error (\$stream, \$error) { die "framed Stream error: \$error\\n" }
 
+        package Linux::Event::Bench::Regression::Timer;
+        use parent -norequire, 'Linux::Event::Timer';
+        sub on_timer (\$timer) { main::timer_expired(\$timer) }
+
         package Linux::Event::Bench::Regression::ConnectionServer;
         use parent -norequire, 'Linux::Event::Stream';
         sub on_data (\$stream, \$bytes) { return }
@@ -286,7 +295,7 @@ sub define_benchmark_classes () {
         sub on_error (\$stream, \$error) { die "client Stream error: \$error\\n" }
         1;
     };
-    eval $source or die "define benchmark Stream classes: $@";
+    eval $source or die "define benchmark classes: $@";
     return;
 }
 
@@ -297,6 +306,8 @@ sub rotated_workloads ($repeat) {
 
 sub run_workload ($name) {
     return registration_lifecycle() if $name eq 'registration-lifecycle';
+    return timer_lifecycle() if $name eq 'timer-lifecycle';
+    return timer_expiration() if $name eq 'timer-expiration';
     return stream_lifecycle('Linux::Event::Bench::Regression::Raw')
         if $name eq 'raw-stream-lifecycle';
     return stream_lifecycle('Linux::Event::Bench::Regression::Framed')
@@ -331,6 +342,57 @@ sub register_churn ($loop, $handles, $count) {
 }
 
 sub no_ready ($registration) { return }
+
+sub timer_lifecycle () {
+    my $loop = Linux::Event::Loop->new;
+    timer_churn($loop, $warmup_iterations);
+    my ($wall, $cpu) = timed(sub {
+        timer_churn($loop, $iterations);
+    });
+    return measurement($iterations, 'timer', $wall, $cpu);
+}
+
+sub timer_churn ($loop, $count) {
+    for (1 .. $count) {
+        my $timer = $loop->add(
+            Linux::Event::Bench::Regression::Timer->new(after => 3_600)
+        );
+        $timer->cancel;
+    }
+    return;
+}
+
+sub timer_expiration () {
+    run_timer_expirations($warmup_iterations) if $warmup_iterations;
+    my ($wall, $cpu) = run_timer_expirations($iterations);
+    return measurement($iterations, 'timer', $wall, $cpu);
+}
+
+sub run_timer_expirations ($count) {
+    my $loop = Linux::Event::Loop->new;
+    my $run = {
+        loop => $loop,
+        target => $count,
+        completed => 0,
+    };
+    for (1 .. $count) {
+        $loop->add(Linux::Event::Bench::Regression::Timer->new(
+            after => 0,
+            data => $run,
+        ));
+    }
+    my ($wall, $cpu) = timed(sub { $loop->run });
+    die "timer expiration completed $run->{completed} of $count Timers\n"
+        if $run->{completed} != $count;
+    return ($wall, $cpu);
+}
+
+sub timer_expired ($timer) {
+    my $run = $timer->data;
+    $run->{completed}++;
+    $run->{loop}->stop if $run->{completed} == $run->{target};
+    return;
+}
 
 sub stream_lifecycle ($class) {
     my $loop = Linux::Event::Loop->new;

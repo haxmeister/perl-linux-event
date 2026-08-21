@@ -34,9 +34,9 @@ my $loop = Linux::Event::Loop->new;
 ```
 
 Each loop owns one epoll instance, an event buffer, a native fd-indexed
-registration registry, and its attached high-level objects. Stream and Listener
-accept `loop => $loop` or attach through `$loop->add($object)`. `watch()` is the
-immediate raw-descriptor API.
+registration registry, and its attached high-level objects. Stream, Listener,
+and Timer accept `loop => $loop` or attach through `$loop->add($object)`.
+`watch()` is the immediate raw-descriptor API.
 
 ## Registering a handle
 
@@ -213,7 +213,8 @@ $loop->reset_stats;
 ```
 
 Counters cover epoll waits, ready-event classes, callback calls, epoll_ctl
-operations, batching, watcher allocation/lifecycle, and loop drive methods.
+operations, batching, watcher allocation/lifecycle, Timer heap and timerfd
+activity, and loop drive methods.
 
 Optional nanosecond profiling:
 

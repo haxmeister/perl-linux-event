@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_025';
+our $VERSION = '0.100_026';
 
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
@@ -49,8 +49,8 @@ High-level objects may be attached in either of two equivalent ways:
   $loop->add($stream);
 
 C<add> invokes the concrete object's attachment implementation and
-returns the same object. Stream and Listener reject attachment to a second
-Loop or attachment after reaching a terminal state.
+returns the same object. Stream, Listener, and Timer reject attachment to a
+second Loop or attachment after reaching a terminal state.
 
 C<watch> is the low-level descriptor API. It registers immediately and returns
 an opaque native registration handle. The handle is not a public class or a
@@ -60,17 +60,21 @@ subclassing API.
 
 =head2 add($object)
 
-Attaches a detached L<Linux::Event::Stream> or L<Linux::Event::Listener> and
-returns that exact object. The object becomes owned by this Loop. Attaching it
-again, attaching it to another Loop, or attaching a terminal object throws an
-exception.
+Attaches a detached L<Linux::Event::Stream>, L<Linux::Event::Listener>, or
+L<Linux::Event::Timer> and returns that exact object. The object becomes owned
+by this Loop. Attaching it again, attaching it to another Loop, or attaching a
+terminal object throws an exception.
 
 The following are equivalent:
 
   my $a = MyStream->connect(loop => $loop, host => $host, port => $port);
   my $b = $loop->add(MyStream->connect(host => $host, port => $port));
 
+  my $timer = $loop->add(MyTimer->new(after => 0.25));
+
 The C<loop> constructor option and C<add> are both primary public APIs.
+Timer construction and scheduling deliberately use this generic attachment
+path; Loop has no Timer-specific factory methods.
 
 =head1 RAW DESCRIPTOR API
 
@@ -158,7 +162,8 @@ work completes.
 =head1 DIAGNOSTICS AND TUNING
 
 C<stats> returns counters for epoll waits, event classes, callbacks,
-registrations, dispatch batching, and lifecycle activity. C<reset_stats>
+registrations, Timer scheduling and delivery, dispatch batching, and lifecycle
+activity. C<reset_stats>
 resets them. C<enable_profile(1)> additionally records nanosecond timing and
 changes the measured workload, so it should be disabled for normal benchmarks.
 

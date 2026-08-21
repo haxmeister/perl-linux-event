@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_025';
+our $VERSION = '0.100_026';
 
 use Carp qw(croak);
 use parent 'Linux::Event::Listener::_Engine';

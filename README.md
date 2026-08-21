@@ -5,9 +5,10 @@ It combines an XS-first `epoll` reactor with inbound and outbound connection
 acquisition, a native buffered Stream layer, and an OpenSSL TLS transport in
 one distribution.
 
-The public model is deliberately small. `Linux::Event::Loop` owns readiness;
-`Linux::Event::Stream` owns established and connecting byte streams; and
-`Linux::Event::Listener` owns listening sockets. There is no public Watcher,
+The public model is deliberately small. `Linux::Event::Loop` owns readiness
+and scheduled work; `Linux::Event::Stream` owns established and connecting
+byte streams; `Linux::Event::Listener` owns listening sockets; and
+`Linux::Event::Timer` owns a scheduled callback. There is no public Watcher,
 IO, Connect, or Connector class. Native epoll registrations remain opaque, so
 one logical object may use several kernel event sources without exposing them
 as more application objects.
@@ -17,6 +18,7 @@ as more application objects.
 - `Linux::Event::Loop` - epoll engine and object attachment
 - `Linux::Event::Stream` - TCP/Unix stream endpoints and outbound connection
 - `Linux::Event::Listener` - TCP/Unix listening endpoints
+- `Linux::Event::Timer` - subclass-defined one-shot and recurring timers
 - `Linux::Event::TLS` - optional OpenSSL transport provider for Stream
 - `Linux::Event::Framer::*` - native framing declarations for Stream types
 - `Linux::Event::Error` - shared structured failure value
@@ -47,6 +49,16 @@ depend on them.
 - `add()` sets the Loop and returns the same object
 - raw `watch()` returning an already-attached opaque registration handle
 - no generic Perl dispatch layer in the readiness hot path
+
+### Timer
+
+- subclass-defined `on_timer($timer)` callbacks cached once per Timer type
+- relative, absolute monotonic, and fixed-rate recurring schedules
+- one lazily created `timerfd` and one indexed native minimum heap per Loop
+- same-deadline FIFO ordering and bounded expiration batches
+- coalesced missed periodic ticks exposed through `expirations`
+- idempotent terminal cancellation and deterministic application-data cleanup
+- in-callback rescheduling without reentrant delivery
 
 ### Stream connection
 
@@ -90,7 +102,7 @@ higher-level layer for applications that want owned byte-stream I/O.
 
 ## Loop attachment
 
-Stream and Listener both accept `loop => $loop`, and both may instead be
+Stream, Listener, and Timer accept `loop => $loop`, and may instead be
 constructed detached and added later:
 
 ```perl
@@ -101,11 +113,36 @@ my $client = ClientStream->connect(
 my $server = $loop->add(ServerStream->listen(
     host => '0.0.0.0', port => 9999,
 ));
+
+my $heartbeat = $loop->add(Heartbeat->new(every => 30));
 ```
 
 These are equivalent attachment styles. `add()` stores the Loop, starts the
 object, and returns that same object. An object can be attached only once and
 cannot move between Loops.
+
+## Timer example
+
+Timers follow the same subclass and attachment style as Streams:
+
+```perl
+package SessionTimeout;
+use parent 'Linux::Event::Timer';
+
+sub on_timer ($timer) {
+    $timer->data->close;
+}
+
+package main;
+my $timeout = $loop->add(SessionTimeout->new(
+    after => 30,
+    data  => $stream,
+));
+```
+
+Application context is directly available through `data`, so a timer callback
+can close or modify any Stream, Listener, or other state it retains. Use
+`reschedule` to replace an active schedule and `cancel` for terminal removal.
 
 ## Build and test
 
@@ -345,6 +382,7 @@ memory against the versioned object-configured baseline.
 - [`docs/CORE.md`](docs/CORE.md) - raw reactor and registration API
 - [`docs/OBJECT-LIFECYCLE.md`](docs/OBJECT-LIFECYCLE.md) - Loop attachment and resource ownership
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor and Stream architecture
+- [`docs/TIMER-DESIGN.md`](docs/TIMER-DESIGN.md) - Timer API, scheduler, and lifecycle semantics
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - plain transport and TLS provider contract
 - [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition and future resolver contract
@@ -352,7 +390,7 @@ memory against the versioned object-configured baseline.
 - [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
 - [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy
 - [`docs/XS-ROADMAP.md`](docs/XS-ROADMAP.md) - remaining native work
-- [`bench/README.md`](bench/README.md) - reactor and Stream benchmarks
+- [`bench/README.md`](bench/README.md) - reactor, Timer, and Stream benchmarks
 - [`docs/DEVELOPMENT-HISTORY.md`](docs/DEVELOPMENT-HISTORY.md) - historical optimization notes
 
 ## Project direction

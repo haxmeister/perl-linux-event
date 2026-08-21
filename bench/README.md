@@ -1,16 +1,17 @@
 # Benchmark Guide
 
-The benchmark directory contains current reactor, callback, Stream transport,
-framing, native-framer, and lifecycle measurements. Older optimization
+The benchmark directory contains current reactor, callback, Timer, Stream
+transport, framing, native-framer, and lifecycle measurements. Older optimization
 experiments are preserved under `bench/archive/` and are not the recommended
 way to measure the current implementation.
 
 ## Release performance-regression suite
 
 `run-performance-regression.pl` is the permanent same-version-contract guard
-for Linux::Event releases. It covers raw registration churn, raw and framed
-Stream construction, raw and natively framed message throughput, and the full
-public `connect`/`listen` lifecycle. Every workload records median wall rate
+for Linux::Event releases. It covers raw registration churn, Timer attachment,
+cancellation and expiration, raw and framed Stream construction, raw and
+natively framed message throughput, and the full public `connect`/`listen`
+lifecycle. Every workload records median wall rate
 and process CPU microseconds per operation after warmup. Workload order rotates
 across repeats.
 
@@ -41,6 +42,24 @@ rejects baselines with a different benchmark contract or configuration.
 Use `--quick` only while developing the harness. Release decisions should use
 the default seven repeats and full workload sizes. Do not compare reports from
 different machines, Perl builds, power modes, or competing system load.
+
+## Timer microbenchmark
+
+`run-timer-microbench.pl` isolates the native scheduler at increasing heap
+sizes. It measures attach/cancel lifecycle, indexed-heap rescheduling, and
+zero-delay expiration delivery:
+
+```bash
+perl -Mblib bench/run-timer-microbench.pl \
+  --counts=1000,10000,100000 \
+  --repeats=5 \
+  --json=bench/results/timer-microbench.json
+```
+
+The lifecycle and reschedule rows count one operation per Timer. The expiration
+row schedules an equal-deadline cohort and runs the Loop until all callbacks
+have completed. Use the standard performance-regression suite for release
+gating; use this benchmark to diagnose Timer-specific scaling.
 
 ## Listener lifecycle microbenchmark
 

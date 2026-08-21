@@ -48,11 +48,11 @@ close $fh;
 
 is($report->{benchmark}, 'linux-event-performance-regression',
     'report identifies the benchmark');
-is($report->{benchmark_contract_version}, 1,
+is($report->{benchmark_contract_version}, 2,
     'report records the contract version');
-is(scalar @{ $report->{summary} }, 6,
+is(scalar @{ $report->{summary} }, 8,
     'report contains every default workload');
-is(scalar @{ $report->{comparison}{workloads} }, 6,
+is(scalar @{ $report->{comparison}{workloads} }, 8,
     'comparison contains every default workload');
 
 done_testing;

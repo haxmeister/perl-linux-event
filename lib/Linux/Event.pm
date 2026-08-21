@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_025';
+our $VERSION = '0.100_026';
 
 1;
 
@@ -26,8 +26,8 @@ Linux::Event - Linux-native event reactor and stream processing foundation
 
 Linux::Event is a Linux-only event and stream-processing distribution.  The
 XS-first C<Linux::Event::Loop> reactor owns native descriptor registrations.
-Public Stream and Listener objects own their resources and attach directly to
-one Loop; they do not inherit from a generic Watcher or IO class.
+Public Stream, Listener, and Timer objects own their resources and attach
+directly to one Loop; they do not inherit from a generic Watcher or IO class.
 
 The APIs deliberately remain layered.  Applications that need raw descriptor
 readiness can use the reactor directly.  Applications that want automatic
@@ -55,6 +55,10 @@ half-close, protocol-transition, and transport lifecycle.
 
 TCP and Unix listeners that automatically construct a chosen Stream subclass.
 
+=item * L<Linux::Event::Timer>
+
+Subclass-defined one-shot and fixed-rate recurring monotonic timers.
+
 =item * L<Linux::Event::TLS>
 
 OpenSSL client/server transport provider for Stream.
@@ -75,8 +79,9 @@ Lazy IPv4, IPv6, and Unix socket-address values.
 
 =head1 PUBLIC MODEL
 
-Applications subclass C<Linux::Event::Stream> to define protocol behavior.
-They do not subclass Loop registrations. Outbound acquisition is
+Applications subclass C<Linux::Event::Stream> to define protocol behavior and
+C<Linux::Event::Timer> to define scheduled behavior. They do not subclass Loop
+registrations. Outbound acquisition is
 C<< MyStream->connect(...) >> and inbound acquisition is
 C<< MyStream->listen(...) >>. TLS is a transport provider passed with
 C<transport =E<gt>>, not another kind of Stream.
