@@ -118,7 +118,7 @@ parser configuration.
 
 Every connection's XS state retains that descriptor and owns only mutable fd,
 input/parser, output-queue, lifecycle, and counter state. A framed connection
-therefore does not copy callbacks, delimiters, prefix policy, or transport
+therefore does not copy callbacks, delimiters, prefix policy, or Stream policy
 settings into every allocation.
 
 The retained descriptor reference may be replaced explicitly by
@@ -253,7 +253,10 @@ do not inspect a peer avoid formatting it.
 Listener constructs its configured Stream subclass, attaches the Stream to the
 same Loop, invokes the optional public `on_accept($listener, $stream)`, and then
 reports a plain Stream ready. TLS Stream readiness waits for its handshake.
-Listener does not create a temporary accepted-socket registration. An
+Listener data is passed automatically to every accepted Stream. A TLS
+declaration on the Stream class selects a fresh server-side provider and is
+validated before Listener creates its socket. Listener does not create a
+temporary accepted-socket registration. An
 `on_accept` exception closes only that Stream and becomes a nonfatal callback
 Error. Resource accept errors pause listener readiness before the typed error
 callback so a readable backlog cannot create an error spin.

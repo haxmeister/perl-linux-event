@@ -286,9 +286,6 @@ sub define_benchmark_classes () {
         package Linux::Event::Bench::Regression::ConnectionServer;
         use parent -norequire, 'Linux::Event::Stream';
         sub on_data (\$stream, \$bytes) { return }
-        sub accepted_stream_options (\$class, \$listener, \$peer) {
-            return data => \$listener->data;
-        }
         sub on_ready (\$stream) { main::connection_server_ready(\$stream) }
         sub on_error (\$stream, \$error) { die "server Stream error: \$error\\n" }
 

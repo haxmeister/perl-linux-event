@@ -88,8 +88,9 @@ registration. The application continues to hold one Stream object throughout.
 Listener similarly owns its listening registration and creates Stream objects
 for accepted sockets. It attaches each Stream before the optional Listener
 `on_accept` callback; plain Stream `on_ready` follows that callback, while TLS
-Stream `on_ready` follows its successful handshake. These native registrations
-are implementation details.
+Stream `on_ready` follows its successful handshake. Listener passes its `data`
+value to each accepted Stream. These native registrations are implementation
+details.
 
 Timer is also a logical object rather than a timerfd wrapper. All active Timers
 on one Loop share one lazily created timerfd and live in a native indexed heap.

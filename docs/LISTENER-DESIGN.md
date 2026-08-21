@@ -8,6 +8,7 @@ listening API. There is no separate generic Listen class.
 ## Public API
 
 ```perl
+my $server_state = { connections => {} };
 my $listener = Linux::Event::Listener->new(
     loop                => $loop,          # optional: attach immediately
     stream_class        => 'ServerStream', # required
@@ -16,6 +17,7 @@ my $listener = Linux::Event::Listener->new(
     backlog             => 4096,           # default
     max_accept_per_tick => 256,            # default
     edge_triggered      => 0,              # default
+    data                => $server_state,  # optional; inherited by each Stream
 );
 ```
 
@@ -31,7 +33,9 @@ my $listener = $loop->add(Linux::Event::Listener->new(
 ```
 
 `stream_class` is required and names the Stream subclass constructed for each
-accepted connection.
+accepted connection. Every accepted Stream receives the Listener's `data`
+value. `on_accept` may replace that value for one connection with
+`$stream->data($connection_state)`.
 
 ## Socket sources
 
@@ -109,24 +113,42 @@ Peer addresses are represented by `Linux::Event::Address` and decoded lazily.
 Applications that never inspect `peer()` do not pay for textual address
 formatting.
 
-## Per-connection options
+## Accepted Stream policy
 
-A Stream class can provide construction state for accepted connections:
+Accepted connection policy belongs to the Stream subclass. General buffering
+and deadline defaults use `stream_options`. TLS is declared once on that same
+class:
 
 ```perl
-sub accepted_stream_options ($class, $listener, $peer) {
+package SecureServerStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::TLS
+    cert_file => '/etc/myapp/server-cert.pem', # required for server role
+    key_file  => '/etc/myapp/server-key.pem',  # required for server role
+    alpn      => ['my-protocol/1'];             # optional
+
+sub stream_options ($class) {
     return (
-        data => { server => $listener->data, peer => $peer },
-        transport => Linux::Event::TLS->server(
-            cert_file => 'server-cert.pem',
-            key_file  => 'server-key.pem',
-        ),
+        idle_timeout => 60, # optional; default 0
+        max_buffer   => 8 * 1024 * 1024,
     );
 }
+
+package main;
+my $server_state = { connections => {} };
+my $listener = Linux::Event::Listener->new(
+    loop         => $loop,                 # optional: attach immediately
+    stream_class => 'SecureServerStream',  # required
+    host         => '0.0.0.0',             # required for TCP
+    port         => 9443,                  # required for TCP
+    data         => $server_state,         # optional; inherited by each Stream
+);
 ```
 
-The method must return an even option list and cannot replace `fh` or `peer`.
-A fresh stateful transport provider must be returned for each connection.
+Listener recognizes that `SecureServerStream` declares TLS, validates the
+server certificate and key during Listener construction, and creates a fresh
+server-side TLS transport for each accepted connection. There is no per-accept
+options hook.
 
 ## Errors and lifecycle
 

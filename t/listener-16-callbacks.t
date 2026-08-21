@@ -13,10 +13,6 @@ use Linux::Event::Stream;
     package T::CallbackStream;
     use parent 'Linux::Event::Stream';
 
-    sub accepted_stream_options ($class, $listener, $peer) {
-        return data => $listener->data;
-    }
-
     sub on_ready ($stream) {
         $stream->data->{ready}++;
         return;

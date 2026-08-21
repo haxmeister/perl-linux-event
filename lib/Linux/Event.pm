@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_029';
+our $VERSION = '0.100_030';
 
 1;
 
@@ -66,7 +66,7 @@ Subclass-defined synchronous signalfd subscriptions with native fan-out.
 
 =item * L<Linux::Event::TLS>
 
-OpenSSL client/server transport provider for Stream.
+Declarative OpenSSL TLS policy for Stream subclasses.
 
 =item * L<Linux::Event::Framer>
 
@@ -89,8 +89,8 @@ C<Linux::Event::Timer> to define scheduled behavior, and
 C<Linux::Event::Signal> to define signal behavior. They do not subclass Loop
 registrations. Outbound acquisition is C<< MyStream->connect(...) >>. Inbound
 acquisition is C<< Linux::Event::Listener->new(stream_class =E<gt> 'MyStream',
-...) >>. TLS is a transport provider passed with C<transport =E<gt>>, not
-another kind of Stream.
+...) >>. A Stream subclass opts into TLS with C<use Linux::Event::TLS>;
+C<connect> and Listener acceptance select the client or server handshake role.
 
 C<< $loop->watch(...) >> remains available for low-level descriptor readiness.
 It immediately returns an opaque native registration handle with methods such

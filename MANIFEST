@@ -171,6 +171,7 @@ t/stream-46-async-resolver.t
 t/stream-47-deadlines-api.t
 t/stream-48-deadlines.t
 t/tls-00-load.t
+t/tls-01-declaration.t
 t/tls-10-stream.t
 t/tls-20-deadline-and-eof.t
 t/tls-21-stream-deadlines.t

@@ -6,8 +6,9 @@ protocol transitions. It must not own TLS policy. `Linux::Event::Loop`
 continues to own only descriptor readiness.
 
 The native transport boundary introduced in 0.100_014 separates those roles.
-Version 0.100_015 publishes its exact-version ABI and the optional
-`transport => $provider` constructor argument.
+Version 0.100_015 publishes its exact-version provider ABI. Applications now
+declare TLS on a Stream subclass; Stream creates the appropriate provider when
+the connection is acquired.
 
 ## Current provider
 
@@ -47,24 +48,33 @@ readiness. Treating both as ordinary fd EAGAIN would deadlock valid handshakes.
 The provider also owns writable shutdown. This moved the final direct socket
 operation out of Perl and keeps `end()` transport-neutral.
 
-## TLS provider behavior
+## TLS behavior
 
-`Linux::Event::TLS` is the distribution's focused OpenSSL provider, not a
-framer and not an XSLoop feature. It composes like this:
+`Linux::Event::TLS` is the distribution's focused OpenSSL transport, not a
+framer and not an XSLoop feature. Application code declares its policy on the
+Stream type:
 
 ```perl
-my $tls = Linux::Event::TLS->client(
-    server_name => 'gateway.discord.gg',
-    alpn        => ['http/1.1'],
-);
+package GatewayStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::TLS
+    verify => 1,              # default
+    alpn   => ['http/1.1'];   # optional
 
-my $stream = GatewayStream->new(
-    loop      => $loop,
-    fh        => $socket,
-    transport => $tls,
-    data      => $state,
+package main;
+my $stream = GatewayStream->connect(
+    loop => $loop,                # optional: attach immediately
+    host => 'gateway.discord.gg', # required
+    port => 443,                  # required
+    data => $state,               # optional
 );
 ```
+
+`connect()` selects the client TLS role and uses its host for SNI and hostname
+verification by default. Listener selects the server role when it accepts a
+TLS-declared `stream_class`; that class must declare `cert_file` and
+`key_file`, which Listener preflights during construction. Each acquisition
+creates a fresh stateful provider internally.
 
 The initial provider supplies:
 
@@ -82,7 +92,7 @@ The initial provider supplies:
 - `MSG_NOSIGNAL` socket writes that preserve application `SIGPIPE` policy;
 - idempotent close behavior and explicit rejection of encrypted detach.
 
-The TLS provider defaults to a 10-second handshake deadline and a 5-second
+TLS defaults to a 10-second handshake deadline and a 5-second
 shutdown deadline. Zero disables either deadline. One TLS-owned timerfd watcher
 is created when a deadline is first needed, disarmed after handshake, reused
 for shutdown, and destroyed with the Stream. Ordinary plain Streams allocate
@@ -101,7 +111,7 @@ readiness. Stream `on_ready` remains the callback for successful handshake and
 application-protocol readiness.
 
 Clean peer `close_notify` enters ordinary EOF handling. Socket EOF without
-`close_notify` is instead a typed TLS read error. Provider-native counters and
+`close_notify` is instead a typed TLS read error. Native counters and
 the plain-versus-TLS benchmark expose both outcomes and the transport's
 handshake/read/write/shutdown activity without changing the ABI.
 

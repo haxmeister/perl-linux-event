@@ -7,17 +7,27 @@ to use after establishment, and that same object owns every later state.
 ## Public API
 
 ```perl
+package ClientStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::TLS
+    verify => 1,              # default
+    alpn   => ['http/1.1'];   # optional
+
+package main;
+my $state = { requests => {} };
 my $stream = ClientStream->connect(
-    loop    => $loop,
-    host    => 'example.com',
-    port    => 443,
-    timeout => 10,
-    data    => $application_state,
-    transport => Linux::Event::TLS->client(
-        server_name => 'example.com',
-    ),
+    loop    => $loop,              # optional: attach immediately
+    host    => 'example.com',      # required
+    port    => 443,                # required
+    timeout => 10,                 # default
+    data    => $state,             # optional
 );
 ```
+
+The TLS declaration is part of the Stream type. `connect()` selects the client
+role automatically and defaults SNI and hostname verification to its `host`.
+Specify `server_name` in the declaration only when it must differ from the
+connection host.
 
 Detached construction is equivalent:
 

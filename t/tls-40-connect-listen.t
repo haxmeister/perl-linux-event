@@ -10,22 +10,15 @@ use Linux::Event::Listener;
 use Linux::Event::Stream;
 use Linux::Event::TLS;
 
-our ($LOOP, $STATE, $CERT, $KEY, $CLIENT_ID);
+our ($LOOP, $STATE, $CLIENT_ID);
 
 {
     package T::IntegratedTLSServer;
     use parent 'Linux::Event::Stream';
-
-    sub accepted_stream_options ($class, $listener, $peer) {
-        return (
-            data => $main::STATE,
-            transport => Linux::Event::TLS->server(
-                cert_file => $main::CERT,
-                key_file  => $main::KEY,
-                alpn      => ['les-integrated/1'],
-            ),
-        );
-    }
+    use Linux::Event::TLS
+        cert_file => "$FindBin::Bin/tls-certs/server-cert.pem",
+        key_file  => "$FindBin::Bin/tls-certs/server-key.pem",
+        alpn      => ['les-integrated/1'];
 
     sub on_ready ($stream) {
         push @{ $stream->data->{server_order} }, 'ready';
@@ -65,6 +58,9 @@ our ($LOOP, $STATE, $CERT, $KEY, $CLIENT_ID);
 {
     package T::IntegratedTLSClient;
     use parent 'Linux::Event::Stream';
+    use Linux::Event::TLS
+        ca_file => "$FindBin::Bin/tls-certs/server-cert.pem",
+        alpn    => ['les-integrated/1'];
 
     sub on_ready ($stream) {
         die 'TLS connecting Stream identity changed'
@@ -84,8 +80,6 @@ our ($LOOP, $STATE, $CERT, $KEY, $CLIENT_ID);
     }
 }
 
-$CERT = "$Bin/tls-certs/server-cert.pem";
-$KEY = "$Bin/tls-certs/server-key.pem";
 $STATE = {
     server_ready => 0,
     client_ready => 0,
@@ -98,16 +92,11 @@ $LOOP = Linux::Event::Loop->new;
 
 my $listener = $LOOP->add(T::IntegratedTLSListener->new(
     stream_class => 'T::IntegratedTLSServer',
-    host => '127.0.0.1', port => 0,
+    host => '127.0.0.1', port => 0, data => $STATE,
 ));
 my $client = T::IntegratedTLSClient->connect(
-    host => '127.0.0.1', port => $listener->port, timeout => 5,
+    host => 'localhost', port => $listener->port, timeout => 5,
     data => $STATE,
-    transport => Linux::Event::TLS->client(
-        server_name => 'localhost',
-        ca_file => $CERT,
-        alpn => ['les-integrated/1'],
-    ),
 );
 $CLIENT_ID = refaddr($client);
 ok(!$client->write('ping'), 'TLS client queues application data before add');
@@ -123,6 +112,12 @@ ok(!$STATE->{accepted_transport_ready},
     'Listener on_accept observes TLS Stream before handshake readiness');
 ok($STATE->{client_ready_transport}, 'client transport is ready inside on_ready');
 ok($STATE->{server_ready_transport}, 'server transport is ready inside on_ready');
+is($client->selected_alpn, 'les-integrated/1',
+    'Stream exposes negotiated ALPN without provider access');
+like($client->tls_protocol, qr/^TLSv1\.[23]$/,
+    'Stream exposes the negotiated TLS protocol');
+ok(defined $client->tls_cipher, 'Stream exposes the negotiated TLS cipher');
+ok(ref($client->tls_stats) eq 'HASH', 'Stream exposes native TLS statistics');
 is($STATE->{server_input}, 'ping', 'server receives queued client plaintext');
 is($STATE->{client_input}, 'pong', 'client receives server plaintext');
 is(refaddr($client), $CLIENT_ID, 'TLS Stream identity remains stable');

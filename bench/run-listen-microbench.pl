@@ -50,10 +50,6 @@ die "modes must not contain duplicates\n"
 
     sub on_data ($stream, $bytes) { }
 
-    sub accepted_stream_options ($class, $listener, $peer) {
-        return data => $listener->data;
-    }
-
     sub on_ready ($stream) {
         my $run = $stream->data;
         $stream->close;

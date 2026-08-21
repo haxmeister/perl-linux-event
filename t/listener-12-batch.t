@@ -10,9 +10,6 @@ use Linux::Event::Listener;
 {
     package T::BatchStream;
     use parent 'Linux::Event::Stream';
-    sub accepted_stream_options ($class, $listener, $peer) {
-        return data => $listener->data;
-    }
     sub on_ready ($stream) {
         push @{ $stream->data->{accepted} }, $stream;
         $stream->loop->stop

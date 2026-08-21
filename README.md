@@ -21,7 +21,7 @@ as more application objects.
 - `Linux::Event::Listener` - TCP/Unix listening endpoints
 - `Linux::Event::Timer` - subclass-defined one-shot and recurring timers
 - `Linux::Event::Signal` - subclass-defined synchronous signal subscriptions
-- `Linux::Event::TLS` - optional OpenSSL transport provider for Stream
+- `Linux::Event::TLS` - declarative OpenSSL policy for Stream subclasses
 - `Linux::Event::Framer::*` - native framing declarations for Stream types
 - `Linux::Event::Error` - shared structured failure value
 - `Linux::Event::Address` - lazy IPv4, IPv6, and Unix address value
@@ -154,8 +154,8 @@ sub stream_options ($class) {
 ```
 
 Each value is seconds and zero disables that policy. Constructor values
-override the subclass for one Stream, including accepted Streams configured by
-`accepted_stream_options`:
+override the subclass for one outbound or directly adopted Stream. Accepted
+Streams use the configured Stream subclass's cached policy:
 
 ```perl
 my $stream = ClientStream->connect(
@@ -286,6 +286,7 @@ The same Stream object exists before, during, and after connection setup:
 ```perl
 package GatewayStream;
 use parent 'Linux::Event::Stream';
+use Linux::Event::TLS;
 
 sub on_ready ($stream) {
     $stream->write("GET / HTTP/1.1\r\nHost: gateway.discord.gg\r\n\r\n");
@@ -293,16 +294,12 @@ sub on_ready ($stream) {
 
 package main;
 use Linux::Event::Loop;
-use Linux::Event::TLS;
 
 my $loop = Linux::Event::Loop->new;
 my $stream = $loop->add(GatewayStream->connect(
-    host    => 'gateway.discord.gg',
-    port    => 443,
-    timeout => 10,
-    transport => Linux::Event::TLS->client(
-        server_name => 'gateway.discord.gg',
-    ),
+    host    => 'gateway.discord.gg', # required
+    port    => 443,                  # required
+    timeout => 10,                   # default
 ));
 $loop->run;
 ```
@@ -313,6 +310,37 @@ called before readiness; bounded output is retained on the Stream and flushed
 after connection establishment. Hostnames resolve on a private native worker
 pool; completion wakes the owning Loop through eventfd, and IPv6/IPv4
 connection attempts are staggered without blocking the reactor.
+
+TLS belongs to the Stream type rather than to one client constructor. The same
+declaration becomes a server handshake when Listener accepts that Stream
+subclass. An accepted TLS Stream must declare its certificate and key:
+
+```perl
+package SecureEchoStream;
+use parent 'Linux::Event::Stream';
+use Linux::Event::TLS
+    cert_file => '/etc/myapp/server-cert.pem', # required for server role
+    key_file  => '/etc/myapp/server-key.pem',  # required for server role
+    alpn      => ['my-protocol/1'];             # optional
+
+sub on_ready ($stream) {
+    $stream->send("ready\n");
+}
+
+package main;
+my $server_state = { connections => {} };
+my $server = Linux::Event::Listener->new(
+    loop         => $loop,               # optional: attach immediately
+    stream_class => 'SecureEchoStream',  # required
+    host         => '0.0.0.0',           # required for TCP
+    port         => 9443,                # required for TCP
+    data         => $server_state,       # optional; inherited by each Stream
+);
+```
+
+Listener calls `on_accept` immediately after attaching the accepted Stream;
+the Stream's `on_ready` waits until the server handshake completes. Outbound
+TLS defaults SNI and hostname verification to the `connect(host => ...)` value.
 
 ## Line echo server
 
@@ -446,12 +474,13 @@ queued output stays byte-for-byte ordered; subsequent `send()` calls use the
 new framer. A paused Stream remains paused across the transition.
 
 This is a protocol transition, not encryption or descriptor replacement. TLS
-belongs at a transport boundary adjacent to Stream rather than pretending to be
-a framing rule.
+is declared independently on a Stream subclass and is implemented at the
+native transport boundary rather than pretending to be a framing rule.
 
-## Class transport options
+## Class Stream options
 
-Transport policy also belongs to the Stream type and is cached once:
+Buffering, backpressure, and deadline policy also belong to the Stream type and
+are cached once:
 
 ```perl
 sub stream_options ($class) {
@@ -479,7 +508,7 @@ removed by design.
 ## Why subclass descriptors
 
 The first construction of a Stream subclass resolves its callback methods,
-framer declaration, native parser configuration, and transport settings into
+framer declaration, native parser configuration, and Stream policy into
 one immutable Perl/XS descriptor. Each connection refers to that descriptor
 and allocates only mutable I/O and lifecycle state. This removes repeated
 callback hashes, framer objects, option parsing, validation, and native config
@@ -497,7 +526,7 @@ memory against the versioned object-configured baseline.
 - [`docs/TIMER-DESIGN.md`](docs/TIMER-DESIGN.md) - Timer API, scheduler, and lifecycle semantics
 - [`docs/SIGNAL-DESIGN.md`](docs/SIGNAL-DESIGN.md) - signalfd fan-out, mask ownership, and lifecycle
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
-- [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - plain transport and TLS provider contract
+- [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - declarative TLS and the internal transport contract
 - [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
 - [`docs/STREAM-DEADLINES.md`](docs/STREAM-DEADLINES.md) - established inactivity and operation deadlines
 - [`docs/LISTENER-DESIGN.md`](docs/LISTENER-DESIGN.md) - inbound acquisition and accept policy

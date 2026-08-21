@@ -1,5 +1,22 @@
 Revision history for Linux-Event
 
+0.100_030  2026-08-21
+    - Make TLS declarative Stream policy: use Linux::Event::TLS on a Stream
+      subclass and let connect or Listener acceptance select the client or
+      server handshake role automatically.
+    - Default outbound TLS server_name, SNI, and hostname verification to the
+      connect host while retaining an explicit override for different service
+      identities and adopted handles.
+    - Load and validate accepted TLS certificate and key policy during Listener
+      construction and create fresh native server state for every connection.
+    - Pass Listener data automatically to each accepted Stream and remove the
+      cumbersome accepted_stream_options hook from the public design.
+    - Expose negotiated ALPN, protocol, cipher, and native TLS statistics
+      directly on Stream without requiring access to its internal provider.
+    - Add declaration validation, inheritance, role, callback-order, metadata,
+      and integrated client/server regression coverage; update all current
+      Listener, Stream, connection, and transport documentation to one model.
+
 0.100_029  2026-08-21
     - Add optional Listener on_accept($listener, $stream) after Stream
       construction and Loop attachment, before plain Stream readiness or TLS

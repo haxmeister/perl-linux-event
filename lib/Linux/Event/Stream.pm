@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_029';
+our $VERSION = '0.100_030';
 
 use Carp qw(croak);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
@@ -19,6 +19,7 @@ require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
 
 my %FRAMER_DEFINITION;
+my %TLS_DEFINITION;
 my %CLASS_DESCRIPTOR;
 
 sub _declare_framer ($base, $target, $definition) {
@@ -36,6 +37,27 @@ sub _framer_for ($class) {
     for my $package (@{ mro::get_linear_isa($class) }) {
         return $FRAMER_DEFINITION{$package}
             if exists $FRAMER_DEFINITION{$package};
+    }
+    return undef;
+}
+
+sub _declare_tls ($base, $target, $definition) {
+    croak 'TLS may be declared only for a Linux::Event::Stream subclass'
+        if $target eq $base || !$target->isa($base);
+    croak "$target already has a Stream descriptor"
+        if exists $CLASS_DESCRIPTOR{$target};
+    croak "$target already declares TLS"
+        if exists $TLS_DEFINITION{$target};
+    croak 'TLS declaration must be a hash reference'
+        if ref($definition) ne 'HASH';
+    $TLS_DEFINITION{$target} = $definition;
+    return;
+}
+
+sub _tls_for ($class) {
+    for my $package (@{ mro::get_linear_isa($class) }) {
+        return $TLS_DEFINITION{$package}
+            if exists $TLS_DEFINITION{$package};
     }
     return undef;
 }
@@ -126,6 +148,7 @@ sub _descriptor_for ($class) {
         if !$class->isa(__PACKAGE__);
 
     my $framer = _framer_for($class);
+    my $tls = _tls_for($class);
     my %callback = map { $_ => scalar $class->can($_) }
         qw(on_data on_message on_drain on_eof on_error on_close
            on_ready on_transport_ready);
@@ -176,6 +199,7 @@ sub _descriptor_for ($class) {
         options   => $option,
         native    => $native,
         framer    => $framer,
+        tls       => $tls,
         callbacks => \%callback,
     };
     $CLASS_DESCRIPTOR{$class} = $descriptor;
@@ -287,6 +311,8 @@ sub new ($class, %opt) {
             || !$loop->can('watch_fd'));
     my $fh = delete $opt{fh};
     my $connect = delete $opt{_connect};
+    my $accepted = delete($opt{_accepted}) // 0;
+    my $tls_role = delete $opt{tls_role};
     my $data = delete $opt{data};
     my $peer = delete $opt{peer};
     my $transport = delete $opt{transport};
@@ -304,11 +330,37 @@ sub new ($class, %opt) {
         if defined($fh) && !defined(fileno($fh));
     croak 'new(): internal connection options must be a hash reference'
         if defined($connect) && ref($connect) ne 'HASH';
+    croak 'new(): tls_role must be client or server'
+        if defined($tls_role)
+        && (ref($tls_role) || ($tls_role ne 'client' && $tls_role ne 'server'));
+    croak 'new(): tls_role is only valid with fh'
+        if defined($tls_role) && !defined($fh);
+    croak 'new(): internal accepted mode is only valid with fh'
+        if $accepted && !defined($fh);
+    croak 'new(): tls_role cannot be combined with accepted mode'
+        if $accepted && defined($tls_role);
     croak 'new(): transport must be an object implementing _stream_transport_bind()'
         if defined($transport)
         && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = _descriptor_for($class);
+    if (my $tls = $descriptor->{tls}) {
+        croak 'new(): transport cannot be supplied for a TLS-declared Stream'
+            if defined $transport;
+        require Linux::Event::TLS;
+        my $role = defined($connect) ? 'client'
+            : $accepted ? 'server'
+            : $tls_role;
+        croak 'new(): a TLS-declared adopted fh requires tls_role'
+            if !defined $role;
+        $transport = $role eq 'server'
+            ? Linux::Event::TLS->_server_from_declaration($tls)
+            : Linux::Event::TLS->_client_from_declaration(
+                $tls, defined($connect) ? $connect->{host} : undef,
+            );
+    } elsif (defined $tls_role) {
+        croak 'new(): tls_role requires a Stream subclass declaring TLS';
+    }
     my %timeout = map {
         $_ => exists($timeout_override{$_})
             ? $timeout_override{$_} : $descriptor->{options}{$_}
@@ -367,6 +419,15 @@ sub connect ($class, %opt) {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     return $class->new(%stream, _connect => \%opt);
+}
+
+sub _validate_accepted_configuration ($class) {
+    my $descriptor = _descriptor_for($class);
+    if (my $tls = $descriptor->{tls}) {
+        require Linux::Event::TLS;
+        Linux::Event::TLS->_server_from_declaration($tls);
+    }
+    return;
 }
 
 sub _prepare_fh ($self, $fh) {
@@ -560,6 +621,30 @@ sub transport_name ($self) {
 sub is_transport_ready ($self) {
     return !!$self->{xs_state}->transport_ready if $self->{xs_state};
     return 0;
+}
+
+sub selected_alpn ($self) {
+    my $transport = $self->{transport};
+    return undef if !$transport || !$transport->can('selected_alpn');
+    return $transport->selected_alpn;
+}
+
+sub tls_protocol ($self) {
+    my $transport = $self->{transport};
+    return undef if !$transport || !$transport->can('protocol');
+    return $transport->protocol;
+}
+
+sub tls_cipher ($self) {
+    my $transport = $self->{transport};
+    return undef if !$transport || !$transport->can('cipher');
+    return $transport->cipher;
+}
+
+sub tls_stats ($self) {
+    my $transport = $self->{transport};
+    return undef if !$transport || !$transport->can('stats');
+    return $transport->stats;
 }
 
 sub idle_timeout  ($self) { $self->{timeout}{idle_timeout} }
@@ -1133,10 +1218,11 @@ subclass and construct lightweight per-connection instances containing only
 changing connection state.
 
 The first construction of each subclass resolves its inherited callback CVs,
-framer declaration, parser configuration, and transport settings into one
-cached descriptor. XS stores that descriptor once and every connection's native
-state references it. Construction therefore avoids per-object callback hashes,
-framer objects, repeated validation, and repeated native configuration copies.
+framer and TLS declarations, parser configuration, and Stream policy into one
+cached descriptor. XS stores that descriptor once and every connection's
+native state references it. Construction therefore avoids per-object callback
+hashes, framer objects, repeated validation, and repeated native configuration
+copies.
 
 =head1 DEFINING A STREAM TYPE
 
@@ -1165,17 +1251,19 @@ cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
-=head2 new(fh => $fh, loop => $loop, data => $value, transport => $provider, ...)
+=head2 new(fh => $fh, loop => $loop, data => $value, ...)
 
 C<fh> is required for an already-established Stream. Stream takes ownership of
 the filehandle and sets it nonblocking. Supply C<loop> to attach before C<new>
 returns, or omit it and attach with C<< $loop->add($stream) >>. Both forms are
 primary APIs and C<add> returns the same Stream. C<data> is optional
-per-connection state. C<transport> is an optional native byte-transport
-provider such as L<Linux::Event::TLS>. The provider is bound to the established
-descriptor and retained for the Stream's lifetime. Use C<detach> to transfer a
-still-open plain handle back to the application; non-plain transports cannot be
-detached.
+per-connection state. Use C<detach> to transfer a still-open plain handle back
+to the application; TLS Streams cannot be detached.
+
+A TLS-declared Stream normally obtains its role from C<connect> or Listener
+acceptance. Supplying an already-connected C<fh> is ambiguous, so that advanced
+form also requires C<tls_role =E<gt> 'client'> or C<'server'>. See
+L<Linux::Event::TLS>.
 
 C<idle_timeout>, C<read_timeout>, and C<write_timeout> override the subclass's
 cached inactivity defaults for this Stream. Each is non-negative seconds and
@@ -1199,11 +1287,12 @@ Otherwise the state is C<unattached> until C<< $loop->add($stream) >>.
 
 Exactly one of C<host>/C<port>, C<unix>, or packed C<sockaddr>/C<family> is
 required. C<timeout> is seconds, defaults to 10, and may be zero to disable the
-deadline. C<data>, C<transport>, established timeout overrides, and C<deadline>
-are passed to the Stream. C<write> and C<send> may queue output before
-attachment or readiness. Hostname resolution runs in the Loop's private native
-worker pool; socket establishment and staggered IPv6/IPv4 attempts are
-nonblocking.
+deadline. C<data>, established timeout overrides, and C<deadline> are passed to
+the Stream. A class declaring L<Linux::Event::TLS> automatically uses client
+TLS and defaults certificate hostname verification to C<host>. C<write> and
+C<send> may queue output before attachment or readiness. Hostname resolution
+runs in the Loop's private native worker pool; socket establishment and
+staggered IPv6/IPv4 attempts are nonblocking.
 
 =head1 ATTACHMENT AND OWNERSHIP
 
@@ -1212,9 +1301,32 @@ C<< $loop->add($stream) >> perform the same attachment. A terminal Stream cannot
 be reused or reattached. The Stream owns its filehandle until C<close>, graceful
 completion, or C<detach> transfers a plain handle back to the caller.
 
-=head1 CLASS TRANSPORT OPTIONS
+=head1 TLS DECLARATION
 
-A subclass that needs non-default transport settings may define
+A subclass opts into TLS declaratively, after establishing Stream inheritance:
+
+  package SecureStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::TLS
+      ca_file           => '/etc/ssl/certs/ca-certificates.crt', # optional
+      verify            => 1,                                   # default
+      alpn              => ['http/1.1'],                        # optional
+      handshake_timeout => 10,                                  # default
+      shutdown_timeout  => 5;                                   # default
+
+C<< SecureStream->connect(...) >> selects client TLS. A Listener that names
+C<SecureStream> selects server TLS and therefore requires C<cert_file> and
+C<key_file> in the declaration. C<on_ready> has one meaning in both roles: the
+plain connection or TLS handshake is ready for application traffic.
+
+TLS is an acquisition declaration, not protocol inheritance. It creates fresh
+connection state only when a Stream is constructed. C<transition_to> changes
+protocol callbacks and framing but never installs, removes, or replaces the
+active byte transport.
+
+=head1 CLASS STREAM OPTIONS
+
+A subclass that needs non-default Stream settings may define
 C<stream_options>. It runs once when the class descriptor is built, not once
 per connection:
 
@@ -1297,7 +1409,7 @@ Changes a live connection to another loaded C<Linux::Event::Stream> subclass.
 The same object is reblessed into C<$class>, and the same filehandle, native registration,
 native connection state, output queue, backpressure state, lifecycle state, and
 C<data> are retained. Future callbacks, C<send> framing, parser rules, and class
-transport policy come from the target subclass's cached descriptor.
+Stream policy come from the target subclass's cached descriptor.
 
 Unread bytes already held by a framed parser are preserved and reinterpreted by
 the target parser. A raw C<on_data> callback may pass the unconsumed suffix of
@@ -1391,6 +1503,12 @@ timerfd/native heap.
 Returns the configured provider object, active native byte transport name, and
 whether its asynchronous setup has completed. Ordinary filehandle-backed
 Streams have no provider object, report C<plain>, and are immediately ready.
+
+=head2 selected_alpn / tls_protocol / tls_cipher / tls_stats
+
+Return negotiated ALPN, TLS protocol, cipher, and native TLS counters for a TLS
+Stream. The scalar information methods return undef for a plain Stream;
+C<tls_stats> returns undef when no TLS provider is active.
 
 =head2 is_read_paused / is_read_eof / is_write_ended / is_closed
 

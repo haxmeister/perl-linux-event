@@ -11,9 +11,6 @@ use Linux::Event::Listener;
 {
     package T::UnixStream;
     use parent 'Linux::Event::Stream';
-    sub accepted_stream_options ($class, $listener, $peer) {
-        return data => $listener->data;
-    }
     sub on_ready ($stream) {
         $stream->data->{peer} = $stream->peer;
         $stream->data->{stream} = $stream;

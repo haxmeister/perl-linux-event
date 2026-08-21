@@ -56,7 +56,7 @@ once:
 2. resolve the nearest inherited native framer declaration;
 3. call and validate `stream_options`;
 4. validate that the class is either raw or framed, never both;
-5. create one immutable XS descriptor holding parser config, transport policy,
+5. create one immutable XS descriptor holding parser config, Stream policy,
    and callback references.
 
 Subsequent construction retrieves that descriptor from the class cache. The
@@ -213,8 +213,10 @@ delivered before `transition_to()` returns. Pause state always gates delivery.
   `on_close` does not run because the resource was not closed.
 - `transition_to` changes protocol behavior while preserving ownership and
   connection-local lifecycle state.
-- `transport`, `transport_name`, and `is_transport_ready` expose provider
-  identity and asynchronous setup state (`plain` is immediately ready).
+- `transport_name` and `is_transport_ready` expose transport identity and
+  asynchronous setup state (`plain` is immediately ready). TLS metadata is
+  available directly through `selected_alpn`, `tls_protocol`, `tls_cipher`,
+  and `tls_stats`.
 - I/O, framing, and hard output-limit failures create
   `Linux::Event::Error`, invoke
   `on_error` if present, and close.
@@ -222,7 +224,7 @@ delivered before `transition_to()` returns. Pause state always gates delivery.
 Application callback exceptions propagate. They are not treated as transport
 or framing errors.
 
-## Class transport policy
+## Class Stream policy
 
 `stream_options` may return a key/value list or hash reference:
 

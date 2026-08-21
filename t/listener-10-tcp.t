@@ -28,10 +28,6 @@ our ($LOOP, $STATE);
     package T::AcceptedTCPStream;
     use parent 'Linux::Event::Stream';
 
-    sub accepted_stream_options ($class, $listener, $peer) {
-        return data => $listener->data;
-    }
-
     sub on_ready ($stream) {
         my $state = $stream->data;
         push @{ $state->{order} }, 'ready';

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_029';
+our $VERSION = '0.100_030';
 
 use Carp qw(croak);
 use Linux::Event::Error;
@@ -18,6 +18,7 @@ sub new ($class, %opt) {
         // croak 'new(): missing stream_class';
     croak 'new(): stream_class must name a Linux::Event::Stream subclass'
         if ref($stream_class) || !$stream_class->isa('Linux::Event::Stream');
+    $stream_class->_validate_accepted_configuration;
 
     my $self = $class->SUPER::new(%opt);
     $self->{stream_class} = $stream_class;
@@ -29,17 +30,12 @@ sub stream_class ($self) { $self->{stream_class} }
 
 sub _accept_client ($self, $fh, $peer) {
     my $class = $self->{stream_class};
-    my %option = (fh => $fh, peer => $peer);
-    if (my $configure = $class->can('accepted_stream_options')) {
-        my @extra = $configure->($class, $self, $peer);
-        croak "$class accepted_stream_options() returned an odd option list"
-            if @extra % 2;
-        my %extra = @extra;
-        croak "$class accepted_stream_options() cannot replace fh or peer"
-            if exists($extra{fh}) || exists($extra{peer});
-        %option = (%option, @extra);
-    }
-    my $stream = $class->new(%option);
+    my $stream = $class->new(
+        fh        => $fh,
+        peer      => $peer,
+        data      => $self->data,
+        _accepted => 1,
+    );
     $stream->_attach_to_loop($self->loop);
     if (my $callback = $self->{descriptor}{on_accept}) {
         my $ok = eval { $callback->($self, $stream); 1 };
@@ -118,9 +114,9 @@ accepted connections with native C<accept4>, constructs the configured Stream
 subclass for every accepted connection, and attaches each Stream to the same
 Loop. Application code never handles accepted descriptors directly.
 
-For per-connection construction policy, the Stream class may define
-C<accepted_stream_options($class, $listener, $peer)> and return additional
-constructor options such as C<data> or a fresh server transport provider.
+Every accepted Stream receives the Listener's C<data> value. Stream-level
+buffer, deadline, framing, and TLS policy comes from the Stream subclass's
+cached declarations.
 
 =head1 CONSTRUCTION
 
@@ -226,23 +222,30 @@ Source-specific options are rejected for other source types.
 
 Listener uses native C<accept4> with C<SOCK_NONBLOCK> and C<SOCK_CLOEXEC>.
 For every success it constructs C<stream_class> with C<fh> and a lazy
-L<Linux::Event::Address> C<peer>, attaches the Stream to this Listener's Loop,
-calls the optional Listener C<on_accept>, and then fires C<on_ready> for a plain
-Stream. A TLS Stream starts its asynchronous handshake after attachment and
-does not fire C<on_ready> until that handshake succeeds.
+L<Linux::Event::Address> C<peer>, passes it this Listener's C<data>, attaches
+the Stream to this Listener's Loop, calls the optional Listener C<on_accept>,
+and then fires C<on_ready> for a plain Stream. C<on_accept> may replace the
+Stream's C<data> when connection-specific state is needed.
 
-The Stream class may customize construction:
+A Stream subclass declares TLS directly:
 
-  sub accepted_stream_options ($class, $listener, $peer) {
-      return data => {
-          server_state => $listener->data,
-          peer         => $peer,
-      };
+  package SecureStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::TLS
+      cert_file         => '/etc/linux-event/server-cert.pem', # required
+      key_file          => '/etc/linux-event/server-key.pem',  # required
+      alpn              => ['echo/1'],                         # optional
+      handshake_timeout => 10,                                 # default
+      shutdown_timeout  => 5;                                  # default
+
+  sub on_data ($stream, $bytes) {
+      $stream->write($bytes);
   }
 
-The result must be an even option list and cannot replace C<fh> or C<peer>.
-TLS servers return a fresh C<transport =E<gt> Linux::Event::TLS->server(...)>
-provider for each accepted connection.
+Naming C<SecureStream> as C<stream_class> makes every accepted connection use
+server TLS automatically. Listener loads and validates the declared server
+identity during construction. The TLS handshake begins after attachment and
+C<on_ready> does not fire until it succeeds.
 
 =head1 CALLBACKS
 
