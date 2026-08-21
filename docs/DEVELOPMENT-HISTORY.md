@@ -7,8 +7,9 @@ This file preserves the benchmark/optimization phase notes that previously occup
 The 0.100_024 Watcher/IO/Connect/Listen migration exposed too many overlapping
 public concepts. Version 0.100_025 removes those compatibility layers. Loop,
 Stream, and Listener now express ownership directly; raw `watch()` results are
-opaque native registration handles. `MyStream->connect()` and
-`MyStream->listen()` are the only ordinary acquisition entry points.
+opaque native registration handles. `MyStream->connect()` is the outbound
+entry point and `Linux::Event::Listener->new(stream_class => ...)` is the
+inbound entry point.
 
 Both `loop => $loop` and detached construction plus `Loop->add()` are supported
 for Stream and Listener. Neither adds a hot-path Perl dispatch layer. Errors,
@@ -26,10 +27,10 @@ contract only; native concrete dispatch remains direct.
 
 Stream now represents outbound acquisition itself. `MyStream->connect()`
 preserves one object identity through connect, TLS readiness, message I/O, and
-close, including bounded writes issued before readiness. `MyStream->listen()`
-returns a Listener that creates and attaches accepted Stream instances without
-application socket plumbing. Connect, Listen, XSLoop, and XSWatcher remain
-compatibility/advanced implementation names during the migration.
+close, including bounded writes issued before readiness. Listener creates and
+attaches accepted Stream instances without application socket plumbing.
+Connect, Listen, XSLoop, and XSWatcher remain compatibility/advanced
+implementation names during the migration.
 
 ## Inbound Listen integration (0.100_020)
 

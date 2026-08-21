@@ -45,11 +45,6 @@ sub on_accept ($self, $fh, $peer) {
 }
 
 sub on_error ($self, $error) {
-    my $class = $self->{stream_class};
-    if (my $callback = $class->can('on_listener_error')) {
-        $callback->($class, $self, $error);
-        return;
-    }
     die "listener failed: $error\n";
 }
 
@@ -63,13 +58,15 @@ Linux::Event::Listener - accepting socket that constructs Stream instances
 
 =head1 SYNOPSIS
 
+  use Linux::Event::Listener;
   use Linux::Event::Loop;
 
   my $loop = Linux::Event::Loop->new;
-  my $listener = EchoStream->listen(
-      loop => $loop,
-      host => '0.0.0.0',
-      port => 7000,
+  my $listener = Linux::Event::Listener->new(
+      loop         => $loop,
+      stream_class => 'EchoStream',
+      host         => '0.0.0.0',
+      port         => 7000,
   );
 
 =head1 DESCRIPTION
@@ -85,15 +82,21 @@ constructor options such as C<data> or a fresh server transport provider.
 
 =head1 CONSTRUCTION
 
-Applications normally call C<< MyStream->listen(...) >>. This is equivalent to
-calling C<< Linux::Event::Listener->new(stream_class =E<gt> 'MyStream', ...) >>
-and ensures that each accepted connection uses the calling Stream class.
+Construct Listener directly and name the Stream subclass that it should create
+for accepted connections.
 
 Every Listener can be attached in either form:
 
-  my $listener = MyStream->listen(loop => $loop, %socket_options);
+  my $listener = Linux::Event::Listener->new(
+      loop         => $loop,
+      stream_class => 'MyStream',
+      %socket_options,
+  );
 
-  my $listener = MyStream->listen(%socket_options);
+  my $listener = Linux::Event::Listener->new(
+      stream_class => 'MyStream',
+      %socket_options,
+  );
   $loop->add($listener);
 
 C<< $loop->add >> sets C<loop>, starts accepting, and returns the same Listener.
@@ -158,16 +161,19 @@ provider for each accepted connection.
 =head1 ERROR POLICY
 
 Runtime failures are L<Linux::Event::Error> objects. Resource exhaustion pauses
-acceptance before notification to prevent an error spin. A Stream class can
-define:
+acceptance before notification to prevent an error spin. The base Listener
+dies after such a failure. Applications that need another policy may subclass
+Listener and override C<on_error>:
 
-  sub on_listener_error ($class, $listener, $error) {
+  package MyListener;
+  use parent 'Linux::Event::Listener';
+
+  sub on_error ($listener, $error) {
       warn "$error\n";
   }
 
-Without this method Listener dies on a runtime listener failure. Constructor
-validation errors throw immediately, and socket-setup failures throw a
-structured Error.
+Constructor validation errors throw immediately, and socket-setup failures
+throw a structured Error.
 
 =head1 METHODS
 

@@ -2,28 +2,30 @@
 
 `Linux::Event::Listener` owns an inbound TCP or Unix listening socket and
 constructs one configured `Linux::Event::Stream` subclass for every accepted
-connection. Applications normally obtain it through `MyStream->listen()`.
-There is no separate generic Listen class.
+connection. Listener is constructed directly; Stream does not own or proxy the
+listening API. There is no separate generic Listen class.
 
 ## Public API
 
 ```perl
-my $listener = ServerStream->listen(
-    loop => $loop, host => '0.0.0.0', port => 9999,
+my $listener = Linux::Event::Listener->new(
+    loop => $loop,
+    stream_class => 'ServerStream',
+    host => '0.0.0.0', port => 9999,
 );
 ```
 
 Or construct detached and attach explicitly:
 
 ```perl
-my $listener = $loop->add(ServerStream->listen(
+my $listener = $loop->add(Linux::Event::Listener->new(
+    stream_class => 'ServerStream',
     host => '0.0.0.0', port => 9999,
 ));
 ```
 
-`Linux::Event::Listener->new(stream_class => $class, ...)` is the direct form
-used by `Stream->listen()`. The Stream convenience method is preferred because
-it cannot disagree with the selected Stream type.
+`stream_class` is required and names the Stream subclass constructed for each
+accepted connection.
 
 ## Socket sources
 
@@ -86,10 +88,14 @@ still-open listener handle. `state()` reports `unattached`, `listening`,
 
 Runtime failures use `Linux::Event::Error`. Resource exhaustion errors such as
 `EMFILE` pause acceptance before notification to avoid a readable-backlog error
-spin. A Stream class may define:
+spin. The base Listener dies after a runtime failure. A Listener subclass may
+override that policy:
 
 ```perl
-sub on_listener_error ($class, $listener, $error) {
+package AppListener;
+use parent 'Linux::Event::Listener';
+
+sub on_error ($listener, $error) {
     warn "$error\n";
 }
 ```

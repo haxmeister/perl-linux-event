@@ -5,6 +5,7 @@ use Test::More;
 use Socket qw(AF_INET SOCK_STREAM inet_aton pack_sockaddr_in);
 
 use Linux::Event::Loop;
+use Linux::Event::Listener;
 
 {
     package T::LineEchoStream;
@@ -23,7 +24,8 @@ use Linux::Event::Loop;
 
 my $loop = Linux::Event::Loop->new;
 my $state = { streams => [], messages => 0 };
-my $listener = T::LineEchoStream->listen(
+my $listener = Linux::Event::Listener->new(
+    stream_class => 'T::LineEchoStream',
     loop => $loop, host => '127.0.0.1', port => 0, data => $state,
 );
 socket(my $client, AF_INET, SOCK_STREAM, 0) or die "socket: $!";

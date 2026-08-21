@@ -37,13 +37,13 @@ my $stream = $loop->add(ChatStream->new(
 ```
 
 The established constructor also accepts `loop => $loop`. Outbound
-`ChatStream->connect(...)` and inbound `ChatStream->listen(...)` follow the same
-rule: pass `loop` for immediate attachment or omit it and use `Loop->add()`.
-Both forms attach the same object without a wrapper or public base class.
+`ChatStream->connect(...)` follows the same rule: pass `loop` for immediate
+attachment or omit it and use `Loop->add()`. Inbound acquisition belongs to
+`Linux::Event::Listener`, which is constructed with
+`stream_class => 'ChatStream'`.
 
 `connect()` keeps one Stream identity across `unattached`, `connecting`,
-`active`, and `closed` states. `listen()` returns a Listener configured to
-construct this Stream subclass. See `STREAM-CONNECTIONS.md`,
+`active`, and `closed` states. See `STREAM-CONNECTIONS.md`,
 `LISTENER-DESIGN.md`, and `OBJECT-LIFECYCLE.md`.
 
 ## Class descriptor

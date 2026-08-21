@@ -104,9 +104,9 @@ perl -Mblib bench/run-listen-microbench.pl \
 
 All rows create loopback clients through `MyStream->connect`. The `manual` row
 uses explicit socket setup, `Loop->watch`, Perl `accept`, and close. The `add`
-row constructs a detached Listener through `MyStream->listen` and attaches it
-with `Loop->add`. The `loop` row passes `loop => $loop` directly to
-`MyStream->listen`. Both public rows automatically construct and close the same
+row constructs a detached `Linux::Event::Listener` and attaches it with
+`Loop->add`. The `loop` row passes `loop => $loop` directly to the Listener
+constructor. Both public rows automatically construct and close the same
 minimal Stream subclass. Execution order rotates across repeats, so use a
 repeat count divisible by three for a balanced run.
 The script reports median accepts per second and process CPU microseconds per

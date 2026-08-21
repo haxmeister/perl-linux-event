@@ -1,6 +1,11 @@
 Revision history for Linux-Event
 
 0.100_028  2026-08-21
+    - Correct inbound acquisition ownership: remove the accidental
+      MyStream->listen() proxy and make Linux::Event::Listener->new with an
+      explicit stream_class the sole Listener construction API.
+    - Move runtime Listener error policy off Stream classes. The base Listener
+      remains fatal; applications may override on_error in a Listener subclass.
     - Add established Stream idle, read, and write inactivity deadlines with
       cached subclass defaults and per-connection constructor overrides.
     - Add constructor and runtime overall-operation deadlines through

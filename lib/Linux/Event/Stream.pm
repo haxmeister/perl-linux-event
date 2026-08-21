@@ -369,12 +369,6 @@ sub connect ($class, %opt) {
     return $class->new(%stream, _connect => \%opt);
 }
 
-sub listen ($class, %opt) {
-    croak 'listen(): must be called as a class method' if ref $class;
-    require Linux::Event::Listener;
-    return Linux::Event::Listener->new(stream_class => $class, %opt);
-}
-
 sub _prepare_fh ($self, $fh) {
     _set_nonblocking($fh);
     my $descriptor = $self->{descriptor};
@@ -1211,18 +1205,6 @@ attachment or readiness. Hostname resolution runs in the Loop's private native
 worker pool; socket establishment and staggered IPv6/IPv4 attempts are
 nonblocking.
 
-=head2 listen(host => $host, port => $port, ...)
-
-  my $listener = $loop->add(MyStream->listen(
-      host => '0.0.0.0', port => 9999,
-  ));
-
-Returns a L<Linux::Event::Listener> that constructs and attaches this Stream
-subclass for every accepted connection. It is detached unless
-C<loop =E<gt> $loop> is supplied, which attaches and starts it before returning.
-TCP, Unix, and adopted listening socket options are documented by
-L<Linux::Event::Listener>.
-
 =head1 ATTACHMENT AND OWNERSHIP
 
 A Stream is attached once, to one Loop. C<loop =E<gt> $loop> and
@@ -1376,14 +1358,15 @@ C<read_timeout> resets on inbound bytes, is suspended by C<pause_read>, and
 starts a fresh interval on C<resume_read>. C<write_timeout> exists only while
 output remains queued and resets on successful write progress.
 
-=head2 set_deadline(after => $seconds, operation => $name)
-
-=head2 set_deadline(at => $monotonic_deadline, operation => $name)
+=head2 set_deadline(...)
 
 Set or replace the one explicit overall-operation deadline and return the
-Stream. An overall deadline never resets because of I/O. Calling this before
-establishment stores the policy; relative time begins when the Stream becomes
-usable, while C<at> remains an absolute C<CLOCK_MONOTONIC> value.
+Stream. Supply C<after =E<gt> $seconds> or
+C<at =E<gt> $monotonic_deadline>, together with
+C<operation =E<gt> $name>. An overall deadline never resets because of I/O.
+Calling this before establishment stores the policy; relative time begins when
+the Stream becomes usable, while C<at> remains an absolute C<CLOCK_MONOTONIC>
+value.
 
 =head2 clear_deadline
 

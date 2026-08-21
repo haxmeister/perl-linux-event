@@ -87,10 +87,10 @@ Lazy IPv4, IPv6, and Unix socket-address values.
 Applications subclass C<Linux::Event::Stream> to define protocol behavior and
 C<Linux::Event::Timer> to define scheduled behavior, and
 C<Linux::Event::Signal> to define signal behavior. They do not subclass Loop
-registrations. Outbound acquisition is
-C<< MyStream->connect(...) >> and inbound acquisition is
-C<< MyStream->listen(...) >>. TLS is a transport provider passed with
-C<transport =E<gt>>, not another kind of Stream.
+registrations. Outbound acquisition is C<< MyStream->connect(...) >>. Inbound
+acquisition is C<< Linux::Event::Listener->new(stream_class =E<gt> 'MyStream',
+...) >>. TLS is a transport provider passed with C<transport =E<gt>>, not
+another kind of Stream.
 
 C<< $loop->watch(...) >> remains available for low-level descriptor readiness.
 It immediately returns an opaque native registration handle with methods such

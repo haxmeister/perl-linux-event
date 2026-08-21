@@ -15,8 +15,9 @@ my $stream = ClientStream->connect(
     loop => $loop, host => '127.0.0.1', port => 9999,
 );
 
-my $listener = ServerStream->listen(
-    loop => $loop, host => '0.0.0.0', port => 9999,
+my $listener = Linux::Event::Listener->new(
+    loop => $loop, stream_class => 'ServerStream',
+    host => '0.0.0.0', port => 9999,
 );
 
 my $timer = SessionTimer->new(
@@ -35,7 +36,8 @@ my $stream = $loop->add(ClientStream->connect(
     host => '127.0.0.1', port => 9999,
 ));
 
-my $listener = $loop->add(ServerStream->listen(
+my $listener = $loop->add(Linux::Event::Listener->new(
+    stream_class => 'ServerStream',
     host => '0.0.0.0', port => 9999,
 ));
 

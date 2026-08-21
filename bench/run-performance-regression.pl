@@ -123,6 +123,7 @@ die "warmup values must be non-negative\n"
 die "threshold-percent must be non-negative\n" if $threshold_percent < 0;
 
 require Linux::Event;
+require Linux::Event::Listener;
 require Linux::Event::Loop;
 require Linux::Event::Stream;
 require Linux::Event::Timer;
@@ -290,7 +291,10 @@ sub define_benchmark_classes () {
         }
         sub on_ready (\$stream) { main::connection_server_ready(\$stream) }
         sub on_error (\$stream, \$error) { die "server Stream error: \$error\\n" }
-        sub on_listener_error (\$class, \$listener, \$error) {
+
+        package Linux::Event::Bench::Regression::ConnectionListener;
+        use parent -norequire, 'Linux::Event::Listener';
+        sub on_error (\$listener, \$error) {
             die "Listener error: \$error\\n";
         }
 
@@ -570,10 +574,10 @@ sub run_connections ($count) {
         client_done => 0,
         server_done => 0,
     };
-    my $listener
-        = Linux::Event::Bench::Regression::ConnectionServer->listen(
-            host => '127.0.0.1', port => 0, data => $run,
-        );
+    my $listener = Linux::Event::Bench::Regression::ConnectionListener->new(
+        stream_class => 'Linux::Event::Bench::Regression::ConnectionServer',
+        host => '127.0.0.1', port => 0, data => $run,
+    );
     $loop->add($listener);
     $run->{port} = $listener->port;
 

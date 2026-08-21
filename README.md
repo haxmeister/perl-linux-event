@@ -161,11 +161,14 @@ Stream, Listener, Timer, and Signal accept `loop => $loop`, and may instead be
 constructed detached and added later:
 
 ```perl
+use Linux::Event::Listener;
+
 my $client = ClientStream->connect(
     loop => $loop, host => '127.0.0.1', port => 9999,
 );
 
-my $server = $loop->add(ServerStream->listen(
+my $server = $loop->add(Linux::Event::Listener->new(
+    stream_class => 'ServerStream',
     host => '0.0.0.0', port => 9999,
 ));
 
@@ -301,10 +304,14 @@ use Linux::Event::Framer 'Delimiter', "\n";
 sub on_message ($stream, $line) { $stream->send($line) }
 
 package main;
+use Linux::Event::Listener;
 use Linux::Event::Loop;
 my $loop = Linux::Event::Loop->new;
 my $server = $loop->add(
-    EchoStream->listen(host => '0.0.0.0', port => 9999)
+    Linux::Event::Listener->new(
+        stream_class => 'EchoStream',
+        host => '0.0.0.0', port => 9999,
+    )
 );
 $loop->run;
 ```

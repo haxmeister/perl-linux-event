@@ -50,7 +50,8 @@ our ($LOOP, $CLIENT_ID, $READY, $REPLY, $SERVER_PEER, $ERROR);
 }
 
 $LOOP = Linux::Event::Loop->new;
-my $listener = T::AutomaticEcho->listen(
+my $listener = Linux::Event::Listener->new(
+    stream_class => 'T::AutomaticEcho',
     host => '127.0.0.1',
     port => 0,
 );

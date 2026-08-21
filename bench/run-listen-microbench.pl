@@ -61,7 +61,13 @@ die "modes must not contain duplicates\n"
         main::finish_if_done($run);
     }
 
-    sub on_listener_error ($class, $listener, $error) {
+}
+
+{
+    package BenchAutomaticListener;
+    use parent 'Linux::Event::Listener';
+
+    sub on_error ($listener, $error) {
         die "benchmark listener failed: $error\n";
     }
 }
@@ -158,13 +164,15 @@ sub one_run ($mode, $client_count) {
             read => \&manual_accept_ready,
         );
     } elsif ($mode eq 'add') {
-        $run->{listener} = BenchAutomaticStream->listen(
+        $run->{listener} = BenchAutomaticListener->new(
+            stream_class => 'BenchAutomaticStream',
             host => '127.0.0.1', port => 0, data => $run,
         );
         $loop->add($run->{listener});
         $run->{port} = $run->{listener}->port;
     } else {
-        $run->{listener} = BenchAutomaticStream->listen(
+        $run->{listener} = BenchAutomaticListener->new(
+            stream_class => 'BenchAutomaticStream',
             loop => $loop, host => '127.0.0.1', port => 0, data => $run,
         );
         $run->{port} = $run->{listener}->port;
@@ -231,9 +239,9 @@ Usage: perl -Mblib bench/run-listen-microbench.pl [options]
 
 All rows acquire loopback TCP clients through MyStream->connect. Manual uses
 explicit listener setup, Loop->watch, Perl accept, and close. Add uses detached
-MyStream->listen followed by Loop->add. Loop supplies loop => directly to
-MyStream->listen. Both Listener rows construct and close the same minimal
-Stream subclass. Every successfully connected client
+Listener construction followed by Loop->add. Loop supplies loop => directly to
+Listener->new. Both Listener rows construct and close the same minimal Stream
+subclass. Every successfully connected client
 uses equal abortive teardown so repeated rows do not exhaust the host with
 client-side TIME_WAIT sockets. Repeat execution order rotates to reduce bias;
 use a repeat count divisible by three for balanced execution order.

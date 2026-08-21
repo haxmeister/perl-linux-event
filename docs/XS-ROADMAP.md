@@ -55,9 +55,9 @@ the signalfd mask and supports multiple numbers per object plus multiple
 objects per number.
 
 `MyStream->connect()` keeps one Stream identity through outbound acquisition
-and optional TLS readiness. `MyStream->listen()` creates the Listener that
-constructs accepted Streams. The public hierarchy adds no generic Perl call to
-steady-state native readiness dispatch.
+and optional TLS readiness. `Linux::Event::Listener->new(stream_class => ...)`
+owns inbound acquisition and constructs accepted Streams. The public hierarchy
+adds no generic Perl call to steady-state native readiness dispatch.
 
 ## Completed - initial TLS provider implementation
 

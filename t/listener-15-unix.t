@@ -6,6 +6,7 @@ use File::Temp qw(tempdir);
 use Socket qw(AF_UNIX SOCK_STREAM pack_sockaddr_un);
 
 use Linux::Event::Loop;
+use Linux::Event::Listener;
 
 {
     package T::UnixStream;
@@ -27,7 +28,8 @@ my $loop = Linux::Event::Loop->new;
 my $state = {};
 my $listener;
 eval {
-    $listener = T::UnixStream->listen(
+    $listener = Linux::Event::Listener->new(
+        stream_class => 'T::UnixStream',
         loop => $loop, unix => $path, permissions => 0600, data => $state,
     );
     1;

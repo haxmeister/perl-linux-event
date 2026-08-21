@@ -79,7 +79,9 @@ $resolver_loop->run;
 ok(!defined $RESOLVED, 'late resolver completion is discarded after cancellation');
 
 $LOOP = Linux::Event::Loop->new;
-my $listener = T::ResolverServer->listen(host => '127.0.0.1', port => 0);
+my $listener = Linux::Event::Listener->new(
+    stream_class => 'T::ResolverServer', host => '127.0.0.1', port => 0,
+);
 $LOOP->add($listener);
 my $client = T::ResolverClient->connect(
     host => 'localhost', port => $listener->port, timeout => 2,

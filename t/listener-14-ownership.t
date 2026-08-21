@@ -9,6 +9,7 @@ use Socket qw(
 );
 
 use Linux::Event::Loop;
+use Linux::Event::Listener;
 
 {
     package T::OwnedStream;
@@ -26,7 +27,9 @@ sub raw_listener () {
 my $borrowed = raw_listener();
 my $borrowed_fd = fileno($borrowed);
 my $loop = Linux::Event::Loop->new;
-my $listener = T::OwnedStream->listen(loop => $loop, fh => $borrowed);
+my $listener = Linux::Event::Listener->new(
+    stream_class => 'T::OwnedStream', loop => $loop, fh => $borrowed,
+);
 is($listener->fd, $borrowed_fd, 'adopted listener preserves descriptor');
 ok(fcntl($borrowed, F_GETFL, 0) & O_NONBLOCK,
     'adopted listener is made nonblocking');
@@ -43,7 +46,8 @@ close $borrowed;
 my $detached_source = raw_listener();
 my $detached_fd = fileno($detached_source);
 my $loop2 = Linux::Event::Loop->new;
-my $detaching = T::OwnedStream->listen(
+my $detaching = Linux::Event::Listener->new(
+    stream_class => 'T::OwnedStream',
     loop => $loop2, fh => $detached_source, owns_socket => 1,
 );
 my $detached = $detaching->detach;

@@ -6,6 +6,7 @@ use Fcntl qw(F_GETFD F_GETFL FD_CLOEXEC O_NONBLOCK);
 use Socket qw(AF_INET SOCK_STREAM inet_aton pack_sockaddr_in);
 
 use Linux::Event::Loop;
+use Linux::Event::Listener;
 use Linux::Event::Stream;
 
 our ($LOOP, $STATE);
@@ -38,7 +39,8 @@ our ($LOOP, $STATE);
 
 $LOOP = Linux::Event::Loop->new;
 $STATE = {};
-my $listener = T::AcceptedTCPStream->listen(
+my $listener = Linux::Event::Listener->new(
+    stream_class => 'T::AcceptedTCPStream',
     loop => $LOOP, host => '127.0.0.1', port => 0, data => $STATE,
 );
 

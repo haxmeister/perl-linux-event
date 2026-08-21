@@ -6,6 +6,7 @@ use FindBin qw($Bin);
 use Scalar::Util qw(refaddr);
 
 use Linux::Event::Loop;
+use Linux::Event::Listener;
 use Linux::Event::Stream;
 use Linux::Event::TLS;
 
@@ -41,7 +42,13 @@ our ($LOOP, $STATE, $CERT, $KEY, $CLIENT_ID);
         $stream->loop->stop;
     }
 
-    sub on_listener_error ($class, $listener, $error) {
+}
+
+{
+    package T::IntegratedTLSListener;
+    use parent 'Linux::Event::Listener';
+
+    sub on_error ($listener, $error) {
         $main::STATE->{error} = "$error";
         $listener->loop->stop;
     }
@@ -80,7 +87,8 @@ $STATE = {
 };
 $LOOP = Linux::Event::Loop->new;
 
-my $listener = $LOOP->add(T::IntegratedTLSServer->listen(
+my $listener = $LOOP->add(T::IntegratedTLSListener->new(
+    stream_class => 'T::IntegratedTLSServer',
     host => '127.0.0.1', port => 0,
 ));
 my $client = T::IntegratedTLSClient->connect(
