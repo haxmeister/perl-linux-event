@@ -20,12 +20,15 @@ for my $required (
     'docs/STREAM-CONNECTIONS.md',
     'docs/LISTENER-DESIGN.md',
     'docs/TIMER-DESIGN.md',
+    'docs/SIGNAL-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
+    'bench/run-resolver-microbench.pl',
+    'bench/run-signal-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -49,16 +52,22 @@ for my $required (
     'lib/Linux/Event/Framer/Varint.pm',
     'lib/Linux/Event/TLS.pm',
     'lib/Linux/Event/Loop.pm',
+    'lib/Linux/Event/Signal.pm',
     'lib/Linux/Event/Listener.pm',
     'lib/Linux/Event/Listener/_Engine.pm',
     'lib/Linux/Event/Stream.pm',
     'lib/Linux/Event/Stream/_Connection.pm',
+    'lib/Linux/Event/Stream/_Resolver.pm',
     'lib/Linux/Event/Timer.pm',
     'xstls/Makefile.PL',
     'xstls/TLS.xs',
     'xstls/check_openssl.c',
     'xsconnection/Makefile.PL',
     'xsconnection/Connection.xs',
+    'xsresolver/Makefile.PL',
+    'xsresolver/Resolver.xs',
+    'xssignal/Makefile.PL',
+    'xssignal/Signal.xs',
     'xslistener/Makefile.PL',
     'xslistener/Listener.xs',
     'examples/line-echo-server.pl',
@@ -77,12 +86,15 @@ for my $live (
     'docs/STREAM-CONNECTIONS.md',
     'docs/LISTENER-DESIGN.md',
     'docs/TIMER-DESIGN.md',
+    'docs/SIGNAL-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
+    'bench/run-resolver-microbench.pl',
+    'bench/run-signal-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -110,6 +122,8 @@ my %allowed = map { $_ => 1 } qw(
     run-connect-microbench.pl
     run-listen-microbench.pl
     run-reactor-comparison.pl
+    run-resolver-microbench.pl
+    run-signal-microbench.pl
     run-callback-ceiling.pl
     run-stream-lifecycle-bench.pl
     run-stream-microbench.pl

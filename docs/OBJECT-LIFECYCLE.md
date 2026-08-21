@@ -22,6 +22,10 @@ my $listener = ServerStream->listen(
 my $timer = SessionTimer->new(
     loop => $loop, after => 30, data => $session,
 );
+
+my $signal = ShutdownSignal->new(
+    loop => $loop, signals => [SIGINT, SIGTERM], data => $server,
+);
 ```
 
 An object may instead be constructed detached and passed to `add()`:
@@ -37,6 +41,10 @@ my $listener = $loop->add(ServerStream->listen(
 
 my $timer = $loop->add(SessionTimer->new(
     after => 30, data => $session,
+));
+
+my $signal = $loop->add(ShutdownSignal->new(
+    signals => [SIGINT, SIGTERM], data => $server,
 ));
 ```
 
@@ -58,6 +66,9 @@ different parts of an application.
 - Loop retains an active Timer even when the application drops its reference.
   A one-shot Timer releases its `data` after callback completion; recurring
   Timers retain it until cancellation or Loop destruction.
+- Loop retains active Signal objects through one shared native signalfd
+  service. Cancellation or Loop destruction restores Loop-owned mask entries
+  and releases retained data.
 - `add()` returns the exact object it received; it does not wrap or replace it.
 
 Violations are rejected synchronously. This makes the Loop registry and native
@@ -77,6 +88,11 @@ Timer is also a logical object rather than a timerfd wrapper. All active Timers
 on one Loop share one lazily created timerfd and live in a native indexed heap.
 Cancellation is terminal and idempotent. Rescheduling is allowed while active
 or from inside `on_timer`, but an expired or cancelled Timer cannot be revived.
+
+Signal is a logical subscription rather than a signalfd wrapper. All Signal
+objects on one Loop share one signalfd and native fan-out registry. One object
+may subscribe to several numbers and several objects may subscribe to the same
+number on that Loop.
 
 ## Raw descriptor registrations
 
@@ -105,3 +121,7 @@ For Timer, explicit `cancel()` is the corresponding terminal operation. Loop
 destruction cancels every remaining Timer and releases its retained data. If a
 Timer cancels itself during `on_timer`, cleanup is deferred until the callback
 returns so callback-local access remains safe.
+
+Signal cancellation follows the same terminal rule. Self-cancellation and
+cross-cancellation during fan-out are safe; callback-local data remains visible
+until the active callback returns.

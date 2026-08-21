@@ -41,8 +41,9 @@ Exactly one address mode is required:
 - `sockaddr => $packed, family => $af` uses a caller-packed address.
 
 `timeout` is a non-negative number of seconds and defaults to 10. A zero value
-disables the connection deadline. Hostname resolution currently uses
-synchronous `getaddrinfo`; socket establishment itself is nonblocking.
+disables the connection deadline. The deadline covers hostname resolution and
+every socket attempt. Numeric IPv4/IPv6 literals, Unix addresses, and packed
+sockaddrs bypass the resolver.
 
 ## State sequence
 
@@ -78,11 +79,29 @@ installs its established native read/write state. No second public object or
 callback adapter is created.
 
 The private engine is deliberately in Perl because connection setup is a cold
-lifecycle path. XS provides the timerfd and established Stream hot paths. This
-keeps policy readable without adding Perl dispatch to steady-state I/O.
+lifecycle path. XS provides the timerfd, resolver workers, eventfd wakeup, and
+established Stream hot paths. This keeps policy readable without adding Perl
+dispatch to steady-state I/O.
 
-## Future resolver work
+## Resolver and Happy Eyeballs
 
-Candidate storage is separate from attempt state so asynchronous DNS and a
-staggered Happy Eyeballs policy can be introduced without changing the public
-Stream API or its ownership model.
+Each Loop lazily acquires one private resolver service with two native pthread
+workers. Workers call `getaddrinfo`, copy complete address results into native
+memory, and write the service eventfd. They never enter the Perl interpreter or
+touch Perl values. The Loop watches that eventfd through its ordinary raw
+`watch()` mechanism, drains completions on the Loop thread, and resumes the
+private connection engine there. This is intentionally not a public eventfd,
+poster, or general cross-thread callback API.
+
+IPv6 and IPv4 candidates are interleaved. The first connection attempt starts
+immediately; while it remains pending, the next family starts after 250 ms.
+Further candidates use the same stagger. A failure may advance immediately,
+the first successful socket wins, and every losing watcher and socket is
+cancelled deterministically.
+
+Cancellation removes the resolver request's Loop-thread recipient. A native
+`getaddrinfo` already running may finish, but its late completion is discarded
+safely. Applications do not need a threaded Perl build: the distribution uses
+native C threads and keeps Perl confined to the Loop thread. Fork before a Loop
+starts hostname resolution; a resolver service is not reusable in a forked
+child.

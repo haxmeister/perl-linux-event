@@ -32,13 +32,15 @@ the same Linux::Event distribution. The guiding rule remains:
 - one shared timerfd plus an indexed native deadline heap per Loop
 - cached subclass callbacks, fixed-rate recurrence, coalescing, and bounded
   dispatch for public Timer objects
+- one shared signalfd, native fan-out registry, aggregate delivery, and exact
+  mask restoration for public Signal objects
 
 These are permanent regression targets. New work must not trade them away
 without benchmark evidence.
 
 ## Completed - unified object lifecycle
 
-`Linux::Event::Loop` owns high-level Stream, Listener, and Timer objects through
+`Linux::Event::Loop` owns high-level Stream, Listener, Timer, and Signal objects through
 `add()`, while `watch()` creates an immediately attached opaque native
 registration. There is no public Watcher or IO base class. One logical object
 may own several internal epoll registrations.
@@ -46,6 +48,11 @@ may own several internal epoll registrations.
 Timer uses that same attachment contract without adding Loop-specific factory
 methods. The abstract public Timer class caches `on_timer` once per subclass;
 active instances live entirely in the Loop's native scheduler.
+
+Signal uses the same attachment contract. Its abstract public class caches
+`on_signal` once per subclass, while each Loop's private native service owns
+the signalfd mask and supports multiple numbers per object plus multiple
+objects per number.
 
 `MyStream->connect()` keeps one Stream identity through outbound acquisition
 and optional TLS readiness. `MyStream->listen()` creates the Listener that
@@ -101,20 +108,25 @@ remaining backlog again. Edge-triggered listeners require an unlimited drain.
 No temporary accepted-socket registration is created before Stream attachment.
 Resource exhaustion pauses readiness before typed error delivery.
 
-## Priority 1 - Asynchronous Resolver and Happy Eyeballs
+## Completed - asynchronous Resolver and Happy Eyeballs
 
-The current hostname path still calls `getaddrinfo` synchronously and attempts
-returned candidates sequentially. Replace it with:
+Hostname resolution is mechanically separate from Stream connection policy in
+a private XS extension. Each Loop lazily owns two native resolver workers and
+one eventfd completion queue. Workers never enter Perl. The normal raw Loop
+watch path drains complete candidate collections, cancelled requests discard
+late results, IPv6/IPv4 attempts are staggered by 250 ms, and first-success
+ownership closes all losers. Literal, Unix, and packed addresses bypass the
+resolver. Dedicated integration, cancellation, ordering, and microbenchmark
+coverage protects the boundary.
 
-- a native resolver worker that never blocks the reactor thread
-- eventfd delivery of complete candidate collections
-- request cancellation that safely discards late resolver completion
-- staggered IPv6/IPv4 attempts following Happy Eyeballs policy
-- first-success ownership transfer and deterministic loser cleanup
-- resolver, fallback-latency, concurrent-connect, and cancellation benchmarks
+## Completed - signalfd signal handling
 
-Keep resolution mechanically separate from Stream connection policy. Literal and packed
-addresses must continue to bypass the resolver entirely.
+`Linux::Event::Signal` provides synchronous Loop-thread delivery without Perl
+signal handlers. One lazy signalfd and native subscription registry per Loop
+drain and aggregate records before fan-out. Cancellation is safe during
+callbacks, last-subscriber removal restores only mask entries Linux::Event
+changed, and one signal number has one owning Loop per process. Resolver
+workers block signals independently so native DNS cannot intercept them.
 
 ## Priority 2 - General native framing families
 
@@ -166,8 +178,8 @@ few cold Perl calls.
 
 ## Priority 6 - Linux fd drain helpers
 
-Profile native draining/aggregation for Linux descriptors such as eventfd,
-signalfd, and pidfd so Perl receives meaningful aggregate events.
+Profile native draining/aggregation for remaining Linux descriptors such as
+pidfd so Perl receives meaningful aggregate events.
 
 ## Priority 7 - Buffer representation experiments
 

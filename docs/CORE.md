@@ -35,7 +35,8 @@ my $loop = Linux::Event::Loop->new;
 
 Each loop owns one epoll instance, an event buffer, a native fd-indexed
 registration registry, and its attached high-level objects. Stream, Listener,
-and Timer accept `loop => $loop` or attach through `$loop->add($object)`.
+Timer, and Signal accept `loop => $loop` or attach through
+`$loop->add($object)`.
 `watch()` is the immediate raw-descriptor API.
 
 ## Registering a handle

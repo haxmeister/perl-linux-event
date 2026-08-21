@@ -7,8 +7,9 @@ one distribution.
 
 The public model is deliberately small. `Linux::Event::Loop` owns readiness
 and scheduled work; `Linux::Event::Stream` owns established and connecting
-byte streams; `Linux::Event::Listener` owns listening sockets; and
-`Linux::Event::Timer` owns a scheduled callback. There is no public Watcher,
+byte streams; `Linux::Event::Listener` owns listening sockets;
+`Linux::Event::Timer` owns a scheduled callback; and `Linux::Event::Signal`
+owns synchronous signalfd subscriptions. There is no public Watcher,
 IO, Connect, or Connector class. Native epoll registrations remain opaque, so
 one logical object may use several kernel event sources without exposing them
 as more application objects.
@@ -19,14 +20,16 @@ as more application objects.
 - `Linux::Event::Stream` - TCP/Unix stream endpoints and outbound connection
 - `Linux::Event::Listener` - TCP/Unix listening endpoints
 - `Linux::Event::Timer` - subclass-defined one-shot and recurring timers
+- `Linux::Event::Signal` - subclass-defined synchronous signal subscriptions
 - `Linux::Event::TLS` - optional OpenSSL transport provider for Stream
 - `Linux::Event::Framer::*` - native framing declarations for Stream types
 - `Linux::Event::Error` - shared structured failure value
 - `Linux::Event::Address` - lazy IPv4, IPv6, and Unix address value
 
-`Linux::Event::Listener::_Engine` and `Linux::Event::Stream::_Connection` are
-private implementation packages. Applications must not construct, subclass, or
-depend on them.
+`Linux::Event::Listener::_Engine`, `Linux::Event::Stream::_Connection`, and
+`Linux::Event::Stream::_Resolver` are private implementation packages.
+Signal's descriptor and service packages are private as well. Applications
+must not construct, subclass, or depend on them.
 
 ## Current capabilities
 
@@ -59,6 +62,15 @@ depend on them.
 - coalesced missed periodic ticks exposed through `expirations`
 - idempotent terminal cancellation and deterministic application-data cleanup
 - in-callback rescheduling without reentrant delivery
+
+### Signal
+
+- subclass-defined `on_signal($signal, $number, $count)` callbacks
+- one lazy nonblocking signalfd and one native fan-out registry per Loop
+- multiple signal numbers per object and multiple objects per signal
+- complete aggregate counts broadcast to every matching subscriber
+- exact restoration of mask entries changed by Linux::Event
+- safe self/cross-cancellation and deterministic Loop-destruction cleanup
 
 ### Stream connection
 
@@ -102,7 +114,7 @@ higher-level layer for applications that want owned byte-stream I/O.
 
 ## Loop attachment
 
-Stream, Listener, and Timer accept `loop => $loop`, and may instead be
+Stream, Listener, Timer, and Signal accept `loop => $loop`, and may instead be
 constructed detached and added later:
 
 ```perl
@@ -115,6 +127,10 @@ my $server = $loop->add(ServerStream->listen(
 ));
 
 my $heartbeat = $loop->add(Heartbeat->new(every => 30));
+
+my $shutdown = $loop->add(ShutdownSignal->new(
+    signals => [SIGINT, SIGTERM],
+));
 ```
 
 These are equivalent attachment styles. `add()` stores the Loop, starts the
@@ -144,6 +160,28 @@ Application context is directly available through `data`, so a timer callback
 can close or modify any Stream, Listener, or other state it retains. Use
 `reschedule` to replace an active schedule and `cancel` for terminal removal.
 
+## Signal example
+
+Signals use the same subclass and attachment style without asynchronous Perl
+signal handlers:
+
+```perl
+package ShutdownSignal;
+use parent 'Linux::Event::Signal';
+
+sub on_signal ($signal, $number, $count) {
+    $signal->data->{listener}->close;
+    $signal->loop->stop;
+}
+
+package main;
+use POSIX qw(SIGINT SIGTERM);
+my $shutdown = $loop->add(ShutdownSignal->new(
+    signals => [SIGINT, SIGTERM],
+    data    => { listener => $server },
+));
+```
+
 ## Build and test
 
 ```bash
@@ -152,7 +190,7 @@ make
 make test
 ```
 
-All five native extensions are built into the same `blib` tree. Building TLS
+All seven native extensions are built into the same `blib` tree. Building TLS
 requires OpenSSL 1.1.1 or newer, including its development headers and
 libraries. To use that copy
 without installing it:
@@ -203,8 +241,9 @@ $loop->run;
 `on_ready` means application-ready: TCP is connected and, when configured, the
 TLS handshake and verification are complete. `send()` or `write()` may be
 called before readiness; bounded output is retained on the Stream and flushed
-after connection establishment. Hostname resolution is still synchronous in
-this release.
+after connection establishment. Hostnames resolve on a private native worker
+pool; completion wakes the owning Loop through eventfd, and IPv6/IPv4
+connection attempts are staggered without blocking the reactor.
 
 ## Line echo server
 
@@ -383,14 +422,15 @@ memory against the versioned object-configured baseline.
 - [`docs/OBJECT-LIFECYCLE.md`](docs/OBJECT-LIFECYCLE.md) - Loop attachment and resource ownership
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor and Stream architecture
 - [`docs/TIMER-DESIGN.md`](docs/TIMER-DESIGN.md) - Timer API, scheduler, and lifecycle semantics
+- [`docs/SIGNAL-DESIGN.md`](docs/SIGNAL-DESIGN.md) - signalfd fan-out, mask ownership, and lifecycle
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - plain transport and TLS provider contract
-- [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition and future resolver contract
+- [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
 - [`docs/LISTENER-DESIGN.md`](docs/LISTENER-DESIGN.md) - inbound acquisition and accept policy
 - [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
 - [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy
 - [`docs/XS-ROADMAP.md`](docs/XS-ROADMAP.md) - remaining native work
-- [`bench/README.md`](bench/README.md) - reactor, Timer, and Stream benchmarks
+- [`bench/README.md`](bench/README.md) - reactor, Timer, Signal, and Stream benchmarks
 - [`docs/DEVELOPMENT-HISTORY.md`](docs/DEVELOPMENT-HISTORY.md) - historical optimization notes
 
 ## Project direction

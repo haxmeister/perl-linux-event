@@ -9,6 +9,8 @@
 ^xstls/(?:Makefile$|MYMETA\.(?:json|yml)$|TLS\.(?:c|o|bs)$|blib(?:/|$)|check_openssl(?:\.o)?$)
 ^xsconnection/(?:Makefile$|MYMETA\.(?:json|yml)$|Connection\.(?:c|o|bs|xsc)$|_Connection\.bs$|blib(?:/|$))
 ^xslistener/(?:Makefile$|MYMETA\.(?:json|yml)$|Listener\.(?:c|o|bs|xsc)$|_Engine\.bs$|blib(?:/|$))
+^xsresolver/(?:Makefile$|MYMETA\.(?:json|yml)$|Resolver\.(?:c|o|bs|xsc)$|_Resolver\.bs$|blib(?:/|$))
+^xssignal/(?:Makefile$|MYMETA\.(?:json|yml)$|Signal\.(?:c|o|bs|xsc)$|blib(?:/|$))
 ^Linux-Event-[^/]+(?:/|\.tar(?:\.gz)?$)
 ^bench/results/.*\.json$
 ^\.prove$

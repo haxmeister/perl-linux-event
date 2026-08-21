@@ -1,5 +1,29 @@
 Revision history for Linux-Event
 
+0.100_027  2026-08-21
+    - Move hostname resolution off the reactor thread into a private XS
+      resolver with two lazy native pthread workers per Loop.
+    - Deliver copied getaddrinfo results through one eventfd watched by the
+      ordinary raw Loop API; no public eventfd, post, or threaded-Perl API is
+      introduced.
+    - Interleave IPv6 and IPv4 candidates, stagger pending attempts by 250 ms,
+      transfer the first successful socket, and deterministically close losers.
+    - Make cancellation discard late completion safely, include DNS in the
+      connection deadline, retain literal-address bypass, and document that
+      processes must fork before starting resolver workers.
+    - Add native delivery, cancellation, hostname connection, ordering, and
+      resolver microbenchmark coverage.
+    - Add subclass-defined Linux::Event::Signal with one lazy signalfd and
+      native fan-out registry per Loop, supporting several signals per object
+      and several objects per signal.
+    - Aggregate complete signalfd drains before callback delivery, preserve
+      attachment-order fan-out, and make self/cross-cancellation callback-safe.
+    - Track signal-mask ownership exactly, reject cross-Loop consumption of one
+      signal number, restore only Loop-owned entries, and make resolver workers
+      block signals independently.
+    - Add Signal API, delivery, lifecycle, mask, error, and benchmark coverage
+      plus explicit thread and fork ownership documentation.
+
 0.100_026  2026-08-21
     - Add Linux::Event::Timer as an abstract subclass-defined public object
       with cached on_timer callbacks and the same Loop->add attachment contract

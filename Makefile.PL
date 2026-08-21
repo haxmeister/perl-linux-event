@@ -9,7 +9,7 @@ WriteMakefile(
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
-    DIR              => [qw(xsloop xsstream xstls xsconnection xslistener)],
+    DIR              => [qw(xsloop xsstream xstls xsconnection xsresolver xssignal xslistener)],
     META_MERGE       => {
         resources => {
             repository => 'https://github.com/haxmeister/perl-linux-event',

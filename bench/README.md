@@ -1,6 +1,6 @@
 # Benchmark Guide
 
-The benchmark directory contains current reactor, callback, Timer, Stream
+The benchmark directory contains current reactor, callback, Timer, Signal, Stream
 transport, framing, native-framer, and lifecycle measurements. Older optimization
 experiments are preserved under `bench/archive/` and are not the recommended
 way to measure the current implementation.
@@ -60,6 +60,35 @@ The lifecycle and reschedule rows count one operation per Timer. The expiration
 row schedules an equal-deadline cohort and runs the Loop until all callbacks
 have completed. Use the standard performance-regression suite for release
 gating; use this benchmark to diagnose Timer-specific scaling.
+
+## Signal microbenchmark
+
+`run-signal-microbench.pl` measures one-at-a-time real-time signal delivery and
+native fan-out at increasing subscriber counts:
+
+```bash
+perl -Mblib bench/run-signal-microbench.pl \
+  --deliveries=10000 --subscribers=1,10,100 --repeats=5
+```
+
+It reports delivered signals per second, resulting Perl callbacks per second,
+and process CPU microseconds per signal. The real-time signal keeps every
+delivery queued; only one signal is outstanding at a time so the benchmark
+measures the Loop/signalfd round trip rather than queue saturation.
+
+## Resolver microbenchmark
+
+`run-resolver-microbench.pl` measures the private worker/eventfd path with
+batched asynchronous hostname requests. It reports aggregate resolution rate
+and median submit-to-Loop-delivery latency:
+
+```bash
+perl -Mblib bench/run-resolver-microbench.pl \
+  --host=localhost --requests=1000 --repeats=5
+```
+
+Use a stable local or controlled DNS target when comparing builds. Public
+internet resolver latency is environment noise and is not a release gate.
 
 ## Listener lifecycle microbenchmark
 

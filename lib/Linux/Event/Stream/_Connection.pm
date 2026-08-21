@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_026';
+our $VERSION = '0.100_027';
 
 use Carp qw(croak);
 use Errno ();
@@ -12,11 +12,13 @@ use Socket qw(
     AF_INET AF_INET6 AF_UNIX
     SOCK_STREAM SOCK_NONBLOCK SOCK_CLOEXEC
     SOL_SOCKET SO_ERROR
-    getaddrinfo inet_pton
+    inet_pton
     pack_sockaddr_in pack_sockaddr_in6 pack_sockaddr_un
 );
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
 use Linux::Event::Error;
+use Linux::Event::Stream::_Resolver ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -128,8 +130,12 @@ sub new ($class, %opt) {
         last_operation => undef,
         timer_fd      => undef,
         timer_watcher => undef,
-        timer_role    => undef,
         pending_result => undef,
+        deadline_at   => undef,
+        fallback_at   => undef,
+        resolver      => undef,
+        resolver_request => undef,
+        needs_resolution => 0,
     }, $class;
 
     $self->_resolve_candidates;
@@ -158,12 +164,14 @@ sub _attach_to_loop ($self, $loop) {
         if $self->{state} ne 'detached' || $self->{loop};
     $self->{loop} = $loop;
     $self->{state} = 'pending';
+    $self->{deadline_at} = _now() + $self->{timeout}
+        if $self->{timeout} > 0;
+    $self->_rearm_timer if defined $self->{deadline_at};
     if ($self->{pending_result}) {
-        my $fd = $self->_ensure_timer;
-        $self->{timer_role} = 'dispatch';
-        __PACKAGE__->_timerfd_arm($fd, 0.000000001);
+        $self->_rearm_timer;
+    } elsif ($self->{needs_resolution}) {
+        $self->_start_resolution;
     } else {
-        $self->_arm_timeout if $self->{timeout} > 0;
         $self->_attempt_next;
     }
     return $self;
@@ -173,6 +181,7 @@ sub cancel ($self) {
     return 0 if $self->is_done;
     $self->{state} = 'cancelled';
     $self->{pending_result} = undef;
+    $self->_cancel_resolution;
     $self->_close_attempts;
     $self->_close_timer;
     return 1;
@@ -223,13 +232,50 @@ sub _resolve_candidates ($self) {
         return;
     }
 
-    my ($resolver_error, @result) = getaddrinfo(
-        $self->{host}, $self->{port}, { socktype => SOCK_STREAM },
-    );
-    if ($resolver_error) {
-        my $message = "$resolver_error";
-        my $errno = $message =~ /NONAME|NODATA|NO_DATA/i
-            ? Errno::ENOENT() : Errno::EIO();
+    $self->{needs_resolution} = 1;
+    return;
+}
+
+sub _now () { clock_gettime(CLOCK_MONOTONIC) }
+
+sub _start_resolution ($self) {
+    return if $self->{state} ne 'pending' || $self->{resolver_request};
+    my $resolver = Linux::Event::Stream::_Resolver->for_loop($self->{loop});
+    $self->{resolver} = $resolver;
+    my $id = eval { $resolver->submit($self, $self->{host}, $self->{port}) };
+    if (!$id) {
+        my $message = $@ || 'could not submit hostname resolution';
+        $self->_queue_error($self->_error(
+            type             => 'resolve',
+            operation        => 'resolve',
+            errno            => Errno::EIO(),
+            message          => $message,
+            resolver_message => $message,
+        ));
+        return;
+    }
+    $self->{resolver_request} = $id;
+    $self->_rearm_timer;
+    return;
+}
+
+sub _cancel_resolution ($self) {
+    my $id = delete $self->{resolver_request};
+    my $resolver = delete $self->{resolver};
+    $resolver->cancel($id) if $resolver && defined $id;
+    return;
+}
+
+sub _resolver_completed ($self, $result) {
+    return if $self->{state} ne 'pending';
+    return if !defined($self->{resolver_request})
+        || $result->{id} != $self->{resolver_request};
+    delete $self->{resolver_request};
+    delete $self->{resolver};
+
+    if ($result->{error_code}) {
+        my $message = $result->{message} || 'hostname resolution failed';
+        my $errno = $result->{system_errno} || Errno::ENOENT();
         $self->_queue_error($self->_error(
             type             => 'resolve',
             operation        => 'resolve',
@@ -239,14 +285,8 @@ sub _resolve_candidates ($self) {
         ));
         return;
     }
-    for my $result (@result) {
-        next if !defined($result->{family}) || !defined($result->{addr});
-        push @{ $self->{candidates} }, {
-            family   => $result->{family},
-            protocol => $result->{protocol} // 0,
-            sockaddr => $result->{addr},
-        };
-    }
+
+    $self->{candidates} = _happy_eyeballs_order($result->{candidates});
     if (!@{ $self->{candidates} }) {
         $self->_queue_error($self->_error(
             type      => 'resolve',
@@ -254,8 +294,39 @@ sub _resolve_candidates ($self) {
             errno     => Errno::ENOENT(),
             message   => 'hostname resolution returned no stream addresses',
         ));
+        return;
     }
+    $self->{candidate_at} = 0;
+    $self->_attempt_next;
     return;
+}
+
+sub _happy_eyeballs_order ($input) {
+    my (@v4, @v6, @other);
+    for my $candidate (@$input) {
+        next if !defined($candidate->{family})
+            || !defined($candidate->{sockaddr});
+        if ($candidate->{family} == AF_INET) {
+            push @v4, $candidate;
+        } elsif ($candidate->{family} == AF_INET6) {
+            push @v6, $candidate;
+        } else {
+            push @other, $candidate;
+        }
+    }
+    my $first_family = @$input && $input->[0]{family} == AF_INET
+        ? AF_INET : AF_INET6;
+    my @ordered;
+    while (@v4 || @v6) {
+        if ($first_family == AF_INET) {
+            push @ordered, shift @v4 if @v4;
+            push @ordered, shift @v6 if @v6;
+        } else {
+            push @ordered, shift @v6 if @v6;
+            push @ordered, shift @v4 if @v4;
+        }
+    }
+    return [ @ordered, @other ];
 }
 
 sub _attempt_next ($self) {
@@ -303,6 +374,9 @@ sub _attempt_next ($self) {
                 _callback_data_arg => 1,
             );
             $attempt->{watcher} = $watcher;
+            $self->{fallback_at} = _now() + 0.250
+                if $self->{candidate_at} < @{ $self->{candidates} };
+            $self->_rearm_timer;
             return;
         }
 
@@ -311,6 +385,10 @@ sub _attempt_next ($self) {
         delete $self->{attempts}{$id};
         close $fh;
     }
+
+    $self->{fallback_at} = undef;
+    $self->_rearm_timer;
+    return if keys %{ $self->{attempts} };
 
     my $errno = $self->{last_errno} // Errno::EIO();
     my $operation = $self->{last_operation} // 'connect';
@@ -364,10 +442,27 @@ sub _ensure_timer ($self) {
     return $fd;
 }
 
-sub _arm_timeout ($self) {
-    my $fd = $self->_ensure_timer;
-    $self->{timer_role} = 'timeout';
-    __PACKAGE__->_timerfd_arm($fd, $self->{timeout});
+sub _rearm_timer ($self) {
+    return if !$self->{loop} || $self->{state} ne 'pending';
+    my $delay;
+    if ($self->{pending_result}) {
+        $delay = 0.000000001;
+    } else {
+        my @when = grep { defined } $self->{deadline_at}, $self->{fallback_at};
+        if (@when) {
+            my $next = $when[0];
+            for my $when (@when[1 .. $#when]) {
+                $next = $when if $when < $next;
+            }
+            $delay = $next - _now();
+            $delay = 0.000000001 if $delay <= 0;
+        }
+    }
+    if (defined $delay) {
+        __PACKAGE__->_timerfd_arm($self->_ensure_timer, $delay);
+    } elsif (defined $self->{timer_fd}) {
+        __PACKAGE__->_timerfd_arm($self->{timer_fd}, 0);
+    }
     return;
 }
 
@@ -376,9 +471,7 @@ sub _queue_success ($self, $attempt) {
         || $self->{pending_result};
     $self->{pending_result} = [ success => $attempt ];
     return if !$self->{loop};
-    my $fd = $self->_ensure_timer;
-    $self->{timer_role} = 'dispatch';
-    __PACKAGE__->_timerfd_arm($fd, 0.000000001);
+    $self->_rearm_timer;
     return;
 }
 
@@ -387,9 +480,7 @@ sub _queue_error ($self, $error) {
         || $self->{pending_result};
     $self->{pending_result} = [ error => $error ];
     return if !$self->{loop};
-    my $fd = $self->_ensure_timer;
-    $self->{timer_role} = 'dispatch';
-    __PACKAGE__->_timerfd_arm($fd, 0.000000001);
+    $self->_rearm_timer;
     return;
 }
 
@@ -406,13 +497,22 @@ sub _timer_ready ($self) {
         return;
     }
 
-    return if ($self->{timer_role} // '') ne 'timeout';
-    $self->_finish_error($self->_error(
-        type      => 'timeout',
-        operation => 'connect',
-        errno     => Errno::ETIMEDOUT(),
-        message   => 'connection deadline expired',
-    ));
+    my $now = _now();
+    if (defined($self->{deadline_at}) && $now >= $self->{deadline_at}) {
+        $self->_finish_error($self->_error(
+            type      => 'timeout',
+            operation => 'connect',
+            errno     => Errno::ETIMEDOUT(),
+            message   => 'connection deadline expired',
+        ));
+        return;
+    }
+    if (defined($self->{fallback_at}) && $now >= $self->{fallback_at}) {
+        $self->{fallback_at} = undef;
+        $self->_attempt_next;
+        return;
+    }
+    $self->_rearm_timer;
     return;
 }
 
@@ -443,7 +543,6 @@ sub _close_timer ($self) {
     if (defined(my $fd = delete $self->{timer_fd})) {
         __PACKAGE__->_timerfd_close($fd);
     }
-    $self->{timer_role} = undef;
     return;
 }
 
@@ -452,6 +551,7 @@ sub _finish_success ($self, $attempt) {
     return if !exists $self->{attempts}{ $attempt->{id} };
 
     $self->{state} = 'connected';
+    $self->_cancel_resolution;
     $self->_close_attempts($attempt);
     $self->_close_timer;
 
@@ -477,6 +577,7 @@ sub _finish_error ($self, $error) {
     $self->{state} = 'failed';
     $self->{error} = $error;
     $self->{pending_result} = undef;
+    $self->_cancel_resolution;
     $self->_close_attempts;
     $self->_close_timer;
     $self->{stream}->_connect_failed($error);

@@ -3,6 +3,7 @@ use Test::More;
 use_ok('Linux::Event');
 use_ok('Linux::Event::Loop');
 use_ok('Linux::Event::Timer');
+use_ok('Linux::Event::Signal');
 use_ok('Linux::Event::Stream');
 use_ok('Linux::Event::Listener');
 use_ok('Linux::Event::Error');

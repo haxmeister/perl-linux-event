@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_026';
+our $VERSION = '0.100_027';
 
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
@@ -49,8 +49,8 @@ High-level objects may be attached in either of two equivalent ways:
   $loop->add($stream);
 
 C<add> invokes the concrete object's attachment implementation and
-returns the same object. Stream, Listener, and Timer reject attachment to a
-second Loop or attachment after reaching a terminal state.
+returns the same object. Stream, Listener, Timer, and Signal reject attachment
+to a second Loop or attachment after reaching a terminal state.
 
 C<watch> is the low-level descriptor API. It registers immediately and returns
 an opaque native registration handle. The handle is not a public class or a
@@ -60,10 +60,10 @@ subclassing API.
 
 =head2 add($object)
 
-Attaches a detached L<Linux::Event::Stream>, L<Linux::Event::Listener>, or
-L<Linux::Event::Timer> and returns that exact object. The object becomes owned
-by this Loop. Attaching it again, attaching it to another Loop, or attaching a
-terminal object throws an exception.
+Attaches a detached L<Linux::Event::Stream>, L<Linux::Event::Listener>,
+L<Linux::Event::Timer>, or L<Linux::Event::Signal> and returns that exact
+object. The object becomes owned by this Loop. Attaching it again, attaching it
+to another Loop, or attaching a terminal object throws an exception.
 
 The following are equivalent:
 

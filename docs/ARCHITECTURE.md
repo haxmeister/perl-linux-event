@@ -156,10 +156,10 @@ generic readiness core and an independently testable buffered Stream layer.
 ## Public ownership layer
 
 `Linux::Event::Loop->add()` accepts distribution objects that implement Loop
-attachment, currently Stream, Listener, and Timer. There is no public Watcher or IO
-base class and no generic Perl dispatcher. Raw `watch()` returns an opaque
-native handle. Stream, Listener, and Timer retain their concrete cached callbacks and
-private registrations.
+attachment, currently Stream, Listener, Timer, and Signal. There is no public
+Watcher or IO base class and no generic Perl dispatcher. Raw `watch()` returns
+an opaque native handle. Stream, Listener, Timer, and Signal retain their
+concrete cached callbacks and private registrations.
 
 An application object is one logical activity rather than one fd. A connecting
 Stream can own attempt and deadline registrations until connection completes,
@@ -184,6 +184,20 @@ their previous deadline, coalescing missed intervals into one callback.
 Dispatch is capped at 1024 callbacks per batch, and immediate work created from
 inside a Timer callback is deferred to a later Loop turn.
 
+## Signal delivery layer
+
+Each Loop with Signal subscriptions owns one private nonblocking signalfd and a
+native per-number fan-out registry. Signal subclass callbacks are cached once.
+The raw lean watcher crosses into the Signal extension once per readiness,
+where complete signalfd batches are drained and aggregated before semantic
+callbacks enter Perl.
+
+One Signal may register several numbers and several Signals on that Loop may
+register the same number. Dispatch snapshots subscribers so callbacks may
+cancel themselves or later subscribers safely. Reference counts keep a number
+in the shared mask until its last subscriber is gone. Original thread-mask
+membership is recorded and only entries changed by Linux::Event are restored.
+
 ## Stream acquisition layer
 
 The private `Linux::Event::Stream::_Connection` engine owns outbound socket
@@ -206,11 +220,13 @@ a later lifecycle change, not part of the Timer API itself.
 to it. During success, Stream binds native state to the connected fd. The
 application-visible object is never replaced.
 
-Hostname resolution currently uses synchronous `getaddrinfo`, and candidates
-are attempted sequentially. The request stores candidates separately from
-attempt records so a future asynchronous Resolver and staggered Happy Eyeballs
-policy can replace those mechanics without changing the callback or ownership
-contract.
+Hostname resolution lives in a separate private XS extension. Two lazy native
+workers per Loop run `getaddrinfo` without touching Perl state, copy results to
+a native completion queue, and signal one eventfd. An ordinary raw Loop watcher
+drains that queue on the reactor thread. The connection engine interleaves
+IPv6/IPv4 candidates, starts pending alternatives at 250 ms intervals, and
+transfers only the first successful socket while closing every loser. Numeric,
+Unix, and packed addresses do not start the resolver.
 
 ## Listener acquisition layer
 

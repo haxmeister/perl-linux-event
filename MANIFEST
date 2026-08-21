@@ -24,6 +24,8 @@ bench/run-framing-microbench.pl
 bench/run-listen-microbench.pl
 bench/run-native-framers-microbench.pl
 bench/run-performance-regression.pl
+bench/run-resolver-microbench.pl
+bench/run-signal-microbench.pl
 bench/run-reactor-comparison.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
@@ -39,6 +41,7 @@ docs/DEVELOPMENT-HISTORY.md
 docs/FRAMING.md
 docs/LISTENER-DESIGN.md
 docs/OBJECT-LIFECYCLE.md
+docs/SIGNAL-DESIGN.md
 docs/STREAM-CONNECTIONS.md
 docs/STREAM-DESIGN.md
 docs/TIMER-DESIGN.md
@@ -60,8 +63,10 @@ lib/Linux/Event/Framer/Varint.pm
 lib/Linux/Event/Listener.pm
 lib/Linux/Event/Listener/_Engine.pm
 lib/Linux/Event/Loop.pm
+lib/Linux/Event/Signal.pm
 lib/Linux/Event/Stream.pm
 lib/Linux/Event/Stream/_Connection.pm
+lib/Linux/Event/Stream/_Resolver.pm
 lib/Linux/Event/Timer.pm
 lib/Linux/Event/TLS.pm
 Makefile.PL
@@ -108,6 +113,11 @@ t/listener-12-batch.t
 t/listener-13-benchmark-smoke.t
 t/listener-14-ownership.t
 t/listener-15-unix.t
+t/resolver-13-benchmark-smoke.t
+t/signal-00-api.t
+t/signal-10-delivery.t
+t/signal-11-lifecycle.t
+t/signal-13-benchmark-smoke.t
 t/stream-00-load.t
 t/stream-01-raw-data.t
 t/stream-02-pause-resume.t
@@ -154,6 +164,7 @@ t/stream-42-connect-api.t
 t/stream-43-connect-unix.t
 t/stream-44-connect-error-close.t
 t/stream-45-connect-timeout.t
+t/stream-46-async-resolver.t
 t/tls-00-load.t
 t/tls-10-stream.t
 t/tls-20-deadline-and-eof.t
@@ -163,6 +174,10 @@ t/tls-certs/server-cert.pem
 t/tls-certs/server-key.pem
 xsconnection/Connection.xs
 xsconnection/Makefile.PL
+xsresolver/Makefile.PL
+xsresolver/Resolver.xs
+xssignal/Makefile.PL
+xssignal/Signal.xs
 xslistener/Listener.xs
 xslistener/Makefile.PL
 xsloop/Makefile.PL
