@@ -3,10 +3,10 @@ use strict;
 use warnings;
 use Test::More;
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 pipe(my $read_fh, my $write_fh) or die "pipe: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $old_calls = 0;
 my $new_calls = 0;
 
@@ -48,7 +48,7 @@ close $write_fh;
 # is cancelled. Registry replacement must then recover from MOD/ENOENT with
 # ADD, while preserving the same inert-old-handle semantics.
 pipe(my $reuse_read, my $reuse_write) or die "pipe: $!";
-my $reuse_loop = Linux::Event::XSLoop->new;
+my $reuse_loop = Linux::Event::Loop->new;
 my $old_fd = fileno($reuse_read);
 my ($replacement, $replacement_read, $replacement_write);
 my $replacement_calls = 0;

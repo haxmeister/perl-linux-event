@@ -5,12 +5,12 @@ use Test::More;
 use Scalar::Util qw(refaddr);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::SharedVarintStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Varint';
+    use Linux::Event::Framer 'Varint';
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;
     }
@@ -20,7 +20,7 @@ socketpair(my $sx, my $cx, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 socketpair(my $sy, my $cy, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my ($state_x, $state_y) = ({}, {});
 my $x = T::SharedVarintStream->new(loop => $loop, fh => $sx, data => $state_x);
 my $y = T::SharedVarintStream->new(loop => $loop, fh => $sy, data => $state_y);

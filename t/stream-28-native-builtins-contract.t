@@ -8,13 +8,13 @@ use File::Spec;
 use Linux::Event::Stream;
 
 for my $package (qw(
-    Linux::Event::Stream::Framer::Delimiter
-    Linux::Event::Stream::Framer::Fixed
-    Linux::Event::Stream::Framer::LengthPrefix
-    Linux::Event::Stream::Framer::U32BE
-    Linux::Event::Stream::Framer::Netstring
-    Linux::Event::Stream::Framer::Varint
-    Linux::Event::Stream::Framer::DecimalLength
+    Linux::Event::Framer::Delimiter
+    Linux::Event::Framer::Fixed
+    Linux::Event::Framer::LengthPrefix
+    Linux::Event::Framer::U32BE
+    Linux::Event::Framer::Netstring
+    Linux::Event::Framer::Varint
+    Linux::Event::Framer::DecimalLength
 )) {
     (my $file = "$package.pm") =~ s{::}{/}g;
     require $file;
@@ -23,7 +23,7 @@ for my $package (qw(
 
 eval q{
     package T::DeclarationWithoutParent;
-    use Linux::Event::Stream::Framer 'Fixed', size => 4;
+    use Linux::Event::Framer 'Fixed', size => 4;
     1;
 };
 like($@, qr/must inherit from Linux::Event::Stream/,
@@ -32,7 +32,7 @@ like($@, qr/must inherit from Linux::Event::Stream/,
 eval q{
     package T::LowercaseDeclaration;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'delimiter', "\n";
+    use Linux::Event::Framer 'delimiter', "\n";
     sub on_message { }
     1;
 };
@@ -42,7 +42,7 @@ like($@, qr/cannot declare framer 'delimiter'/,
 eval q{
     package T::InvalidDeclarationName;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer '../Delimiter', "\n";
+    use Linux::Event::Framer '../Delimiter', "\n";
     sub on_message { }
     1;
 };
@@ -52,8 +52,8 @@ like($@, qr/invalid framer name/,
 eval q{
     package T::DuplicateDeclaration;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Fixed', size => 4;
-    use Linux::Event::Stream::Framer 'Fixed', size => 4;
+    use Linux::Event::Framer 'Fixed', size => 4;
+    use Linux::Event::Framer 'Fixed', size => 4;
     sub on_message { }
     1;
 };
@@ -62,7 +62,7 @@ like($@, qr/already declares a framer/, 'a Stream type declares exactly one fram
 eval q{
     package T::BadFixedDeclaration;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Fixed', size => 0;
+    use Linux::Event::Framer 'Fixed', size => 0;
     sub on_message { }
     1;
 };

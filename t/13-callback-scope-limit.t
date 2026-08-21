@@ -1,9 +1,9 @@
 use v5.36;
 use Test::More;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use IO::Handle;
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 is($loop->callback_scope_limit, 128, 'default is 128 callbacks per scope');
 
 $loop->set_callback_scope_limit(4);

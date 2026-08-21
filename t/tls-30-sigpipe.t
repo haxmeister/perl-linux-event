@@ -6,7 +6,7 @@ use POSIX qw(_exit);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use FindBin qw($Bin);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 use Linux::Event::TLS;
 
@@ -42,7 +42,7 @@ if ($pid == 0) {
     socketpair(my $client_fh, my $server_fh,
         AF_UNIX, SOCK_STREAM, PF_UNSPEC) or _exit(2);
 
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $state = { input => '' };
     my $cert = "$Bin/tls-certs/server-cert.pem";
     my $key = "$Bin/tls-certs/server-key.pem";

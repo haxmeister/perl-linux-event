@@ -3,8 +3,8 @@ use warnings;
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-    NAME             => 'Linux::Event::XSLoop',
-    VERSION_FROM     => '../lib/Linux/Event/XSLoop.pm',
+    NAME             => 'Linux::Event::Loop',
+    VERSION_FROM     => '../lib/Linux/Event/Loop.pm',
     ABSTRACT         => 'XS-first epoll reactor core for Linux::Event',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',

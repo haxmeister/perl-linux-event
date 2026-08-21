@@ -13,7 +13,7 @@ use POSIX qw(_exit strftime uname);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -25,14 +25,14 @@ use Linux::Event::Stream;
 {
     package Linux::Event::Bench::FramedMinimal;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
 }
 
 {
     package Linux::Event::Bench::FramedFullNamed;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
     sub on_drain ($stream) { return }
     sub on_eof ($stream) { return }
@@ -41,7 +41,7 @@ use Linux::Event::Stream;
 }
 
 my @all_cases = qw(
-    watcher
+    registration
     raw-named
     framed-minimal
     framed-full-named
@@ -49,8 +49,8 @@ my @all_cases = qw(
 my %known_case = map { $_ => 1 } @all_cases;
 my @default_cases = @all_cases;
 
-my $contract_version = 1;
-my $api_style        = 'watcher-add';
+my $contract_version = 2;
+my $api_style        = 'loop-add';
 my $iterations     = 100_000;
 my $pool_size      = 256;
 my @live_counts    = (1_000, 10_000, 20_000);
@@ -78,7 +78,7 @@ GetOptions(
 
 usage(0) if $help;
 die "api-style '$api_style' is not implemented by this source revision\n"
-    if $api_style ne 'subclass-descriptor' && $api_style ne 'watcher-add';
+    if $api_style ne 'loop-option' && $api_style ne 'loop-add';
 die "iterations must be > 0\n" if $iterations <= 0;
 die "pool must be > 0\n" if $pool_size <= 0;
 die "warmup must be >= 0\n" if $warmup < 0;
@@ -199,8 +199,8 @@ if (defined $json_path) {
         notes => [
             'Socketpairs are created outside timed regions.',
             'Stream subclass descriptors are built during warmup, outside timed regions.',
-            'framed-full-named is directly comparable with the contract-1 object-configured baseline.',
-            'RSS deltas include retained Stream/watcher state and the references that keep it live.',
+            'loop-add and loop-option exercise the two supported attachment forms.',
+            'RSS deltas include retained Stream/registration state and the references that keep it live.',
             'Compare results only when benchmark_contract_version and workload match.',
         ],
     };
@@ -214,10 +214,10 @@ if (defined $json_path) {
 }
 
 say "\nUse framed-full-named for the main before/after constructor comparison.";
-say "Compare only with contract=1 results for the same workload and settings.";
+say "Compare only with contract=2 results for the same workload and settings.";
 
 sub run_lifecycle_case ($case) {
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my ($server_fh, $client_fh) = socket_pool($pool_size);
 
     for my $i (0 .. $warmup - 1) {
@@ -253,7 +253,7 @@ sub run_lifecycle_case ($case) {
 
 sub lifecycle_once ($case, $loop, $fh, $token) {
     my $object = create_object($case, $loop, $fh, $token);
-    if ($case eq 'watcher') {
+    if ($case eq 'registration') {
         $object->cancel;
     } else {
         my $detached = $object->detach;
@@ -264,8 +264,8 @@ sub lifecycle_once ($case, $loop, $fh, $token) {
 }
 
 sub create_object ($case, $loop, $fh, $token) {
-    if ($case eq 'watcher') {
-        my $watcher = $loop->watch_fd(
+    if ($case eq 'registration') {
+        my $registration = $loop->watch_fd(
             fileno($fh),
             fh => $fh,
             data => $watch_data,
@@ -274,14 +274,14 @@ sub create_object ($case, $loop, $fh, $token) {
             error => \&_watch_error,
             _callback_data_arg => 1,
         );
-        $watcher->disable_write;
-        return $watcher;
+        $registration->disable_write;
+        return $registration;
     }
 
-    return create_subclass_descriptor($case, $loop, $fh)
-        if $api_style eq 'subclass-descriptor';
-    return create_watcher_add($case, $loop, $fh)
-        if $api_style eq 'watcher-add';
+    return create_loop_option($case, $loop, $fh)
+        if $api_style eq 'loop-option';
+    return create_loop_add($case, $loop, $fh)
+        if $api_style eq 'loop-add';
 
     die "unimplemented api-style adapter: $api_style\n";
 }
@@ -289,7 +289,7 @@ sub create_object ($case, $loop, $fh, $token) {
 # API ADAPTER: the socket preparation, workload names, timing, teardown, RSS
 # measurement, summaries, and JSON contract around this constructor section
 # remain unchanged from the object-configured baseline.
-sub create_subclass_descriptor ($case, $loop, $fh) {
+sub create_loop_option ($case, $loop, $fh) {
 
     if ($case eq 'raw-named') {
         return Linux::Event::Bench::RawNamed->new(loop => $loop, fh => $fh);
@@ -306,7 +306,7 @@ sub create_subclass_descriptor ($case, $loop, $fh) {
     die "unimplemented case: $case\n";
 }
 
-sub create_watcher_add ($case, $loop, $fh) {
+sub create_loop_add ($case, $loop, $fh) {
     my $class = $case eq 'raw-named'
         ? 'Linux::Event::Bench::RawNamed'
         : $case eq 'framed-minimal'
@@ -327,7 +327,7 @@ sub run_memory_child ($case, $count, $repeat) {
         close $reader;
         my $result;
         my $ok = eval {
-            my $loop = Linux::Event::XSLoop->new;
+            my $loop = Linux::Event::Loop->new;
             my ($server_fh, $client_fh) = socket_pool($count);
 
             # Allocate the retention vector before the baseline so its capacity
@@ -337,7 +337,7 @@ sub run_memory_child ($case, $count, $repeat) {
 
             # Pay one-time XS/Perl allocator and registration initialization
             # before the baseline. The measured delta should describe retained
-            # per-object state, not the first watcher ever created in a process.
+            # per-object state, not the first registration ever created in a process.
             lifecycle_once($case, $loop, $server_fh->[0], -1);
             my $rss_before_kb = vmrss_kb();
             for my $i (0 .. $count - 1) {
@@ -463,7 +463,7 @@ sub usage ($status) {
     print {$fh} <<'USAGE';
 Usage: perl bench/run-stream-lifecycle-bench.pl [options]
 
-  --api-style=NAME     watcher-add (default) or subclass-descriptor compatibility
+  --api-style=NAME     loop-add (default) or loop-option
   --iterations=N       lifecycle operations per case/repeat (default 100000)
   --pool=N             pre-created socketpairs reused by lifecycle cases (256)
   --live=N,N           retained object counts (1000,10000,20000)
@@ -476,7 +476,7 @@ Usage: perl bench/run-stream-lifecycle-bench.pl [options]
   --help               show this help
 
 Cases:
-  watcher                internal watcher-shaped registration baseline
+  registration           opaque native registration baseline
   raw-named              Stream raw-data mode with a named callback
   framed-minimal         delimiter subclass plus named on_message
   framed-full-named      delimiter subclass plus five named lifecycle callbacks

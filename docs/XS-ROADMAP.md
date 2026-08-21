@@ -28,17 +28,17 @@ the same Linux::Event distribution. The guiding rule remains:
 - exact-name declarative loading without a duplicate framer keyword registry
 - raw `on_data` fallback for application-specific protocols
 - in-place raw/framed protocol transitions that retain unread native input,
-  queued output, watcher identity, lifecycle, and application state
+  queued output, registration identity, lifecycle, and application state
 
 These are permanent regression targets. New work must not trade them away
 without benchmark evidence.
 
-## Completed - unified Watcher lifecycle
+## Completed - unified object lifecycle
 
-`Linux::Event::Loop` now owns high-level `Linux::Event::Watcher` objects through
-`add()`, while `watch()` creates an immediately attached raw
-`Linux::Event::IO`. Stream, Listener, and Connector are Watcher types; one
-logical Watcher may own several internal epoll registrations.
+`Linux::Event::Loop` owns high-level Stream and Listener objects through
+`add()`, while `watch()` creates an immediately attached opaque native
+registration. There is no public Watcher or IO base class. One logical object
+may own several internal epoll registrations.
 
 `MyStream->connect()` keeps one Stream identity through outbound acquisition
 and optional TLS readiness. `MyStream->listen()` creates the Listener that
@@ -69,31 +69,30 @@ and `SSL_write` wanting read). Deadlines, richer shutdown diagnostics, provider
 bounded-buffer observability and live transport replacement remain follow-up
 work.
 
-## Completed - initial outbound Connect layer
+## Completed - Stream connection layer
 
-`Linux::Event::Connect` now ships in the main distribution with subclass-cached
-terminal callbacks, strict IPv4/IPv6/Unix/packed address modes, typed errors,
-silent cancellation, and a default connection deadline. Socket creation uses
+`MyStream->connect()` owns the public outbound lifecycle. Its private
+`Linux::Event::Stream::_Connection` engine implements strict
+IPv4/IPv6/Unix/packed address modes, typed errors, silent cancellation, and a
+default connection deadline. Socket creation uses
 `SOCK_NONBLOCK | SOCK_CLOEXEC` atomically. Immediate results are deferred so
 network callbacks never run inside the constructor.
 
 The policy/state machine remains in cold Perl code. A small native timerfd
-helper supplies monotonic deadlines and deferred dispatch. Same-fd watcher
-replacement now uses one `EPOLL_CTL_MOD`, allowing the successful Connect
-watcher to become a Stream or raw consumer registration without a DEL/ADD pair.
+helper supplies monotonic deadlines and deferred dispatch. Same-fd native
+replacement uses one `EPOLL_CTL_MOD` where an fd registration is replaced.
 
-## Completed - native inbound Listen layer
+## Completed - native Listener layer
 
-`Linux::Event::Listen` now creates or adopts listening stream sockets and
-transfers generic accepted filehandles through cached subclass callbacks. A
-small native extension drains `accept4()` with atomic nonblocking and
+`Linux::Event::Listener` creates or adopts listening stream sockets and
+constructs a configured Stream subclass for each accepted connection. A small
+private native extension drains `accept4()` with atomic nonblocking and
 close-on-exec flags and retains packed peer addresses for lazy conversion.
 
 The default level-triggered fairness cap is safe because epoll reports a
 remaining backlog again. Edge-triggered listeners require an unlimited drain.
-No per-connection watcher is created before the application optionally hands
-the handle to Stream. Resource exhaustion pauses readiness before typed error
-delivery.
+No temporary accepted-socket registration is created before Stream attachment.
+Resource exhaustion pauses readiness before typed error delivery.
 
 ## Priority 2 - Asynchronous Resolver and Happy Eyeballs
 
@@ -107,7 +106,7 @@ returned candidates sequentially. Replace it with:
 - first-success ownership transfer and deterministic loser cleanup
 - resolver, fallback-latency, concurrent-connect, and cancellation benchmarks
 
-Keep resolution mechanically separate from Connect policy. Literal and packed
+Keep resolution mechanically separate from Stream connection policy. Literal and packed
 addresses must continue to bypass the resolver entirely.
 
 ## Priority 3 - General native framing families
@@ -155,8 +154,8 @@ high-churn connection workloads justify it, native code may:
 - cancel timeout state
 - notify Perl once with success or failure
 
-The public Connect contract must not change merely to eliminate a few cold Perl
-calls.
+The public Stream connection contract must not change merely to eliminate a
+few cold Perl calls.
 
 ## Priority 7 - Linux fd drain helpers
 

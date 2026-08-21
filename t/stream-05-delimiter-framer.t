@@ -4,13 +4,13 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
     package T::EndDelimitedStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', '<END>';
+    use Linux::Event::Framer 'Delimiter', '<END>';
     sub on_message ($stream, $message) {
         my $state = $stream->data;
         push @{ $state->{messages} }, $message;
@@ -19,7 +19,7 @@ use Linux::Event::Stream;
 }
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, messages => [] };
 
 my $stream = T::EndDelimitedStream->new(

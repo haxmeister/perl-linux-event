@@ -5,12 +5,12 @@ use Test::More;
 use Scalar::Util qw(refaddr);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::SharedLineStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub stream_options ($class) { return read_size => 2 }
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -22,7 +22,7 @@ socketpair(my $sa, my $ca, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 socketpair(my $sb, my $cb, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state_a = { got => undef };
 my $state_b = { got => undef };
 

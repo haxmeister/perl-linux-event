@@ -2,7 +2,7 @@
 
 `Linux::Event::Stream` owns byte-stream semantics: framing, output ordering,
 backpressure, hard queue limits, read pause, EOF, half-close, errors, and
-protocol transitions. It must not own TLS policy. `Linux::Event::XSLoop`
+protocol transitions. It must not own TLS policy. `Linux::Event::Loop`
 continues to own only descriptor readiness.
 
 The native transport boundary introduced in 0.100_014 separates those roles.

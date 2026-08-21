@@ -5,7 +5,7 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use FindBin qw($Bin);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 use Linux::Event::TLS;
 
@@ -49,7 +49,7 @@ use Linux::Event::TLS;
 socketpair(my $client_fh, my $server_fh, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { client_input => '', server_input => '', errors => '' };
 my $cert = "$Bin/tls-certs/server-cert.pem";
 my $key = "$Bin/tls-certs/server-key.pem";
@@ -105,7 +105,7 @@ $server->close;
 
 socketpair(my $bad_client_fh, my $bad_server_fh,
     AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $bad_loop = Linux::Event::XSLoop->new;
+my $bad_loop = Linux::Event::Loop->new;
 my $bad_state = { client_input => '', server_input => '', errors => '' };
 my $bad_server = T::TLSServer->new(
     loop => $bad_loop,
@@ -124,7 +124,7 @@ my $bad_client = T::TLSClient->new(
     ),
 );
 $bad_loop->run_for(2);
-isa_ok($bad_state->{client_error}, 'Linux::Event::Stream::Error');
+isa_ok($bad_state->{client_error}, 'Linux::Event::Error');
 is($bad_state->{client_error}->type, 'tls',
     'verification failure is a typed TLS error');
 is($bad_state->{client_error}->operation, 'handshake',
@@ -136,7 +136,7 @@ $bad_server->close;
 
 socketpair(my $paused_client_fh, my $paused_server_fh,
     AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $paused_loop = Linux::Event::XSLoop->new;
+my $paused_loop = Linux::Event::Loop->new;
 my $paused_state = { client_input => '', server_input => '', errors => '' };
 my $paused_server = T::TLSServer->new(
     loop => $paused_loop,

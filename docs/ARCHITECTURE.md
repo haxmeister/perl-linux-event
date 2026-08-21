@@ -81,13 +81,12 @@ EPOLLOUT
 The watcher is re-checked after each callback so cancellation takes effect
 within the same returned epoll batch.
 
-Registering a new watcher for an already registered fd uses one
-`EPOLL_CTL_MOD`, changes `epoll_event.data.ptr` to the new native watcher, and
-marks the old handle inactive. Cancelling that old handle is then harmless and
-cannot remove the replacement. This is the ownership-transfer path used when
-Connect hands an established socket to Stream or another watcher consumer.
+Registering a new native record for an already registered fd uses one
+`EPOLL_CTL_MOD`, changes `epoll_event.data.ptr` to the new record, and marks the
+old handle inactive. Cancelling that old handle is harmless and cannot remove
+the replacement.
 
-## Watcher lifetime
+## Native registration lifetime
 
 The loop owns native watcher records. `cancel`/`unwatch_fd` removes the epoll
 registration and marks the watcher inactive. Experimental reclamation can defer
@@ -154,25 +153,26 @@ The Stream extension does not include private reactor headers. XSLoop passes
 watcher data directly to Stream's private readiness entry points, preserving a
 generic readiness core and an independently testable buffered Stream layer.
 
-## Watcher ownership layer
+## Public ownership layer
 
-`Linux::Event::Loop->add()` accepts only `Linux::Event::Watcher` objects.
-Watcher is a construction-time type and lifecycle contract, not a new hot-path
-dispatcher. Raw readiness objects are `Linux::Event::IO` Watchers. Streams,
-Listeners, and Connectors retain their concrete cached callbacks and private
-native registrations.
+`Linux::Event::Loop->add()` accepts distribution objects that implement Loop
+attachment, currently Stream and Listener. There is no public Watcher or IO
+base class and no generic Perl dispatcher. Raw `watch()` returns an opaque
+native handle. Stream and Listener retain their concrete cached callbacks and
+private registrations.
 
-A Watcher is one logical activity rather than one fd. A connecting Stream owns
-an internal Connector and deadline registration until connection completes,
-then retains the same public Stream identity while its established socket is
+An application object is one logical activity rather than one fd. A connecting
+Stream can own attempt and deadline registrations until connection completes,
+then retains the same public identity while its established socket is
 registered with the native Stream engine.
 
-## Connector acquisition layer
+## Stream acquisition layer
 
-`Linux::Event::Connect` owns outbound socket acquisition, not established
-socket I/O. The Perl request object validates address modes, caches subclass
-callbacks, stores candidate/attempt lifecycle, and checks `SO_ERROR` after
-writable readiness. Sockets are created with `SOCK_NONBLOCK | SOCK_CLOEXEC`.
+The private `Linux::Event::Stream::_Connection` engine owns outbound socket
+acquisition, while the public Stream owns the entire logical lifecycle. The
+engine validates address modes, stores candidate/attempt state, and checks
+`SO_ERROR` after writable readiness. Sockets are created with
+`SOCK_NONBLOCK | SOCK_CLOEXEC`.
 
 A small adjacent XS extension owns only timerfd mechanics. It gives pending
 requests monotonic deadlines and ensures immediate success or operational
@@ -180,10 +180,8 @@ failure is delivered from the loop rather than reentrantly inside the
 constructor. The attempt engine is intentionally a cold Perl path until
 profiling demonstrates a reason to move it.
 
-The advanced standalone Connector still supports generic socket transfer. The
-common `MyStream->connect()` path creates one detached Stream and uses the same
-connector engine internally. During success, the Stream binds its native state
-to the connected fd and replaces the temporary writable registration. The
+`MyStream->connect()` creates one Stream and the private engine reports directly
+to it. During success, Stream binds native state to the connected fd. The
 application-visible object is never replaced.
 
 Hostname resolution currently uses synchronous `getaddrinfo`, and candidates
@@ -199,15 +197,14 @@ or filesystem Unix listeners, or adopts a caller-provided listening handle,
 then registers one read watcher for that listening descriptor. It never
 creates a watcher for an accepted connection.
 
-Readiness enters a separate Listen XS extension that drains `accept4()` with
+Readiness enters a private Listener XS engine that drains `accept4()` with
 atomic `SOCK_NONBLOCK | SOCK_CLOEXEC`. Descriptor and packed-sockaddr pairs
 return to Perl for the cached subclass `on_accept` method. Address text remains
-lazy through `Linux::Event::Listen::Peer`; applications that do not inspect a
+lazy through `Linux::Event::Address`; applications that do not inspect a
 peer avoid formatting it.
 
-The canonical Listener constructs its configured Stream subclass, attaches the
-Stream to the same Loop, and then reports it ready. The compatibility
-`Linux::Event::Listen` layer retains generic filehandle transfer for advanced
-non-Stream consumers. Neither path creates a temporary accepted-socket watcher.
-Resource accept errors pause listener readiness before the typed error callback
-so a readable backlog cannot create an error spin.
+Listener constructs its configured Stream subclass, attaches the Stream to the
+same Loop, and then reports it ready. It does not create a temporary
+accepted-socket registration. Resource accept errors pause listener readiness
+before the typed error callback so a readable backlog cannot create an error
+spin.

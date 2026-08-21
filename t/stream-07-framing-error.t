@@ -4,13 +4,13 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
     package T::LimitedLineStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n", max_frame => 4;
+    use Linux::Event::Framer 'Delimiter', "\n", max_frame => 4;
     sub on_message ($stream, $message) {
         Test::More::fail('oversized native frame must not emit a message');
     }
@@ -23,7 +23,7 @@ use Linux::Event::Stream;
 }
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, error => undef, closed => 0 };
 
 my $stream = T::LimitedLineStream->new(
@@ -38,7 +38,7 @@ like($@, qr/exceeds max_frame=4/, 'outbound delimiter framing enforces max_frame
 syswrite($b, "12345\n");
 $loop->run;
 
-isa_ok($state->{error}, 'Linux::Event::Stream::Error');
+isa_ok($state->{error}, 'Linux::Event::Error');
 is($state->{error}->type, 'framing', 'native parser failure becomes framing error');
 like($state->{error}->message, qr/max_frame=4/, 'framing error preserves parser context');
 is($state->{closed}, 1, 'framing failure closes stream exactly once');

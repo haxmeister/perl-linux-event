@@ -4,7 +4,7 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -21,18 +21,18 @@ use Linux::Event::Stream;
 {
     package T::API::FramedMissing;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
 }
 
 {
     package T::API::FramedMixed;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub on_data ($stream, $bytes) { }
     sub on_message ($stream, $message) { }
 }
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 my $stream = T::API::Raw->new(

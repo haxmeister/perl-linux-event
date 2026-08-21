@@ -5,7 +5,7 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use FindBin qw($Bin);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 use Linux::Event::TLS;
 
@@ -52,7 +52,7 @@ my $key = "$Bin/tls-certs/server-key.pem";
 
 socketpair(my $timeout_fh, my $idle_peer, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $timeout_loop = Linux::Event::XSLoop->new;
+my $timeout_loop = Linux::Event::Loop->new;
 my $timeout_state = {};
 my $timeout_tls = Linux::Event::TLS->client(
     server_name       => 'localhost',
@@ -66,7 +66,7 @@ my $timeout_stream = T::TLSDeadline->new(
     transport => $timeout_tls,
 );
 $timeout_loop->run_for(0.5);
-isa_ok($timeout_state->{error}, 'Linux::Event::Stream::Error');
+isa_ok($timeout_state->{error}, 'Linux::Event::Error');
 is($timeout_state->{error}->type, 'tls', 'handshake timeout is a TLS error');
 is($timeout_state->{error}->operation, 'handshake',
     'handshake timeout identifies its operation');
@@ -79,7 +79,7 @@ close $idle_peer;
 
 socketpair(my $shutdown_fh, my $shutdown_idle_peer,
     AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $shutdown_loop = Linux::Event::XSLoop->new;
+my $shutdown_loop = Linux::Event::Loop->new;
 my $shutdown_state = {};
 my $shutdown_tls = Linux::Event::TLS->client(
     server_name       => 'localhost',
@@ -95,7 +95,7 @@ my $shutdown_stream = T::TLSDeadline->new(
 );
 $shutdown_stream->end;
 $shutdown_loop->run_for(0.5);
-isa_ok($shutdown_state->{error}, 'Linux::Event::Stream::Error');
+isa_ok($shutdown_state->{error}, 'Linux::Event::Error');
 is($shutdown_state->{error}->operation, 'shutdown',
     'shutdown timeout identifies its operation');
 is($shutdown_state->{error}->message, 'TLS shutdown timed out',
@@ -106,7 +106,7 @@ close $shutdown_idle_peer;
 
 socketpair(my $client_fh, my $server_fh, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { input => '' };
 my $client_tls = Linux::Event::TLS->client(
     server_name => 'localhost', ca_file => $cert,
@@ -129,7 +129,7 @@ ok($client_before->{bytes_read} >= 4, 'TLS plaintext reads are counted');
 
 $server->close;
 $loop->run_for(0.5);
-isa_ok($state->{client_error}, 'Linux::Event::Stream::Error');
+isa_ok($state->{client_error}, 'Linux::Event::Error');
 is($state->{client_error}->type, 'tls', 'unclean EOF is a TLS error');
 is($state->{client_error}->operation, 'read',
     'unclean EOF identifies the read operation');

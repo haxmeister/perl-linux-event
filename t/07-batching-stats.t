@@ -2,9 +2,9 @@ use v5.36;
 use strict;
 use warnings;
 use Test::More;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 ok($loop->event_capacity >= 1, 'default event capacity is positive');
 $loop->set_event_capacity(64);
 is($loop->event_capacity, 64, 'event capacity can be set');

@@ -6,7 +6,7 @@ use warnings;
 {
     package EchoStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
 
     sub on_message ($stream, $line) { $stream->send($line) }
 }

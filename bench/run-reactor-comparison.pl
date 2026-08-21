@@ -180,8 +180,8 @@ sub fairness_contract {
 
 sub check_deps {
     printf "Perl %s\n", $^V;
-    my $le = eval { require Linux::Event::XSLoop; 1 };
-    print $le ? "Linux::Event::XSLoop: available\n" : "Linux::Event::XSLoop: MISSING ($@)\n";
+    my $le = eval { require Linux::Event::Loop; 1 };
+    print $le ? "Linux::Event::Loop: available\n" : "Linux::Event::Loop: MISSING ($@)\n";
 
     my $ev = eval { require EV; 1 };
     if ($ev) {
@@ -519,8 +519,8 @@ sub setup_reactor ($system, $sockets, $c, $phase) {
 }
 
 sub setup_linuxevent ($sockets, $c, $phase) {
-    require Linux::Event::XSLoop;
-    my $loop = Linux::Event::XSLoop->new;
+    require Linux::Event::Loop;
+    my $loop = Linux::Event::Loop->new;
     $loop->set_callback_scope_limit(128);
     my @watchers;
 
@@ -546,7 +546,7 @@ sub setup_linuxevent ($sockets, $c, $phase) {
         reset_stats => sub { $loop->reset_stats; },
         metadata => sub {
             return {
-                backend => 'Linux::Event::XSLoop epoll',
+                backend => 'Linux::Event::Loop epoll',
                 backend_runtime => 'epoll',
                 callback_api => 'Linux::Event no-argument CV fast path',
                 loop_drive => 'Perl while + XS run_once(-1)',

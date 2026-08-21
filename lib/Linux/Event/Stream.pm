@@ -3,16 +3,15 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_024';
+our $VERSION = '0.100_025';
 
 use Carp qw(croak);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use mro ();
 use Socket qw(SOL_SOCKET SO_ERROR);
 
-use parent 'Linux::Event::Watcher';
-use Linux::Event::Connect ();
-use Linux::Event::Stream::Error;
+use Linux::Event::Stream::_Connection ();
+use Linux::Event::Error;
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -167,7 +166,7 @@ sub _xs_write_error ($self, $errno) {
 }
 
 sub _xs_output_limit ($self, $pending_bytes, $limit) {
-    my $error = Linux::Event::Stream::Error->new(
+    my $error = Linux::Event::Error->new(
         type          => 'output_limit',
         operation     => 'write',
         message       => "pending output would exceed $limit bytes",
@@ -197,7 +196,7 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
         return;
     }
     if ($status == 5) {
-        my $error = Linux::Event::Stream::Error->new(
+        my $error = Linux::Event::Error->new(
             type      => $self->transport_name // 'transport',
             operation => $operation,
             message   => $message || 'transport error',
@@ -287,9 +286,9 @@ sub new ($class, %opt) {
     if ($connect) {
         $self->{preconnect_output} = [];
         $self->{preconnect_bytes} = 0;
-        $self->{connector} = Linux::Event::Stream::_Connector->new(
+        $self->{connection} = Linux::Event::Stream::_Connection->new(
             %$connect,
-            data => $self,
+            stream => $self,
         );
     }
     $self->_attach_to_loop($loop) if $loop;
@@ -352,8 +351,8 @@ sub _attach_to_loop ($self, $loop) {
     croak 'add(): Stream is not unattached'
         if $self->{closed} || $self->{loop};
     $self->{loop} = $loop;
-    if (my $connector = $self->{connector}) {
-        $connector->_attach_to_loop($loop);
+    if (my $connection = $self->{connection}) {
+        $connection->_attach_to_loop($loop);
         return $self;
     }
 
@@ -385,12 +384,12 @@ sub _attach_to_loop ($self, $loop) {
 
 sub _connect_succeeded ($self, $fh) {
     return if $self->{closed};
-    delete $self->{connector};
+    delete $self->{connection};
     $self->{fh} = $fh;
     my $prepared = eval { $self->_prepare_fh($fh); 1 };
     if (!$prepared) {
         my $message = $@ || 'connected Stream setup failed';
-        my $error = Linux::Event::Stream::Error->new(
+        my $error = Linux::Event::Error->new(
             type => 'connect', operation => 'attach', message => $message,
         );
         $self->_fail($error);
@@ -414,7 +413,7 @@ sub _connect_succeeded ($self, $fh) {
         my $started = eval { $transport->_stream_transport_start($self); 1 };
         if (!$started) {
             my $message = $@ || 'transport startup failed';
-            my $error = Linux::Event::Stream::Error->new(
+            my $error = Linux::Event::Error->new(
                 type => 'transport', operation => 'start', message => $message,
             );
             $self->_fail($error);
@@ -428,14 +427,8 @@ sub _connect_succeeded ($self, $fh) {
 
 sub _connect_failed ($self, $connect_error) {
     return if $self->{closed};
-    delete $self->{connector};
-    my $error = Linux::Event::Stream::Error->new(
-        type      => 'connect',
-        operation => $connect_error->operation,
-        errno     => $connect_error->errno,
-        message   => $connect_error->message,
-    );
-    $self->_fail($error);
+    delete $self->{connection};
+    $self->_fail($connect_error);
     return;
 }
 
@@ -470,7 +463,7 @@ sub state ($self) {
     return 'detached' if $self->{closed} && $self->{detached};
     return 'closed' if $self->{closed};
     return 'unattached' if !$self->{loop};
-    return 'connecting' if $self->{connector};
+    return 'connecting' if $self->{connection};
     return 'active';
 }
 sub last_error ($self) { $self->{last_error} }
@@ -514,11 +507,11 @@ sub write ($self, $bytes) {
 
     if (!$self->{xs_state}) {
         croak 'write(): stream has no pending or active transport'
-            if !$self->{connector};
+            if !$self->{connection};
         my $pending = ($self->{preconnect_bytes} // 0) + length($bytes);
         my $limit = $self->{descriptor}{options}{max_pending_bytes};
         if ($limit && $pending > $limit) {
-            my $error = Linux::Event::Stream::Error->new(
+            my $error = Linux::Event::Error->new(
                 type          => 'output_limit',
                 operation     => 'write',
                 message       => "pending output would exceed $limit bytes",
@@ -649,7 +642,7 @@ sub _finish_write_side ($self) {
             1;
         };
         if (!$started) {
-            my $error = Linux::Event::Stream::Error->new(
+            my $error = Linux::Event::Error->new(
                 type      => $self->transport_name,
                 operation => 'shutdown',
                 message   => $@ || 'transport shutdown setup failed',
@@ -670,7 +663,7 @@ sub _finish_write_side ($self) {
     }
     if ($status == 5) {
         if (($self->transport_name // 'plain') ne 'plain') {
-            my $error = Linux::Event::Stream::Error->new(
+            my $error = Linux::Event::Error->new(
                 type      => $self->transport_name,
                 operation => 'shutdown',
                 message   => $message || 'transport shutdown failed',
@@ -720,7 +713,7 @@ sub _destroy_transport_deadline ($self) {
 
 sub _transport_deadline_expired ($self, $operation, $message) {
     return if $self->{closed};
-    my $error = Linux::Event::Stream::Error->new(
+    my $error = Linux::Event::Error->new(
         type      => $self->transport_name // 'transport',
         operation => $operation,
         message   => $message,
@@ -742,7 +735,7 @@ sub _mark_eof ($self) {
 
 sub _fail_io ($self, $operation, $errno) {
     local $! = $errno;
-    my $error = Linux::Event::Stream::Error->new(
+    my $error = Linux::Event::Error->new(
         type      => 'io',
         operation => $operation,
         errno     => $errno,
@@ -752,7 +745,7 @@ sub _fail_io ($self, $operation, $errno) {
 }
 
 sub _fail_framing ($self, $message) {
-    my $error = Linux::Event::Stream::Error->new(
+    my $error = Linux::Event::Error->new(
         type      => 'framing',
         operation => 'frame',
         message   => $message,
@@ -772,8 +765,8 @@ sub _fail ($self, $error) {
 sub _close_now ($self, $close_fh) {
     return if $self->{closed};
     $self->{closed} = 1;
-    if (my $connector = delete $self->{connector}) {
-        $connector->cancel;
+    if (my $connection = delete $self->{connection}) {
+        $connection->cancel;
     }
     $self->{preconnect_output} = [];
     $self->{preconnect_bytes} = 0;
@@ -803,15 +796,6 @@ sub _set_nonblocking ($fh) {
         or croak "new(): fcntl(F_SETFL O_NONBLOCK): $!";
 }
 
-{
-    package Linux::Event::Stream::_Connector;
-    use parent -norequire, 'Linux::Event::Connect';
-
-    sub _callback_target_data ($class) { 1 }
-    *on_connect = \&Linux::Event::Stream::_connect_succeeded;
-    *on_error = \&Linux::Event::Stream::_connect_failed;
-}
-
 1;
 
 __END__
@@ -827,7 +811,7 @@ Linux::Event::Stream - subclass-defined native buffered streams
 
   package EchoStream;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::Stream::Framer 'Delimiter', "\n";
+  use Linux::Event::Framer 'Delimiter', "\n";
 
   sub on_message ($stream, $message) {
       $stream->send($message);
@@ -851,10 +835,11 @@ Linux::Event::Stream - subclass-defined native buffered streams
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Stream> is a Watcher backed by the native buffered byte-stream
-engine above L<Linux::Event::Loop>. It is a base class rather than a configurable Stream
-type. Applications define behavior once in a subclass and construct lightweight
-per-connection instances containing only changing connection state.
+C<Linux::Event::Stream> is a resource-owning object backed by the native
+buffered byte-stream engine above L<Linux::Event::Loop>. It is a base class
+rather than a configurable Stream type. Applications define behavior once in a
+subclass and construct lightweight per-connection instances containing only
+changing connection state.
 
 The first construction of each subclass resolves its inherited callback CVs,
 framer declaration, parser configuration, and transport settings into one
@@ -877,7 +862,7 @@ A framed subclass imports one native built-in and defines C<on_message>:
 
   package LineStream;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::Stream::Framer 'Delimiter', "\n";
+  use Linux::Event::Framer 'Delimiter', "\n";
 
   sub on_message ($stream, $message) {
       $stream->send($message);
@@ -889,43 +874,56 @@ cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
-=head2 new(fh => $fh, data => $value, transport => $provider)
+=head2 new(fh => $fh, loop => $loop, data => $value, transport => $provider)
 
-C<fh> is required for an already-established Stream. Construction is detached;
-attach the result with C<< $loop->add($stream) >>. Stream takes ownership of
-the filehandle and sets it nonblocking. C<data> is optional per-connection state. C<transport> is
-an optional native byte-transport provider such as C<Linux::Event::TLS>. The
-provider is bound to the established descriptor and retained for the Stream's
-lifetime. Use C<detach> to transfer a still-open plain handle back to the
-application; non-plain transports cannot be detached.
+C<fh> is required for an already-established Stream. Stream takes ownership of
+the filehandle and sets it nonblocking. Supply C<loop> to attach before C<new>
+returns, or omit it and attach with C<< $loop->add($stream) >>. Both forms are
+primary APIs and C<add> returns the same Stream. C<data> is optional
+per-connection state. C<transport> is an optional native byte-transport
+provider such as L<Linux::Event::TLS>. The provider is bound to the established
+descriptor and retained for the Stream's lifetime. Use C<detach> to transfer a
+still-open plain handle back to the application; non-plain transports cannot be
+detached.
 
 Callbacks, framing, and buffer policy are class behavior and are not accepted
 as constructor options.
 
-The former C<loop =E<gt> $loop> option remains compatibility syntax and is
-equivalent to adding the constructed Stream before C<new> returns.
-
-=head2 connect
+=head2 connect(host => $host, port => $port, ...)
 
   my $stream = MyStream->connect(
       host => '127.0.0.1', port => 9999, timeout => 10,
   );
   $loop->add($stream);
 
-Returns one detached Stream in the outbound-acquisition state. The same object
-survives connection setup, optional TLS negotiation, established I/O, and
-close. C<host>/C<port>, C<unix>, and packed C<sockaddr>/C<family> address modes
-match L<Linux::Event::Connector>. C<write> and C<send> may queue output before
-attachment or readiness.
+Returns one Stream that survives connection setup, optional TLS negotiation,
+established I/O, and close. Supply C<loop> to start connecting immediately.
+Otherwise the state is C<unattached> until C<< $loop->add($stream) >>.
 
-=head2 listen
+Exactly one of C<host>/C<port>, C<unix>, or packed C<sockaddr>/C<family> is
+required. C<timeout> is seconds, defaults to 10, and may be zero to disable the
+deadline. C<data> and C<transport> are passed to the Stream. C<write> and
+C<send> may queue output before attachment or readiness. Hostname resolution is
+synchronous in this release; socket establishment is nonblocking.
+
+=head2 listen(host => $host, port => $port, ...)
 
   my $listener = $loop->add(MyStream->listen(
       host => '0.0.0.0', port => 9999,
   ));
 
-Returns a detached L<Linux::Event::Listener> that constructs and attaches this
-Stream subclass for every accepted connection.
+Returns a L<Linux::Event::Listener> that constructs and attaches this Stream
+subclass for every accepted connection. It is detached unless
+C<loop =E<gt> $loop> is supplied, which attaches and starts it before returning.
+TCP, Unix, and adopted listening socket options are documented by
+L<Linux::Event::Listener>.
+
+=head1 ATTACHMENT AND OWNERSHIP
+
+A Stream is attached once, to one Loop. C<loop =E<gt> $loop> and
+C<< $loop->add($stream) >> perform the same attachment. A terminal Stream cannot
+be reused or reattached. The Stream owns its filehandle until C<close>, graceful
+completion, or C<detach> transfers a plain handle back to the caller.
 
 =head1 CLASS TRANSPORT OPTIONS
 
@@ -967,9 +965,10 @@ may reuse callbacks and framing from its parent. Per-user or per-connection
 permissions belong in C<data>, which callbacks access through C<< $stream->data >>.
 C<on_ready> is called once when an asynchronously acquired Stream becomes
 usable. For TLS, this means handshake and verification have completed. Accepted
-Streams are ready after Listener attachment. C<on_transport_ready> is retained
-as the provider-specific compatibility callback and runs immediately before
-C<on_ready> for an asynchronous non-plain transport.
+Streams are ready after Listener attachment. C<on_transport_ready> is the
+lower-level provider-ready notification and runs immediately before C<on_ready>
+for an asynchronous non-plain transport. Most applications need only
+C<on_ready>.
 
 Application callback exceptions are not swallowed.
 
@@ -983,7 +982,7 @@ C<on_drain> before producing more.
 
 When C<max_pending_bytes> is nonzero, a write whose unsent remainder would put
 the native queue above that limit is not queued. Stream reports an
-C<output_limit> L<Linux::Event::Stream::Error> through C<on_error> and closes.
+C<output_limit> L<Linux::Event::Error> through C<on_error> and closes.
 The error's C<pending_bytes> and C<limit> accessors describe the attempted
 queue size and configured bound. An immediate kernel write may already have
 sent a prefix before its remainder is found to exceed the limit; Stream never
@@ -1002,7 +1001,7 @@ Disable and re-enable input readiness without destroying the Stream.
 =head2 transition_to($class, input => $bytes)
 
 Changes a live connection to another loaded C<Linux::Event::Stream> subclass.
-The same object is reblessed into C<$class>, and the same filehandle, watcher,
+The same object is reblessed into C<$class>, and the same filehandle, native registration,
 native connection state, output queue, backpressure state, lifecycle state, and
 C<data> are retained. Future callbacks, C<send> framing, parser rules, and class
 transport policy come from the target subclass's cached descriptor.
@@ -1044,8 +1043,8 @@ writable half-close remain independent.
 
 =head2 close
 
-Immediately cancels the watcher and closes the owned descriptor. Queued output
-may be lost.
+Immediately cancels native readiness and closes the owned descriptor. Queued
+output may be lost. Returns the Stream.
 
 =head2 detach
 
@@ -1078,10 +1077,15 @@ Return the owning Loop, C<unattached>, C<connecting>, C<active>, C<detached>, or
 C<closed> lifecycle state, and the lazy accepted peer when the Stream came from
 a Listener.
 
+=head2 last_error
+
+Returns the L<Linux::Event::Error> that caused closure, or undef when the Stream
+has not failed.
+
 =head1 FRAMING POLICY
 
 Framed Stream types use native built-ins declared through
-L<Linux::Event::Stream::Framer>. Arbitrary per-connection framer objects and the
+L<Linux::Event::Framer>. Arbitrary per-connection framer objects and the
 old custom Perl C<next_frame> contract are intentionally unsupported. Unusual
 protocols can buffer and parse raw C<on_data> bytes. Generally useful framing
 families should be implemented as native Linux::Event built-ins.

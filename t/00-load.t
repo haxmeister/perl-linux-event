@@ -1,10 +1,11 @@
 use v5.36;
 use Test::More;
 use_ok('Linux::Event');
-use_ok('Linux::Event::Watcher');
 use_ok('Linux::Event::Loop');
-use_ok('Linux::Event::IO');
-use_ok('Linux::Event::XSLoop');
+use_ok('Linux::Event::Stream');
+use_ok('Linux::Event::Listener');
+use_ok('Linux::Event::Error');
+use_ok('Linux::Event::Address');
 my $loop = Linux::Event::Loop->new;
 ok($loop, 'created loop');
 done_testing;

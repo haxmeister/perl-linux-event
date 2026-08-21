@@ -2,10 +2,25 @@
 
 This file preserves the benchmark/optimization phase notes that previously occupied the project README. It is historical material, not the current public API documentation.
 
+## Public hierarchy simplification (0.100_025)
+
+The 0.100_024 Watcher/IO/Connect/Listen migration exposed too many overlapping
+public concepts. Version 0.100_025 removes those compatibility layers. Loop,
+Stream, and Listener now express ownership directly; raw `watch()` results are
+opaque native registration handles. `MyStream->connect()` and
+`MyStream->listen()` are the only ordinary acquisition entry points.
+
+Both `loop => $loop` and detached construction plus `Loop->add()` are supported
+for Stream and Listener. Neither adds a hot-path Perl dispatch layer. Errors,
+addresses, and framing declarations also moved to their final common
+`Linux::Event::Error`, `Linux::Event::Address`, and `Linux::Event::Framer::*`
+namespaces. The sections below intentionally retain the names and decisions of
+the release they describe.
+
 ## Unified Watcher lifecycle (0.100_024)
 
 The public model now names every loop-owned activity a Watcher. The canonical
-`Linux::Event::Loop` owns raw `Linux::Event::IO`, Stream, Listener, Connector,
+`Linux::Event::Loop` owns raw `Linux::Event::_Registration`, Stream, Listener, Connector,
 and future composite Watchers through `add()`. Watcher is a lifecycle/type
 contract only; native concrete dispatch remains direct.
 
@@ -165,7 +180,7 @@ export PERL5LIB=$PWD/blib/lib:$PWD/blib/arch
 
 ## Public comparison benchmark
 
-The local Linux::Event target is `phase33c`, which explicitly loads `Linux::Event::XSLoop` from `blib/lib` and `blib/arch`. This avoids accidentally benchmarking the globally installed `Linux::Event`.
+The local Linux::Event target is `phase33c`, which explicitly loads `Linux::Event::Loop` from `blib/lib` and `blib/arch`. This avoids accidentally benchmarking the globally installed `Linux::Event`.
 
 The comparison harness isolates every system/client/repeat case in a fresh worker process. This prevents AnyEvent/EV default-loop state from leaking between systems and prevents `VmHWM` RSS from accumulating across earlier benchmark cases. Failed or timed-out runs retain diagnostic attempt rates in JSON, but are not assigned official ranked msg/s or MiB/s. Summary rows use successful repeats only.
 

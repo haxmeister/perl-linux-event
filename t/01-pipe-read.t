@@ -1,13 +1,13 @@
 use v5.36;
 use Test::More;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use IO::Handle;
 
 pipe(my $r, my $w) or die $!;
 $r->blocking(0);
 $w->blocking(0);
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $got = 0;
 my $watcher = $loop->watch_fd(fileno($r), fh => $r, read => sub ($watcher) {
     my $fh = $watcher->fh;

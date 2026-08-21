@@ -4,7 +4,7 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -30,7 +30,7 @@ use Linux::Event::Stream;
 # Closing from on_data must stop the native drain before a second callback.
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $close_state = { loop => $loop, action => 'close', calls => 0, got => '' };
 my $stream = T::CallbackStateStream->new(
     loop => $loop,
@@ -45,7 +45,7 @@ close $b;
 # Pausing from on_data must also stop the native drain until resumed.
 socketpair(my $c, my $d, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop2 = Linux::Event::XSLoop->new;
+my $loop2 = Linux::Event::Loop->new;
 my $pause_state = { loop => $loop2, action => 'pause', calls => 0, got => '' };
 my $stream2 = T::CallbackStateStream->new(
     loop => $loop2,

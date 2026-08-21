@@ -15,7 +15,7 @@ kernel epoll
 Linux::Event::Loop
     |
     v
-native watcher
+opaque native registration
     |
     +-- error callback   EPOLLERR / EPOLLHUP / EPOLLRDHUP
     +-- read callback    EPOLLIN
@@ -33,43 +33,43 @@ use Linux::Event::Loop;
 my $loop = Linux::Event::Loop->new;
 ```
 
-Each loop owns one epoll instance, an event buffer, a native fd-indexed watcher
-registry, and its attached Watchers. High-level Watchers attach through
-`$loop->add($watcher)`; `watch()` is the immediate-attachment convenience for
-raw IO.
+Each loop owns one epoll instance, an event buffer, a native fd-indexed
+registration registry, and its attached high-level objects. Stream and Listener
+accept `loop => $loop` or attach through `$loop->add($object)`. `watch()` is the
+immediate raw-descriptor API.
 
 ## Registering a handle
 
 Normal application code should label the watched resource explicitly:
 
 ```perl
-my $watcher = $loop->watch(
+my $registration = $loop->watch(
     fh    => $fh,
     data  => { connection_id => 42 },
-    read  => sub ($watcher) { ... },
-    write => sub ($watcher) { ... },
-    error => sub ($watcher) { ... },
+    read  => sub ($registration) { ... },
+    write => sub ($registration) { ... },
+    error => sub ($registration) { ... },
 );
 ```
 
-The returned object is a `Linux::Event::IO`, which is a
-`Linux::Event::Watcher` with the native raw-descriptor methods.
+The returned value is an opaque native registration handle. Its internal class
+name is not a public contract and it must not be subclassed.
 
 When `fh` is supplied, Linux::Event resolves its integer file descriptor once at
-watcher construction and retains the handle for `$watcher->fh`.
+registration and retains the handle for `$registration->fh`.
 
 If an application has only a raw descriptor, use:
 
 ```perl
-my $watcher = $loop->watch(
+my $registration = $loop->watch(
     fd   => $fd,
-    read => sub ($watcher) { ... },
+    read => sub ($registration) { ... },
 );
 ```
 
-Exactly one of `fh` or `fd` is required. Every watcher always has an integer fd,
-available through `$watcher->fd`. A watcher created from `fd` alone has no
-stored filehandle, so `$watcher->fh` is `undef`.
+Exactly one of `fh` or `fd` is required. Every registration has an integer fd,
+available through `$registration->fd`. A registration created from `fd` alone
+has no stored filehandle, so `$registration->fh` is `undef`.
 
 The lower-level positional method remains available:
 
@@ -77,10 +77,10 @@ The lower-level positional method remains available:
 $loop->watch_fd($fd, read => sub ($watcher) { ... });
 ```
 
-`watch_fd` is retained for low-level/internal code, compatibility, and unusual
+`watch_fd` is retained for low-level/internal code and unusual
 workloads where watcher-registration throughput itself has been measured as a
 bottleneck. Prefer `watch()` in normal application code. Both forms create the
-same native watcher and have the same readiness-dispatch hot path.
+same native registration and have the same readiness-dispatch hot path.
 
 Only the callbacks you need are required. Read interest is enabled when a read
 callback exists; write interest is enabled when a write callback exists.
@@ -97,8 +97,8 @@ For one returned epoll event the dispatch order is:
 2. read callback
 3. write callback
 
-After each callback the reactor checks whether the watcher is still active.
-This lets a callback cancel its own watcher safely before later readiness types
+After each callback the reactor checks whether the registration is still active.
+This lets a callback cancel its own registration safely before later readiness types
 for the same event are considered.
 
 ## Reading until EAGAIN
@@ -106,8 +106,8 @@ for the same event are considered.
 A normal level-triggered read callback can drain the fd:
 
 ```perl
-read => sub ($watcher) {
-    my $fh = $watcher->fh;
+read => sub ($registration) {
+    my $fh = $registration->fh;
 
     while (1) {
         my $buf = '';
@@ -115,12 +115,12 @@ read => sub ($watcher) {
 
         if (!defined $n) {
             last if $!{EAGAIN} || $!{EWOULDBLOCK};
-            $watcher->cancel;
+            $registration->cancel;
             last;
         }
 
         if ($n == 0) {
-            $watcher->cancel;
+            $registration->cancel;
             last;
         }
 
@@ -139,8 +139,8 @@ model is desired.
 Writable readiness should generally be enabled only when output is blocked:
 
 ```perl
-$watcher->enable_write;
-$watcher->disable_write;
+$registration->enable_write;
+$registration->disable_write;
 ```
 
 Linux::Event::Stream subclasses manage these transitions in the native write
@@ -179,11 +179,11 @@ $loop->run_for(0.250);
 
 ## No-argument fast callbacks
 
-When a closure already captures everything it needs, the watcher argument can
+When a closure already captures everything it needs, the registration argument can
 be omitted:
 
 ```perl
-my $watcher = $loop->watch(
+my $registration = $loop->watch(
     fh      => $fh,
     read    => sub { drain_socket($fh) },
     no_args => 1,
@@ -192,14 +192,14 @@ my $watcher = $loop->watch(
 ```
 
 `lean` is available only with the no-argument path. It avoids retaining Perl
-references used solely by watcher accessors. This is an expert performance
-option; prefer the normal watcher callback until profiling demonstrates that
+references used solely by registration accessors. This is an expert performance
+option; prefer the normal callback until profiling demonstrates that
 the extra reduction matters.
 
-## One watcher per fd
+## One registration per fd
 
-The registry enforces one active watcher per integer fd. Re-registering an fd
-replaces the old watcher. `unwatch_fd` and watcher `cancel` are safe when the
+The registry enforces one active registration per integer fd. Re-registering an fd
+replaces the old registration. `unwatch_fd` and handle `cancel` are safe when the
 registration is already absent/inactive.
 
 This model also prevents ambiguous dispatch when file-descriptor numbers are

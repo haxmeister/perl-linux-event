@@ -1,13 +1,13 @@
 use v5.36;
 use Test::More;
 use IO::Handle;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 pipe(my $r, my $w) or die $!;
 $r->blocking(0);
 $w->blocking(0);
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $argc = -1;
 my $watcher = $loop->watch_fd(
     fileno($r),

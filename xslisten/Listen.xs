@@ -1,5 +1,5 @@
 /*
- * Linux::Event::Listen native accept drain
+ * Linux::Event::Listener native accept drain
  * =========================================
  *
  * Readiness remains owned by XSLoop. This extension absorbs the repetitive
@@ -16,7 +16,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
-MODULE = Linux::Event::Listen    PACKAGE = Linux::Event::Listen
+MODULE = Linux::Event::Listener::_Engine    PACKAGE = Linux::Event::Listener::_Engine
 PROTOTYPES: DISABLE
 
 SV *

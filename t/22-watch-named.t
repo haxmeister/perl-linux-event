@@ -3,10 +3,10 @@ use strict;
 use warnings;
 use Test::More;
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 pipe(my $r, my $w) or die "pipe: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 
 my $fh_watcher = $loop->watch(
     fh   => $r,

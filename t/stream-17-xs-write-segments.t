@@ -4,7 +4,7 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_SNDBUF);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -31,7 +31,7 @@ socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
 setsockopt($a, SOL_SOCKET, SO_SNDBUF, pack('i', 4096))
     or die "setsockopt SO_SNDBUF: $!";
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $first = 'A' x (1024 * 1024);
 my $second = 'B' x (64 * 1024);
 my $third = 'C' x (64 * 1024);

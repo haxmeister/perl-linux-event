@@ -698,7 +698,7 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
     w->lean = (opt->lean && !w->callback_args) ? 1 : 0;
     if (w->lean) loop->lean_watchers++;
 
-    watcher_sv = sv_setref_pv(newSV(0), "Linux::Event::IO", (void*)w);
+    watcher_sv = sv_setref_pv(newSV(0), "Linux::Event::_Registration", (void*)w);
     if (!w->lean || (w->callback_args && !w->callback_arg_data))
         w->self_sv = newSVsv(watcher_sv);
     if (!w->lean) {
@@ -741,7 +741,7 @@ static int le_fd_from_fh(SV *fh) {
     return fd;
 }
 
-MODULE = Linux::Event::XSLoop    PACKAGE = Linux::Event::XSLoop
+MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::Loop
 PROTOTYPES: DISABLE
 
 SV *
@@ -1147,7 +1147,7 @@ run_for(loop_obj, seconds)
         if (loop->profile_enabled) loop->dispatch_ns += le_now_ns() - dispatch_t0;
     }
 
-MODULE = Linux::Event::XSLoop    PACKAGE = Linux::Event::XSWatcher
+MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::_Registration
 PROTOTYPES: DISABLE
 
 void

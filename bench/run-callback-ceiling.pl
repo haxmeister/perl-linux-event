@@ -168,7 +168,7 @@ sub run_case_isolated ($system, $count, $repeat) {
 }
 
 sub run_case ($system, $count, $repeat) {
-    require Linux::Event::XSLoop;
+    require Linux::Event::Loop;
 
     my $server = IO::Socket::INET->new(
         LocalAddr => $host,
@@ -207,7 +207,7 @@ sub run_case ($system, $count, $repeat) {
         push @pids, $pid;
     }
 
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     $loop->set_callback_scope_limit(128);
     my %c = (
         accepted => 0,

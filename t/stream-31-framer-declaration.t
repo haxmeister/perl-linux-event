@@ -4,10 +4,10 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 BEGIN {
-    package Linux::Event::Stream::Framer::ProbeNative;
+    package Linux::Event::Framer::ProbeNative;
     sub _build_definition ($class, @args) {
         die 'ProbeNative takes no arguments' if @args;
         return {
@@ -19,13 +19,13 @@ BEGIN {
             },
         };
     }
-    $INC{'Linux/Event/Stream/Framer/ProbeNative.pm'} = __FILE__;
+    $INC{'Linux/Event/Framer/ProbeNative.pm'} = __FILE__;
 }
 
 {
     package T::ProbeNativeStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'ProbeNative';
+    use Linux::Event::Framer 'ProbeNative';
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;
         $stream->data->{loop}->stop;
@@ -34,12 +34,12 @@ BEGIN {
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop };
 my $stream = T::ProbeNativeStream->new(loop => $loop, fh => $a, data => $state);
 
 is($stream->{descriptor}{framer}{package},
-    'Linux::Event::Stream::Framer::ProbeNative',
+    'Linux::Event::Framer::ProbeNative',
     'declaration derives the implementation package from the exact name');
 is($stream->{descriptor}{native}{read_mode}, 3,
     'dynamically loaded declaration contributes native parser configuration');

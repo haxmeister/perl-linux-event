@@ -4,12 +4,12 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::U32BEStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'U32BE';
+    use Linux::Event::Framer 'U32BE';
     sub stream_options ($class) { return read_size => 3 }
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;
@@ -19,7 +19,7 @@ use Linux::Event::XSLoop;
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop };
 my $stream = T::U32BEStream->new(loop => $loop, fh => $a, data => $state);
 

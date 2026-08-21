@@ -5,10 +5,26 @@ It combines an XS-first `epoll` reactor with inbound and outbound connection
 acquisition, a native buffered Stream layer, and an OpenSSL TLS transport in
 one distribution.
 
-The public model is deliberately uniform: `Linux::Event::Loop` owns Watchers.
-Raw IO, Streams, Listeners, and Connectors are Watcher types. Native epoll
-registrations remain internal, so a composite Watcher may own several kernel
-event sources without creating extra public objects.
+The public model is deliberately small. `Linux::Event::Loop` owns readiness;
+`Linux::Event::Stream` owns established and connecting byte streams; and
+`Linux::Event::Listener` owns listening sockets. There is no public Watcher,
+IO, Connect, or Connector class. Native epoll registrations remain opaque, so
+one logical object may use several kernel event sources without exposing them
+as more application objects.
+
+## Public modules
+
+- `Linux::Event::Loop` - epoll engine and object attachment
+- `Linux::Event::Stream` - TCP/Unix stream endpoints and outbound connection
+- `Linux::Event::Listener` - TCP/Unix listening endpoints
+- `Linux::Event::TLS` - optional OpenSSL transport provider for Stream
+- `Linux::Event::Framer::*` - native framing declarations for Stream types
+- `Linux::Event::Error` - shared structured failure value
+- `Linux::Event::Address` - lazy IPv4, IPv6, and Unix address value
+
+`Linux::Event::Listener::_Engine` and `Linux::Event::Stream::_Connection` are
+private implementation packages. Applications must not construct, subclass, or
+depend on them.
 
 ## Current capabilities
 
@@ -23,23 +39,25 @@ event sources without creating extra public objects.
 - runtime read/write interest changes
 - profiling and statistics support
 
-### Watcher lifecycle
+### Object lifecycle
 
-- detached construction followed by explicit `$loop->add($watcher)`
+- `loop => $loop` on every attachable public object
+- equivalent detached construction followed by `$loop->add($object)`
 - strict one-Loop, one-attachment ownership
-- raw `watch()` convenience returning an already-attached `Linux::Event::IO`
+- `add()` sets the Loop and returns the same object
+- raw `watch()` returning an already-attached opaque registration handle
 - no generic Perl dispatch layer in the readiness hot path
 
-### Connector
+### Stream connection
 
-- subclass-defined `on_connect` and `on_error` behavior cached per type
+- `MyStream->connect()` as the sole public outbound connection API
+- the same Stream object before, during, and after establishment
 - IPv4, IPv6, Unix stream, and caller-packed address modes
 - nonblocking, close-on-exec sockets created atomically
 - default connection deadline implemented with Linux `timerfd`
 - typed resolve, socket, connect, and timeout errors
 - loop-dispatched immediate outcomes and silent cancellation
-- generic connected-filehandle ownership transfer; Stream is optional
-- one-`MOD` watcher replacement when the consumer registers the same fd
+- output may be queued before attachment or readiness
 
 ### Listener
 
@@ -48,8 +66,7 @@ event sources without creating extra public objects.
 - native `accept4` draining with atomic nonblocking and close-on-exec flags
 - bounded level-triggered batches for listener fairness
 - lazy peer-address conversion and typed runtime errors
-- generic accepted-filehandle transfer; Stream is optional
-- no temporary per-connection watcher before Stream construction
+- no temporary accepted-socket registration before Stream construction
 
 ### Stream
 
@@ -70,6 +87,25 @@ event sources without creating extra public objects.
 
 The raw reactor never performs application I/O automatically. Stream is the
 higher-level layer for applications that want owned byte-stream I/O.
+
+## Loop attachment
+
+Stream and Listener both accept `loop => $loop`, and both may instead be
+constructed detached and added later:
+
+```perl
+my $client = ClientStream->connect(
+    loop => $loop, host => '127.0.0.1', port => 9999,
+);
+
+my $server = $loop->add(ServerStream->listen(
+    host => '0.0.0.0', port => 9999,
+));
+```
+
+These are equivalent attachment styles. `add()` stores the Loop, starts the
+object, and returns that same object. An object can be attached only once and
+cannot move between Loops.
 
 ## Build and test
 
@@ -130,7 +166,7 @@ There is no application-level socket or accepted-filehandle plumbing:
 ```perl
 package EchoStream;
 use parent 'Linux::Event::Stream';
-use Linux::Event::Stream::Framer 'Delimiter', "\n";
+use Linux::Event::Framer 'Delimiter', "\n";
 
 sub on_message ($stream, $line) { $stream->send($line) }
 
@@ -188,7 +224,7 @@ declaration after `use parent` and implements `on_message`:
 ```perl
 package LineEchoStream;
 use parent 'Linux::Event::Stream';
-use Linux::Event::Stream::Framer 'Delimiter', "\n";
+use Linux::Event::Framer 'Delimiter', "\n";
 
 sub on_message ($stream, $message) {
     $stream->send($message);
@@ -196,18 +232,18 @@ sub on_message ($stream, $message) {
 ```
 
 The declaration name is the exact final component below
-`Linux::Event::Stream::Framer`. There is no alias table or per-connection
+`Linux::Event::Framer`. There is no alias table or per-connection
 framer object. Examples:
 
 ```perl
-use Linux::Event::Stream::Framer 'Fixed', size => 32;
-use Linux::Event::Stream::Framer 'LengthPrefix',
+use Linux::Event::Framer 'Fixed', size => 32;
+use Linux::Event::Framer 'LengthPrefix',
     bytes => 4, endian => 'big', max_frame => 16 * 1024 * 1024;
-use Linux::Event::Stream::Framer 'U32BE',
+use Linux::Event::Framer 'U32BE',
     max_frame => 16 * 1024 * 1024;
-use Linux::Event::Stream::Framer 'Netstring', max_frame => 1_048_576;
-use Linux::Event::Stream::Framer 'Varint', max_frame => 1_048_576;
-use Linux::Event::Stream::Framer 'DecimalLength',
+use Linux::Event::Framer 'Netstring', max_frame => 1_048_576;
+use Linux::Event::Framer 'Varint', max_frame => 1_048_576;
+use Linux::Event::Framer 'DecimalLength',
     separator => ' ', max_frame => 1_048_576;
 ```
 
@@ -239,7 +275,7 @@ sub on_data ($stream, $bytes) {
 ```
 
 `transition_to()` reblesses the same object and swaps its shared native
-descriptor. It retains the filehandle, watcher, XS connection state, queued
+descriptor. It retains the filehandle, native registration, XS connection state, queued
 output, backpressure and half-close state, `data`, and unread native input.
 Bytes already buffered by an old framed parser are reinterpreted by the target
 parser. `input` supplies the unconsumed suffix held by a raw callback.
@@ -295,12 +331,13 @@ memory against the versioned object-configured baseline.
 
 ## Documentation
 
-- [`docs/CORE.md`](docs/CORE.md) - raw reactor API and watcher lifecycle
+- [`docs/CORE.md`](docs/CORE.md) - raw reactor and registration API
+- [`docs/OBJECT-LIFECYCLE.md`](docs/OBJECT-LIFECYCLE.md) - Loop attachment and resource ownership
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor and Stream architecture
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - plain transport and TLS provider contract
-- [`docs/CONNECT-DESIGN.md`](docs/CONNECT-DESIGN.md) - outbound acquisition, ownership, and future resolver contract
-- [`docs/LISTEN-DESIGN.md`](docs/LISTEN-DESIGN.md) - inbound acquisition, accept policy, and ownership transfer
+- [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition and future resolver contract
+- [`docs/LISTENER-DESIGN.md`](docs/LISTENER-DESIGN.md) - inbound acquisition and accept policy
 - [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
 - [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy
 - [`docs/XS-ROADMAP.md`](docs/XS-ROADMAP.md) - remaining native work

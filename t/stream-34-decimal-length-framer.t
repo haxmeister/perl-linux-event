@@ -4,12 +4,12 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::DecimalStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'DecimalLength';
+    use Linux::Event::Framer 'DecimalLength';
     sub stream_options ($class) { return read_size => 1 }
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -25,14 +25,14 @@ use Linux::Event::XSLoop;
 {
     package T::DecimalPipeStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'DecimalLength', separator => '|';
+    use Linux::Event::Framer 'DecimalLength', separator => '|';
     sub on_message ($stream, $message) { }
 }
 
 {
     package T::DecimalPrefixStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'DecimalLength',
+    use Linux::Event::Framer 'DecimalLength',
         separator => '|', include_prefix => 1;
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;
@@ -43,7 +43,7 @@ use Linux::Event::XSLoop;
 {
     package T::DecimalLimitedStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'DecimalLength', max_frame => 3;
+    use Linux::Event::Framer 'DecimalLength', max_frame => 3;
     sub on_message ($stream, $message) {
         Test::More::fail('oversized DecimalLength frame must not emit');
     }
@@ -70,7 +70,7 @@ sub read_exact ($fh, $wanted) {
 eval q{
     package T::BadDecimalSeparatorWidth;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'DecimalLength', separator => '12';
+    use Linux::Event::Framer 'DecimalLength', separator => '12';
     sub on_message { }
     1;
 };
@@ -79,7 +79,7 @@ like($@, qr/exactly one byte/, 'multi-byte decimal separator is rejected');
 eval q{
     package T::BadDecimalDigitSeparator;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'DecimalLength', separator => '7';
+    use Linux::Event::Framer 'DecimalLength', separator => '7';
     sub on_message { }
     1;
 };
@@ -87,7 +87,7 @@ like($@, qr/must not be an ASCII digit/, 'digit decimal separator is rejected');
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, got => [], target => 3 };
 my $stream = T::DecimalStream->new(loop => $loop, fh => $a, data => $state);
 
@@ -119,7 +119,7 @@ close $d;
 
 socketpair(my $e, my $f, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop2 = Linux::Event::XSLoop->new;
+my $loop2 = Linux::Event::Loop->new;
 my $prefix_state = { loop => $loop2 };
 my $prefixed = T::DecimalPrefixStream->new(
     loop => $loop2, fh => $e, data => $prefix_state,
@@ -134,7 +134,7 @@ close $f;
 sub native_error ($wire, $class) {
     socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
         or die "socketpair: $!";
-    my $error_loop = Linux::Event::XSLoop->new;
+    my $error_loop = Linux::Event::Loop->new;
     my $error_state = { loop => $error_loop, got => [] };
     my $bad = $class->new(loop => $error_loop, fh => $left, data => $error_state);
     syswrite($right, $wire);

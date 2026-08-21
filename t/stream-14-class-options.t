@@ -5,7 +5,7 @@ use Test::More;
 use Scalar::Util qw(refaddr);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::OptionsHash;
@@ -51,7 +51,7 @@ use Linux::Event::XSLoop;
     sub on_data ($stream, $bytes) { }
 }
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 socketpair(my $c, my $d, AF_UNIX, SOCK_STREAM, PF_UNSPEC)

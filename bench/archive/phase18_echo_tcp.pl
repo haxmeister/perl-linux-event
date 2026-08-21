@@ -7,7 +7,7 @@ use IO::Handle;
 use Time::HiRes qw(time usleep);
 use Getopt::Long qw(GetOptions);
 use POSIX qw(:sys_wait_h);
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 my $clients = 1;
 my $messages = 1000;
@@ -34,7 +34,7 @@ my $server = IO::Socket::INET->new(
 $server->blocking(0);
 my $port = $server->sockport;
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $accepted = 0;
 my $closed = 0;
 my $expected = $clients * $messages * $bytes;

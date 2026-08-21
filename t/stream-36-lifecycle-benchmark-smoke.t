@@ -12,14 +12,14 @@ my @cmd = (
     "-I$Bin/../blib/lib",
     "-I$Bin/../blib/arch",
     $script,
-    '--api-style=watcher-add',
+    '--api-style=loop-add',
     '--iterations=20',
     '--pool=2',
     '--live=8',
     '--warmup=2',
     '--repeats=1',
     '--memory-repeats=1',
-    '--cases=watcher,raw-named,framed-minimal,framed-full-named',
+    '--cases=registration,raw-named,framed-minimal,framed-full-named',
 );
 
 my $err = gensym;
@@ -35,8 +35,9 @@ my $output = $stdout . $stderr;
 
 is($status, 0, 'Stream lifecycle benchmark smoke exits successfully')
     or diag $output;
-like($output, qr/watcher repeat=1 .* ops\/s/, 'watcher lifecycle row ran');
-like($output, qr/contract=1 api_style=watcher-add/,
+like($output, qr/registration repeat=1 .* ops\/s/,
+    'registration lifecycle row ran');
+like($output, qr/contract=2 api_style=loop-add/,
     'benchmark contract and API adapter are identified');
 like($output, qr/raw-named repeat=1 .* ops\/s/, 'raw Stream lifecycle row ran');
 like($output, qr/framed-full-named repeat=1 .* ops\/s/,

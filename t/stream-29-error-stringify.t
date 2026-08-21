@@ -3,9 +3,9 @@ use strict;
 use warnings;
 use Test::More;
 
-use Linux::Event::Stream::Error;
+use Linux::Event::Error;
 
-my $error = Linux::Event::Stream::Error->new(
+my $error = Linux::Event::Error->new(
     type => 'framing',
     operation => 'frame',
     message => 'bad frame',

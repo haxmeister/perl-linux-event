@@ -8,7 +8,7 @@ A framed Stream is a subclass with one declarative import and a named
 ```perl
 package MessageStream;
 use parent 'Linux::Event::Stream';
-use Linux::Event::Stream::Framer 'LengthPrefix',
+use Linux::Event::Framer 'LengthPrefix',
     bytes => 4, endian => 'big', max_frame => 16 * 1024 * 1024;
 
 sub on_message ($stream, $message) {
@@ -30,11 +30,11 @@ lifecycle state.
 The name is validated as a single Perl package component and expanded as:
 
 ```text
-Linux::Event::Stream::Framer::<Name>
+Linux::Event::Framer::<Name>
 ```
 
 For example, `Delimiter` loads
-`Linux::Event::Stream::Framer::Delimiter`. There is no central keyword or alias
+`Linux::Event::Framer::Delimiter`. There is no central keyword or alias
 table to keep synchronized. Misspelled or incorrectly cased names fail when the
 class is compiled.
 
@@ -148,7 +148,7 @@ The public declaration loader derives the implementation package from its name,
 so adding a family does not require editing a keyword list. A complete built-in
 still requires both sides:
 
-1. a `Linux::Event::Stream::Framer::<Name>` module that validates declaration
+1. a `Linux::Event::Framer::<Name>` module that validates declaration
    arguments and provides immutable native config plus outbound encoding;
 2. a corresponding XS parser mode that handles partial input, multiple frames,
    limits, errors, pause/close reentrancy, and instrumentation;
@@ -163,7 +163,7 @@ generally useful families to Linux::Event with the XS implementation and tests.
 
 ## Error behavior
 
-Malformed or oversized input becomes a `Linux::Event::Stream::Error` with type
+Malformed or oversized input becomes a `Linux::Event::Error` with type
 `framing`. Stream stores it in `last_error`, invokes the cached `on_error`
 callback when present, and closes. Application callback exceptions are not
 silently converted or swallowed.

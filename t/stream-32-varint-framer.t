@@ -4,12 +4,12 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::VarintStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Varint';
+    use Linux::Event::Framer 'Varint';
     sub stream_options ($class) { return read_size => 1 }
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -25,7 +25,7 @@ use Linux::Event::XSLoop;
 {
     package T::VarintPrefixStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Varint', include_prefix => 1;
+    use Linux::Event::Framer 'Varint', include_prefix => 1;
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;
         $stream->data->{loop}->stop;
@@ -35,7 +35,7 @@ use Linux::Event::XSLoop;
 {
     package T::VarintLimitedStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Varint', max_frame => 3;
+    use Linux::Event::Framer 'Varint', max_frame => 3;
     sub on_message ($stream, $message) {
         Test::More::fail('oversized Varint frame must not emit');
     }
@@ -69,7 +69,7 @@ sub read_exact ($fh, $wanted) {
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, got => [], target => 3 };
 my $stream = T::VarintStream->new(loop => $loop, fh => $a, data => $state);
 
@@ -93,7 +93,7 @@ close $b;
 
 socketpair(my $c, my $d, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop2 = Linux::Event::XSLoop->new;
+my $loop2 = Linux::Event::Loop->new;
 my $prefix_state = { loop => $loop2 };
 my $prefixed = T::VarintPrefixStream->new(
     loop => $loop2, fh => $c, data => $prefix_state,
@@ -110,7 +110,7 @@ close $d;
 sub native_error ($wire, $class) {
     socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
         or die "socketpair: $!";
-    my $error_loop = Linux::Event::XSLoop->new;
+    my $error_loop = Linux::Event::Loop->new;
     my $error_state = { loop => $error_loop, got => [] };
     my $bad = $class->new(loop => $error_loop, fh => $left, data => $error_state);
     syswrite($right, $wire);

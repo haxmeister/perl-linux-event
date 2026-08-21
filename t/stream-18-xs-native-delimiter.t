@@ -4,13 +4,13 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
     package T::NativeDelimiterStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\x02END\x03";
+    use Linux::Event::Framer 'Delimiter', "\x02END\x03";
     sub stream_options ($class) { return read_size => 4 }
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -22,7 +22,7 @@ use Linux::Event::Stream;
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $delimiter = "\x02END\x03";
 my $state = { loop => $loop, messages => [] };
 

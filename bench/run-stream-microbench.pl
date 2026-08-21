@@ -8,7 +8,7 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -84,7 +84,7 @@ say "cross-runtime Stream leaderboard. It compares direct raw-reactor echo";
 say "with uncapped and hard-capped subclass-defined native Streams.";
 
 sub run_case ($system, $count) {
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $payload = 'x' x $bytes;
 
     my @server_fh;

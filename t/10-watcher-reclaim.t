@@ -1,8 +1,8 @@
 use v5.36;
 use Test::More;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 $loop->enable_watcher_reclaim(1);
 
 pipe(my $r, my $w) or die $!;

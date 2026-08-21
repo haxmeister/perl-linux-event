@@ -185,7 +185,7 @@ Usage:
   perl bench/run-async-comparison.pl --build --systems phase35-xs,phase35-empty,phase35-perl --clients 1000,2500,5000,10000 --warmup 1 --messages 10 --bytes 64 --client-driver async --out bench/results/phase35-ceiling.html --json bench/results/phase35-ceiling.json
 
 Options:
-  --build       run perl Makefile.PL && make before benchmarking Linux::Event::XSLoop
+  --build       run perl Makefile.PL && make before benchmarking Linux::Event::Loop
   --bytes       comma-separated message sizes, e.g. 64 or 64,512,4096,16384
   --repeats N   repeat each case; default 3; summaries use successful repeats only
   --timeout N   server timeout in seconds; default 60 (use 90+ for stressed 20k runs)
@@ -215,7 +215,7 @@ USAGE
 
 sub build_local_xsloop {
     return unless -e 'Makefile.PL';
-    warn "== building local Linux::Event::XSLoop module ==\n";
+    warn "== building local Linux::Event::Loop module ==\n";
     system($^X, 'Makefile.PL') == 0 or die "Makefile.PL failed\n";
     system('make') == 0 or die "make failed\n";
 }
@@ -252,8 +252,8 @@ sub check_dependencies ($systems_ref) {
         }
     }
     if (grep { $_ =~ /^(?:phase|xsloop)/ } @$systems_ref) {
-        my $ok = eval { require Linux::Event::XSLoop; 1 };
-        printf "  %-28s %s\n", 'Linux::Event::XSLoop', ($ok ? 'OK (local build/load)' : 'MISSING/NOT BUILT (use --build)');
+        my $ok = eval { require Linux::Event::Loop; 1 };
+        printf "  %-28s %s\n", 'Linux::Event::Loop', ($ok ? 'OK (local build/load)' : 'MISSING/NOT BUILT (use --build)');
         $missing++ unless $ok;
     }
     print $missing ? "Dependency check: $missing missing item(s)\n" : "Dependency check: OK\n";
@@ -802,8 +802,8 @@ sub server_runner ($system) {
 }
 
 sub run_xsloop ($server, $clients, $messages, $warmup, $bytes, $timeout) {
-    require Linux::Event::XSLoop;
-    my $loop = Linux::Event::XSLoop->new;
+    require Linux::Event::Loop;
+    my $loop = Linux::Event::Loop->new;
     $loop->set_event_capacity($xsloop_event_cap) if $xsloop_event_cap;
     $loop->set_callback_scope_limit(128) if is_phase35_system($ACTIVE_SYSTEM) || $ACTIVE_SYSTEM eq 'phase34' || $ACTIVE_SYSTEM eq 'phase34b' || $ACTIVE_SYSTEM eq 'phase34c';
     $loop->set_callback_scope_limit(phase33c_scope_limit($ACTIVE_SYSTEM)) if is_phase33c_system($ACTIVE_SYSTEM);
@@ -1066,7 +1066,7 @@ sub display_system ($s) {
 }
 
 sub backend_name ($s) {
-    return 'XS-first epoll (Linux::Event::XSLoop)' if is_xsloop_system($s);
+    return 'XS-first epoll (Linux::Event::Loop)' if is_xsloop_system($s);
     return $s eq 'anyevent' ? 'EV/libev epoll on Linux' : $s eq 'ev' ? 'EV/libev epoll on Linux' : $s eq 'ioasync' ? 'IO::Async::Loop::Epoll' : $s eq 'mojo' ? 'Mojo::IOLoop reactor, prefers Mojo::Reactor::EV' : 'unknown';
 }
 

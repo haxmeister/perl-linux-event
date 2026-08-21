@@ -4,12 +4,12 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::NetstringStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Netstring';
+    use Linux::Event::Framer 'Netstring';
     sub stream_options ($class) { return read_size => 2 }
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -34,7 +34,7 @@ sub read_exact ($fh, $wanted) {
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, got => [], target => 3 };
 my $stream = T::NetstringStream->new(loop => $loop, fh => $a, data => $state);
 ok($stream->send('hello'), 'non-empty netstring send succeeds');
@@ -53,7 +53,7 @@ close $b;
 
 socketpair(my $c, my $d, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop2 = Linux::Event::XSLoop->new;
+my $loop2 = Linux::Event::Loop->new;
 my $bad_state = { loop => $loop2, got => [] };
 my $bad = T::NetstringStream->new(loop => $loop2, fh => $c, data => $bad_state);
 syswrite($d, '03:abc,');

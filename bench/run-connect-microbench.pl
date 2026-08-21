@@ -12,16 +12,15 @@ use POSIX qw(strftime uname);
 use Socket qw(
     AF_INET INADDR_LOOPBACK
     SOCK_STREAM SOCK_NONBLOCK SOCK_CLOEXEC
-    SOL_SOCKET SO_LINGER SO_REUSEADDR SOMAXCONN
+    SOL_SOCKET SO_ERROR SO_LINGER SO_REUSEADDR SOMAXCONN
     pack_sockaddr_in unpack_sockaddr_in
 );
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
-use Linux::Event::Connect;
 use Linux::Event::Stream;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
-my @modes = qw(raw stream integrated);
+my @modes = qw(manual add loop);
 my @clients = (1, 10, 100);
 my $connections = 10_000;
 my $repeats = 6;
@@ -44,8 +43,8 @@ die "connections must be positive\n" if $connections < 1;
 die "repeats must be positive\n" if $repeats < 1;
 die "timeout must be positive\n" if $timeout <= 0;
 die "clients must be positive\n" if grep { $_ < 1 } @clients;
-my %valid_mode = map { $_ => 1 } qw(raw stream integrated);
-die "modes must contain only raw, stream, or integrated\n"
+my %valid_mode = map { $_ => 1 } qw(manual add loop);
+die "modes must contain only manual, add, or loop\n"
     if grep { !$valid_mode{$_} } @modes;
 my %seen_mode;
 die "modes must not contain duplicates\n"
@@ -53,13 +52,6 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchConnectStream;
-    use parent 'Linux::Event::Stream';
-    sub on_data ($stream, $bytes) { }
-    sub on_error ($stream, $error) { }
-}
-
-{
-    package BenchIntegratedStream;
     use parent 'Linux::Event::Stream';
 
     sub on_data ($stream, $bytes) { }
@@ -75,35 +67,44 @@ die "modes must not contain duplicates\n"
     }
 }
 
-{
-    package BenchConnectRequest;
-    use parent 'Linux::Event::Connect';
-
-    sub on_connect ($request, $fh) {
-        my $run = $request->data;
-        main::enable_abortive_close($fh);
-        if ($run->{mode} eq 'stream') {
-            my $stream = BenchConnectStream->new(
-                loop => $request->loop,
-                fh   => $fh,
-            );
-            $stream->close;
-        } else {
-            close $fh;
-        }
-        main::complete_request($run);
-    }
-
-    sub on_error ($request, $error) {
-        die "benchmark connection failed: $error\n";
-    }
-}
-
 sub complete_request ($run) {
     $run->{active}--;
     $run->{completed}++;
     launch_requests($run);
     finish_if_done($run);
+    return;
+}
+
+sub manual_connected ($registration) {
+    my $run = $registration->data;
+    my $fh = $registration->fh;
+    my $packed = getsockopt($fh, SOL_SOCKET, SO_ERROR);
+    my $errno = defined($packed) ? unpack('i', $packed) : 0 + $!;
+    if ($errno) {
+        local $! = $errno;
+        die "manual benchmark connection failed: $!\n";
+    }
+    $registration->cancel;
+    enable_abortive_close($fh);
+    close $fh;
+    complete_request($run);
+    return;
+}
+
+sub launch_manual ($run) {
+    socket(my $fh, AF_INET,
+        SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)
+        or die "manual client socket: $!\n";
+    my $connected = connect(
+        $fh, pack_sockaddr_in($run->{port}, INADDR_LOOPBACK),
+    );
+    die "manual client connect: $!\n" if !$connected && !$!{EINPROGRESS};
+    $run->{loop}->watch(
+        fh    => $fh,
+        data  => $run,
+        write => \&manual_connected,
+        error => \&manual_connected,
+    );
     return;
 }
 
@@ -135,22 +136,24 @@ sub launch_requests ($run) {
         && $run->{started} < $run->{connections}) {
         $run->{started}++;
         $run->{active}++;
-        if ($run->{mode} eq 'integrated') {
-            my $stream = BenchIntegratedStream->connect(
+        if ($run->{mode} eq 'manual') {
+            launch_manual($run);
+        } elsif ($run->{mode} eq 'loop') {
+            BenchConnectStream->connect(
+                loop    => $run->{loop},
+                host    => '127.0.0.1',
+                port    => $run->{port},
+                timeout => $timeout,
+                data    => $run,
+            );
+        } else {
+            my $stream = BenchConnectStream->connect(
                 host    => '127.0.0.1',
                 port    => $run->{port},
                 timeout => $timeout,
                 data    => $run,
             );
             $run->{loop}->add($stream);
-        } else {
-            my $request = BenchConnectRequest->new(
-                host    => '127.0.0.1',
-                port    => $run->{port},
-                timeout => $timeout,
-                data    => $run,
-            );
-            $run->{loop}->add($request);
         }
     }
     return;
@@ -167,7 +170,7 @@ sub one_run ($mode, $client_count) {
     listen($listener, SOMAXCONN) or die "listener listen: $!\n";
     my ($port) = unpack_sockaddr_in(getsockname($listener));
 
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     $loop->enable_watcher_reclaim(1);
     my $run = {
         mode        => $mode,
@@ -217,8 +220,8 @@ sub median (@values) {
         : ($values[$middle - 1] + $values[$middle]) / 2;
 }
 
-say 'Median loopback TCP Connect lifecycle benchmark';
-say "Linux::Event version $Linux::Event::Connect::VERSION";
+say 'Median loopback TCP Stream connection lifecycle benchmark';
+say "Linux::Event version $Linux::Event::Stream::VERSION";
 printf "%-8s %8s %14s %14s\n",
     qw(mode clients connects/s cpu_us/connect);
 my @records;
@@ -266,7 +269,7 @@ if (defined $json_path) {
         benchmark_contract_version => 1,
         generated_at => strftime('%Y-%m-%dT%H:%M:%SZ', gmtime),
         environment => {
-            linux_event_version => $Linux::Event::Connect::VERSION,
+            linux_event_version => $Linux::Event::Stream::VERSION,
             perl => "$^V",
             uname => \@uname,
             git_commit => git_commit(),
@@ -284,8 +287,9 @@ if (defined $json_path) {
         summary => \@summary,
         notes => [
             'Every row performs nonblocking TCP connection setup and teardown.',
-            'Raw closes the transferred socket; stream constructs and closes a minimal Stream.',
-            'Integrated preserves one Stream identity across connection setup and close.',
+            'Manual is a raw nonblocking socket and Loop registration baseline.',
+            'Add uses detached MyStream->connect followed by Loop->add.',
+            'Loop supplies loop => directly to MyStream->connect.',
             'The timeout is a per-request catastrophic deadline, not the measured row duration.',
             'Compare only results with the same benchmark contract and configuration.',
         ],
@@ -313,7 +317,7 @@ sub usage ($exit) {
     print <<'USAGE';
 Usage: perl -Mblib bench/run-connect-microbench.pl [options]
 
-  --modes=LIST          raw,stream,integrated (default: all three)
+  --modes=LIST          manual,add,loop (default: all three)
   --clients=LIST        concurrent requests (default: 1,10,100)
   --connections=N       completed connections per row (default: 10000)
   --repeats=N           median repetitions (default: 6)
@@ -321,12 +325,11 @@ Usage: perl -Mblib bench/run-connect-microbench.pl [options]
   --json=PATH           write raw records and summaries as JSON
   --help
 
-The raw row closes the transferred socket in on_connect. The stream row
-constructs and closes a Stream, exercising same-fd watcher handoff when the
-nonblocking TCP connection completes through epoll. Integrated constructs one
-connecting Stream before acquisition and closes it from on_ready, preserving
-its identity across the same complete lifecycle. Every successfully
-connected client uses equal abortive teardown so repeated rows do not exhaust
+Manual uses a raw nonblocking socket plus an opaque Loop registration. Add uses
+detached MyStream->connect followed by Loop->add. Loop passes loop => directly
+to MyStream->connect. Both public Stream rows preserve one object across
+connection acquisition, readiness, and close. Every successfully connected
+client uses equal abortive teardown so repeated rows do not exhaust
 the host with client-side TIME_WAIT sockets. Repeat execution order rotates to
 reduce bias; use a repeat count divisible by three for balanced execution.
 USAGE

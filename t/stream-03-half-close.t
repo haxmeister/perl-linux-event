@@ -4,7 +4,7 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SHUT_WR);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -27,7 +27,7 @@ use Linux::Event::Stream;
 }
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, request => '', eof_calls => 0, close_calls => 0 };
 
 my $stream = T::HalfCloseStream->new(

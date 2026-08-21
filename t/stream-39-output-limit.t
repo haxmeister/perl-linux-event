@@ -4,7 +4,7 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_SNDBUF);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -51,7 +51,7 @@ sub constrained_pair () {
     return ($a, $b);
 }
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my ($limited_fh, $limited_peer) = constrained_pair();
 my $state = { close_calls => 0 };
 my $limited = T::OutputLimit->new(
@@ -66,7 +66,7 @@ while (!$limited->is_closed) {
 
 ok($accepted_calls > 0, 'writes are accepted before the hard limit is reached');
 ok($limited->is_closed, 'hard output limit closes the Stream');
-isa_ok($state->{error}, 'Linux::Event::Stream::Error');
+isa_ok($state->{error}, 'Linux::Event::Error');
 is($state->{error}->type, 'output_limit', 'overflow has a distinct error type');
 is($state->{error}->operation, 'write', 'overflow identifies the write operation');
 is($state->{error}->limit, 16_384, 'error exposes the configured limit');

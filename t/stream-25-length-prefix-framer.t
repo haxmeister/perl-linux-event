@@ -4,12 +4,12 @@ use warnings;
 use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
 {
     package T::LengthBEStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'LengthPrefix', bytes => 2, endian => 'big';
+    use Linux::Event::Framer 'LengthPrefix', bytes => 2, endian => 'big';
     sub stream_options ($class) { return read_size => 2 }
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -21,14 +21,14 @@ use Linux::Event::XSLoop;
 {
     package T::LengthLEStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'LengthPrefix', bytes => 2, endian => 'little';
+    use Linux::Event::Framer 'LengthPrefix', bytes => 2, endian => 'little';
     sub on_message ($stream, $message) { }
 }
 
 {
     package T::LengthLimitedStream;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'LengthPrefix', bytes => 2, max_frame => 3;
+    use Linux::Event::Framer 'LengthPrefix', bytes => 2, max_frame => 3;
     sub on_message ($stream, $message) {
         Test::More::fail('oversized length frame must not emit');
     }
@@ -40,7 +40,7 @@ use Linux::Event::XSLoop;
 
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $state = { loop => $loop, got => [], target => 2 };
 my $stream = T::LengthBEStream->new(loop => $loop, fh => $a, data => $state);
 ok($stream->send('abc'), 'big-endian send succeeds');
@@ -69,7 +69,7 @@ close $d;
 
 socketpair(my $e, my $f, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
-my $loop2 = Linux::Event::XSLoop->new;
+my $loop2 = Linux::Event::Loop->new;
 my $limited_state = { loop => $loop2 };
 my $limited = T::LengthLimitedStream->new(
     loop => $loop2, fh => $e, data => $limited_state,

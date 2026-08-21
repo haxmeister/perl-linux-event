@@ -13,7 +13,7 @@ our ($LOOP, $CLIENT_ID, $READY, $REPLY, $SERVER_PEER, $ERROR);
 {
     package T::AutomaticEcho;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
 
     sub on_message ($stream, $message) {
         $main::SERVER_PEER = $stream->peer;
@@ -29,7 +29,7 @@ our ($LOOP, $CLIENT_ID, $READY, $REPLY, $SERVER_PEER, $ERROR);
 {
     package T::AutomaticClient;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
 
     sub on_ready ($stream) {
         $main::READY++;
@@ -55,10 +55,13 @@ my $listener = T::AutomaticEcho->listen(
     port => 0,
 );
 isa_ok($listener, 'Linux::Event::Listener');
-isa_ok($listener, 'Linux::Event::Watcher');
 is($listener->state, 'unattached', 'Listener construction is detached');
-$LOOP->add($listener);
+is($LOOP->add($listener), $listener, 'add returns the same Listener');
 is($listener->state, 'listening', 'add starts the Listener');
+is($listener->loop, $LOOP, 'add sets the Listener loop');
+my $reattach = eval { $LOOP->add($listener); 1 };
+ok(!$reattach, 'Listener rejects a second attachment');
+like($@, qr/not unattached/, 'Listener reattachment failure is explicit');
 
 my $client = T::AutomaticClient->connect(
     host => '127.0.0.1',
@@ -69,15 +72,19 @@ $CLIENT_ID = refaddr($client);
 is($client->state, 'unattached', 'connecting Stream construction is detached');
 ok(!$client->send('hello'), 'send queues before connection readiness');
 is($client->pending_bytes, 6, 'pre-connect queue includes outbound framing');
-$LOOP->add($client);
+is($LOOP->add($client), $client, 'add returns the same Stream');
 is($client->state, 'connecting', 'add starts outbound connection');
+is($client->loop, $LOOP, 'add sets the Stream loop');
+$reattach = eval { $LOOP->add($client); 1 };
+ok(!$reattach, 'Stream rejects a second attachment');
+like($@, qr/not unattached/, 'Stream reattachment failure is explicit');
 
 $LOOP->run;
 
 is($ERROR, undef, 'automatic client/server path has no error');
 is($READY, 1, 'on_ready fires once after the connection is usable');
 is($REPLY, 'hello', 'automatic accepted Stream echoes one framed message');
-isa_ok($SERVER_PEER, 'Linux::Event::Listen::Peer');
+isa_ok($SERVER_PEER, 'Linux::Event::Address');
 is(refaddr($client), $CLIENT_ID, 'client retains identity through connection');
 is($client->state, 'closed', 'client reaches terminal state');
 

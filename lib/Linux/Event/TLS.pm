@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_024';
+our $VERSION = '0.100_025';
 
 use Carp qw(croak);
 
@@ -138,15 +138,13 @@ Linux::Event::TLS - OpenSSL transport provider for Linux::Event::Stream
 
 =head1 SYNOPSIS
 
-  my $tls = Linux::Event::TLS->client(
-      server_name => 'gateway.discord.gg',
-      alpn        => ['http/1.1'],
-  );
-
-  my $stream = MyStream->new(
-      loop      => $loop,
-      fh        => $connected_socket,
-      transport => $tls,
+  my $stream = MyStream->connect(
+      loop => $loop,
+      host => 'example.com', port => 443,
+      transport => Linux::Event::TLS->client(
+          server_name => 'example.com',
+          alpn        => ['http/1.1'],
+      ),
   );
 
 =head1 DESCRIPTION
@@ -156,10 +154,11 @@ same C<Linux::Event> distribution. Stream continues to own buffering, framing,
 backpressure, and descriptor readiness. OpenSSL owns TLS protocol state,
 cryptography, certificate verification, ALPN, and close notification.
 
-Each provider uses one timerfd watcher while attached to a Stream. It is
+Each provider is stateful and belongs to exactly one Stream. It uses one
+timerfd registration while attached. The timer is
 disarmed between the handshake and shutdown phases, reused for both deadlines,
-and destroyed with the Stream. This deadline machinery remains outside plain
-Stream and XSLoop.
+and destroyed with the Stream. This deadline machinery remains outside the
+plain Stream path.
 
 Client verification and hostname checking are enabled by default. Passing
 C<verify =E<gt> 0> is intended only for explicitly controlled environments.
@@ -177,11 +176,19 @@ C<ca_file>, C<ca_path>, C<verify>, an array reference C<alpn>,
 C<handshake_timeout>, and C<shutdown_timeout>. Timeouts are seconds and default
 to 10 and 5 respectively. Zero disables the corresponding deadline.
 
+Verification is enabled by default and checks both the certificate chain and
+C<server_name>. C<ca_file> and C<ca_path> override trust-source selection.
+C<verify =E<gt> 0> disables peer verification and should be limited to
+controlled test or private environments.
+
 =head2 server
 
 Creates a server provider. C<cert_file> and C<key_file> are required. C<alpn>
 is optional. C<handshake_timeout> and C<shutdown_timeout> have the same defaults
 and zero-disable behavior as the client provider.
+
+Create a fresh provider for every accepted Stream, normally from the Stream
+class's C<accepted_stream_options> method.
 
 =head2 selected_alpn
 
@@ -199,5 +206,20 @@ Returns the negotiated cipher name after the handshake.
 
 Returns native counters for handshake, read, write, shutdown, readiness retry,
 clean EOF, unclean EOF, error, and deadline activity.
+
+=head1 STREAM INTEGRATION
+
+TLS is a transport provider, not a Stream subclass and not a framer. Stream
+continues to expose plaintext to C<on_data> or C<on_message>, applies framing
+above TLS, and manages its ordinary output queue and backpressure. C<on_ready>
+runs only after the TLS handshake and verification succeed.
+
+C<< $stream->end >> drains plaintext output and performs TLS shutdown with
+C<close_notify>. C<< $stream->close >> is immediate. A TLS Stream cannot be
+detached because its socket contains provider-owned encrypted protocol state.
+
+=head1 REQUIREMENTS
+
+Linux and OpenSSL 1.1.1 or newer, including development headers at build time.
 
 =cut

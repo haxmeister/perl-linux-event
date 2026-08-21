@@ -6,7 +6,7 @@ use warnings;
 {
     package EchoClient;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
 
     sub on_ready ($stream) {
         $stream->send($stream->data->{message});

@@ -18,7 +18,7 @@ subclass.
 | none of these | no framer; use `on_data` | application-specific parsing |
 
 Names are case-sensitive and are the exact final package components under
-`Linux::Event::Stream::Framer`.
+`Linux::Event::Framer`.
 
 A connection whose wire format changes after a handshake or upgrade may use
 different Stream subclasses at different stages. Use `transition_to()` rather
@@ -32,7 +32,7 @@ Use this when a non-empty byte sequence ends each message:
 ```perl
 package CRLFStream;
 use parent 'Linux::Event::Stream';
-use Linux::Event::Stream::Framer 'Delimiter', "\r\n",
+use Linux::Event::Framer 'Delimiter', "\r\n",
     max_frame => 1_048_576;
 
 sub on_message ($stream, $message) { ... }
@@ -50,7 +50,7 @@ actual wire delimiter directly, such as `"\n"` or `"\r\n"`.
 Use this only when every message has exactly the same byte length:
 
 ```perl
-use Linux::Event::Stream::Framer 'Fixed', size => 32;
+use Linux::Event::Framer 'Fixed', size => 32;
 ```
 
 `send()` rejects payloads that are not exactly `size` bytes.
@@ -60,7 +60,7 @@ use Linux::Event::Stream::Framer 'Fixed', size => 32;
 Use this for a one-, two-, or four-byte unsigned payload length:
 
 ```perl
-use Linux::Event::Stream::Framer 'LengthPrefix',
+use Linux::Event::Framer 'LengthPrefix',
     bytes          => 2,
     endian         => 'big',
     include_prefix => 0,
@@ -76,7 +76,7 @@ Use this convenience family for an unsigned four-byte network-order payload
 length:
 
 ```perl
-use Linux::Event::Stream::Framer 'U32BE',
+use Linux::Event::Framer 'U32BE',
     max_frame => 16 * 1024 * 1024;
 ```
 
@@ -88,7 +88,7 @@ It has the same wire form as `LengthPrefix` with `bytes => 4` and
 Use this for canonical netstrings:
 
 ```perl
-use Linux::Event::Stream::Framer 'Netstring',
+use Linux::Event::Framer 'Netstring',
     max_frame => 1_048_576;
 ```
 
@@ -100,7 +100,7 @@ leading zeroes other than the canonical zero, and a missing trailing comma.
 Use this when the payload length is an unsigned LEB128 integer:
 
 ```perl
-use Linux::Event::Stream::Framer 'Varint',
+use Linux::Event::Framer 'Varint',
     include_prefix => 0,
     max_frame      => 1_048_576;
 ```
@@ -113,7 +113,7 @@ overlong, or overflowing prefixes.
 Use this when ASCII decimal digits state the payload length:
 
 ```perl
-use Linux::Event::Stream::Framer 'DecimalLength',
+use Linux::Event::Framer 'DecimalLength',
     separator      => ' ',
     include_prefix => 0,
     max_frame      => 1_048_576;
@@ -146,7 +146,7 @@ profiling justifies it, add it to Linux::Event as a native built-in.
 
 Set `max_frame` for untrusted framed input. Stream also has a class-level
 `max_buffer` transport limit, defaulting to 8 MiB. The parser reports violations
-as `Linux::Event::Stream::Error` objects with type `framing`, invokes
+as `Linux::Event::Error` objects with type `framing`, invokes
 `on_error` when defined, and closes the Stream.
 
 See [`FRAMING.md`](FRAMING.md) for the complete declaration and extension

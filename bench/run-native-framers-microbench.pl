@@ -8,7 +8,7 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -26,37 +26,37 @@ use Linux::Event::Stream;
 {
     package Linux::Event::Bench::NativeDelimiter;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'Delimiter', "\x02END\x03";
+    use Linux::Event::Framer 'Delimiter', "\x02END\x03";
 }
 
 {
     package Linux::Event::Bench::NativeLength;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'LengthPrefix', bytes => 4, endian => 'big';
+    use Linux::Event::Framer 'LengthPrefix', bytes => 4, endian => 'big';
 }
 
 {
     package Linux::Event::Bench::NativeU32BE;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'U32BE';
+    use Linux::Event::Framer 'U32BE';
 }
 
 {
     package Linux::Event::Bench::NativeNetstring;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'Netstring';
+    use Linux::Event::Framer 'Netstring';
 }
 
 {
     package Linux::Event::Bench::NativeVarint;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'Varint';
+    use Linux::Event::Framer 'Varint';
 }
 
 {
     package Linux::Event::Bench::NativeDecimal;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'DecimalLength';
+    use Linux::Event::Framer 'DecimalLength';
 }
 
 my @clients = (1, 10, 100, 1000);
@@ -86,7 +86,7 @@ die "unknown framer in --framers\n" if grep { !$valid{$_} } @framers;
 eval qq{
     package Linux::Event::Bench::NativeFixed;
     use parent -norequire, 'Linux::Event::Bench::NativeFramerBase';
-    use Linux::Event::Stream::Framer 'Fixed', size => $bytes;
+    use Linux::Event::Framer 'Fixed', size => $bytes;
     1;
 } or die "define fixed-size benchmark Stream: $@";
 
@@ -165,7 +165,7 @@ sub wire_for ($name, $payload) {
 }
 
 sub run_case ($framer_name, $count) {
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $payload = 'x' x $bytes;
     my $wire = wire_for($framer_name, $payload);
     my $wire_len = length($wire);

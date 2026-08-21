@@ -8,7 +8,7 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -31,7 +31,7 @@ use Linux::Event::Stream;
 {
     package Linux::Event::Bench::NativeDelimiterEcho;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\x02END\x03";
+    use Linux::Event::Framer 'Delimiter', "\x02END\x03";
     sub on_message ($stream, $message) {
         my $state = $stream->data;
         die "framing payload mismatch\n" if $message ne $state->{payload};
@@ -95,7 +95,7 @@ say "\nBoth paths use the same XS read/write transport and wire format.";
 say "The raw row parses in on_data; the native row finds frame boundaries in XS.";
 
 sub run_case ($system, $count) {
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $payload = 'x' x $bytes;
     my $wire = $payload . $delimiter;
     my $wire_len = length($wire);

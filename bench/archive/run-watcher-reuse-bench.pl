@@ -34,7 +34,7 @@ my @watchers = map { int($_) } grep length, split /,/, $watchers;
 die "watcher counts must be > 0\n" unless @watchers && !grep { $_ <= 0 } @watchers;
 
 if ($build) {
-    warn "== building local Linux::Event::XSLoop module ==\n";
+    warn "== building local Linux::Event::Loop module ==\n";
     system($^X, 'Makefile.PL') == 0 or die "Makefile.PL failed\n";
     system('make') == 0 or die "make failed\n";
 }
@@ -68,8 +68,8 @@ USAGE
 }
 
 sub run_case ($system, $count, $cycles, $repeat) {
-    require Linux::Event::XSLoop;
-    my $loop = Linux::Event::XSLoop->new;
+    require Linux::Event::Loop;
+    my $loop = Linux::Event::Loop->new;
     $loop->enable_watcher_reclaim(1) if $system eq 'phase30' || $system eq 'phase31';
 
     my $created = 0;

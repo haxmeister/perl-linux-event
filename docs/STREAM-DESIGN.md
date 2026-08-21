@@ -1,6 +1,6 @@
 # Stream design
 
-`Linux::Event::Stream` is an owned buffered byte-stream Watcher above the
+`Linux::Event::Stream` is an owned buffered byte-stream object above the
 `Linux::Event::Loop` reactor. It is intentionally Linux-only and uses native
 code for repetitive I/O, queue, buffer, and built-in framing work.
 
@@ -12,7 +12,7 @@ as an ordinary Perl package:
 ```perl
 package ChatStream;
 use parent 'Linux::Event::Stream';
-use Linux::Event::Stream::Framer 'Delimiter', "\n";
+use Linux::Event::Framer 'Delimiter', "\n";
 
 sub on_message ($stream, $message) { ... }
 sub on_drain   ($stream)           { ... }
@@ -35,6 +35,16 @@ my $stream = $loop->add(ChatStream->new(
     },
 ));
 ```
+
+The established constructor also accepts `loop => $loop`. Outbound
+`ChatStream->connect(...)` and inbound `ChatStream->listen(...)` follow the same
+rule: pass `loop` for immediate attachment or omit it and use `Loop->add()`.
+Both forms attach the same object without a wrapper or public base class.
+
+`connect()` keeps one Stream identity across `unattached`, `connecting`,
+`active`, and `closed` states. `listen()` returns a Listener configured to
+construct this Stream subclass. See `STREAM-CONNECTIONS.md`,
+`LISTENER-DESIGN.md`, and `OBJECT-LIFECYCLE.md`.
 
 ## Class descriptor
 
@@ -71,7 +81,7 @@ Per-connection native state includes:
 - segmented output queue and pending byte count
 - instrumentation counters
 
-Per-connection Perl state includes the loop, handle, watcher, optional `data`,
+Per-connection Perl state includes the loop, handle, native registration, optional `data`,
 and semantic lifecycle flags. It does not contain callback option hashes or a
 framer object.
 
@@ -140,7 +150,7 @@ connection without reconstructing it. The Perl object is reblessed and its
 native state swaps one retained class descriptor reference for another. These
 connection-local resources remain unchanged:
 
-- fd, filehandle, watcher, and XSState identity
+- fd, filehandle, native registration, and XSState identity
 - application `data`
 - output segments, byte ordering, and pending byte count
 - read pause, peer EOF, local half-close, and closed state
@@ -188,7 +198,7 @@ delivered before `transition_to()` returns. Pause state always gates delivery.
 - `transport`, `transport_name`, and `is_transport_ready` expose provider
   identity and asynchronous setup state (`plain` is immediately ready).
 - I/O, framing, and hard output-limit failures create
-  `Linux::Event::Stream::Error`, invoke
+  `Linux::Event::Error`, invoke
   `on_error` if present, and close.
 
 Application callback exceptions propagate. They are not treated as transport

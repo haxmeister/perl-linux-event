@@ -1,5 +1,5 @@
 /*
- * Linux::Event::Connect native deadline helper
+ * Linux::Event::Stream internal connection deadline helper
  * =============================================
  *
  * Connection policy and candidate management remain in Perl because they run
@@ -39,7 +39,7 @@ lec_timer_value(double seconds, struct itimerspec *timer)
     timer->it_value.tv_nsec = nanoseconds;
 }
 
-MODULE = Linux::Event::Connect    PACKAGE = Linux::Event::Connect
+MODULE = Linux::Event::Stream::_Connection    PACKAGE = Linux::Event::Stream::_Connection
 PROTOTYPES: DISABLE
 
 int
@@ -49,7 +49,7 @@ _timerfd_new(CLASS)
     (void)CLASS;
     RETVAL = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
     if (RETVAL < 0)
-        croak("timerfd_create for Connect failed: %s", strerror(errno));
+        croak("timerfd_create for Stream connection failed: %s", strerror(errno));
   OUTPUT:
     RETVAL
 
@@ -64,7 +64,7 @@ _timerfd_arm(CLASS, fd, seconds)
     (void)CLASS;
     lec_timer_value(seconds, &timer);
     if (timerfd_settime(fd, 0, &timer, NULL) != 0)
-        croak("timerfd_settime for Connect failed: %s", strerror(errno));
+        croak("timerfd_settime for Stream connection failed: %s", strerror(errno));
 
 void
 _timerfd_consume(CLASS, fd)
@@ -79,7 +79,7 @@ _timerfd_consume(CLASS, fd)
         count = read(fd, &expirations, sizeof(expirations));
     } while (count < 0 && errno == EINTR);
     if (count < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-        croak("read Connect timerfd failed: %s", strerror(errno));
+        croak("read Stream connection timerfd failed: %s", strerror(errno));
 
 void
 _timerfd_close(CLASS, fd)

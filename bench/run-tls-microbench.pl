@@ -9,7 +9,7 @@ use JSON::PP qw(encode_json);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 use Linux::Event::TLS;
 
@@ -111,7 +111,7 @@ say "The TLS row uses verified protocol machinery with local test identity";
 say "and excludes construction/handshake from the timed message interval.";
 
 sub run_case ($system, $count) {
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $bench = {
         loop          => $loop,
         system        => $system,

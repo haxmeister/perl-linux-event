@@ -1,13 +1,13 @@
 use v5.36;
 use Test::More;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use IO::Handle;
 
 pipe(my $r1, my $w1) or die $!;
 pipe(my $r2, my $w2) or die $!;
 $_->blocking(0) for ($r1, $w1, $r2, $w2);
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my @seen;
 my @watchers;
 

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 use Time::HiRes qw(time);
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use IO::Handle;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Getopt::Long qw(GetOptions);
@@ -21,7 +21,7 @@ socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die $!;
 $a->blocking(0);
 $b->blocking(0);
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my ($sent, $recv) = (0, 0);
 my ($wa, $wb);
 

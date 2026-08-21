@@ -1,6 +1,6 @@
 use v5.36;
 use Test::More;
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use IO::Handle;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
@@ -13,7 +13,7 @@ sub make_pair {
 
 {
     my ($server, $client) = make_pair();
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $watcher = $loop->watch_fd(
         fileno($server),
         callback_args => 0,
@@ -44,7 +44,7 @@ sub make_pair {
 
 {
     my ($server, $client) = make_pair();
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $empty_calls = 0;
     my $watcher = $loop->watch_fd(
         fileno($server),
@@ -79,7 +79,7 @@ sub make_pair {
 
 {
     my ($server, $client) = make_pair();
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my $ok = eval {
         $loop->watch_fd(
             fileno($server),

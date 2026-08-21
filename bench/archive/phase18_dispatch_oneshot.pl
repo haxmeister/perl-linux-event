@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 use Time::HiRes qw(time);
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use IO::Handle;
 use Getopt::Long qw(GetOptions);
 
@@ -19,7 +19,7 @@ pipe(my $r, my $w) or die $!;
 $r->blocking(0);
 $w->blocking(0);
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 my $count = 0;
 
 my $watcher = $loop->watch_fd(fileno($r), fh => $r, read => sub ($watcher) {

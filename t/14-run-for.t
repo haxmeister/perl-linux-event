@@ -3,9 +3,9 @@ use strict;
 use warnings;
 use Test::More;
 use Time::HiRes qw(time);
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 
-my $loop = Linux::Event::XSLoop->new;
+my $loop = Linux::Event::Loop->new;
 pipe(my $r, my $w) or die "pipe: $!";
 my $hit = 0;
 my $watcher;
@@ -25,7 +25,7 @@ my $st = $loop->stats;
 is($st->{run_for_calls}, 1, 'run_for entered persistent native loop once');
 is($st->{run_once_calls}, 0, 'run_for did not bounce through run_once');
 
-my $idle = Linux::Event::XSLoop->new;
+my $idle = Linux::Event::Loop->new;
 $t0 = time;
 $idle->run_for(0.02);
 $elapsed = time - $t0;

@@ -5,7 +5,7 @@ use Test::More;
 use Scalar::Util qw(refaddr);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -23,7 +23,7 @@ use Linux::Event::Stream;
 {
     package T::Transition::Line;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) {
         my $state = $stream->data;
         push @{ $state->{messages} }, $message;
@@ -34,7 +34,7 @@ use Linux::Event::Stream;
 {
     package T::Transition::Control;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) {
         my $state = $stream->data;
         push @{ $state->{control} }, $message;
@@ -45,7 +45,7 @@ use Linux::Event::Stream;
 {
     package T::Transition::Fixed;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Fixed', size => 3;
+    use Linux::Event::Framer 'Fixed', size => 3;
     sub on_message ($stream, $message) {
         my $state = $stream->data;
         push @{ $state->{fixed} }, $message;
@@ -56,7 +56,7 @@ use Linux::Event::Stream;
 {
     package T::Transition::FramedToRaw;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', '|';
+    use Linux::Event::Framer 'Delimiter', '|';
     sub on_message ($stream, $message) {
         $stream->data->{framed} = $message;
         $stream->transition_to('T::Transition::RawTail');
@@ -81,7 +81,7 @@ use Linux::Event::Stream;
 {
     package T::Transition::Small;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub stream_options ($class) { return max_buffer => 4 }
     sub on_message ($stream, $message) { return }
 }
@@ -98,37 +98,37 @@ use Linux::Event::Stream;
 {
     package T::Transition::SourceFixed;
     use parent -norequire, 'T::Transition::SourceBase';
-    use Linux::Event::Stream::Framer 'Fixed', size => 2;
+    use Linux::Event::Framer 'Fixed', size => 2;
 }
 
 {
     package T::Transition::SourceLength;
     use parent -norequire, 'T::Transition::SourceBase';
-    use Linux::Event::Stream::Framer 'LengthPrefix', bytes => 1;
+    use Linux::Event::Framer 'LengthPrefix', bytes => 1;
 }
 
 {
     package T::Transition::SourceNetstring;
     use parent -norequire, 'T::Transition::SourceBase';
-    use Linux::Event::Stream::Framer 'Netstring';
+    use Linux::Event::Framer 'Netstring';
 }
 
 {
     package T::Transition::SourceVarint;
     use parent -norequire, 'T::Transition::SourceBase';
-    use Linux::Event::Stream::Framer 'Varint';
+    use Linux::Event::Framer 'Varint';
 }
 
 {
     package T::Transition::SourceDecimal;
     use parent -norequire, 'T::Transition::SourceBase';
-    use Linux::Event::Stream::Framer 'DecimalLength', separator => ' ';
+    use Linux::Event::Framer 'DecimalLength', separator => ' ';
 }
 
 sub stream_pair ($class, $state) {
     socketpair(my $stream_fh, my $peer_fh, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
         or die "socketpair: $!";
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     $state->{loop} = $loop;
     my $stream = $class->new(loop => $loop, fh => $stream_fh, data => $state);
     return ($loop, $stream, $peer_fh);

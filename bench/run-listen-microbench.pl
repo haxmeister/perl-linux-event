@@ -12,15 +12,14 @@ use Socket qw(
 );
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
-use Linux::Event::Connect;
-use Linux::Event::Listen;
 use Linux::Event::Stream;
-use Linux::Event::XSLoop;
+use Linux::Event::Listener;
+use Linux::Event::Loop;
 
-my @modes = qw(manual handoff raw stream automatic);
+my @modes = qw(manual add loop);
 my @clients = (1, 10, 100);
 my $connections = 10_000;
-my $repeats = 10;
+my $repeats = 9;
 my $timeout = 30;
 my $help = 0;
 
@@ -38,18 +37,12 @@ die "connections must be positive\n" if $connections < 1;
 die "repeats must be positive\n" if $repeats < 1;
 die "timeout must be positive\n" if $timeout <= 0;
 die "clients must be positive\n" if grep { $_ < 1 } @clients;
-my %valid_mode = map { $_ => 1 } qw(manual handoff raw stream automatic);
-die "modes must contain only manual, handoff, raw, stream, or automatic\n"
+my %valid_mode = map { $_ => 1 } qw(manual add loop);
+die "modes must contain only manual, add, or loop\n"
     if grep { !$valid_mode{$_} } @modes;
 my %seen_mode;
 die "modes must not contain duplicates\n"
     if grep { $seen_mode{$_}++ } @modes;
-
-{
-    package BenchListenStream;
-    use parent 'Linux::Event::Stream';
-    sub on_data ($stream, $bytes) { }
-}
 
 {
     package BenchAutomaticStream;
@@ -74,40 +67,22 @@ die "modes must not contain duplicates\n"
 }
 
 {
-    package BenchListener;
-    use parent 'Linux::Event::Listen';
-
-    sub on_accept ($listener, $fh, $peer) {
-        my $run = $listener->data;
-        if ($run->{mode} eq 'stream') {
-            BenchListenStream->new(loop => $listener->loop, fh => $fh)->close;
-        } else {
-            close $fh;
-        }
-        $run->{accepted}++;
-        main::finish_if_done($run);
-    }
-
-    sub on_error ($listener, $error) {
-        die "benchmark listener failed: $error\n";
-    }
-}
-
-{
     package BenchListenClient;
-    use parent 'Linux::Event::Connect';
+    use parent 'Linux::Event::Stream';
 
-    sub on_connect ($request, $fh) {
-        my $run = $request->data;
-        main::enable_abortive_close($fh, 'client');
-        close $fh;
+    sub on_data ($stream, $bytes) { }
+
+    sub on_ready ($stream) {
+        my $run = $stream->data;
+        main::enable_abortive_close($stream->fh, 'client');
+        $stream->close;
         $run->{active}--;
         $run->{completed}++;
         main::launch_requests($run);
         main::finish_if_done($run);
     }
 
-    sub on_error ($request, $error) {
+    sub on_error ($stream, $error) {
         die "benchmark connection failed: $error\n";
     }
 }
@@ -125,31 +100,14 @@ sub finish_if_done ($run) {
     return;
 }
 
-sub manual_accept_ready ($watcher) {
-    my $run = $watcher->data;
-    my $batch = Linux::Event::Listen->_accept4_batch(
-        fileno($run->{listener_fh}), 256,
-    );
-    my $errno = $batch->[0];
-    for (my $at = 1; $at < @$batch; $at += 2) {
-        my $fd = $batch->[$at];
-        if ($run->{mode} eq 'handoff') {
-            open(my $client, '+<&=', $fd) or do {
-                my $error = "$!";
-                Linux::Event::Listen->_close_fd($fd);
-                die "handoff filehandle construction failed: $error\n";
-            };
-            my $peer = Linux::Event::Listen::Peer->new($batch->[$at + 1]);
-            close $client;
-        } else {
-            Linux::Event::Listen->_close_fd($fd);
-        }
+sub manual_accept_ready ($registration) {
+    my $run = $registration->data;
+    while (accept(my $client, $run->{listener_fh})) {
+        close $client;
         $run->{accepted}++;
     }
-    if ($errno) {
-        local $! = $errno;
-        die "manual accept4 failed: $!\n";
-    }
+    die "manual accept failed: $!\n"
+        if !$!{EAGAIN} && !$!{EWOULDBLOCK};
     finish_if_done($run);
     return;
 }
@@ -159,7 +117,7 @@ sub launch_requests ($run) {
         && $run->{started} < $run->{connections}) {
         $run->{started}++;
         $run->{active}++;
-        BenchListenClient->new(
+        BenchListenClient->connect(
             loop    => $run->{loop},
             host    => '127.0.0.1',
             port    => $run->{port},
@@ -171,7 +129,7 @@ sub launch_requests ($run) {
 }
 
 sub one_run ($mode, $client_count) {
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     $loop->enable_watcher_reclaim(1);
     my $run = {
         mode        => $mode,
@@ -183,7 +141,7 @@ sub one_run ($mode, $client_count) {
         completed   => 0,
         accepted    => 0,
     };
-    if ($mode eq 'manual' || $mode eq 'handoff') {
+    if ($mode eq 'manual') {
         socket(my $listener, AF_INET,
             SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0)
             or die "manual listener socket: $!\n";
@@ -199,14 +157,14 @@ sub one_run ($mode, $client_count) {
             data => $run,
             read => \&manual_accept_ready,
         );
-    } elsif ($mode eq 'automatic') {
+    } elsif ($mode eq 'add') {
         $run->{listener} = BenchAutomaticStream->listen(
             host => '127.0.0.1', port => 0, data => $run,
         );
         $loop->add($run->{listener});
         $run->{port} = $run->{listener}->port;
     } else {
-        $run->{listener} = BenchListener->new(
+        $run->{listener} = BenchAutomaticStream->listen(
             loop => $loop, host => '127.0.0.1', port => 0, data => $run,
         );
         $run->{port} = $run->{listener}->port;
@@ -220,7 +178,7 @@ sub one_run ($mode, $client_count) {
     my $elapsed = clock_gettime(CLOCK_MONOTONIC) - $wall_start;
     my $cpu = ($user_end - $user_start) + ($system_end - $system_start);
 
-    if ($mode eq 'manual' || $mode eq 'handoff') {
+    if ($mode eq 'manual') {
         $run->{listener_watcher}->cancel;
         close $run->{listener_fh};
     } else {
@@ -240,8 +198,8 @@ sub median (@values) {
         : ($values[$middle - 1] + $values[$middle]) / 2;
 }
 
-say 'Median loopback TCP Listen lifecycle benchmark';
-say "Linux::Event version $Linux::Event::Listen::VERSION";
+say 'Median loopback TCP Listener lifecycle benchmark';
+say "Linux::Event version $Linux::Event::Listener::VERSION";
 printf "%-8s %8s %14s %14s\n",
     qw(mode clients accepts/s cpu_us/accept);
 for my $client_count (@clients) {
@@ -264,23 +222,21 @@ sub usage ($exit) {
     print <<'USAGE';
 Usage: perl -Mblib bench/run-listen-microbench.pl [options]
 
-  --modes=LIST          manual,handoff,raw,stream,automatic (default: all five)
+  --modes=LIST          manual,add,loop (default: all three)
   --clients=LIST        concurrent clients (default: 1,10,100)
   --connections=N       accepted connections per row (default: 10000)
-  --repeats=N           median repetitions (default: 10)
+  --repeats=N           median repetitions (default: 9)
   --timeout=SECONDS     catastrophic connection deadline (default: 30)
   --help
 
-All rows acquire loopback TCP clients through Linux::Event::Connect. Manual
-uses explicit listener setup, a raw XSLoop watcher, and native descriptor
-close. Handoff adds Perl filehandle and lazy Peer construction. Raw accepts
-through Linux::Event::Listen and invokes its callback. Stream additionally
-constructs and closes a minimal Stream. Automatic uses MyStream->listen and
-Loop->add, then closes the automatically constructed Stream from on_ready.
-Every successfully connected client
+All rows acquire loopback TCP clients through MyStream->connect. Manual uses
+explicit listener setup, Loop->watch, Perl accept, and close. Add uses detached
+MyStream->listen followed by Loop->add. Loop supplies loop => directly to
+MyStream->listen. Both Listener rows construct and close the same minimal
+Stream subclass. Every successfully connected client
 uses equal abortive teardown so repeated rows do not exhaust the host with
 client-side TIME_WAIT sockets. Repeat execution order rotates to reduce bias;
-use a repeat count divisible by five for balanced execution order.
+use a repeat count divisible by three for balanced execution order.
 USAGE
     exit $exit;
 }

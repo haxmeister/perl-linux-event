@@ -12,7 +12,7 @@ use POSIX qw(strftime uname);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
-use Linux::Event::XSLoop;
+use Linux::Event::Loop;
 use Linux::Event::Stream;
 
 {
@@ -30,14 +30,14 @@ use Linux::Event::Stream;
 {
     package Linux::Event::Bench::Transition::Delimiter;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Delimiter', "\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
 }
 
 {
     package Linux::Event::Bench::Transition::Fixed;
     use parent 'Linux::Event::Stream';
-    use Linux::Event::Stream::Framer 'Fixed', size => 64;
+    use Linux::Event::Framer 'Fixed', size => 64;
     sub on_message ($stream, $message) { return }
 }
 
@@ -150,7 +150,7 @@ if (defined $json_path) {
 
 sub run_case ($case) {
     my ($class_a, $class_b) = @{ $case_classes{$case} };
-    my $loop = Linux::Event::XSLoop->new;
+    my $loop = Linux::Event::Loop->new;
     my (@streams, @peers);
 
     for my $i (0 .. $pool_size - 1) {

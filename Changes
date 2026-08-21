@@ -1,5 +1,28 @@
 Revision history for Linux-Event
 
+0.100_025  2026-08-21
+    - Simplify the public hierarchy to Linux::Event::Loop, Stream, Listener,
+      TLS, Framer, Error, and Address. Remove the public Watcher, IO, Connect,
+      Connector, Listen, XSLoop, and XSWatcher compatibility modules.
+    - Make MyStream->connect() the sole public outbound acquisition API and
+      retain one Stream identity across connection, optional TLS readiness,
+      established I/O, and close. Keep the acquisition engine private.
+    - Make MyStream->listen() the normal inbound API and keep accept mechanics
+      in a private Listener engine. Accepted descriptors become the configured
+      Stream subclass directly, without a temporary public registration.
+    - Support both loop => $loop construction and detached construction plus
+      Loop->add() for Stream and Listener. Both forms attach the same object;
+      add() sets its Loop and returns it.
+    - Return only an opaque native registration from the low-level watch API;
+      raw registrations are not a named public class hierarchy.
+    - Consolidate errors under Linux::Event::Error, peer addresses under
+      Linux::Event::Address, and native framing declarations under
+      Linux::Event::Framer::*.
+    - Rewrite the module POD, README, lifecycle, connection, Listener, core,
+      architecture, and benchmark documentation around the reduced API.
+    - Replace obsolete Connect/Listen benchmark modes with raw baselines and
+      direct comparisons of loop => and Loop->add() attachment styles.
+
 0.100_024  2026-08-16
     - Introduce Linux::Event::Watcher as the public lifecycle contract and
       Linux::Event::Loop as the canonical XS-first loop name.
