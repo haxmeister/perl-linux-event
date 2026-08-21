@@ -4,11 +4,11 @@
 ^Makefile$
 ^MYMETA\.(?:json|yml)$
 ^(?:.*/)?pm_to_blib$
-^xsloop/(?:Makefile$|MYMETA\.(?:json|yml)$|XSLoop\.(?:c|o|bs|xsc)$|Loop\.bs$|blib(?:/|$))
-^xsstream/(?:Makefile$|MYMETA\.(?:json|yml)$|XSStream\.(?:c|o)$|Stream\.bs$|blib(?:/|$))
+^xsloop/(?:Makefile$|MYMETA\.(?:json|yml)$|Loop\.(?:c|o|bs|xsc)$|blib(?:/|$))
+^xsstream/(?:Makefile$|MYMETA\.(?:json|yml)$|Stream\.(?:c|o|bs|xsc)$|blib(?:/|$))
 ^xstls/(?:Makefile$|MYMETA\.(?:json|yml)$|TLS\.(?:c|o|bs)$|blib(?:/|$)|check_openssl(?:\.o)?$)
-^xsconnect/(?:Makefile$|MYMETA\.(?:json|yml)$|Connect\.(?:c|o|bs)$|_Connection\.bs$|blib(?:/|$))
-^xslisten/(?:Makefile$|MYMETA\.(?:json|yml)$|Listen\.(?:c|o|bs)$|_Engine\.bs$|blib(?:/|$))
+^xsconnection/(?:Makefile$|MYMETA\.(?:json|yml)$|Connection\.(?:c|o|bs|xsc)$|_Connection\.bs$|blib(?:/|$))
+^xslistener/(?:Makefile$|MYMETA\.(?:json|yml)$|Listener\.(?:c|o|bs|xsc)$|_Engine\.bs$|blib(?:/|$))
 ^Linux-Event-[^/]+(?:/|\.tar(?:\.gz)?$)
 ^bench/results/.*\.json$
 ^\.prove$

@@ -86,4 +86,3 @@ keeps policy readable without adding Perl dispatch to steady-state I/O.
 Candidate storage is separate from attempt state so asynchronous DNS and a
 staggered Happy Eyeballs policy can be introduced without changing the public
 Stream API or its ownership model.
-

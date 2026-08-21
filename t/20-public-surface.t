@@ -32,6 +32,7 @@ for my $required (
     'bench/run-stream-transition-bench.pl',
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
+    'bench/run-performance-regression.pl',
     'bench/archive/README.md',
     'lib/Linux/Event.pm',
     'lib/Linux/Event/Address.pm',
@@ -53,10 +54,10 @@ for my $required (
     'xstls/Makefile.PL',
     'xstls/TLS.xs',
     'xstls/check_openssl.c',
-    'xsconnect/Makefile.PL',
-    'xsconnect/Connect.xs',
-    'xslisten/Makefile.PL',
-    'xslisten/Listen.xs',
+    'xsconnection/Makefile.PL',
+    'xsconnection/Connection.xs',
+    'xslistener/Makefile.PL',
+    'xslistener/Listener.xs',
     'examples/line-echo-server.pl',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");
@@ -85,6 +86,7 @@ for my $live (
     'bench/run-stream-transition-bench.pl',
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
+    'bench/run-performance-regression.pl',
 ) {
     my $path = File::Spec->catfile($root, split m{/}, $live);
     open my $fh, '<', $path or die "open $path: $!";
@@ -110,6 +112,7 @@ my %allowed = map { $_ => 1 } qw(
     run-stream-transition-bench.pl
     run-framing-microbench.pl
     run-native-framers-microbench.pl
+    run-performance-regression.pl
 );
 is_deeply([grep { !$allowed{$_} } @bench_root], [], 'bench root contains only current public files');
 ok(!-d File::Spec->catdir($root, 'tls'),

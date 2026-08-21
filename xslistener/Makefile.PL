@@ -10,7 +10,7 @@ WriteMakefile(
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
     PM               => {},
-    XS               => { 'Listen.xs' => 'Listen.c' },
-    OBJECT           => 'Listen$(OBJ_EXT)',
-    clean            => { FILES => 'Listen.c' },
+    XS               => { 'Listener.xs' => 'Listener.c' },
+    OBJECT           => 'Listener$(OBJ_EXT)',
+    clean            => { FILES => 'Listener.c' },
 );

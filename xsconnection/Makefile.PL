@@ -10,7 +10,7 @@ WriteMakefile(
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
     PM               => {},
-    XS               => { 'Connect.xs' => 'Connect.c' },
-    OBJECT           => 'Connect$(OBJ_EXT)',
-    clean            => { FILES => 'Connect.c' },
+    XS               => { 'Connection.xs' => 'Connection.c' },
+    OBJECT           => 'Connection$(OBJ_EXT)',
+    clean            => { FILES => 'Connection.c' },
 );

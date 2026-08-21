@@ -2,8 +2,8 @@
  * Linux::Event XS reactor core
  * ============================
  *
- * This file contains the native implementation behind Linux::Event::XSLoop
- * and Linux::Event::XSWatcher.  The design goal is a short readiness path:
+ * This file contains the native implementation behind Linux::Event::Loop and
+ * its opaque registration handles.  The design goal is a short readiness path:
  *
  *     epoll_wait()
  *       -> epoll_event.data.ptr
@@ -22,10 +22,10 @@
  *
  * Lifetime invariant
  * ------------------
- * le_loop_t owns all native le_watcher_t records.  Perl XSWatcher objects are
- * handles into loop-owned state.  Returned epoll batches may still contain a
- * watcher pointer after EPOLL_CTL_DEL, so any optional reuse/reclaim path must
- * not recycle a watcher until the current dispatch batch is finished.
+ * le_loop_t owns all native le_watcher_t records.  Opaque Perl registration
+ * handles refer to loop-owned state.  Returned epoll batches may still contain
+ * a watcher pointer after EPOLL_CTL_DEL, so any optional reuse/reclaim path
+ * must not recycle a watcher until the current dispatch batch is finished.
  *
  * Callback invariant
  * ------------------

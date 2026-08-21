@@ -22,6 +22,11 @@ Revision history for Linux-Event
       architecture, and benchmark documentation around the reduced API.
     - Replace obsolete Connect/Listen benchmark modes with raw baselines and
       direct comparisons of loop => and Loop->add() attachment styles.
+    - Add a permanent capture/compare performance-regression suite covering
+      reactor registration, Stream lifecycle and throughput, native delimiter
+      framing, and integrated connect/listen acquisition.
+    - Align active XS source and build names with the reduced public model and
+      remove stale XSLoop/XSWatcher terminology from the reactor source.
 
 0.100_024  2026-08-16
     - Introduce Linux::Event::Watcher as the public lifecycle contract and

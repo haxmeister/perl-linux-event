@@ -74,9 +74,7 @@ The C<loop> constructor option and C<add> are both primary public APIs.
 
 =head1 RAW DESCRIPTOR API
 
-=head2 watch(fh => $fh, ...)
-
-=head2 watch(fd => $fd, ...)
+=head2 watch(fh => $fh, ...) / watch(fd => $fd, ...)
 
 Registers exactly one filehandle or integer descriptor. Supported options are:
 

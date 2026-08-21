@@ -124,6 +124,17 @@ without installing it:
 export PERL5LIB="$PWD/blib/lib:$PWD/blib/arch"
 ```
 
+Before a release, capture or compare the permanent regression suite:
+
+```bash
+perl -Mblib bench/run-performance-regression.pl \
+  --baseline bench/results/performance-baseline.json \
+  --fail-on-regression
+```
+
+See [`bench/README.md`](bench/README.md) for baseline capture, thresholds, and
+measurement controls.
+
 ## Outbound connection example
 
 The same Stream object exists before, during, and after connection setup:

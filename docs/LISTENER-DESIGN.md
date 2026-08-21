@@ -95,4 +95,3 @@ sub on_listener_error ($class, $listener, $error) {
 ```
 
 Without that hook, Listener treats a runtime listener failure as fatal.
-

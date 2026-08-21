@@ -10,8 +10,8 @@ WriteMakefile(
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
     PM               => {},
-    XS               => { 'XSLoop.xs' => 'XSLoop.c' },
-    OBJECT           => 'XSLoop$(OBJ_EXT)',
+    XS               => { 'Loop.xs' => 'Loop.c' },
+    OBJECT           => 'Loop$(OBJ_EXT)',
     TYPEMAPS         => ['typemap'],
-    clean            => { FILES => 'XSLoop.c' },
+    clean            => { FILES => 'Loop.c' },
 );

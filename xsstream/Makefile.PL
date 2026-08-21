@@ -10,7 +10,7 @@ WriteMakefile(
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
     PM               => {},
-    XS               => { 'XSStream.xs' => 'XSStream.c' },
-    OBJECT           => 'XSStream$(OBJ_EXT)',
-    clean            => { FILES => 'XSStream.c' },
+    XS               => { 'Stream.xs' => 'Stream.c' },
+    OBJECT           => 'Stream$(OBJ_EXT)',
+    clean            => { FILES => 'Stream.c' },
 );

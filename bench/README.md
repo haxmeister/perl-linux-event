@@ -5,6 +5,43 @@ framing, native-framer, and lifecycle measurements. Older optimization
 experiments are preserved under `bench/archive/` and are not the recommended
 way to measure the current implementation.
 
+## Release performance-regression suite
+
+`run-performance-regression.pl` is the permanent same-version-contract guard
+for Linux::Event releases. It covers raw registration churn, raw and framed
+Stream construction, raw and natively framed message throughput, and the full
+public `connect`/`listen` lifecycle. Every workload records median wall rate
+and process CPU microseconds per operation after warmup. Workload order rotates
+across repeats.
+
+Capture a full baseline from a clean, idle machine:
+
+```bash
+perl Makefile.PL && make
+perl -Mblib bench/run-performance-regression.pl \
+  --json bench/results/performance-baseline.json
+```
+
+Build the candidate on the same machine and compare it with exactly the same
+configuration:
+
+```bash
+perl -Mblib bench/run-performance-regression.pl \
+  --baseline bench/results/performance-baseline.json \
+  --threshold-percent 10 \
+  --fail-on-regression \
+  --json bench/results/performance-candidate.json
+```
+
+The comparison reports throughput and CPU deltas for every workload. With
+`--fail-on-regression`, it exits with status 2 if median throughput falls by at
+least the threshold or median CPU cost rises by at least the threshold. It
+rejects baselines with a different benchmark contract or configuration.
+
+Use `--quick` only while developing the harness. Release decisions should use
+the default seven repeats and full workload sizes. Do not compare reports from
+different machines, Perl builds, power modes, or competing system load.
+
 ## Listener lifecycle microbenchmark
 
 Run the permanent inbound connection benchmark from the distribution root:

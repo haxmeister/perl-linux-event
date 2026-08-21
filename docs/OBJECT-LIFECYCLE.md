@@ -84,4 +84,3 @@ Explicit `close()` is recommended because it makes application intent and
 callback timing clear. Destructors are a safety net. Stream fires `on_close`
 once when it closes an owned connection, but `detach()` deliberately does not:
 the resource remains open and ownership transfers to the caller.
-
