@@ -28,6 +28,7 @@ our ($LOOP, $STATE, $CERT, $KEY, $CLIENT_ID);
     }
 
     sub on_ready ($stream) {
+        push @{ $stream->data->{server_order} }, 'ready';
         $stream->data->{server_ready}++;
         $stream->data->{server_ready_transport} = $stream->is_transport_ready;
     }
@@ -51,6 +52,13 @@ our ($LOOP, $STATE, $CERT, $KEY, $CLIENT_ID);
     sub on_error ($listener, $error) {
         $main::STATE->{error} = "$error";
         $listener->loop->stop;
+    }
+
+    sub on_accept ($listener, $stream) {
+        push @{ $main::STATE->{server_order} }, 'accept';
+        $main::STATE->{accepted_transport_ready}
+            = $stream->is_transport_ready;
+        return;
     }
 }
 
@@ -84,6 +92,7 @@ $STATE = {
     server_input => '',
     client_input => '',
     error => '',
+    server_order => [],
 };
 $LOOP = Linux::Event::Loop->new;
 
@@ -108,6 +117,10 @@ $LOOP->run_for(5);
 is($STATE->{error}, '', 'integrated TLS client/server path has no error');
 is($STATE->{client_ready}, 1, 'client on_ready follows verified TLS handshake');
 is($STATE->{server_ready}, 1, 'accepted server on_ready follows TLS handshake');
+is_deeply($STATE->{server_order}, [qw(accept ready)],
+    'Listener on_accept precedes TLS Stream on_ready');
+ok(!$STATE->{accepted_transport_ready},
+    'Listener on_accept observes TLS Stream before handshake readiness');
 ok($STATE->{client_ready_transport}, 'client transport is ready inside on_ready');
 ok($STATE->{server_ready_transport}, 'server transport is ready inside on_ready');
 is($STATE->{server_input}, 'ping', 'server receives queued client plaintext');

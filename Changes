@@ -1,5 +1,21 @@
 Revision history for Linux-Event
 
+0.100_029  2026-08-21
+    - Add optional Listener on_accept($listener, $stream) after Stream
+      construction and Loop attachment, before plain Stream readiness or TLS
+      handshake completion.
+    - Contain on_accept exceptions by closing only the affected Stream,
+      suppressing its pending on_ready, and delivering a nonfatal callback
+      Error through the Listener's on_error policy.
+    - Make Listener family reporting consistent with Address: family returns
+      inet, inet6, unix, or unknown; family_number retains the native value;
+      is_tcp and is_unix provide convenience predicates.
+    - Replace undefined Listener documentation placeholders with complete TCP,
+      Unix, and adopted-socket examples annotated as required, default, or
+      optional.
+    - Add plain and TLS callback-order coverage plus callback-failure cleanup
+      and family-accessor regression tests.
+
 0.100_028  2026-08-21
     - Correct inbound acquisition ownership: remove the accidental
       MyStream->listen() proxy and make Linux::Event::Listener->new with an

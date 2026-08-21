@@ -246,12 +246,14 @@ creates a watcher for an accepted connection.
 
 Readiness enters a private Listener XS engine that drains `accept4()` with
 atomic `SOCK_NONBLOCK | SOCK_CLOEXEC`. Descriptor and packed-sockaddr pairs
-return to Perl for the cached subclass `on_accept` method. Address text remains
-lazy through `Linux::Event::Address`; applications that do not inspect a
-peer avoid formatting it.
+return to Perl for the cached private `_accept_client` construction method.
+Address text remains lazy through `Linux::Event::Address`; applications that
+do not inspect a peer avoid formatting it.
 
 Listener constructs its configured Stream subclass, attaches the Stream to the
-same Loop, and then reports it ready. It does not create a temporary
-accepted-socket registration. Resource accept errors pause listener readiness
-before the typed error callback so a readable backlog cannot create an error
-spin.
+same Loop, invokes the optional public `on_accept($listener, $stream)`, and then
+reports a plain Stream ready. TLS Stream readiness waits for its handshake.
+Listener does not create a temporary accepted-socket registration. An
+`on_accept` exception closes only that Stream and becomes a nonfatal callback
+Error. Resource accept errors pause listener readiness before the typed error
+callback so a readable backlog cannot create an error spin.

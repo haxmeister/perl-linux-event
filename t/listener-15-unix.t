@@ -37,6 +37,11 @@ eval {
 
 ok(-S $path, 'created Unix listener has a socket path');
 is((stat($path))[2] & 0777, 0600, 'Unix listener applies permissions');
+is($listener->family, 'unix', 'Unix Listener reports symbolic family');
+is($listener->family_number, AF_UNIX,
+    'Unix Listener reports native family separately');
+ok($listener->is_unix, 'Unix Listener identifies as Unix');
+ok(!$listener->is_tcp, 'Unix Listener does not identify as TCP');
 socket(my $client, AF_UNIX, SOCK_STREAM, 0) or die "socket: $!";
 connect($client, pack_sockaddr_un($path)) or die "connect: $!";
 $loop->run;

@@ -3,9 +3,10 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_028';
+our $VERSION = '0.100_029';
 
 use Carp qw(croak);
+use Linux::Event::Error;
 use parent 'Linux::Event::Listener::_Engine';
 
 sub new ($class, %opt) {
@@ -26,7 +27,7 @@ sub new ($class, %opt) {
 
 sub stream_class ($self) { $self->{stream_class} }
 
-sub on_accept ($self, $fh, $peer) {
+sub _accept_client ($self, $fh, $peer) {
     my $class = $self->{stream_class};
     my %option = (fh => $fh, peer => $peer);
     if (my $configure = $class->can('accepted_stream_options')) {
@@ -40,6 +41,28 @@ sub on_accept ($self, $fh, $peer) {
     }
     my $stream = $class->new(%option);
     $stream->_attach_to_loop($self->loop);
+    if (my $callback = $self->{descriptor}{on_accept}) {
+        my $ok = eval { $callback->($self, $stream); 1 };
+        if (!$ok) {
+            my $message = "$@";
+            $message =~ s/\s+\z//;
+            $message = 'on_accept callback failed' if $message eq '';
+            eval { $stream->close; 1 };
+            my $error = Linux::Event::Error->new(
+                type      => 'callback',
+                operation => 'on_accept',
+                message   => $message,
+                fatal     => 0,
+                host      => $self->host,
+                port      => $self->port,
+                path      => $self->path,
+                family    => $self->family,
+            );
+            $self->{last_error} = $error;
+            $self->{descriptor}{on_error}->($self, $error);
+            return;
+        }
+    }
     $stream->_fire_ready if !$stream->transport;
     return;
 }
@@ -61,13 +84,32 @@ Linux::Event::Listener - accepting socket that constructs Stream instances
   use Linux::Event::Listener;
   use Linux::Event::Loop;
 
+  package EchoStream;
+  use parent 'Linux::Event::Stream';
+
+  sub on_data ($stream, $bytes) {
+      $stream->write($bytes);
+  }
+
+  package EchoListener;
+  use parent 'Linux::Event::Listener';
+
+  sub on_accept ($listener, $stream) {
+      say "accepted " . $stream->peer->host;
+  }
+
+  package main;
   my $loop = Linux::Event::Loop->new;
-  my $listener = Linux::Event::Listener->new(
-      loop         => $loop,
-      stream_class => 'EchoStream',
-      host         => '0.0.0.0',
-      port         => 7000,
+  my $listener = EchoListener->new(
+      loop                => $loop,         # optional: attach immediately
+      stream_class        => 'EchoStream',  # required
+      host                => '0.0.0.0',     # required for TCP
+      port                => 7000,          # required for TCP
+      backlog             => 4096,          # default
+      max_accept_per_tick => 256,           # default
+      edge_triggered      => 0,             # default
   );
+  $loop->run;
 
 =head1 DESCRIPTION
 
@@ -88,14 +130,18 @@ for accepted connections.
 Every Listener can be attached in either form:
 
   my $listener = Linux::Event::Listener->new(
-      loop         => $loop,
-      stream_class => 'MyStream',
-      %socket_options,
+      loop         => $loop,          # optional: attach immediately
+      stream_class => 'ServerStream', # required
+      host         => '127.0.0.1',    # required for TCP
+      port         => 9000,           # required for TCP
+      reuseaddr    => 1,              # default
   );
 
   my $listener = Linux::Event::Listener->new(
-      stream_class => 'MyStream',
-      %socket_options,
+      stream_class => 'ServerStream',  # required
+      unix         => '/run/app.sock', # required for Unix
+      unlink       => 1,               # optional; default 0
+      permissions  => 0660,            # optional
   );
   $loop->add($listener);
 
@@ -128,14 +174,52 @@ C<owns_socket =E<gt> 1> to transfer ownership.
 
 =head1 OPTIONS
 
-C<loop> optionally attaches immediately. C<data> stores application state.
-C<backlog> defaults to 4096. C<max_accept_per_tick> defaults to 256 and bounds
-the number of accepts per level-triggered dispatch; zero drains until
-C<EAGAIN>. C<edge_triggered =E<gt> 1> requires the zero/unbounded setting.
+Common options, shown with their actual defaults, are:
 
-TCP creation accepts C<reuseaddr> (default true), C<reuseport> (default false),
-and optional C<v6only>. Unix creation accepts C<unlink> to replace an existing
-socket path, C<unlink_on_close> (default true), and numeric C<permissions>.
+  my $listener = Linux::Event::Listener->new(
+      stream_class        => 'ServerStream', # required
+      host                => '0.0.0.0',      # required for TCP
+      port                => 9000,           # required for TCP
+      loop                => $loop,          # optional
+      data                => $server_state,  # optional
+      backlog             => 4096,           # default
+      max_accept_per_tick => 256,            # default
+      edge_triggered      => 0,              # default
+  );
+
+C<max_accept_per_tick> bounds accepts per level-triggered dispatch. Zero drains
+until C<EAGAIN>. C<edge_triggered =E<gt> 1> requires that zero/unbounded
+setting.
+
+TCP socket options are:
+
+  my $listener = Linux::Event::Listener->new(
+      stream_class => 'ServerStream', # required
+      host         => '::',           # required for TCP
+      port         => 9000,           # required for TCP
+      reuseaddr    => 1,              # default
+      reuseport    => 0,              # default
+      v6only       => 1,              # optional; kernel default if omitted
+  );
+
+Unix socket options are:
+
+  my $listener = Linux::Event::Listener->new(
+      stream_class    => 'ServerStream',  # required
+      unix            => '/run/app.sock', # required for Unix
+      unlink          => 0,               # default
+      unlink_on_close => 1,               # default
+      permissions     => 0660,            # optional
+  );
+
+Adopted-socket options are:
+
+  my $listener = Linux::Event::Listener->new(
+      stream_class => 'ServerStream', # required
+      fh           => $socket,        # required for adoption
+      owns_socket  => 0,              # default
+  );
+
 Source-specific options are rejected for other source types.
 
 =head1 ACCEPTED STREAMS
@@ -143,7 +227,9 @@ Source-specific options are rejected for other source types.
 Listener uses native C<accept4> with C<SOCK_NONBLOCK> and C<SOCK_CLOEXEC>.
 For every success it constructs C<stream_class> with C<fh> and a lazy
 L<Linux::Event::Address> C<peer>, attaches the Stream to this Listener's Loop,
-and fires readiness for a plain Stream.
+calls the optional Listener C<on_accept>, and then fires C<on_ready> for a plain
+Stream. A TLS Stream starts its asynchronous handshake after attachment and
+does not fire C<on_ready> until that handshake succeeds.
 
 The Stream class may customize construction:
 
@@ -157,6 +243,33 @@ The Stream class may customize construction:
 The result must be an even option list and cannot replace C<fh> or C<peer>.
 TLS servers return a fresh C<transport =E<gt> Linux::Event::TLS->server(...)>
 provider for each accepted connection.
+
+=head1 CALLBACKS
+
+=head2 on_accept
+
+A Listener subclass may define this optional callback:
+
+  sub on_accept ($listener, $stream) {
+      $listener->data->{connections}{ $stream->fd } = $stream;
+  }
+
+It receives the fully constructed Stream after attachment to the Listener's
+Loop. It runs before a plain Stream's C<on_ready> and before a TLS Stream has
+completed its handshake. Use it for connection accounting, association with
+server state, initial policy, or immediate rejection with C<< $stream->close >>.
+
+An exception closes that accepted Stream, suppresses its pending C<on_ready>,
+and delivers a nonfatal C<callback> Error with operation C<on_accept> to the
+Listener's C<on_error>. The listening socket remains active when C<on_error>
+handles the error.
+
+=head2 on_error
+
+Listener subclasses may override C<on_error($listener, $error)> to implement
+runtime error policy. The base implementation dies. Resource-exhaustion errors
+pause acceptance before C<on_error> runs; call C<resume> after the application
+has restored descriptor or memory capacity.
 
 =head1 ERROR POLICY
 
@@ -192,10 +305,21 @@ an owned Unix path when configured. C<cancel> is an alias for C<close>.
 Stop accepting and return the still-open listener handle, transferring
 ownership to the caller. Returns undef after a terminal state.
 
-=head2 loop / fh / fd / host / port / path / family
+=head2 loop / fh / fd / host / port / path
 
 Return attachment and bound-socket information. Fields that do not apply to the
 socket family are undefined.
+
+=head2 family / family_number / is_tcp / is_unix
+
+C<family> returns C<inet>, C<inet6>, C<unix>, or C<unknown>.
+C<family_number> returns the native numeric address-family constant.
+C<is_tcp> is true for IPv4 and IPv6 listeners; C<is_unix> is true for Unix
+listeners.
+
+=head2 stream_class
+
+Return the configured Stream subclass name.
 
 =head2 state
 

@@ -95,6 +95,11 @@ Successful TLS plaintext reads and writes update the same optional native
 activity timestamps as the plain transport. Handshake control traffic does not
 start or reset established policy.
 
+For an accepted TLS connection, Listener's optional `on_accept` callback runs
+after Stream construction and Loop attachment but before TLS transport
+readiness. Stream `on_ready` remains the callback for successful handshake and
+application-protocol readiness.
+
 Clean peer `close_notify` enters ordinary EOF handling. Socket EOF without
 `close_notify` is instead a typed TLS read error. Provider-native counters and
 the plain-versus-TLS benchmark expose both outcomes and the transport's

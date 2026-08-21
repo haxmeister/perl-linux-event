@@ -9,9 +9,13 @@ listening API. There is no separate generic Listen class.
 
 ```perl
 my $listener = Linux::Event::Listener->new(
-    loop => $loop,
-    stream_class => 'ServerStream',
-    host => '0.0.0.0', port => 9999,
+    loop                => $loop,          # optional: attach immediately
+    stream_class        => 'ServerStream', # required
+    host                => '0.0.0.0',      # required for TCP
+    port                => 9999,           # required for TCP
+    backlog             => 4096,           # default
+    max_accept_per_tick => 256,            # default
+    edge_triggered      => 0,              # default
 );
 ```
 
@@ -19,8 +23,10 @@ Or construct detached and attach explicitly:
 
 ```perl
 my $listener = $loop->add(Linux::Event::Listener->new(
-    stream_class => 'ServerStream',
-    host => '0.0.0.0', port => 9999,
+    stream_class => 'ServerStream',  # required
+    unix         => '/run/app.sock', # required for Unix
+    unlink       => 1,               # optional; default 0
+    permissions  => 0660,            # optional
 ));
 ```
 
@@ -45,6 +51,33 @@ options include `backlog`, `unlink`, `unlink_on_close`, and `permissions`.
 Source-specific options are rejected when used with another source, preventing
 configuration that appears to work but has no effect.
 
+The complete source-specific shapes are:
+
+```perl
+my $tcp = Linux::Event::Listener->new(
+    stream_class => 'ServerStream', # required
+    host         => '::',           # required for TCP
+    port         => 9999,           # required for TCP
+    reuseaddr    => 1,              # default
+    reuseport    => 0,              # default
+    v6only       => 1,              # optional; kernel default if omitted
+);
+
+my $unix = Linux::Event::Listener->new(
+    stream_class    => 'ServerStream',  # required
+    unix            => '/run/app.sock', # required for Unix
+    unlink          => 0,               # default
+    unlink_on_close => 1,               # default
+    permissions     => 0660,            # optional
+);
+
+my $adopted = Linux::Event::Listener->new(
+    stream_class => 'ServerStream', # required
+    fh           => $socket,        # required for adoption
+    owns_socket  => 0,              # default
+);
+```
+
 ## Accept behavior
 
 Native code drains `accept4()` with atomic `SOCK_NONBLOCK | SOCK_CLOEXEC`.
@@ -55,6 +88,22 @@ to zero drains until `EAGAIN`; this unbounded mode is required when
 The accepted descriptor is immediately used to construct the configured
 Stream and attach it to the same Loop. There is no temporary accepted-socket
 registration to remove or replace.
+
+An optional Listener callback observes every fully constructed Stream:
+
+```perl
+package ServerListener;
+use parent 'Linux::Event::Listener';
+
+sub on_accept ($listener, $stream) {
+    $listener->data->{connections}{ $stream->fd } = $stream;
+}
+```
+
+The order is construction, Loop attachment, `on_accept`, then plain Stream
+`on_ready`. For TLS, `on_accept` still runs immediately after attachment and
+Stream `on_ready` waits for a successful handshake. The callback can inspect,
+retain, configure, or close the Stream.
 
 Peer addresses are represented by `Linux::Event::Address` and decoded lazily.
 Applications that never inspect `peer()` do not pay for textual address
@@ -101,3 +150,10 @@ sub on_error ($listener, $error) {
 ```
 
 Without that hook, Listener treats a runtime listener failure as fatal.
+An exception from `on_accept` closes only that accepted Stream, suppresses its
+pending `on_ready`, and delivers a nonfatal `callback` Error to `on_error`.
+The Listener remains active when `on_error` handles the failure.
+
+`family()` returns `inet`, `inet6`, `unix`, or `unknown` consistently with
+`Linux::Event::Address`. `family_number()` returns the native numeric family;
+`is_tcp()` and `is_unix()` provide direct predicates.

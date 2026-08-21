@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_028';
+our $VERSION = '0.100_029';
 
 use overload '""' => 'as_string', fallback => 1;
 
@@ -81,9 +81,9 @@ accessors for program logic.
 
 Common C<type> values include C<io>, C<framing>, C<output_limit>, C<resolve>,
 C<socket>, C<connect>, C<timeout>, C<setup>, C<accept>, C<resource>,
-C<listener>, and C<tls>. The list may grow as transports and resource types are
-added. Code should handle the types it understands and retain a general
-fallback.
+C<listener>, C<callback>, and C<tls>. The list may grow as transports and
+resource types are added. Code should handle the types it understands and
+retain a general fallback.
 
 =head1 METHODS
 

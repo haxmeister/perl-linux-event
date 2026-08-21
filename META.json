@@ -42,6 +42,6 @@
          "url" : "https://github.com/haxmeister/perl-linux-event"
       }
    },
-   "version" : "0.100_028",
+   "version" : "0.100_029",
    "x_serialization_backend" : "JSON::PP version 4.16"
 }

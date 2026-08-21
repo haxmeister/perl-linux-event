@@ -115,6 +115,7 @@ t/listener-12-batch.t
 t/listener-13-benchmark-smoke.t
 t/listener-14-ownership.t
 t/listener-15-unix.t
+t/listener-16-callbacks.t
 t/resolver-13-benchmark-smoke.t
 t/signal-00-api.t
 t/signal-10-delivery.t

@@ -3,13 +3,13 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_028';
+our $VERSION = '0.100_029';
 
 use Carp qw(croak);
 use Errno ();
 use Fcntl qw(F_GETFD F_GETFL F_SETFD F_SETFL FD_CLOEXEC O_NONBLOCK);
 use Socket qw(
-    AF_INET6 AF_UNIX AI_PASSIVE
+    AF_INET AF_INET6 AF_UNIX AI_PASSIVE
     IPPROTO_IPV6 IPV6_V6ONLY
     SOCK_STREAM SOCK_NONBLOCK SOCK_CLOEXEC
     SOL_SOCKET SO_ACCEPTCONN SO_ERROR SO_REUSEADDR SO_REUSEPORT
@@ -31,13 +31,15 @@ sub _descriptor_for ($class) {
     croak "$class is not a Linux::Event::Listener::_Engine subclass"
         if !$class->isa(__PACKAGE__);
 
+    my $accept_client = $class->can('_accept_client');
     my $on_accept = $class->can('on_accept');
     my $on_error = $class->can('on_error');
-    croak "$class must define on_accept()" if !$on_accept;
+    croak "$class must define _accept_client()" if !$accept_client;
     croak "$class must define on_error()" if !$on_error;
     return $CLASS_DESCRIPTOR{$class} = {
-        on_accept => $on_accept,
-        on_error  => $on_error,
+        accept_client => $accept_client,
+        on_accept     => $on_accept,
+        on_error      => $on_error,
     };
 }
 
@@ -60,6 +62,13 @@ sub _boolean ($name, $value) {
 sub _message ($errno) {
     local $! = $errno;
     return "$!";
+}
+
+sub _family_name ($family) {
+    return 'inet' if $family == AF_INET;
+    return 'inet6' if $family == AF_INET6;
+    return 'unix' if $family == AF_UNIX;
+    return 'unknown';
 }
 
 sub _setup_error (%arg) {
@@ -314,7 +323,8 @@ sub new ($class, %opt) {
         loop                => undef,
         data                => $data,
         fh                  => $fh,
-        family              => $family,
+        family              => _family_name($family),
+        family_number       => $family,
         host                => $host,
         port                => $port,
         unix                => $path,
@@ -357,6 +367,11 @@ sub host        ($self) { $self->{host} }
 sub port        ($self) { $self->{port} }
 sub path        ($self) { $self->{unix} }
 sub family      ($self) { $self->{family} }
+sub family_number ($self) { $self->{family_number} }
+sub is_tcp      ($self) {
+    return $self->{family} eq 'inet' || $self->{family} eq 'inet6';
+}
+sub is_unix     ($self) { return $self->{family} eq 'unix' }
 sub state       ($self) { $self->{state} }
 sub accepted    ($self) { $self->{accepted} }
 sub last_error  ($self) { $self->{last_error} }
@@ -422,7 +437,7 @@ sub _accept_ready ($self) {
         };
         my $peer = Linux::Event::Address->new($sockaddr);
         $self->{accepted}++;
-        my $callback = $self->{descriptor}{on_accept};
+        my $callback = $self->{descriptor}{accept_client};
         my $ok = eval { $callback->($self, $client, $peer); 1 };
         my $callback_error = $@;
         if (!$ok) {

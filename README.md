@@ -89,8 +89,31 @@ must not construct, subclass, or depend on them.
 - socket creation, options, bind, listen, and cleanup owned by one object
 - native `accept4` draining with atomic nonblocking and close-on-exec flags
 - bounded level-triggered batches for listener fairness
+- optional `on_accept($listener, $stream)` after construction and attachment
 - lazy peer-address conversion and typed runtime errors
 - no temporary accepted-socket registration before Stream construction
+
+Use Listener `on_accept` for immediate connection accounting or admission
+policy. Use Stream `on_ready` when the connection is application-ready; for TLS
+that means after the handshake:
+
+```perl
+package ServerListener;
+use parent 'Linux::Event::Listener';
+
+sub on_accept ($listener, $stream) {
+    $listener->data->{connections}{ $stream->fd } = $stream;
+}
+
+package main;
+my $server = ServerListener->new(
+    loop         => $loop,          # optional: attach immediately
+    stream_class => 'ServerStream', # required
+    host         => '0.0.0.0',      # required for TCP
+    port         => 9999,           # required for TCP
+    reuseaddr    => 1,              # default
+);
+```
 
 ### Stream
 
