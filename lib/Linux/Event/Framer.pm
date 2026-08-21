@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_027';
+our $VERSION = '0.100_028';
 
 use Carp qw(croak);
 

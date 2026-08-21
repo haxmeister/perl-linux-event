@@ -3,11 +3,13 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_027';
+our $VERSION = '0.100_028';
 
 use Carp qw(croak);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
 use mro ();
+use POSIX qw(isfinite);
+use Scalar::Util qw(looks_like_number weaken);
 use Socket qw(SOL_SOCKET SO_ERROR);
 
 use Linux::Event::Stream::_Connection ();
@@ -45,6 +47,9 @@ sub _stream_options_for ($class) {
         max_pending_bytes =>         0,
         read_size        =>    65_536,
         max_buffer       => 8_388_608,
+        idle_timeout     =>         0,
+        read_timeout     =>         0,
+        write_timeout    =>         0,
     );
 
     if (my $configure = $class->can('stream_options')) {
@@ -75,8 +80,42 @@ sub _stream_options_for ($class) {
         if $option{read_size} !~ /\A\d+\z/ || $option{read_size} <= 0;
     croak "$class max_buffer must be a positive integer"
         if $option{max_buffer} !~ /\A\d+\z/ || $option{max_buffer} <= 0;
+    for my $name (qw(idle_timeout read_timeout write_timeout)) {
+        $option{$name} = _timeout_value($class, $name, $option{$name});
+    }
 
     return \%option;
+}
+
+sub _timeout_value ($target, $name, $value) {
+    my $seconds = !defined($value) || ref($value) || !looks_like_number($value)
+        ? undef : 0 + $value;
+    croak "$target $name must be a non-negative number of seconds"
+        if !defined($seconds) || !isfinite($seconds) || $seconds < 0;
+    return $seconds;
+}
+
+sub _deadline_spec ($method, $value) {
+    croak "$method(): deadline must be a hash reference"
+        if ref($value) ne 'HASH';
+    my %option = %$value;
+    my $has_after = exists $option{after};
+    my $has_at = exists $option{at};
+    croak "$method(): deadline requires exactly one of after or at"
+        if $has_after == $has_at;
+    my $operation = delete $option{operation};
+    croak "$method(): deadline operation must be a non-empty string"
+        if !defined($operation) || ref($operation) || $operation eq '';
+    my $name = $has_after ? 'after' : 'at';
+    my $seconds = _timeout_value("$method(): deadline", $name,
+        delete $option{$name});
+    croak "$method(): unknown deadline options: "
+        . join(', ', sort keys %option) if %option;
+    return {
+        absolute  => $has_at ? 1 : 0,
+        seconds   => $seconds,
+        operation => "$operation",
+    };
 }
 
 sub _descriptor_for ($class) {
@@ -179,6 +218,8 @@ sub _xs_output_limit ($self, $pending_bytes, $limit) {
 
 sub _xs_write_empty ($self) {
     return if $self->{closed};
+    $self->{deadline_write_started} = undef;
+    $self->_rearm_stream_deadline if $self->{deadline_started};
     $self->{watcher}->disable_write if $self->{watcher};
     $self->_finish_write_side if $self->{write_ending} && !$self->{write_ended};
     return;
@@ -208,6 +249,7 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
     if ($self->{xs_state} && $self->{xs_state}->transport_ready
         && !($self->{transport_ready_fired} & 0x01)) {
         $self->{transport_ready_fired} |= 0x01;
+        $self->_start_stream_deadlines;
         if ($self->{transport}
             && $self->{transport}->can('_stream_transport_ready')) {
             $self->{transport}->_stream_transport_ready($self);
@@ -248,6 +290,13 @@ sub new ($class, %opt) {
     my $data = delete $opt{data};
     my $peer = delete $opt{peer};
     my $transport = delete $opt{transport};
+    my %timeout_override;
+    for my $name (qw(idle_timeout read_timeout write_timeout)) {
+        $timeout_override{$name} = _timeout_value('new():', $name,
+            delete $opt{$name}) if exists $opt{$name};
+    }
+    my $initial_deadline = exists($opt{deadline})
+        ? _deadline_spec('new', delete $opt{deadline}) : undef;
     croak 'new(): unknown options: ' . join(', ', sort keys %opt) if %opt;
     croak 'new(): exactly one of fh or an outbound connection is required'
         if defined($fh) == defined($connect);
@@ -260,6 +309,10 @@ sub new ($class, %opt) {
         && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = _descriptor_for($class);
+    my %timeout = map {
+        $_ => exists($timeout_override{$_})
+            ? $timeout_override{$_} : $descriptor->{options}{$_}
+    } qw(idle_timeout read_timeout write_timeout);
     my $self = bless {
         descriptor  => $descriptor,
         loop        => undef,
@@ -279,6 +332,17 @@ sub new ($class, %opt) {
         transport_ready_fired => 0,
         transport_deadline_watcher => undef,
         transport_shutdown_started => 0,
+        timeout => \%timeout,
+        timeout_override => \%timeout_override,
+        initial_deadline => $initial_deadline,
+        operation_deadline_at => undef,
+        operation_deadline_name => undef,
+        operation_deadline_timeout => undef,
+        deadline_timer => undef,
+        deadline_started => 0,
+        deadline_tracking => 0,
+        deadline_read_started => undef,
+        deadline_write_started => undef,
     }, $class;
     $self->{peer} = $peer if defined $peer;
 
@@ -298,7 +362,8 @@ sub new ($class, %opt) {
 sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
     my %stream;
-    for my $name (qw(loop data transport)) {
+    for my $name (qw(loop data transport idle_timeout read_timeout
+        write_timeout deadline)) {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     return $class->new(%stream, _connect => \%opt);
@@ -379,6 +444,7 @@ sub _attach_to_loop ($self, $loop) {
         }
     }
     $self->_flush_preconnect_output if exists $self->{preconnect_output};
+    $self->_start_stream_deadlines if !$transport;
     return $self;
 }
 
@@ -421,7 +487,10 @@ sub _connect_succeeded ($self, $fh) {
         }
     }
     $self->_flush_preconnect_output;
-    $self->_fire_ready if !$self->{transport};
+    if (!$self->{transport}) {
+        $self->_start_stream_deadlines;
+        $self->_fire_ready;
+    }
     return;
 }
 
@@ -499,6 +568,220 @@ sub is_transport_ready ($self) {
     return 0;
 }
 
+sub idle_timeout  ($self) { $self->{timeout}{idle_timeout} }
+sub read_timeout  ($self) { $self->{timeout}{read_timeout} }
+sub write_timeout ($self) { $self->{timeout}{write_timeout} }
+
+sub set_deadline ($self, %option) {
+    croak 'set_deadline(): stream is closed' if $self->{closed};
+    my $spec = _deadline_spec('set_deadline', \%option);
+    if (!$self->{deadline_started}) {
+        $self->{initial_deadline} = $spec;
+        return $self;
+    }
+    my $now = _deadline_now();
+    $self->{operation_deadline_at} = $spec->{absolute}
+        ? $spec->{seconds} : $now + $spec->{seconds};
+    $self->{operation_deadline_name} = $spec->{operation};
+    $self->{operation_deadline_timeout} = $spec->{absolute}
+        ? undef : $spec->{seconds};
+    $self->_rearm_stream_deadline;
+    return $self;
+}
+
+sub clear_deadline ($self) {
+    croak 'clear_deadline(): stream is closed' if $self->{closed};
+    $self->{initial_deadline} = undef;
+    $self->{operation_deadline_at} = undef;
+    $self->{operation_deadline_name} = undef;
+    $self->{operation_deadline_timeout} = undef;
+    $self->_rearm_stream_deadline if $self->{deadline_started};
+    return $self;
+}
+
+sub deadline ($self) {
+    return $self->{operation_deadline_at}
+        if defined $self->{operation_deadline_at};
+    my $spec = $self->{initial_deadline} or return undef;
+    return $spec->{seconds} if $spec->{absolute};
+    return undef;
+}
+
+sub deadline_operation ($self) {
+    return $self->{operation_deadline_name}
+        // ($self->{initial_deadline} && $self->{initial_deadline}{operation});
+}
+
+sub _deadline_now () {
+    require Linux::Event::Stream::_Deadline;
+    return Linux::Event::Stream::_Deadline->now;
+}
+
+sub _needs_activity_tracking ($self) {
+    return $self->{timeout}{idle_timeout} > 0
+        || $self->{timeout}{read_timeout} > 0
+        || $self->{timeout}{write_timeout} > 0;
+}
+
+sub _start_stream_deadlines ($self) {
+    return if $self->{closed} || $self->{deadline_started};
+    return if !$self->{loop} || !$self->{xs_state};
+    $self->{deadline_started} = 1;
+    return if !$self->_needs_activity_tracking
+        && !$self->{initial_deadline};
+    my $now = _deadline_now();
+    if ($self->_needs_activity_tracking) {
+        $self->{xs_state}->_set_activity_tracking(1);
+        $self->{deadline_tracking} = 1;
+    }
+    $self->{deadline_read_started} = $now;
+    $self->{deadline_write_started} = $now if $self->pending_bytes > 0;
+    if (my $spec = delete $self->{initial_deadline}) {
+        $self->{operation_deadline_at} = $spec->{absolute}
+            ? $spec->{seconds} : $now + $spec->{seconds};
+        $self->{operation_deadline_name} = $spec->{operation};
+        $self->{operation_deadline_timeout} = $spec->{absolute}
+            ? undef : $spec->{seconds};
+    }
+    $self->_rearm_stream_deadline;
+    return;
+}
+
+sub _deadline_candidates ($self) {
+    my @candidate;
+    if (defined $self->{operation_deadline_at}) {
+        push @candidate, {
+            at        => $self->{operation_deadline_at},
+            operation => $self->{operation_deadline_name},
+            timeout   => $self->{operation_deadline_timeout},
+            priority  => 0,
+        };
+    }
+
+    my ($last_read, $last_write);
+    if ($self->{deadline_tracking} && $self->{xs_state}) {
+        ($last_read, $last_write)
+            = $self->{xs_state}->_activity_snapshot;
+    }
+    my $idle = $self->{timeout}{idle_timeout};
+    if ($idle > 0) {
+        my $last = $last_read > $last_write ? $last_read : $last_write;
+        push @candidate, {
+            at => $last + $idle, operation => 'idle', timeout => $idle,
+            priority => 3,
+        };
+    }
+    my $read = $self->{timeout}{read_timeout};
+    if ($read > 0 && !$self->{read_paused} && !$self->{read_eof}) {
+        my $last = $last_read;
+        $last = $self->{deadline_read_started}
+            if defined($self->{deadline_read_started})
+            && $self->{deadline_read_started} > $last;
+        push @candidate, {
+            at => $last + $read, operation => 'read', timeout => $read,
+            priority => 2,
+        };
+    }
+    my $write = $self->{timeout}{write_timeout};
+    if ($write > 0 && !$self->{write_ended} && $self->pending_bytes > 0) {
+        my $last = $last_write;
+        $last = $self->{deadline_write_started}
+            if defined($self->{deadline_write_started})
+            && $self->{deadline_write_started} > $last;
+        push @candidate, {
+            at => $last + $write, operation => 'write', timeout => $write,
+            priority => 1,
+        };
+    }
+    return @candidate;
+}
+
+sub _rearm_stream_deadline ($self) {
+    return if !$self->{deadline_started} || $self->{closed};
+    my @candidate = sort {
+        $a->{at} <=> $b->{at} || $a->{priority} <=> $b->{priority}
+    } $self->_deadline_candidates;
+    if (!@candidate) {
+        if (my $timer = delete $self->{deadline_timer}) {
+            $timer->cancel;
+        }
+        return;
+    }
+
+    my $at = $candidate[0]{at};
+    if (my $timer = $self->{deadline_timer}) {
+        if ($timer->is_active) {
+            $timer->reschedule(at => $at);
+            return;
+        }
+    }
+
+    my $state = { stream => $self };
+    weaken($state->{stream});
+    my $timer = Linux::Event::Stream::_Deadline->new(
+        at => $at, data => $state,
+    );
+    $self->{deadline_timer} = $timer;
+    $self->{loop}->add($timer);
+    return;
+}
+
+sub _stream_deadline_fired ($self, $timer) {
+    return if $self->{closed} || $self->{deadline_timer} != $timer;
+    my $now = _deadline_now();
+    my @candidate = sort {
+        $a->{at} <=> $b->{at} || $a->{priority} <=> $b->{priority}
+    } $self->_deadline_candidates;
+    my ($expired) = grep { $_->{at} <= $now } @candidate;
+    if (!$expired) {
+        $self->_rearm_stream_deadline;
+        return;
+    }
+
+    my $operation = $expired->{operation};
+    my $error = Linux::Event::Error->new(
+        type      => 'timeout',
+        operation => $operation,
+        message   => "$operation deadline expired",
+        timeout   => $expired->{timeout},
+        deadline  => $expired->{at},
+    );
+    $self->_fail($error);
+    return;
+}
+
+sub _cancel_stream_deadline ($self) {
+    if (my $timer = delete $self->{deadline_timer}) {
+        $timer->cancel;
+    }
+    if ($self->{deadline_tracking} && $self->{xs_state}) {
+        $self->{xs_state}->_set_activity_tracking(0);
+    }
+    $self->{deadline_tracking} = 0;
+    $self->{deadline_started} = 0;
+    return;
+}
+
+sub _apply_transition_timeouts ($self, $descriptor) {
+    for my $name (qw(idle_timeout read_timeout write_timeout)) {
+        $self->{timeout}{$name} = $descriptor->{options}{$name}
+            if !exists $self->{timeout_override}{$name};
+    }
+    return if !$self->{deadline_started} || !$self->{xs_state};
+    $self->{xs_state}->_set_activity_tracking(0)
+        if $self->{deadline_tracking};
+    $self->{deadline_tracking} = 0;
+    my $now = _deadline_now();
+    if ($self->_needs_activity_tracking) {
+        $self->{xs_state}->_set_activity_tracking(1);
+        $self->{deadline_tracking} = 1;
+    }
+    $self->{deadline_read_started} = $now;
+    $self->{deadline_write_started} = $self->pending_bytes > 0 ? $now : undef;
+    $self->_rearm_stream_deadline;
+    return;
+}
+
 sub write ($self, $bytes) {
     croak 'write(): stream is closed' if $self->{closed};
     croak 'write(): writable side has ended'
@@ -526,8 +809,14 @@ sub write ($self, $bytes) {
         return 0;
     }
 
+    my $was_pending = $self->pending_bytes;
     my $status = $self->{xs_state}->_write($bytes);
     $self->{watcher}->enable_write if $status & 0x02;
+    if ($self->{deadline_started} && $self->{timeout}{write_timeout} > 0
+        && !$was_pending && $self->pending_bytes > 0) {
+        $self->{deadline_write_started} = _deadline_now();
+        $self->_rearm_stream_deadline;
+    }
     return $status & 0x01 ? 1 : 0;
 }
 
@@ -553,14 +842,18 @@ sub pause_read ($self) {
     $self->{read_paused} = 1;
     $self->{xs_state}->_pause if $self->{xs_state};
     $self->{watcher}->disable_read if $self->{watcher};
+    $self->_rearm_stream_deadline if $self->{deadline_started};
     return $self;
 }
 
 sub resume_read ($self) {
     return $self if $self->{closed} || $self->{read_eof} || !$self->{read_paused};
     $self->{read_paused} = 0;
+    $self->{deadline_read_started} = _deadline_now()
+        if $self->{deadline_started};
     $self->{xs_state}->_resume if $self->{xs_state};
     $self->{watcher}->enable_read if $self->{watcher};
+    $self->_rearm_stream_deadline if $self->{deadline_started};
     return $self;
 }
 
@@ -587,6 +880,7 @@ sub transition_to ($self, $class, %opt) {
     $xs_state->_transition($descriptor->{xs}, $input);
     $self->{descriptor} = $descriptor;
     bless $self, $class;
+    $self->_apply_transition_timeouts($descriptor);
     $xs_state->_transition_ready;
     return $self;
 }
@@ -602,6 +896,7 @@ sub detach ($self) {
     croak 'detach(): cannot detach a non-plain transport'
         if ($self->transport_name // 'plain') ne 'plain';
     my $fh = $self->{fh};
+    $self->_cancel_stream_deadline;
     if (my $xs_state = delete $self->{xs_state}) {
         $xs_state->_close;
     }
@@ -726,6 +1021,7 @@ sub _mark_eof ($self) {
     return if $self->{read_eof} || $self->{closed};
     $self->{read_eof} = 1;
     $self->{watcher}->disable_read if $self->{watcher};
+    $self->_rearm_stream_deadline if $self->{deadline_started};
 
     if (my $callback = $self->{descriptor}{callbacks}{on_eof}) {
         $callback->($self);
@@ -770,6 +1066,7 @@ sub _close_now ($self, $close_fh) {
     }
     $self->{preconnect_output} = [];
     $self->{preconnect_bytes} = 0;
+    $self->_cancel_stream_deadline;
     $self->_destroy_transport_deadline;
 
     if (my $xs_state = delete $self->{xs_state}) {
@@ -874,7 +1171,7 @@ cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
-=head2 new(fh => $fh, loop => $loop, data => $value, transport => $provider)
+=head2 new(fh => $fh, loop => $loop, data => $value, transport => $provider, ...)
 
 C<fh> is required for an already-established Stream. Stream takes ownership of
 the filehandle and sets it nonblocking. Supply C<loop> to attach before C<new>
@@ -885,6 +1182,12 @@ provider such as L<Linux::Event::TLS>. The provider is bound to the established
 descriptor and retained for the Stream's lifetime. Use C<detach> to transfer a
 still-open plain handle back to the application; non-plain transports cannot be
 detached.
+
+C<idle_timeout>, C<read_timeout>, and C<write_timeout> override the subclass's
+cached inactivity defaults for this Stream. Each is non-negative seconds and
+zero explicitly disables that policy. C<deadline> accepts a hash reference
+containing exactly one of C<after> or C<at> plus a non-empty C<operation> label.
+Relative construction deadlines begin when the Stream becomes usable.
 
 Callbacks, framing, and buffer policy are class behavior and are not accepted
 as constructor options.
@@ -902,9 +1205,11 @@ Otherwise the state is C<unattached> until C<< $loop->add($stream) >>.
 
 Exactly one of C<host>/C<port>, C<unix>, or packed C<sockaddr>/C<family> is
 required. C<timeout> is seconds, defaults to 10, and may be zero to disable the
-deadline. C<data> and C<transport> are passed to the Stream. C<write> and
-C<send> may queue output before attachment or readiness. Hostname resolution is
-synchronous in this release; socket establishment is nonblocking.
+deadline. C<data>, C<transport>, established timeout overrides, and C<deadline>
+are passed to the Stream. C<write> and C<send> may queue output before
+attachment or readiness. Hostname resolution runs in the Loop's private native
+worker pool; socket establishment and staggered IPv6/IPv4 attempts are
+nonblocking.
 
 =head2 listen(host => $host, port => $port, ...)
 
@@ -938,13 +1243,19 @@ per connection:
           low_watermark     => 512 * 1024,
           max_pending_bytes => 8 * 1024 * 1024,
           max_buffer        => 16 * 1024 * 1024,
+          idle_timeout      => 120,
+          read_timeout      => 30,
+          write_timeout     => 10,
       );
   }
 
 The defaults are 65,536 bytes per read, a 1 MiB high watermark, a 256 KiB low
 watermark, no hard pending-output limit, and an 8 MiB maximum framed input
 buffer. Set C<max_pending_bytes> to a positive byte count to impose a hard
-limit; zero keeps the default unlimited policy.
+limit; zero keeps the default unlimited policy. Established timeout defaults
+are zero, which disables them. Constructor values take precedence for one
+Stream and survive protocol transitions; non-overridden values change to the
+target subclass's defaults.
 
 =head1 CALLBACKS
 
@@ -1056,6 +1367,41 @@ provider-owned wire state rather than application plaintext.
 =head2 pending_bytes / is_write_blocked
 
 Report native output-queue and flow-control state.
+
+=head2 idle_timeout / read_timeout / write_timeout
+
+Return this Stream's effective established inactivity policy in seconds.
+C<idle_timeout> resets on successful read or write transport progress.
+C<read_timeout> resets on inbound bytes, is suspended by C<pause_read>, and
+starts a fresh interval on C<resume_read>. C<write_timeout> exists only while
+output remains queued and resets on successful write progress.
+
+=head2 set_deadline(after => $seconds, operation => $name)
+
+=head2 set_deadline(at => $monotonic_deadline, operation => $name)
+
+Set or replace the one explicit overall-operation deadline and return the
+Stream. An overall deadline never resets because of I/O. Calling this before
+establishment stores the policy; relative time begins when the Stream becomes
+usable, while C<at> remains an absolute C<CLOCK_MONOTONIC> value.
+
+=head2 clear_deadline
+
+Remove the explicit operation deadline and return the Stream. Inactivity
+policies remain active.
+
+=head2 deadline / deadline_operation
+
+Return the active absolute operation deadline and its label. A detached
+relative deadline has no absolute value yet, so C<deadline> returns undef.
+
+All established deadline categories start after plain or TLS transport
+readiness. Resolver, connection, TLS handshake, and TLS shutdown time use their
+existing separate owners. Expiration reports a C<timeout>
+L<Linux::Event::Error> through C<on_error> and closes normally through
+C<on_close>. The Error includes C<timeout> and C<deadline> context. Every
+deadline-enabled Stream uses at most one private Timer in the Loop's shared
+timerfd/native heap.
 
 =head2 transport / transport_name / is_transport_ready
 

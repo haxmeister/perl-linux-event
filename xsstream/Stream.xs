@@ -95,6 +95,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 #include <sys/uio.h>
 #include "stream_transport_abi.h"
 #include <sys/socket.h>
@@ -280,6 +281,14 @@ typedef struct les_xsstate_s {
     les_write_seg_t *wtail;
     UV pending_bytes;
 
+    /* Optional established-connection deadline activity. The ordinary Stream
+     * path leaves tracking disabled and therefore pays only one predictable
+     * branch after successful transport progress. */
+    int activity_tracking;
+    unsigned long long last_read_ns;
+    unsigned long long last_write_ns;
+    unsigned long long activity_clock_calls;
+
     /* Read instrumentation. */
     unsigned long long read_ready_calls;
     unsigned long long read_calls;
@@ -312,6 +321,34 @@ typedef struct les_xsstate_s {
     unsigned long long drain_calls;
     unsigned long long empty_calls;
 } les_xsstate_t;
+
+static unsigned long long
+les_activity_now_ns(pTHX)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+        croak("clock_gettime(CLOCK_MONOTONIC) failed: %s", strerror(errno));
+    return (unsigned long long)now.tv_sec * 1000000000ULL
+        + (unsigned long long)now.tv_nsec;
+}
+
+static void
+les_note_read_activity(pTHX_ les_xsstate_t *st)
+{
+    if (!st->activity_tracking)
+        return;
+    st->last_read_ns = les_activity_now_ns(aTHX);
+    st->activity_clock_calls++;
+}
+
+static void
+les_note_write_activity(pTHX_ les_xsstate_t *st)
+{
+    if (!st->activity_tracking)
+        return;
+    st->last_write_ns = les_activity_now_ns(aTHX);
+    st->activity_clock_calls++;
+}
 
 /* Keep the ordinary fd path direct and predictable. Provider indirection is
  * paid only after a future adjacent transport replaces the plain ops table. */
@@ -1350,6 +1387,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
 
         if (result.status == LES_TRANSPORT_OK && result.count > 0) {
             st->bytes_read += (unsigned long long)result.count;
+            les_note_read_activity(aTHX_ st);
 
             if (st->descriptor->read_mode == LES_READ_DELIVER) {
                 SV *bytes = sv_2mortal(newSVpvn(
@@ -1439,6 +1477,7 @@ les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv)
             if (result.status == LES_TRANSPORT_OK && result.count > 0) {
                 off = (STRLEN)result.count;
                 st->bytes_written += (unsigned long long)result.count;
+                les_note_write_activity(aTHX_ st);
                 break;
             }
 
@@ -1545,6 +1584,7 @@ les_write_ready(pTHX_ les_xsstate_t *st)
 
         if (result.status == LES_TRANSPORT_OK && result.count > 0) {
             st->bytes_written += (unsigned long long)result.count;
+            les_note_write_activity(aTHX_ st);
             les_consume_written(st, (size_t)result.count);
             les_maybe_drain_transition(aTHX_ st);
             continue;
@@ -1874,6 +1914,40 @@ _resume(state_obj)
     }
 
 void
+_set_activity_tracking(state_obj, enabled)
+    SV *state_obj
+    int enabled
+  PREINIT:
+    les_xsstate_t *st;
+    unsigned long long now;
+  CODE:
+    st = les_state_from_sv(state_obj);
+    if (enabled) {
+        if (!st->activity_tracking) {
+            now = les_activity_now_ns(aTHX);
+            st->last_read_ns = now;
+            st->last_write_ns = now;
+            st->activity_clock_calls++;
+        }
+        st->activity_tracking = 1;
+    } else {
+        st->activity_tracking = 0;
+    }
+
+void
+_activity_snapshot(state_obj)
+    SV *state_obj
+  PREINIT:
+    les_xsstate_t *st;
+  PPCODE:
+    st = les_state_from_sv(state_obj);
+    if (!st->activity_tracking)
+        croak("Stream activity tracking is not enabled");
+    EXTEND(SP, 2);
+    PUSHs(sv_2mortal(newSVnv((NV)st->last_read_ns / 1000000000.0)));
+    PUSHs(sv_2mortal(newSVnv((NV)st->last_write_ns / 1000000000.0)));
+
+void
 _transition(state_obj, descriptor_obj, input = &PL_sv_undef)
     SV *state_obj
     SV *descriptor_obj
@@ -1994,6 +2068,10 @@ stats(state_obj)
     hv_stores(hv, "empty_calls", newSVuv(st->empty_calls));
     hv_stores(hv, "pending_bytes", newSVuv(st->pending_bytes));
     hv_stores(hv, "write_blocked", newSViv(st->write_blocked ? 1 : 0));
+    hv_stores(hv, "activity_tracking",
+        newSViv(st->activity_tracking ? 1 : 0));
+    hv_stores(hv, "activity_clock_calls",
+        newSVuv(st->activity_clock_calls));
 
     RETVAL = newRV_noinc((SV *)hv);
   OUTPUT:

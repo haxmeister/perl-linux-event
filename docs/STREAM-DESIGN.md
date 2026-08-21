@@ -71,6 +71,7 @@ Immutable descriptor state includes:
 - high and low output watermarks
 - optional hard `max_pending_bytes`
 - framed `max_buffer`
+- idle, read, and write inactivity defaults
 
 Per-connection native state includes:
 
@@ -79,11 +80,28 @@ Per-connection native state includes:
 - pause, EOF, close, and backpressure flags
 - native input bytes and parser scan state
 - segmented output queue and pending byte count
+- optional native read/write activity timestamps
 - instrumentation counters
 
-Per-connection Perl state includes the loop, handle, native registration, optional `data`,
-and semantic lifecycle flags. It does not contain callback option hashes or a
-framer object.
+Per-connection Perl state includes the loop, handle, native registration,
+optional `data`, constructor timeout overrides, one optional operation
+deadline, and semantic lifecycle flags. It does not contain callback option
+hashes or a framer object.
+
+## Established deadlines
+
+Idle, read, and write inactivity policy is cached with each subclass and may
+be overridden per connection. One explicit overall-operation deadline may be
+set at construction or runtime. Established timing starts only after plain or
+TLS transport readiness; acquisition and TLS setup retain separate deadline
+owners.
+
+At most one private Timer per Stream represents the earliest current
+condition. All such Timers share the Loop timerfd and native heap. Native I/O
+records successful progress only when inactivity policy is enabled, and does
+not enter Perl merely to move a deadline. The Timer callback validates the
+latest activity snapshot before expiring or rescheduling itself. See
+`STREAM-DEADLINES.md` for the public contract and reset semantics.
 
 ## Input paths
 

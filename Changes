@@ -1,5 +1,24 @@
 Revision history for Linux-Event
 
+0.100_028  2026-08-21
+    - Add established Stream idle, read, and write inactivity deadlines with
+      cached subclass defaults and per-connection constructor overrides.
+    - Add constructor and runtime overall-operation deadlines through
+      deadline, set_deadline(), clear_deadline(), and monotonic after/at forms.
+    - Start established deadlines only after plain or TLS transport readiness,
+      leaving resolver, connection, TLS handshake, and TLS shutdown deadline
+      ownership unchanged.
+    - Track successful read and write progress natively only for Streams that
+      enable inactivity policy; ordinary Streams perform no activity clock
+      reads in their I/O path.
+    - Use at most one private Timer per deadline-enabled Stream, sharing the
+      Loop's existing timerfd and native deadline heap without exposing the
+      internal Timer object.
+    - Deliver typed timeout errors with operation, duration, and absolute
+      deadline context, then follow ordinary on_error/on_close cleanup.
+    - Add plain, TLS, transition, pause/resume, EOF, queued-write, lifecycle,
+      validation, and benchmark regression coverage.
+
 0.100_027  2026-08-21
     - Move hostname resolution off the reactor thread into a private XS
       resolver with two lazy native pthread workers per Loop.

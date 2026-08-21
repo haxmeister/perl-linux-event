@@ -184,6 +184,15 @@ their previous deadline, coalescing missed intervals into one callback.
 Dispatch is capped at 1024 callbacks per batch, and immediate work created from
 inside a Timer callback is deferred to a later Loop turn.
 
+Established Stream deadlines reuse this scheduler. A deadline-enabled Stream
+owns at most one private Timer containing a weak route back to the Stream. That
+heap entry always represents the earliest idle, read, write, or explicit
+operation deadline. Native Stream state records successful I/O timestamps only
+when inactivity tracking is enabled; progress never enters Perl merely to
+reschedule the heap. When an old deadline arrives, the private callback checks
+the latest snapshot and either expires the Stream or moves the same Timer.
+Ordinary Streams perform no activity clock reads.
+
 ## Signal delivery layer
 
 Each Loop with Signal subscriptions owns one private nonblocking signalfd and a

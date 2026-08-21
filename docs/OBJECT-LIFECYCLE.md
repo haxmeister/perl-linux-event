@@ -61,6 +61,8 @@ different parts of an application.
 - A terminal object cannot be reattached.
 - Stream owns its established socket from construction or successful connect
   until `close()`, `detach()`, or destruction.
+- A deadline-enabled Stream owns at most one private Timer in its Loop's shared
+  scheduler. Close, detach, failure, and Loop destruction cancel that entry.
 - Listener owns sockets it creates. An adopted listener is closed only when
   `owns_socket => 1` was requested.
 - Loop retains an active Timer even when the application drops its reference.
@@ -88,6 +90,9 @@ Timer is also a logical object rather than a timerfd wrapper. All active Timers
 on one Loop share one lazily created timerfd and live in a native indexed heap.
 Cancellation is terminal and idempotent. Rescheduling is allowed while active
 or from inside `on_timer`, but an expired or cancelled Timer cannot be revived.
+Private Stream deadline Timers follow the same scheduler rules but are not
+application objects. Their data holds only a weak route to the owning Stream,
+so deadline ownership does not introduce a Perl reference cycle.
 
 Signal is a logical subscription rather than a signalfd wrapper. All Signal
 objects on one Loop share one signalfd and native fan-out registry. One object

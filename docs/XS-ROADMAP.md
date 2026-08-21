@@ -79,9 +79,9 @@ merging its OpenSSL implementation into XSStream.
 
 The released attachment exact-versions the common ABI, retains provider
 lifetime, and implements cross-direction readiness (`SSL_read` wanting write
-and `SSL_write` wanting read). Deadlines, richer shutdown diagnostics, provider
-bounded-buffer observability and live transport replacement remain follow-up
-work.
+and `SSL_write` wanting read). Established Stream deadlines now cover TLS after
+provider readiness. Richer shutdown diagnostics, provider bounded-buffer
+observability and live transport replacement remain follow-up work.
 
 ## Completed - Stream connection layer
 
@@ -127,6 +127,28 @@ drain and aggregate records before fan-out. Cancellation is safe during
 callbacks, last-subscriber removal restores only mask entries Linux::Event
 changed, and one signal number has one owning Loop per process. Resolver
 workers block signals independently so native DNS cannot intercept them.
+
+## Completed - established Stream deadlines
+
+Stream subclasses cache idle, read, and write inactivity defaults, while each
+instance may override them and own one explicit overall-operation deadline.
+Established policy begins only after plain or TLS readiness and reports typed
+timeout errors through the ordinary Stream close lifecycle.
+
+At most one private Timer per Stream represents the earliest condition in the
+Loop's existing timerfd/native heap. XS records successful transport activity
+only when inactivity policy is enabled. Ordinary Streams perform no timestamp
+syscalls, and enabled I/O progress does not enter Perl merely to move a heap
+entry. Plain, TLS, transition, pause/resume, EOF, queued-write, and regression
+benchmark coverage protect the contract.
+
+## Next completion feature - production socket configuration
+
+Complete the outbound and accepted-socket configuration surface: local address
+binding, TCP_NODELAY, keepalive, TCP_USER_TIMEOUT, buffer sizing, interface
+binding, and a controlled socket-configuration hook. Constructor options should
+remain the primary declaration point, with post-construction setters only where
+Linux permits a meaningful live change.
 
 ## Priority 2 - General native framing families
 

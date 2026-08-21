@@ -102,6 +102,9 @@ must not construct, subclass, or depend on them.
   `Linux::Event::TLS` provider support
 - high/low-watermark backpressure with `on_drain`
 - optional hard pending-output limits with typed overflow errors
+- established idle, read, write, and explicit operation deadlines
+- one private shared-scheduler Timer at most per deadline-enabled Stream
+- native activity timestamps only when inactivity policy is enabled
 - pause/resume reads
 - independent peer EOF and writable half-close
 - graceful `end()`, immediate `close()`, and ownership-transfer `detach()`
@@ -111,6 +114,46 @@ must not construct, subclass, or depend on them.
 
 The raw reactor never performs application I/O automatically. Stream is the
 higher-level layer for applications that want owned byte-stream I/O.
+
+### Established Stream deadlines
+
+Stream subclasses may cache connection-wide inactivity defaults with their
+other class policy:
+
+```perl
+sub stream_options ($class) {
+    return (
+        idle_timeout  => 60,
+        read_timeout  => 30,
+        write_timeout => 10,
+    );
+}
+```
+
+Each value is seconds and zero disables that policy. Constructor values
+override the subclass for one Stream, including accepted Streams configured by
+`accepted_stream_options`:
+
+```perl
+my $stream = ClientStream->connect(
+    host => $host, port => $port,
+    idle_timeout => 120,
+    deadline => { after => 15, operation => 'authentication' },
+);
+```
+
+An application can replace or clear the one explicit overall-operation
+deadline later:
+
+```perl
+$stream->set_deadline(after => 5, operation => 'response');
+$stream->clear_deadline;
+```
+
+Established deadlines begin only when the Stream is usable. Resolver,
+connection, TLS handshake, and TLS shutdown time retain their existing
+deadline owners. Expiration delivers a typed `timeout` error through
+`on_error` and closes through the ordinary Stream lifecycle.
 
 ## Loop attachment
 
@@ -426,6 +469,7 @@ memory against the versioned object-configured baseline.
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - plain transport and TLS provider contract
 - [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
+- [`docs/STREAM-DEADLINES.md`](docs/STREAM-DEADLINES.md) - established inactivity and operation deadlines
 - [`docs/LISTENER-DESIGN.md`](docs/LISTENER-DESIGN.md) - inbound acquisition and accept policy
 - [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
 - [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_027';
+our $VERSION = '0.100_028';
 
 1;
 
@@ -50,7 +50,7 @@ XS-first epoll reactor and native watcher registry.
 =item * L<Linux::Event::Stream>
 
 Subclass-defined buffered byte streams with connection, framing, backpressure,
-half-close, protocol-transition, and transport lifecycle.
+half-close, established deadlines, protocol-transition, and transport lifecycle.
 
 =item * L<Linux::Event::Listener>
 

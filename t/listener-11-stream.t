@@ -11,12 +11,13 @@ use Linux::Event::Loop;
     use parent 'Linux::Event::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($self, $message) {
+        $self->data->{stream} = $self;
         $self->send($message);
         $self->data->{messages}++;
         $self->loop->stop;
     }
     sub accepted_stream_options ($class, $listener, $peer) {
-        return data => $listener->data;
+        return data => $listener->data, idle_timeout => 60;
     }
 }
 
@@ -34,6 +35,8 @@ $loop->run_once(0);
 
 ok(!$state->{error}, 'Listener constructs the Stream automatically');
 is($state->{messages}, 1, 'Stream parses one line');
+is($state->{stream}->idle_timeout, 60,
+    'accepted Stream receives constructor deadline options');
 is(sysread($client, my $echo, 6), 6, 'client receives complete echo');
 is($echo, "hello\n", 'send reapplies the declared line delimiter');
 

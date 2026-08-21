@@ -27,12 +27,13 @@ my @all_workloads = qw(
     raw-stream-lifecycle
     framed-stream-lifecycle
     raw-stream-throughput
+    deadline-stream-throughput
     framed-stream-throughput
     connect-listener-lifecycle
 );
 my %known_workload = map { $_ => 1 } @all_workloads;
 
-my $contract_version = 2;
+my $contract_version = 3;
 my $quick = 0;
 my $repeats;
 my $iterations;
@@ -190,6 +191,7 @@ my $report = {
         'Timer lifecycle measures attach plus cancellation on one shared timerfd.',
         'Timer expiration measures zero-delay delivery through the native heap.',
         'Throughput workloads use one outstanding message per client.',
+        'Deadline throughput enables idle tracking without allowing expiration.',
         'The connection workload measures the complete public connect/listen handoff.',
         'Compare only reports with the same contract and configuration.',
     ],
@@ -272,6 +274,10 @@ sub define_benchmark_classes () {
         sub on_message (\$stream, \$message) { \$stream->send(\$message) }
         sub on_error (\$stream, \$error) { die "framed Stream error: \$error\\n" }
 
+        package Linux::Event::Bench::Regression::DeadlineRaw;
+        use parent -norequire, 'Linux::Event::Bench::Regression::Raw';
+        sub stream_options (\$class) { return idle_timeout => 3_600 }
+
         package Linux::Event::Bench::Regression::Timer;
         use parent -norequire, 'Linux::Event::Timer';
         sub on_timer (\$timer) { main::timer_expired(\$timer) }
@@ -314,6 +320,9 @@ sub run_workload ($name) {
         if $name eq 'framed-stream-lifecycle';
     return stream_throughput('Linux::Event::Bench::Regression::Raw', 0)
         if $name eq 'raw-stream-throughput';
+    return stream_throughput(
+        'Linux::Event::Bench::Regression::DeadlineRaw', 0,
+    ) if $name eq 'deadline-stream-throughput';
     return stream_throughput('Linux::Event::Bench::Regression::Framed', 1)
         if $name eq 'framed-stream-throughput';
     return connection_lifecycle();

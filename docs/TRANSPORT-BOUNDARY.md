@@ -88,6 +88,13 @@ is created when a deadline is first needed, disarmed after handshake, reused
 for shutdown, and destroyed with the Stream. Ordinary plain Streams allocate
 no deadline fd or watcher.
 
+Established idle, read, write, and explicit operation deadlines begin only
+after the provider reports ready. They are Stream policy, not provider policy,
+and use the Loop's shared Timer scheduler rather than the TLS deadline fd.
+Successful TLS plaintext reads and writes update the same optional native
+activity timestamps as the plain transport. Handshake control traffic does not
+start or reset established policy.
+
 Clean peer `close_notify` enters ordinary EOF handling. Socket EOF without
 `close_notify` is instead a typed TLS read error. Provider-native counters and
 the plain-versus-TLS benchmark expose both outcomes and the transport's

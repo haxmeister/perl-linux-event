@@ -43,6 +43,7 @@ docs/LISTENER-DESIGN.md
 docs/OBJECT-LIFECYCLE.md
 docs/SIGNAL-DESIGN.md
 docs/STREAM-CONNECTIONS.md
+docs/STREAM-DEADLINES.md
 docs/STREAM-DESIGN.md
 docs/TIMER-DESIGN.md
 docs/TRANSPORT-BOUNDARY.md
@@ -66,6 +67,7 @@ lib/Linux/Event/Loop.pm
 lib/Linux/Event/Signal.pm
 lib/Linux/Event/Stream.pm
 lib/Linux/Event/Stream/_Connection.pm
+lib/Linux/Event/Stream/_Deadline.pm
 lib/Linux/Event/Stream/_Resolver.pm
 lib/Linux/Event/Timer.pm
 lib/Linux/Event/TLS.pm
@@ -165,9 +167,12 @@ t/stream-43-connect-unix.t
 t/stream-44-connect-error-close.t
 t/stream-45-connect-timeout.t
 t/stream-46-async-resolver.t
+t/stream-47-deadlines-api.t
+t/stream-48-deadlines.t
 t/tls-00-load.t
 t/tls-10-stream.t
 t/tls-20-deadline-and-eof.t
+t/tls-21-stream-deadlines.t
 t/tls-30-sigpipe.t
 t/tls-40-connect-listen.t
 t/tls-certs/server-cert.pem

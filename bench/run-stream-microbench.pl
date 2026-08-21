@@ -27,6 +27,12 @@ use Linux::Event::Stream;
     sub stream_options ($class) { return max_pending_bytes => 16 * 1024 * 1024 }
 }
 
+{
+    package Linux::Event::Bench::DeadlineRawEchoStream;
+    use parent -norequire, 'Linux::Event::Bench::RawEchoStream';
+    sub stream_options ($class) { return idle_timeout => 3_600 }
+}
+
 my @clients = (1, 10, 100, 1000);
 my $messages = 100;
 my $warmup = 10;
@@ -46,7 +52,12 @@ die "warmup must be >= 0\n" if $warmup < 0;
 die "bytes must be > 0\n" if $bytes <= 0;
 die "repeats must be > 0\n" if $repeats <= 0;
 
-my @systems = ('raw-reactor', 'subclass-stream', 'subclass-stream-capped');
+my @systems = (
+    'raw-reactor',
+    'subclass-stream',
+    'subclass-stream-deadline',
+    'subclass-stream-capped',
+);
 my @rows;
 
 for my $count (@clients) {
@@ -81,7 +92,7 @@ for my $count (@clients) {
 
 say "\nThis is a same-process AF_UNIX development microbenchmark, not the final";
 say "cross-runtime Stream leaderboard. It compares direct raw-reactor echo";
-say "with uncapped and hard-capped subclass-defined native Streams.";
+say "with uncapped, deadline-tracked, and hard-capped subclass Streams.";
 
 sub run_case ($system, $count) {
     my $loop = Linux::Event::Loop->new;
@@ -125,7 +136,9 @@ sub run_case ($system, $count) {
         } else {
             my $class = $system eq 'subclass-stream-capped'
                 ? 'Linux::Event::Bench::CappedRawEchoStream'
-                : 'Linux::Event::Bench::RawEchoStream';
+                : $system eq 'subclass-stream-deadline'
+                    ? 'Linux::Event::Bench::DeadlineRawEchoStream'
+                    : 'Linux::Event::Bench::RawEchoStream';
             my $s = $class->new(
                 loop => $loop,
                 fh   => $server,

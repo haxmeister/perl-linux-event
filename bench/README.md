@@ -10,10 +10,10 @@ way to measure the current implementation.
 `run-performance-regression.pl` is the permanent same-version-contract guard
 for Linux::Event releases. It covers raw registration churn, Timer attachment,
 cancellation and expiration, raw and framed Stream construction, raw and
-natively framed message throughput, and the full public `connect`/`listen`
-lifecycle. Every workload records median wall rate
-and process CPU microseconds per operation after warmup. Workload order rotates
-across repeats.
+natively framed message throughput, deadline-tracked raw Stream throughput,
+and the full public `connect`/`listen` lifecycle. Every workload records median
+wall rate and process CPU microseconds per operation after warmup. Workload
+order rotates across repeats.
 
 Capture a full baseline from a clean, idle machine:
 
@@ -261,20 +261,20 @@ refer to phase-era names and assumptions.
 
 `run-stream-microbench.pl` compares direct raw-reactor echo with raw
 subclass-defined Streams using the same AF_UNIX request/reply workload. The
-Stream rows run both the default unlimited output queue and an otherwise
-identical class with a 16 MiB `max_pending_bytes` limit. Their comparison is
-the regression check that the optional hard-limit branch does not materially
-tax normal writes. The same benchmark guards the specialized `plain` provider
-path as the native transport contract evolves. This is not the public
-cross-runtime leaderboard.
+Stream rows cover the default unlimited output queue, an otherwise identical
+class with a 16 MiB `max_pending_bytes` limit, and a class with an enabled idle
+deadline. These comparisons guard the optional hard-limit branch, the disabled
+deadline fast path, and the cost of native activity tracking. The same
+benchmark guards the specialized `plain` provider path as the native transport
+contract evolves. This is not the public cross-runtime leaderboard.
 
 ```bash
 perl -Mblib bench/run-stream-microbench.pl \
   --clients=1,10,100,1000 --warmup=10 --messages=100 \
-  --bytes=64 --repeats=6
+  --bytes=64 --repeats=8
 ```
 
-Use a repeat count divisible by three so every implementation occupies every
+Use a repeat count divisible by four so every implementation occupies every
 execution position equally.
 
 `run-tls-microbench.pl` is the permanent established-connection comparison

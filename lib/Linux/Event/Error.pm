@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_027';
+our $VERSION = '0.100_028';
 
 use overload '""' => 'as_string', fallback => 1;
 
@@ -22,6 +22,8 @@ sub new ($class, %arg) {
         family         => $arg{family},
         attempts       => $arg{attempts},
         resolver_message => $arg{resolver_message},
+        timeout        => $arg{timeout},
+        deadline       => $arg{deadline},
     }, $class;
 }
 
@@ -38,6 +40,8 @@ sub path          ($self) { $self->{path} }
 sub family        ($self) { $self->{family} }
 sub attempts      ($self) { $self->{attempts} }
 sub resolver_message ($self) { $self->{resolver_message} }
+sub timeout       ($self) { $self->{timeout} }
+sub deadline      ($self) { $self->{deadline} }
 
 sub as_string ($self, @ignored) {
     my $text = $self->{message};
@@ -102,6 +106,13 @@ Return applicable connection or listener address details.
 =head2 attempts / resolver_message
 
 Return outbound connection-attempt and resolver details when available.
+
+=head2 timeout / deadline
+
+Return the configured relative duration and expired absolute monotonic deadline
+for established Stream timeout errors. C<timeout> is undefined for an explicit
+absolute operation deadline and both values are undefined for unrelated error
+types.
 
 =head2 as_string
 
