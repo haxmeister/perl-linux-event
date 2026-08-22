@@ -90,6 +90,53 @@ perl -Mblib bench/run-resolver-microbench.pl \
 Use a stable local or controlled DNS target when comparing builds. Public
 internet resolver latency is environment noise and is not a release gate.
 
+## Wakeup microbenchmark
+
+`run-wakeup-microbench.pl` measures public eventfd signalling and Loop callback
+delivery at several coalescing batch sizes:
+
+```bash
+perl -Mblib bench/run-wakeup-microbench.pl \
+  --signals=100000 --batch-sizes=1,16,256 --repeats=5 \
+  --json=bench/results/wakeup-microbench.json
+```
+
+Each callback issues the next batch, so batch size one measures a full
+signal-to-Loop round trip and larger rows expose eventfd coalescing. The report
+separates logical signals from resulting Perl callbacks and includes parent CPU
+microseconds per signal.
+
+## Datagram microbenchmark
+
+`run-datagram-microbench.pl` runs exact serial IPv4 loopback UDP echo through
+connected and unconnected public Datagram objects:
+
+```bash
+perl -Mblib bench/run-datagram-microbench.pl \
+  --packets=100000 --bytes=64 --modes=connected,unconnected --repeats=5 \
+  --json=bench/results/datagram-microbench.json
+```
+
+The timed interval begins in client `on_ready`; construction, asynchronous
+hostname resolution, and teardown are outside it. Every payload is checked and
+only one request is outstanding, making packets/second, payload MiB/second, and
+CPU microseconds per packet directly comparable across the two modes.
+
+## Process microbenchmark
+
+`run-process-microbench.pl` measures `posix_spawnp`, pidfd registration,
+reaping, and `on_exit` delivery for a no-output executable:
+
+```bash
+perl -Mblib bench/run-process-microbench.pl \
+  --program=/bin/true --processes=1000 --concurrency=1,8,32 --repeats=5 \
+  --json=bench/results/process-microbench.json
+```
+
+It reports complete child lifecycles per second and parent CPU microseconds per
+child. Keep the executable, concurrency, libc, kernel, process limits, and host
+load identical when comparing reports.
+
 ## Listener lifecycle microbenchmark
 
 Run the permanent inbound connection benchmark from the distribution root:
@@ -166,7 +213,7 @@ Every ranked system receives the same workload:
 - all connections established and accepted before timing
 - watcher registration outside timing
 - identical named Perl `echo_read()` function
-- `sysread(..., 8192)` drain logic
+- `sysread($fh, $buffer, 8192)` drain logic
 - identical `syswrite` loop
 - serial request/reply: at most one outstanding message per client
 - warmup outside timing

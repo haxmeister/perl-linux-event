@@ -35,7 +35,7 @@ use parent 'Linux::Event::Stream';
 use Linux::Event::Framer 'Delimiter', "\r\n",
     max_frame => 1_048_576;
 
-sub on_message ($stream, $message) { ... }
+sub on_message ($stream, $message) { $stream->send($message) }
 ```
 
 The delimiter may contain arbitrary bytes and may cross socket reads.

@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use parent 'Linux::Event::Timer';
 

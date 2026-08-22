@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
 use Fcntl qw(F_GETFL F_SETFL O_NONBLOCK);
@@ -11,9 +11,12 @@ use mro ();
 use POSIX qw(isfinite);
 use Scalar::Util qw(looks_like_number weaken);
 use Socket qw(SOL_SOCKET SO_ERROR);
+use utf8 ();
 
 use Linux::Event::Stream::_Connection ();
 use Linux::Event::Error;
+use Linux::Event::Address;
+use Linux::Event::_SocketConfig ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -72,6 +75,7 @@ sub _stream_options_for ($class) {
         idle_timeout     =>         0,
         read_timeout     =>         0,
         write_timeout    =>         0,
+        map { $_ => undef } Linux::Event::_SocketConfig::names(),
     );
 
     if (my $configure = $class->can('stream_options')) {
@@ -105,6 +109,12 @@ sub _stream_options_for ($class) {
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
         $option{$name} = _timeout_value($class, $name, $option{$name});
     }
+    for my $name (Linux::Event::_SocketConfig::names()) {
+        $option{$name} = Linux::Event::_SocketConfig::normalize(
+            $class, $name, $option{$name},
+        ) if defined $option{$name};
+        delete $option{$name} if !defined $option{$name};
+    }
 
     return \%option;
 }
@@ -114,6 +124,8 @@ sub _timeout_value ($target, $name, $value) {
         ? undef : 0 + $value;
     croak "$target $name must be a non-negative number of seconds"
         if !defined($seconds) || !isfinite($seconds) || $seconds < 0;
+    croak "$target $name exceeds the supported timer range"
+        if $seconds > 2_147_483_647;
     return $seconds;
 }
 
@@ -151,7 +163,7 @@ sub _descriptor_for ($class) {
     my $tls = _tls_for($class);
     my %callback = map { $_ => scalar $class->can($_) }
         qw(on_data on_message on_drain on_eof on_error on_close
-           on_ready on_transport_ready);
+           on_ready on_transport_ready configure_socket);
 
     if ($framer) {
         croak "$class declares a framer but does not define on_message()"
@@ -316,6 +328,7 @@ sub new ($class, %opt) {
     my $data = delete $opt{data};
     my $peer = delete $opt{peer};
     my $transport = delete $opt{transport};
+    my $socket_override = Linux::Event::_SocketConfig::extract('new', \%opt);
     my %timeout_override;
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
         $timeout_override{$name} = _timeout_value('new():', $name,
@@ -344,6 +357,10 @@ sub new ($class, %opt) {
         && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = _descriptor_for($class);
+    my %socket_policy = map {
+        $_ => exists($socket_override->{$_})
+            ? $socket_override->{$_} : $descriptor->{options}{$_}
+    } Linux::Event::_SocketConfig::names();
     if (my $tls = $descriptor->{tls}) {
         croak 'new(): transport cannot be supplied for a TLS-declared Stream'
             if defined $transport;
@@ -395,16 +412,45 @@ sub new ($class, %opt) {
         deadline_tracking => 0,
         deadline_read_started => undef,
         deadline_write_started => undef,
+        socket_policy => \%socket_policy,
+        local         => undef,
     }, $class;
     $self->{peer} = $peer if defined $peer;
 
-    $self->_prepare_fh($fh) if defined $fh;
+    if (defined $fh) {
+        my $configured = eval {
+            my $local = Linux::Event::Address->new(getsockname($fh));
+            my $family = $local->family_number;
+            Linux::Event::_SocketConfig::apply_policy(
+                $fh, $family, $self->{socket_policy},
+            );
+            my $role = $accepted ? 'accepted' : 'adopted';
+            my $address = $peer;
+            if (!defined($address)) {
+                my $packed = eval { getpeername($fh) };
+                $address = Linux::Event::Address->new($packed)
+                    if defined $packed;
+                $self->{peer} = $address if defined $address;
+            }
+            $self->_configure_socket($fh, $role, $address);
+            $self->{local} = $local;
+            1;
+        };
+        if (!$configured) {
+            my $error = $@ || 'socket configuration failed';
+            close $fh;
+            $self->{fh} = undef;
+            die $error;
+        }
+        $self->_prepare_fh($fh);
+    }
     if ($connect) {
         $self->{preconnect_output} = [];
         $self->{preconnect_bytes} = 0;
         $self->{connection} = Linux::Event::Stream::_Connection->new(
             %$connect,
             stream => $self,
+            socket_policy => $self->{socket_policy},
         );
     }
     $self->_attach_to_loop($loop) if $loop;
@@ -415,11 +461,20 @@ sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
     my %stream;
     for my $name (qw(loop data transport idle_timeout read_timeout
-        write_timeout deadline)) {
+        write_timeout deadline tcp_nodelay keepalive keepalive_idle
+        keepalive_interval keepalive_count tcp_user_timeout send_buffer
+        receive_buffer)) {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     return $class->new(%stream, _connect => \%opt);
 }
+
+sub CLONE ($class) {
+    %CLASS_DESCRIPTOR = ();
+    return;
+}
+
+sub CLONE_SKIP ($class) { 1 }
 
 sub _validate_accepted_configuration ($class) {
     my $descriptor = _descriptor_for($class);
@@ -467,25 +522,53 @@ sub _prepare_fh ($self, $fh) {
     return;
 }
 
+sub _configure_socket ($self, $fh, $role, $address) {
+    my $callback = $self->{descriptor}{callbacks}{configure_socket};
+    return if !$callback;
+    my $ok = eval { $callback->($self, $fh, $role, $address); 1 };
+    return if $ok;
+    my $message = "$@";
+    $message =~ s/\s+\z//;
+    $message = 'configure_socket callback failed' if $message eq '';
+    die Linux::Event::Error->new(
+        type      => 'socket_configuration',
+        operation => 'configure_socket',
+        message   => $message,
+    );
+}
+
 sub _attach_to_loop ($self, $loop) {
     croak 'add(): Stream is not unattached'
         if $self->{closed} || $self->{loop};
     $self->{loop} = $loop;
     if (my $connection = $self->{connection}) {
-        $connection->_attach_to_loop($loop);
+        my $attached = eval { $connection->_attach_to_loop($loop); 1 };
+        if (!$attached) {
+            my $failure = $@ || 'connection attachment failed';
+            $self->{loop} = undef;
+            die $failure;
+        }
         return $self;
     }
 
     my $initial_interest = delete($self->{initial_interest}) // 0x01;
-    my $watcher = $loop->watch_fd(
-        fileno($self->{fh}),
-        fh    => $self->{fh},
-        data  => $self->{xs_state},
-        read  => \&Linux::Event::Stream::XSState::_read_ready,
-        write => \&Linux::Event::Stream::XSState::_write_ready,
-        error => \&_watch_error_xs_cb,
-        _callback_data_arg => 1,
-    );
+    my $watcher = eval {
+        $loop->watch_fd(
+            fileno($self->{fh}),
+            fh    => $self->{fh},
+            data  => $self->{xs_state},
+            read  => \&Linux::Event::Stream::XSState::_read_ready,
+            write => \&Linux::Event::Stream::XSState::_write_ready,
+            error => \&_watch_error_xs_cb,
+            _callback_data_arg => 1,
+        );
+    };
+    if (!$watcher) {
+        my $failure = $@ || 'Stream registration failed';
+        $self->{loop} = undef;
+        $self->{initial_interest} = $initial_interest;
+        die $failure;
+    }
     $self->{watcher} = $watcher;
     $watcher->disable_write if !($initial_interest & 0x02);
     $watcher->disable_read if !($initial_interest & 0x01);
@@ -507,6 +590,10 @@ sub _connect_succeeded ($self, $fh) {
     return if $self->{closed};
     delete $self->{connection};
     $self->{fh} = $fh;
+    $self->{local} = Linux::Event::Address->new(getsockname($fh));
+    my $packed_peer = eval { getpeername($fh) };
+    $self->{peer} = Linux::Event::Address->new($packed_peer)
+        if defined $packed_peer;
     my $prepared = eval { $self->_prepare_fh($fh); 1 };
     if (!$prepared) {
         my $message = $@ || 'connected Stream setup failed';
@@ -517,15 +604,24 @@ sub _connect_succeeded ($self, $fh) {
         return;
     }
     my $initial_interest = delete($self->{initial_interest}) // 0x01;
-    my $watcher = $self->{loop}->watch_fd(
-        fileno($self->{fh}),
-        fh    => $self->{fh},
-        data  => $self->{xs_state},
-        read  => \&Linux::Event::Stream::XSState::_read_ready,
-        write => \&Linux::Event::Stream::XSState::_write_ready,
-        error => \&_watch_error_xs_cb,
-        _callback_data_arg => 1,
-    );
+    my $watcher = eval {
+        $self->{loop}->watch_fd(
+            fileno($self->{fh}),
+            fh    => $self->{fh},
+            data  => $self->{xs_state},
+            read  => \&Linux::Event::Stream::XSState::_read_ready,
+            write => \&Linux::Event::Stream::XSState::_write_ready,
+            error => \&_watch_error_xs_cb,
+            _callback_data_arg => 1,
+        );
+    };
+    if (!$watcher) {
+        my $message = "$@" || 'connected Stream registration failed';
+        $self->_fail(Linux::Event::Error->new(
+            type => 'setup', operation => 'watch', message => $message,
+        ));
+        return;
+    }
     $self->{watcher} = $watcher;
     $watcher->disable_write if !($initial_interest & 0x02);
     $watcher->disable_read if !($initial_interest & 0x01);
@@ -583,6 +679,7 @@ sub _flush_preconnect_output ($self) {
 sub fh ($self) { $self->{fh} }
 sub loop ($self) { $self->{loop} }
 sub peer ($self) { $self->{peer} }
+sub local ($self) { $self->{local} }
 sub state ($self) {
     return 'detached' if $self->{closed} && $self->{detached};
     return 'closed' if $self->{closed};
@@ -650,6 +747,46 @@ sub tls_stats ($self) {
 sub idle_timeout  ($self) { $self->{timeout}{idle_timeout} }
 sub read_timeout  ($self) { $self->{timeout}{read_timeout} }
 sub write_timeout ($self) { $self->{timeout}{write_timeout} }
+
+sub _socket_option ($self, $name, @argument) {
+    croak "$name(): Stream has no established socket"
+        if $self->{closed} || !defined($self->{fh});
+    croak "$name(): expected zero or one argument" if @argument > 1;
+    my $family = $self->{local}
+        ? $self->{local}->family_number
+        : Linux::Event::Address->new(getsockname($self->{fh}))->family_number;
+    Linux::Event::_SocketConfig::set_option(
+        $self->{fh}, $family, $name, $argument[0],
+    ) if @argument;
+    return Linux::Event::_SocketConfig::get_option(
+        $self->{fh}, $family, $name,
+    );
+}
+
+sub tcp_nodelay ($self, @argument) {
+    return $self->_socket_option('tcp_nodelay', @argument);
+}
+sub keepalive ($self, @argument) {
+    return $self->_socket_option('keepalive', @argument);
+}
+sub keepalive_idle ($self, @argument) {
+    return $self->_socket_option('keepalive_idle', @argument);
+}
+sub keepalive_interval ($self, @argument) {
+    return $self->_socket_option('keepalive_interval', @argument);
+}
+sub keepalive_count ($self, @argument) {
+    return $self->_socket_option('keepalive_count', @argument);
+}
+sub tcp_user_timeout ($self, @argument) {
+    return $self->_socket_option('tcp_user_timeout', @argument);
+}
+sub send_buffer ($self, @argument) {
+    return $self->_socket_option('send_buffer', @argument);
+}
+sub receive_buffer ($self, @argument) {
+    return $self->_socket_option('receive_buffer', @argument);
+}
 
 sub set_deadline ($self, %option) {
     croak 'set_deadline(): stream is closed' if $self->{closed};
@@ -865,7 +1002,12 @@ sub write ($self, $bytes) {
     croak 'write(): stream is closed' if $self->{closed};
     croak 'write(): writable side has ended'
         if $self->{write_ending} || $self->{write_ended};
-    return 1 if !defined($bytes) || $bytes eq '';
+    return 1 if !defined $bytes;
+    croak 'write(): bytes must be a scalar byte string' if ref $bytes;
+    $bytes = "$bytes";
+    croak 'write(): bytes must be a scalar byte string'
+        if !utf8::downgrade($bytes, 1);
+    return 1 if $bytes eq '';
 
     if (!$self->{xs_state}) {
         croak 'write(): stream has no pending or active transport'
@@ -946,6 +1088,11 @@ sub transition_to ($self, $class, %opt) {
     my $input = delete $opt{input};
     croak 'transition_to(): input must be a byte string'
         if defined($input) && ref($input);
+    if (defined $input) {
+        $input = "$input";
+        croak 'transition_to(): input must be a byte string'
+            if !utf8::downgrade($input, 1);
+    }
     croak 'transition_to(): unknown options: ' . join(', ', sort keys %opt)
         if %opt;
 
@@ -1131,10 +1278,15 @@ sub _fail_framing ($self, $message) {
 sub _fail ($self, $error) {
     return if $self->{closed};
     $self->{last_error} = $error;
+    my $failure;
     if (my $callback = $self->{descriptor}{callbacks}{on_error}) {
-        $callback->($self, $error);
+        my $reported = eval { $callback->($self, $error); 1 };
+        $failure = $@ if !$reported;
     }
-    $self->_close_now(1);
+    my $closed = eval { $self->_close_now(1); 1 };
+    $failure //= $@ if !$closed;
+    die $failure if defined $failure;
+    return;
 }
 
 sub _close_now ($self, $close_fh) {
@@ -1174,6 +1326,14 @@ sub _set_nonblocking ($fh) {
 
 1;
 
+package Linux::Event::Stream::XSDescriptor;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Stream::XSState;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Stream;
+
 __END__
 
 =head1 NAME
@@ -1204,8 +1364,8 @@ Linux::Event::Stream - subclass-defined native buffered streams
   package main;
   my $loop = Linux::Event::Loop->new;
   my $stream = $loop->add(EchoStream->new(
-      fh   => $socket,
-      data => { user_id => 42 },
+      fh   => $socket,          # required
+      data => { user_id => 42 }, # optional
   ));
   $loop->run;
 
@@ -1251,7 +1411,7 @@ cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
-=head2 new(fh => $fh, loop => $loop, data => $value, ...)
+=head2 new(fh => $fh, loop => $loop, data => $value)
 
 C<fh> is required for an already-established Stream. Stream takes ownership of
 the filehandle and sets it nonblocking. Supply C<loop> to attach before C<new>
@@ -1271,13 +1431,23 @@ zero explicitly disables that policy. C<deadline> accepts a hash reference
 containing exactly one of C<after> or C<at> plus a non-empty C<operation> label.
 Relative construction deadlines begin when the Stream becomes usable.
 
+Socket policy such as C<tcp_nodelay>, C<keepalive>, and buffer sizes may also
+be supplied here for an established C<fh>. Constructor values override the
+subclass policy. Settings omitted from both places leave the kernel value
+unchanged.
+
 Callbacks, framing, and buffer policy are class behavior and are not accepted
 as constructor options.
 
-=head2 connect(host => $host, port => $port, ...)
+=head2 connect(host => 'example.com', port => 443)
 
   my $stream = MyStream->connect(
-      host => '127.0.0.1', port => 9999, timeout => 10,
+      host         => '127.0.0.1', # required
+      port         => 9999,        # required
+      timeout      => 10,          # default
+      local_host   => '127.0.0.1', # optional source address
+      local_port   => 0,           # optional source port
+      tcp_nodelay  => 1,           # optional
   );
   $loop->add($stream);
 
@@ -1293,6 +1463,13 @@ TLS and defaults certificate hostname verification to C<host>. C<write> and
 C<send> may queue output before attachment or readiness. Hostname resolution
 runs in the Loop's private native worker pool; socket establishment and
 staggered IPv6/IPv4 attempts are nonblocking.
+
+Most outbound connections should omit C<local_host> and C<local_port>; Linux
+then chooses the source address and ephemeral source port. C<local_host>
+selects a numeric IPv4 or IPv6 source address, while C<local_port> selects the
+source port. They do not replace the remote C<host> and C<port>.
+C<bind_device> optionally constrains the socket to a Linux interface before
+local binding and connection. It may require kernel privilege.
 
 =head1 ATTACHMENT AND OWNERSHIP
 
@@ -1314,7 +1491,8 @@ A subclass opts into TLS declaratively, after establishing Stream inheritance:
       handshake_timeout => 10,                                  # default
       shutdown_timeout  => 5;                                   # default
 
-C<< SecureStream->connect(...) >> selects client TLS. A Listener that names
+C<< SecureStream->connect(host =E<gt> 'example.com', port =E<gt> 443) >>
+selects client TLS. A Listener that names
 C<SecureStream> selects server TLS and therefore requires C<cert_file> and
 C<key_file> in the declaration. C<on_ready> has one meaning in both roles: the
 plain connection or TLS handshake is ready for application traffic.
@@ -1332,14 +1510,14 @@ per connection:
 
   sub stream_options ($class) {
       return (
-          read_size         => 32_768,
-          high_watermark    => 2 * 1024 * 1024,
-          low_watermark     => 512 * 1024,
-          max_pending_bytes => 8 * 1024 * 1024,
-          max_buffer        => 16 * 1024 * 1024,
-          idle_timeout      => 120,
-          read_timeout      => 30,
-          write_timeout     => 10,
+          read_size         => 32_768,            # optional
+          high_watermark    => 2 * 1024 * 1024,   # optional
+          low_watermark     => 512 * 1024,        # optional
+          max_pending_bytes => 8 * 1024 * 1024,   # optional
+          max_buffer        => 16 * 1024 * 1024,  # optional
+          idle_timeout      => 120,               # optional; seconds
+          read_timeout      => 30,                # optional; seconds
+          write_timeout     => 10,                # optional; seconds
       );
   }
 
@@ -1351,18 +1529,94 @@ are zero, which disables them. Constructor values take precedence for one
 Stream and survive protocol transitions; non-overridden values change to the
 target subclass's defaults.
 
+=head1 SOCKET CONFIGURATION
+
+Socket policy may be cached with the other C<stream_options>:
+
+  sub stream_options ($class) {
+      return (
+          tcp_nodelay       => 1,       # optional
+          keepalive         => 1,       # optional
+          keepalive_idle    => 60,      # optional; seconds
+          keepalive_interval => 10,     # optional; seconds
+          keepalive_count   => 5,       # optional
+          tcp_user_timeout  => 15,      # optional; seconds
+          send_buffer       => 262_144, # optional; bytes
+          receive_buffer    => 262_144, # optional; bytes
+      );
+  }
+
+The same names are accepted by C<new> and C<connect> for one Stream. Instance
+construction wins over class policy; an option omitted from both places is not
+set at all. This is deliberately different from inventing library defaults
+that overwrite Linux tuning silently.
+
+C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
+C<keepalive_interval>, C<keepalive_count>, and C<tcp_user_timeout> are valid
+only for IPv4 or IPv6 TCP sockets. Send and receive buffer sizing also applies
+to Unix Streams. Public timeout values are seconds;
+C<tcp_user_timeout> is converted to the Linux millisecond value with a positive
+sub-millisecond duration rounded up.
+
+For outbound sockets, built-in policy and the optional hook below run after
+C<socket> and before local C<bind> or remote C<connect>. Accepted and adopted
+sockets apply policy before transport setup, including a TLS handshake.
+
+An advanced subclass may define one cached socket hook:
+
+  use Socket qw(IPPROTO_TCP TCP_QUICKACK);
+
+  sub configure_socket ($stream, $fh, $role, $address) {
+      setsockopt($fh, IPPROTO_TCP, TCP_QUICKACK, pack('i', 1))
+          or die "setsockopt(TCP_QUICKACK): $!";
+  }
+
+C<$role> is C<connect>, C<accepted>, or C<adopted>. C<$address> is the remote
+candidate or peer when one is available. A hook exception becomes a structured
+C<socket_configuration> Error. It never falls back silently to another
+configuration.
+
+These options are also live getters/setters on an established Stream:
+
+  my $enabled = $stream->tcp_nodelay;    # current kernel value
+  $stream->tcp_nodelay(1);               # enable and return effective value
+  my $bytes = $stream->send_buffer(262_144);
+
+The complete live set is C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
+C<keepalive_interval>, C<keepalive_count>, C<tcp_user_timeout>,
+C<send_buffer>, and C<receive_buffer>. Linux may round or double buffer
+requests, so setters return the value read back from the kernel. Socket policy
+is acquisition policy; C<transition_to> does not reapply it.
+
 =head1 CALLBACKS
 
 Subclasses may define these ordinary named methods:
 
-  sub on_data    ($stream, $bytes)   { ... }
-  sub on_message ($stream, $message) { ... }
-  sub on_drain   ($stream)           { ... }
-  sub on_eof     ($stream)           { ... }
-  sub on_error   ($stream, $error)   { ... }
-  sub on_close   ($stream)           { ... }
-  sub on_ready   ($stream)           { ... }
-  sub on_transport_ready ($stream)   { ... }
+  sub on_data ($stream, $bytes) {             # required for raw Stream
+      $stream->write($bytes);
+  }
+
+  sub on_message ($stream, $message) {        # required for framed Stream
+      $stream->send($message);
+  }
+
+  sub on_drain ($stream) {                    # optional
+      $stream->data->{blocked} = 0 if $stream->data;
+  }
+
+  sub on_eof ($stream) { $stream->end }       # optional
+  sub on_error ($stream, $error) {            # optional
+      warn "$error\n";
+  }
+  sub on_close ($stream) {                    # optional
+      $stream->data->{closed} = 1 if $stream->data;
+  }
+  sub on_ready ($stream) {                    # optional
+      $stream->write("ready\n");
+  }
+  sub on_transport_ready ($stream) {          # optional
+      say "transport " . $stream->transport_name . " is ready";
+  }
 
 The resolved CVs are cached and invoked directly; readiness dispatch does not
 perform Perl method lookup. Inheritance works normally, so a derived Stream type
@@ -1384,6 +1638,8 @@ Application callback exceptions are not swallowed.
 Writes immediately when possible and queues any remainder. Returns false after
 queued bytes exceed the high watermark; the bytes were still accepted. Wait for
 C<on_drain> before producing more.
+
+C<$bytes> must be a byte string. Encode character text before writing it.
 
 When C<max_pending_bytes> is nonzero, a write whose unsent remainder would put
 the native queue above that limit is not queued. Stream reports an
@@ -1419,7 +1675,10 @@ its current chunk with C<< input => $bytes >>:
       my ($request, $remaining) = parse_upgrade($bytes);
       return if !$request;
       $stream->write(upgrade_response());
-      $stream->transition_to('My::WebSocketStream', input => $remaining);
+      $stream->transition_to(
+          'My::WebSocketStream',
+          input => $remaining, # optional raw unconsumed suffix
+      );
       return;
   }
 
@@ -1470,7 +1729,7 @@ C<read_timeout> resets on inbound bytes, is suspended by C<pause_read>, and
 starts a fresh interval on C<resume_read>. C<write_timeout> exists only while
 output remains queued and resets on successful write progress.
 
-=head2 set_deadline(...)
+=head2 set_deadline(after => 5, operation => 'response')
 
 Set or replace the one explicit overall-operation deadline and return the
 Stream. Supply C<after =E<gt> $seconds> or
@@ -1510,6 +1769,12 @@ Return negotiated ALPN, TLS protocol, cipher, and native TLS counters for a TLS
 Stream. The scalar information methods return undef for a plain Stream;
 C<tls_stats> returns undef when no TLS provider is active.
 
+=head2 tcp_nodelay / keepalive / keepalive_idle / keepalive_interval / keepalive_count / tcp_user_timeout / send_buffer / receive_buffer
+
+With no argument, return the effective Linux socket value. With one argument,
+set the option and return the value read back from the kernel. These methods
+require an established socket; TCP-only methods reject a Unix Stream.
+
 =head2 is_read_paused / is_read_eof / is_write_ended / is_closed
 
 Report Stream lifecycle state.
@@ -1518,11 +1783,12 @@ Report Stream lifecycle state.
 
 Gets or replaces per-connection application state.
 
-=head2 loop / state / peer
+=head2 loop / state / peer / local
 
 Return the owning Loop, C<unattached>, C<connecting>, C<active>, C<detached>, or
-C<closed> lifecycle state, and the lazy accepted peer when the Stream came from
-a Listener.
+C<closed> lifecycle state, the lazy remote peer when available, and the local
+socket address. Outbound and adopted Streams populate both addresses when the
+kernel supplies them; accepted Streams receive their peer from Listener.
 
 =head2 last_error
 

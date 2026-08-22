@@ -16,7 +16,7 @@ sub make_pair {
     my $loop = Linux::Event::Loop->new;
     my $watcher = $loop->watch_fd(
         fileno($server),
-        callback_args => 0,
+        no_args => 1,
         lean => 1,
         _bench_native_echo => 1,
         error => sub { },
@@ -48,7 +48,7 @@ sub make_pair {
     my $empty_calls = 0;
     my $watcher = $loop->watch_fd(
         fileno($server),
-        callback_args => 0,
+        no_args => 1,
         lean => 1,
         _bench_native_echo => 2,
         read => sub { $empty_calls++ },
@@ -83,7 +83,7 @@ sub make_pair {
     my $ok = eval {
         $loop->watch_fd(
             fileno($server),
-            callback_args => 0,
+            no_args => 1,
             lean => 1,
             _bench_native_echo => 3,
             error => sub { },

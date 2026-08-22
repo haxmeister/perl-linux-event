@@ -45,6 +45,23 @@ like(
     qr/non-negative integer/,
     'watch rejects negative fd',
 );
+like(
+    exception(sub {
+        $loop->watch_fd('99999999999999999999', read => sub { });
+    }),
+    qr/non-negative integer/,
+    'watch_fd rejects an fd outside the native integer range',
+);
+like(
+    exception(sub { $loop->watch_fd(1.5, read => sub { }) }),
+    qr/non-negative integer/,
+    'watch_fd rejects a fractional fd',
+);
+like(
+    exception(sub { $loop->unwatch_fd('99999999999999999999') }),
+    qr/non-negative integer/,
+    'unwatch_fd cannot wrap an oversized fd onto another registration',
+);
 
 close $r;
 close $w;

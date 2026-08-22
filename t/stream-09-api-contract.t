@@ -42,6 +42,9 @@ my $stream = T::API::Raw->new(
 is($stream->data->{name}, 'x', 'optional user data retrieved explicitly');
 $stream->data({ name => 'y' });
 is($stream->data->{name}, 'y', 'user data can be replaced');
+my $wide_error = eval { $stream->write("\x{100}"); '' } // $@;
+like($wide_error, qr/scalar byte string/,
+    'write rejects character data that was not encoded to bytes');
 $stream->end;
 ok($stream->is_write_ended, 'end with empty queue half-closes immediately');
 

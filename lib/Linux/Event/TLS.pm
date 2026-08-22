@@ -3,12 +3,16 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
+use POSIX qw(isfinite);
+use utf8 ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
+
+sub CLONE_SKIP ($class) { 1 }
 
 sub import ($class, @arg) {
     my $target = caller;
@@ -29,10 +33,14 @@ sub _alpn_wire ($protocols) {
     croak 'alpn must be an array reference' if ref($protocols) ne 'ARRAY';
     my $wire = '';
     for my $protocol (@$protocols) {
+        my $bytes = defined($protocol) && !ref($protocol)
+            ? "$protocol" : undef;
+        my $is_bytes = defined($bytes) && utf8::downgrade($bytes, 1);
         croak 'each ALPN protocol must be a byte string of 1..255 bytes'
-            if !defined($protocol) || ref($protocol)
-            || length($protocol) < 1 || length($protocol) > 255;
-        $wire .= pack('C', length($protocol)) . $protocol;
+            if !$is_bytes || length($bytes) < 1 || length($bytes) > 255;
+        $wire .= pack('C', length($bytes)) . $bytes;
+        croak 'the encoded ALPN protocol list must not exceed 65535 bytes'
+            if length($wire) > 65_535;
     }
     return $wire;
 }
@@ -44,14 +52,31 @@ sub _timeout ($method, $name, $value, $default) {
         if ref($value)
         || $value !~ /\A(?:\d+(?:\.\d*)?|\.\d+)\z/
         || $value < 0;
-    return 0 + $value;
+    $value = 0 + $value;
+    croak "$where: $name must be a finite number of seconds"
+        if !isfinite($value);
+    croak "$where: $name exceeds the supported timer range"
+        if $value > 2_147_483_647;
+    return $value;
 }
 
 sub _optional_string ($target, $name, $value) {
     return undef if !defined $value;
-    croak "$target TLS $name must be a non-empty string"
-        if ref($value) || $value eq '';
+    croak "$target TLS $name must be a non-empty string without NUL bytes"
+        if ref($value) || $value eq '' || $value =~ /\0/;
     return "$value";
+}
+
+sub _server_name ($target, $value) {
+    my $server_name = _optional_string($target, 'server_name', $value);
+    return undef if !defined $server_name;
+    $server_name = substr($server_name, 1, length($server_name) - 2)
+        if length($server_name) >= 2
+        && substr($server_name, 0, 1) eq '['
+        && substr($server_name, -1, 1) eq ']';
+    croak "$target TLS server_name must not be empty after removing brackets"
+        if $server_name eq '';
+    return $server_name;
 }
 
 sub _build_declaration ($class, $target, @arg) {
@@ -73,9 +98,7 @@ sub _build_declaration ($class, $target, @arg) {
     );
     croak "$target TLS declaration requires cert_file and key_file together"
         if defined($cert_file) != defined($key_file);
-    my $server_name = _optional_string(
-        $target, 'server_name', delete $opt{server_name},
-    );
+    my $server_name = _server_name($target, delete $opt{server_name});
     my $ca_file = _optional_string(
         $target, 'ca_file', delete $opt{ca_file},
     );
@@ -115,10 +138,11 @@ sub _validate_server_declaration ($class, $definition) {
 }
 
 sub _client_from_declaration ($class, $definition, $connect_host = undef) {
-    my $server_name = $definition->{server_name} // $connect_host;
     my $target = $definition->{target};
+    my $server_name = $definition->{server_name} // $connect_host;
     croak "$target TLS client requires server_name when connect() has no host"
         if !defined($server_name) || ref($server_name) || $server_name eq '';
+    $server_name = _server_name($target, $server_name);
     return $class->_new_client(
         $server_name,
         $definition->{verify},
@@ -146,8 +170,15 @@ sub client ($class, %opt) {
     my $server_name = delete $opt{server_name}
         // croak 'client(): missing server_name';
     my $verify = exists $opt{verify} ? delete($opt{verify}) : 1;
-    my $ca_file = delete $opt{ca_file};
-    my $ca_path = delete $opt{ca_path};
+    croak 'client(): verify must be 0 or 1'
+        if !defined($verify) || ref($verify) || $verify !~ /\A[01]\z/;
+    $server_name = _server_name('client()', $server_name);
+    my $ca_file = _optional_string(
+        'client()', 'ca_file', delete $opt{ca_file},
+    );
+    my $ca_path = _optional_string(
+        'client()', 'ca_path', delete $opt{ca_path},
+    );
     my $alpn = _alpn_wire(delete $opt{alpn});
     my $handshake_timeout = _timeout(
         'client', 'handshake_timeout', delete($opt{handshake_timeout}), 10,
@@ -156,8 +187,6 @@ sub client ($class, %opt) {
         'client', 'shutdown_timeout', delete($opt{shutdown_timeout}), 5,
     );
     croak 'client(): unknown options: ' . join(', ', sort keys %opt) if %opt;
-    croak 'client(): server_name must be a non-empty string'
-        if ref($server_name) || $server_name eq '';
     return $class->_new_client(
         $server_name, $verify ? 1 : 0, $ca_file, $ca_path, $alpn,
         $handshake_timeout, $shutdown_timeout,
@@ -170,6 +199,8 @@ sub server ($class, %opt) {
         // croak 'server(): missing cert_file';
     my $key_file = delete $opt{key_file}
         // croak 'server(): missing key_file';
+    $cert_file = _optional_string('server()', 'cert_file', $cert_file);
+    $key_file = _optional_string('server()', 'key_file', $key_file);
     my $alpn = _alpn_wire(delete $opt{alpn});
     my $handshake_timeout = _timeout(
         'server', 'handshake_timeout', delete($opt{handshake_timeout}), 10,
@@ -277,7 +308,8 @@ Linux::Event::TLS - declare OpenSSL TLS policy for a Stream subclass
 
 C<use Linux::Event::TLS> marks the calling L<Linux::Event::Stream> subclass as
 a TLS connection type. The acquisition path selects the handshake role:
-C<< SecureClientStream->connect(...) >> uses client TLS, while a
+C<< SecureClientStream->connect(host =E<gt> 'example.com', port =E<gt> 443) >>
+uses client TLS, while a
 L<Linux::Event::Listener> that names C<SecureServerStream> as its
 C<stream_class> uses server TLS for every accepted connection.
 

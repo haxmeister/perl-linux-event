@@ -34,9 +34,33 @@ like(exception(sub {
 }), qr/non-empty string/, 'empty host is rejected');
 like(exception(sub {
     T::ConnectProbeStream->connect(
+        loop => $loop, host => "127.0.0.1\0.invalid", port => 1,
+    );
+}), qr/without NUL bytes/, 'host containing a NUL byte is rejected');
+like(exception(sub {
+    T::ConnectProbeStream->connect(
+        loop => $loop, unix => "/tmp/linux-event\0.sock",
+    );
+}), qr/without NUL bytes/, 'Unix path containing a NUL byte is rejected');
+like(exception(sub {
+    T::ConnectProbeStream->connect(
         loop => $loop, host => '127.0.0.1', port => 70_000,
     );
 }), qr/between 0 and 65535/, 'out-of-range port is rejected');
+like(exception(sub {
+    T::ConnectProbeStream->connect(
+        loop => $loop, host => '127.0.0.1', port => 1,
+        local_port => undef,
+    );
+}), qr/local_port must be an integer/,
+    'explicit undefined local port is rejected cleanly');
+like(exception(sub {
+    T::ConnectProbeStream->connect(
+        loop => $loop, host => '127.0.0.1', port => 1,
+        timeout => '99999999999999999999999999999999999999999999999999',
+    );
+}), qr/(?:finite number|supported timer range)/,
+    'connection timeout cannot overflow native timer conversion');
 like(exception(sub {
     T::ConnectProbeStream->connect(
         loop => $loop, unix => '/tmp/not-used', timeout => -1,

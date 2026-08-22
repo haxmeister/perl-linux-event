@@ -38,7 +38,7 @@ lifetime management.
 
 The default event array capacity is 8192.
 
-Normal raw registration uses `watch(fh => ...)` or `watch(fd => ...)`.
+Normal raw registration uses `watch(fh => $fh)` or `watch(fd => $fd)`.
 That Perl-facing method resolves a handle to its integer fd once at construction
 and then enters the existing native registration path. It adds nothing to
 steady-state readiness dispatch. `watch_fd` remains the low-level positional
@@ -149,16 +149,16 @@ the built-in parser there, and crosses into Perl only for complete
 `on_message` values or semantic errors. Both paths recheck pause and close state
 after callbacks.
 
-The Stream extension does not include private reactor headers. XSLoop passes
+The Stream extension does not include private reactor headers. Loop passes
 watcher data directly to Stream's private readiness entry points, preserving a
 generic readiness core and an independently testable buffered Stream layer.
 
 ## Public ownership layer
 
 `Linux::Event::Loop->add()` accepts distribution objects that implement Loop
-attachment, currently Stream, Listener, Timer, and Signal. There is no public
-Watcher or IO base class and no generic Perl dispatcher. Raw `watch()` returns
-an opaque native handle. Stream, Listener, Timer, and Signal retain their
+attachment: Stream, Listener, Datagram, Timer, Signal, Wakeup, and Process.
+There is no public Watcher or IO base class and no generic Perl dispatcher. Raw
+`watch()` returns an opaque native handle. Every high-level object retains its
 concrete cached callbacks and private registrations.
 
 An application object is one logical activity rather than one fd. A connecting
@@ -260,3 +260,56 @@ temporary accepted-socket registration. An
 `on_accept` exception closes only that Stream and becomes a nonfatal callback
 Error. Resource accept errors pause listener readiness before the typed error
 callback so a readable backlog cannot create an error spin.
+
+## Socket policy layer
+
+Common socket validation and `setsockopt` conversion live in a private
+cold-path module shared by Stream and Datagram. Stream copies cached class
+policy into one acquisition instance, applies constructor overrides, and
+configures every outbound candidate before bind/connect. Accepted and adopted
+Streams apply the same policy before native transport attachment. Listener
+separately owns listening-socket creation policy.
+
+The optional cached `configure_socket` callback follows built-in policy. It is
+outside steady-state I/O. Failures become typed `socket_configuration` values
+instead of silently changing candidate or transport behavior.
+
+## Wakeup layer
+
+Wakeup owns one nonblocking eventfd and raw lean registration. An ithread clone
+duplicates only the descriptor identity needed for `signal`; cancellation and
+destruction cannot redirect a stale fd number to an unrelated resource. Loop,
+watcher, callback descriptor, and data live in an owner-only state object that
+is skipped during ithread cloning. All other native resource objects also skip
+cloning.
+
+The private resolver eventfd is not implemented through public Wakeup because
+its native workers already own a typed C completion queue and cancellation
+table. Both paths share the same architectural rule: foreign threads publish
+data before writing eventfd, and Perl handles semantics only on the Loop
+thread.
+
+## Datagram layer
+
+Datagram uses a separate XS packet engine. One readiness call allocates one
+receive buffer and drains `recvmsg(MSG_DONTWAIT | MSG_TRUNC)` into a flat batch
+of payload, packed peer, original length, and truncation fields. Perl creates
+lazy Address values and invokes the cached semantic callback once per packet.
+
+Output uses `send` or `sendto` with `MSG_NOSIGNAL`. Queue segments are whole
+packets with separate byte and packet accounting. Connected hostname mode
+reuses the private resolver with `SOCK_DGRAM` hints but does not reuse Stream's
+byte buffers or TCP attempt race.
+
+## Process layer
+
+Process constructs stdio pipes in Perl's owning interpreter, then one XS call
+uses `posix_spawnp` file actions and opens a pidfd. No Perl code executes in a
+post-fork child. The Loop may register pidfd, stdin, stdout, and stderr, all
+routed back to one Process object.
+
+pidfd readiness uses `waitid(P_PIDFD)` for decoded exit identity. Pipe output
+is drained before `on_exit`; queued stdin uses a SIGPIPE-safe native write
+helper. Signals use `pidfd_send_signal`, avoiding numeric PID reuse. Setup
+failure after spawn kills and reaps the exact child before partial ownership is
+released.

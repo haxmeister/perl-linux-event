@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Hash::Util::FieldHash qw(fieldhash);
 use Scalar::Util qw(weaken);
@@ -34,9 +34,11 @@ sub _new ($class, $loop) {
     return $self;
 }
 
-sub submit ($self, $connection, $host, $port) {
-    my $id = $self->{native}->submit($host, "$port");
-    $self->{requests}{$id} = $connection;
+sub submit ($self, $recipient, $host, $port, $socktype = undef) {
+    my $id = defined($socktype)
+        ? $self->{native}->submit($host, "$port", $socktype)
+        : $self->{native}->submit($host, "$port");
+    $self->{requests}{$id} = $recipient;
     return $id;
 }
 
@@ -46,9 +48,9 @@ sub cancel ($self, $id) {
 
 sub _ready ($self) {
     for my $result (@{ $self->{native}->drain }) {
-        my $connection = delete $self->{requests}{ $result->{id} };
-        next if !$connection;
-        $connection->_resolver_completed($result);
+        my $recipient = delete $self->{requests}{ $result->{id} };
+        next if !$recipient;
+        $recipient->_resolver_completed($result);
     }
     return;
 }
@@ -58,5 +60,12 @@ sub DESTROY ($self) {
     delete $self->{native};
     return;
 }
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Stream::_Resolver::_Native;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Stream::_Resolver;
 
 1;

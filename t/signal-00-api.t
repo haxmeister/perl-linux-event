@@ -40,9 +40,17 @@ like(exception(sub { T::Signal::Basic->new(signals => SIGKILL) }),
     qr/cannot be used with signalfd/, 'SIGKILL is rejected');
 like(exception(sub { T::Signal::Basic->new(signals => SIGSTOP) }),
     qr/cannot be used with signalfd/, 'SIGSTOP is rejected');
+like(exception(sub { T::Signal::Basic->new(
+    signals => '18446744073709551631',
+) }), qr/cannot be used with signalfd/,
+    'oversized signal number cannot wrap during native conversion');
 like(exception(sub {
     T::Signal::Basic->new(signals => SIGUSR1, surprise => 1)
 }), qr/unknown options: surprise/, 'unknown option is rejected');
+like(exception(sub {
+    T::Signal::Basic->new(signals => SIGUSR1, loop => 'invalid')
+}), qr/loop must be an object implementing add\(\) and watch\(\)/,
+    'loop constructor option is validated consistently');
 
 my $data = { name => 'signal-data' };
 my $signal = T::Signal::Inherited->new(

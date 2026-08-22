@@ -76,4 +76,48 @@ is($listener->state, 'listening',
 
 $listener->close;
 close $client;
+
+{
+    package T::BrokenAttachStream;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) { }
+    sub on_close ($stream) { $stream->data->{setup_closed}++ }
+    sub _attach_to_loop ($stream, $loop) {
+        die "synthetic accepted Stream attachment failure\n";
+    }
+}
+
+{
+    package T::SetupFailureListener;
+    use parent 'Linux::Event::Listener';
+    sub on_error ($listener, $error) {
+        $listener->data->{setup_error} = $error;
+        $listener->loop->stop;
+    }
+}
+
+my $setup_loop = Linux::Event::Loop->new;
+my $setup_state = { setup_closed => 0 };
+my $setup_listener = T::SetupFailureListener->new(
+    loop         => $setup_loop,
+    stream_class => 'T::BrokenAttachStream',
+    host         => '127.0.0.1',
+    port         => 0,
+    data         => $setup_state,
+);
+socket(my $setup_client, AF_INET, SOCK_STREAM, 0) or die "socket: $!";
+connect($setup_client,
+    pack_sockaddr_in($setup_listener->port, inet_aton('127.0.0.1')))
+    or die "connect: $!";
+$setup_loop->run;
+is($setup_state->{setup_error}->type, 'setup',
+    'accepted Stream attachment failure is typed');
+is($setup_state->{setup_error}->operation, 'accepted_stream',
+    'accepted setup error identifies Stream attachment');
+is($setup_state->{setup_closed}, 1,
+    'accepted Stream attachment failure closes the Stream exactly once');
+is($setup_listener->state, 'listening',
+    'handled accepted setup failure leaves Listener active');
+$setup_listener->close;
+close $setup_client;
 done_testing;

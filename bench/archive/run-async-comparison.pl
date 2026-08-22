@@ -812,7 +812,7 @@ sub run_xsloop ($server, $clients, $messages, $warmup, $bytes, $timeout) {
     my %c = base_counters($clients, $messages, $warmup, $bytes);
     my $server_w;
     if (is_xsloop_system($ACTIVE_SYSTEM) && $ACTIVE_SYSTEM ne 'phase20' && $ACTIVE_SYSTEM ne 'phase19b' && $ACTIVE_SYSTEM ne 'xsloop' && $ACTIVE_SYSTEM ne 'phase18') {
-        $server_w = $loop->watch_fd(fileno($server), fh => $server, callback_args => 0, lean => (is_lean_xsloop_system($ACTIVE_SYSTEM) ? 1 : 0), read => sub {
+        $server_w = $loop->watch_fd(fileno($server), fh => $server, no_args => 1, lean => (is_lean_xsloop_system($ACTIVE_SYSTEM) ? 1 : 0), read => sub {
             while (my $sock = $server->accept) {
                 $c{accepted}++; $sock->blocking(0); my $fd = fileno($sock);
                 my $cw;
@@ -825,14 +825,14 @@ sub run_xsloop ($server, $clients, $messages, $warmup, $bytes, $timeout) {
                 };
                 if ($ACTIVE_SYSTEM eq 'phase35-xs') {
                     $cw = $loop->watch_fd(
-                        $fd, fh => $sock, callback_args => 0, lean => 1,
+                        $fd, fh => $sock, no_args => 1, lean => 1,
                         _bench_native_echo => 1,
                         error => $on_error,
                     );
                 }
                 elsif ($ACTIVE_SYSTEM eq 'phase35-empty') {
                     $cw = $loop->watch_fd(
-                        $fd, fh => $sock, callback_args => 0, lean => 1,
+                        $fd, fh => $sock, no_args => 1, lean => 1,
                         _bench_native_echo => 2,
                         read => $PHASE35_EMPTY_CB,
                         error => $on_error,
@@ -840,7 +840,7 @@ sub run_xsloop ($server, $clients, $messages, $warmup, $bytes, $timeout) {
                 }
                 else {
                     $cw = $loop->watch_fd(
-                        $fd, fh => $sock, callback_args => 0, lean => (is_lean_xsloop_system($ACTIVE_SYSTEM) ? 1 : 0),
+                        $fd, fh => $sock, no_args => 1, lean => (is_lean_xsloop_system($ACTIVE_SYSTEM) ? 1 : 0),
                         read => sub { echo_read($sock, \%c, sub { $cw->cancel; close $sock; $loop->stop if ($ACTIVE_SYSTEM eq 'phase34' || $ACTIVE_SYSTEM eq 'phase34b' || $ACTIVE_SYSTEM eq 'phase34c') && $c{closed} >= $clients; }); },
                         error => $on_error,
                     );
@@ -872,7 +872,7 @@ sub run_xsloop ($server, $clients, $messages, $warmup, $bytes, $timeout) {
         };
         $timeout_watcher = $loop->watch_fd(
             fileno($PHASE34B_TIMEOUT_R),
-            fh => $PHASE34B_TIMEOUT_R, callback_args => 0, lean => 1,
+            fh => $PHASE34B_TIMEOUT_R, no_args => 1, lean => 1,
             read => $stop_for_timeout, error => $stop_for_timeout,
         );
         $loop->run;

@@ -40,10 +40,10 @@ without benchmark evidence.
 
 ## Completed - unified object lifecycle
 
-`Linux::Event::Loop` owns high-level Stream, Listener, Timer, and Signal objects through
-`add()`, while `watch()` creates an immediately attached opaque native
-registration. There is no public Watcher or IO base class. One logical object
-may own several internal epoll registrations.
+`Linux::Event::Loop` owns high-level Stream, Listener, Datagram, Timer, Signal,
+Wakeup, and Process objects through `add()`, while `watch()` creates an
+immediately attached opaque native registration. There is no public Watcher or
+IO base class. One logical object may own several internal epoll registrations.
 
 Timer uses that same attachment contract without adding Loop-specific factory
 methods. The abstract public Timer class caches `on_timer` once per subclass;
@@ -55,7 +55,8 @@ the signalfd mask and supports multiple numbers per object plus multiple
 objects per number.
 
 `MyStream->connect()` keeps one Stream identity through outbound acquisition
-and optional TLS readiness. `Linux::Event::Listener->new(stream_class => ...)`
+and optional TLS readiness. `Linux::Event::Listener` with a configured
+`stream_class`
 owns inbound acquisition and constructs accepted Streams. The public hierarchy
 adds no generic Perl call to steady-state native readiness dispatch.
 
@@ -64,18 +65,19 @@ adds no generic Perl call to steady-state native readiness dispatch.
 HTTPS, secure WebSocket, and Discord require TLS. TLS is a byte transport
 transform, not a message framer. The internal native operation boundary and
 plain provider now exist. The bundled `Linux::Event::TLS` provider attaches
-without adding OpenSSL policy or calls to XSLoop or the plain Stream path.
+without adding OpenSSL policy or calls to the reactor core or the plain Stream
+path.
 
 The design must cover handshake readiness, encrypted and plaintext buffering,
 certificate/hostname errors, shutdown, deadlines, ALPN, and transitions such as
-STARTTLS without putting TLS policy into XSLoop. Initial client/server TLS,
+STARTTLS without putting TLS policy into the reactor core. Initial client/server TLS,
 verification, ALPN, cross-direction readiness, and close notification landed
 with the 0.100_015 transport ABI. Version 0.100_016 added provider-owned
 deadline-watcher lifecycle and the original external Linux::Event::TLS 0.002
 added default handshake and shutdown deadlines, clean/unclean EOF
 classification, native counters, and a same-Stream plain-versus-TLS benchmark.
 Version 0.100_017 merged that provider into the main distribution without
-merging its OpenSSL implementation into XSStream.
+merging its OpenSSL implementation into the native Stream engine.
 
 The released attachment exact-versions the common ABI, retains provider
 lifetime, and implements cross-direction readiness (`SSL_read` wanting write
@@ -142,15 +144,63 @@ syscalls, and enabled I/O progress does not enter Perl merely to move a heap
 entry. Plain, TLS, transition, pause/resume, EOF, queued-write, and regression
 benchmark coverage protect the contract.
 
-## Next completion feature - production socket configuration
+## Completed - eventfd Wakeup boundary
 
-Complete the outbound and accepted-socket configuration surface: local address
-binding, TCP_NODELAY, keepalive, TCP_USER_TIMEOUT, buffer sizing, interface
-binding, and a controlled socket-configuration hook. Constructor options should
-remain the primary declaration point, with post-construction setters only where
-Linux permits a meaningful live change.
+`Linux::Event::Wakeup` exposes one subclass-defined eventfd notification
+object. Foreign native threads, fork children, and cloned ithread handles may
+increment its counter without entering the Loop interpreter. The Loop drains
+one counter value per turn and delivers one semantic `on_wakeup` callback.
 
-## Priority 2 - General native framing families
+Wakeup deliberately carries no Perl payload and is not a coderef posting
+queue. Applications publish data through their own thread-safe queue or IPC
+channel before signalling. Thread clones own duplicate descriptors, while
+callback state, Loop ownership, and application data remain confined to the
+creating interpreter.
+
+## Completed - production socket configuration
+
+Stream class policy and constructor overrides cover local address binding,
+`TCP_NODELAY`, keepalive tuning, `TCP_USER_TIMEOUT`, buffer sizing, and Linux
+interface binding. Built-in policy is applied to every outbound candidate and
+to accepted or adopted sockets before transport attachment. A cached
+`configure_socket` hook follows built-in policy for advanced cold-path setup.
+
+Public timeout values use seconds. Options with meaningful Linux live behavior
+also have getters/setters that return the effective kernel value. Failures are
+structured `socket_configuration` Errors; incompatible address families never
+fall through to an unconfigured candidate.
+
+## Completed - packet-preserving Datagram layer
+
+`Linux::Event::Datagram` provides connected and unconnected UDP plus filesystem
+Unix datagrams. Native `recvmsg(MSG_TRUNC)` batching retains packet boundaries,
+original packet sizes, and packed peers. Native `send`/`sendto` preserves whole
+packets through bounded output queues, soft backpressure, and hard byte or
+packet limits. Connected hostname mode uses the private asynchronous resolver
+with datagram hints.
+
+Ownership, detach, Unix-path cleanup, source-specific option validation,
+truncation reporting, and Loop-thread callback ordering are part of the public
+contract.
+
+## Completed - pidfd Process layer
+
+`Linux::Event::Process` uses `posix_spawnp`, pidfd readiness,
+`waitid(P_PIDFD)`, and `pidfd_send_signal`. One object owns lifecycle, decoded
+exit status, and optional asynchronous stdin/stdout/stderr pipes. Output is
+drained before `on_exit`; stdin writes suppress SIGPIPE without changing
+process-wide signal policy.
+
+Detached spawn specifications are side-effect free until Loop attachment. No
+Perl code runs in a post-fork child, caller filehandles stay caller-owned, and
+partial setup failure kills and reaps a newly spawned child before releasing
+resources.
+
+The essential completion surface is complete in version 0.101. The remaining
+items below are optional expansion and evidence-driven optimization, not
+release blockers.
+
+## Priority 1 - General native framing families
 
 Expand the built-in framing catalog while keeping one rule: built-in boundary
 detection is native, while application-specific protocols parse raw `on_data`
@@ -170,12 +220,12 @@ message-boundary detection. A new general family needs a declarative module,
 corresponding XS parser mode, wire-contract tests, and a native-framer benchmark
 row. Its exact package name becomes the declaration name automatically.
 
-## Priority 3 - Native Stream watcher-state transitions
+## Priority 2 - Native Stream watcher-state transitions
 
 Reduce remaining Perl transitions for writable interest, read suspension,
 close, and half-close when profiling shows the boundary is material.
 
-## Priority 4 - Callback coalescing/batching
+## Priority 3 - Callback coalescing/batching
 
 Investigate fewer Perl entries without changing the ordinary one-message API:
 
@@ -183,7 +233,7 @@ Investigate fewer Perl entries without changing the ordinary one-message API:
 - optionally deliver multiple complete frames together
 - keep batching explicit where it changes application semantics
 
-## Priority 5 - Native connect attempt completion
+## Priority 4 - Native connect attempt completion
 
 Profile before moving the remaining attempt state machine below Perl. If
 high-churn connection workloads justify it, native code may:
@@ -198,12 +248,12 @@ high-churn connection workloads justify it, native code may:
 The public Stream connection contract must not change merely to eliminate a
 few cold Perl calls.
 
-## Priority 6 - Linux fd drain helpers
+## Priority 5 - Additional Linux fd drain helpers
 
-Profile native draining/aggregation for remaining Linux descriptors such as
-pidfd so Perl receives meaningful aggregate events.
+Profile native draining or aggregation for additional descriptor families only
+when Perl currently receives repetitive mechanical events.
 
-## Priority 7 - Buffer representation experiments
+## Priority 6 - Buffer representation experiments
 
 Only if profiling justifies them:
 
@@ -213,7 +263,7 @@ Only if profiling justifies them:
 
 Do not optimize allocation speculatively.
 
-## Priority 8 - Protocol acceleration above Stream
+## Priority 7 - Protocol acceleration above Stream
 
 After the generic framing catalog is broad, consider reusable protocol engines
 such as HTTP or WebSocket parsing. Application semantics remain Perl even when

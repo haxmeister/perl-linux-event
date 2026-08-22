@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
 
@@ -69,25 +69,29 @@ only its changing parser state.
 
 =head1 DECLARATIONS
 
-  use Linux::Event::Framer 'Delimiter', "\r\n",
-      max_frame => 1_048_576;
+  use Linux::Event::Framer 'Delimiter', "\r\n", # required delimiter
+      max_frame => 1_048_576;                    # optional
 
-  use Linux::Event::Framer 'Fixed', size => 32;
+  use Linux::Event::Framer 'Fixed',
+      size => 32; # required
 
   use Linux::Event::Framer 'LengthPrefix',
-      bytes => 2, endian => 'big', max_frame => 1_048_576;
+      bytes     => 2,         # optional; default 4
+      endian    => 'big',     # default
+      max_frame => 1_048_576; # optional
 
   use Linux::Event::Framer 'U32BE',
-      max_frame => 16 * 1024 * 1024;
+      max_frame => 16 * 1024 * 1024; # optional
 
   use Linux::Event::Framer 'Netstring',
-      max_frame => 1_048_576;
+      max_frame => 1_048_576; # optional
 
   use Linux::Event::Framer 'Varint',
-      max_frame => 1_048_576;
+      max_frame => 1_048_576; # optional
 
   use Linux::Event::Framer 'DecimalLength',
-      separator => ' ', max_frame => 1_048_576;
+      separator => ' ',       # default
+      max_frame => 1_048_576; # optional
 
 =head1 RAW STREAMS
 

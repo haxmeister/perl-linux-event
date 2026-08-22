@@ -3,6 +3,7 @@
 #include "XSUB.h"
 
 #include <errno.h>
+#include <arpa/inet.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -460,6 +461,9 @@ _new_client(CLASS, server_name, verify, ca_file, ca_path, alpn_sv, handshake_tim
     const unsigned char *alpn;
     const char *ca_file_name = NULL;
     const char *ca_path_name = NULL;
+    unsigned char address_bytes[sizeof(struct in6_addr)];
+    int is_ip_address;
+    int server_name_ok;
     char construction_error[512];
   CODE:
     tls = (let_tls_t *)calloc(1, sizeof(*tls));
@@ -495,8 +499,17 @@ _new_client(CLASS, server_name, verify, ca_file, ca_path, alpn_sv, handshake_tim
     }
     SSL_set_mode(tls->ssl,
         SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
-    if (SSL_set_tlsext_host_name(tls->ssl, server_name) != 1
-        || (verify && SSL_set1_host(tls->ssl, server_name) != 1)) {
+    is_ip_address = inet_pton(AF_INET, server_name, address_bytes) == 1
+        || inet_pton(AF_INET6, server_name, address_bytes) == 1;
+    if (is_ip_address) {
+        server_name_ok = !verify
+            || X509_VERIFY_PARAM_set1_ip_asc(
+                SSL_get0_param(tls->ssl), server_name) == 1;
+    } else {
+        server_name_ok = SSL_set_tlsext_host_name(tls->ssl, server_name) == 1
+            && (!verify || SSL_set1_host(tls->ssl, server_name) == 1);
+    }
+    if (!server_name_ok) {
         let_set_error(tls, "failed to configure TLS server name");
         snprintf(construction_error, sizeof(construction_error), "%s", tls->error);
         SSL_free(tls->ssl);

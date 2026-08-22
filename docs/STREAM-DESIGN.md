@@ -14,11 +14,15 @@ package ChatStream;
 use parent 'Linux::Event::Stream';
 use Linux::Event::Framer 'Delimiter', "\n";
 
-sub on_message ($stream, $message) { ... }
-sub on_drain   ($stream)           { ... }
-sub on_eof     ($stream)           { ... }
-sub on_error   ($stream, $error)   { ... }
-sub on_close   ($stream)           { ... }
+sub on_message ($stream, $message) { $stream->send($message) }
+sub on_drain ($stream) {
+    $stream->data->{blocked} = 0 if $stream->data;
+}
+sub on_eof ($stream) { $stream->end }
+sub on_error ($stream, $error) { warn "$error\n" }
+sub on_close ($stream) {
+    $stream->data->{closed} = 1 if $stream->data;
+}
 ```
 
 A package does not imply one global connection. It defines shared behavior.
@@ -37,7 +41,8 @@ my $stream = $loop->add(ChatStream->new(
 ```
 
 The established constructor also accepts `loop => $loop`. Outbound
-`ChatStream->connect(...)` follows the same rule: pass `loop` for immediate
+`ChatStream->connect(host => 'chat.example', port => 443)` follows the same
+rule: pass `loop` for immediate
 attachment or omit it and use `Loop->add()`. Inbound acquisition belongs to
 `Linux::Event::Listener`, which is constructed with
 `stream_class => 'ChatStream'`.
@@ -72,6 +77,7 @@ Immutable descriptor state includes:
 - optional hard `max_pending_bytes`
 - framed `max_buffer`
 - idle, read, and write inactivity defaults
+- optional acquisition-time socket policy
 
 Per-connection native state includes:
 
@@ -85,8 +91,22 @@ Per-connection native state includes:
 
 Per-connection Perl state includes the loop, handle, native registration,
 optional `data`, constructor timeout overrides, one optional operation
-deadline, and semantic lifecycle flags. It does not contain callback option
-hashes or a framer object.
+deadline, effective acquisition socket policy, local/peer Addresses, and
+semantic lifecycle flags. It does not contain callback option hashes or a
+framer object.
+
+## Socket configuration
+
+Stream applies constructor overrides over cached class socket policy before
+connect, accepted readiness, or adopted transport setup. TCP_NODELAY,
+keepalive tuning, TCP_USER_TIMEOUT, buffers, optional local source binding, and
+`SO_BINDTODEVICE` are supported. A cached `configure_socket` hook covers
+advanced Linux options without adding an open-ended constructor hash.
+
+Established getter/setters read back effective kernel values. Acquisition
+policy remains attached to the connection and is not reapplied during protocol
+`transition_to`. See `SOCKET-CONFIGURATION.md` for the complete matrix and
+ordering relative to TLS and framing.
 
 ## Established deadlines
 

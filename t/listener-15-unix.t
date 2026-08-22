@@ -2,6 +2,7 @@ use v5.36;
 use strict;
 use warnings;
 use Test::More;
+use Cwd qw(getcwd);
 use File::Temp qw(tempdir);
 use Socket qw(AF_UNIX SOCK_STREAM pack_sockaddr_un);
 
@@ -49,5 +50,16 @@ $state->{stream}->close;
 close $client;
 $listener->close;
 ok(!-e $path, 'owned Unix listener removes path on close');
+
+my $original_directory = getcwd();
+chdir $directory or die "chdir $directory: $!";
+my $zero_path_listener = Linux::Event::Listener->new(
+    stream_class => 'T::UnixStream', # required
+    unix         => '0',             # required
+);
+ok(-S '0', 'relative Unix listener path named zero is created');
+$zero_path_listener->close;
+ok(!-e '0', 'relative Unix listener path named zero is removed on close');
+chdir $original_directory or die "chdir $original_directory: $!";
 
 done_testing;

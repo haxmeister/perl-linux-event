@@ -3,11 +3,12 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
 use Errno ();
 use Fcntl qw(F_GETFD F_GETFL F_SETFD F_SETFL FD_CLOEXEC O_NONBLOCK);
+use Scalar::Util qw(blessed);
 use Socket qw(
     AF_INET AF_INET6 AF_UNIX AI_PASSIVE
     IPPROTO_IPV6 IPV6_V6ONLY
@@ -18,6 +19,7 @@ use Socket qw(
 
 use Linux::Event::Error;
 use Linux::Event::Address;
+use Linux::Event::_SocketConfig ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -43,13 +45,17 @@ sub _descriptor_for ($class) {
     };
 }
 
-sub _integer ($name, $value, $minimum, $maximum = undef) {
+sub _integer ($name, $value, $minimum, $maximum = 2_147_483_647) {
     croak "new(): $name must be an integer"
         if !defined($value) || ref($value) || $value !~ /\A\d+\z/;
+    my $digits = "$value";
+    $digits =~ s/\A0+(?=\d)//;
+    croak "new(): $name must be at most $maximum"
+        if length($digits) > length("$maximum")
+        || (length($digits) == length("$maximum")
+            && $digits gt "$maximum");
     $value = 0 + $value;
     croak "new(): $name must be at least $minimum" if $value < $minimum;
-    croak "new(): $name must be at most $maximum"
-        if defined($maximum) && $value > $maximum;
     return $value;
 }
 
@@ -99,7 +105,7 @@ sub _set_adopted_flags ($fh) {
 }
 
 sub _create_inet_listener ($host, $port, $backlog, $reuseaddr, $reuseport,
-    $v6only) {
+    $v6only, $bind_device) {
     my $node = $host eq '*' ? undef : $host;
     my ($resolver_error, @result) = getaddrinfo(
         $node, $port, { socktype => SOCK_STREAM, flags => AI_PASSIVE },
@@ -112,8 +118,13 @@ sub _create_inet_listener ($host, $port, $backlog, $reuseaddr, $reuseport,
     ) if $resolver_error;
 
     my ($last_errno, $last_operation);
+    my $compatible = 0;
     for my $candidate (@result) {
         next if !defined($candidate->{family}) || !defined($candidate->{addr});
+        next if $candidate->{family} != AF_INET
+            && $candidate->{family} != AF_INET6;
+        next if defined($v6only) && $candidate->{family} != AF_INET6;
+        $compatible = 1;
         my $fh;
         if (!socket(
             $fh,
@@ -144,6 +155,17 @@ sub _create_inet_listener ($host, $port, $backlog, $reuseaddr, $reuseport,
             close $fh;
             next;
         }
+        if (defined $bind_device) {
+            my $ok = eval {
+                Linux::Event::_SocketConfig::bind_device($fh, $bind_device);
+                1;
+            };
+            if (!$ok) {
+                my $error = $@;
+                close $fh;
+                die $error;
+            }
+        }
         if (!bind($fh, $candidate->{addr})) {
             ($last_errno, $last_operation) = (0 + $!, 'bind');
             close $fh;
@@ -156,6 +178,15 @@ sub _create_inet_listener ($host, $port, $backlog, $reuseaddr, $reuseport,
         }
         return ($fh, $candidate->{family});
     }
+
+    die Linux::Event::Error->new(
+        type      => 'socket_configuration',
+        operation => 'setsockopt',
+        option    => 'v6only',
+        message   => 'v6only requires an IPv6 bind address',
+        host      => $host,
+        port      => $port,
+    ) if defined($v6only) && !$compatible;
 
     $last_errno //= Errno::EADDRNOTAVAIL();
     $last_operation //= 'bind';
@@ -222,7 +253,7 @@ sub new ($class, %opt) {
     my %known = map { $_ => 1 } qw(
         loop data backlog max_accept_per_tick edge_triggered
         reuseaddr reuseport v6only unlink unlink_on_close permissions
-        fh owns_socket host port unix
+        fh owns_socket host port unix bind_device
     );
     my @unknown = sort grep { !$known{$_} } keys %opt;
     croak 'new(): unknown options: ' . join(', ', @unknown) if @unknown;
@@ -253,6 +284,10 @@ sub new ($class, %opt) {
     my $permissions = delete $opt{permissions};
     $permissions = _integer('permissions', $permissions, 0, 07777)
         if defined $permissions;
+    my $bind_device = delete $opt{bind_device};
+    croak 'new(): bind_device must be a non-empty interface name'
+        if defined($bind_device)
+        && (ref($bind_device) || $bind_device eq '' || $bind_device =~ /\0/);
 
     my $fh_mode = exists $opt{fh};
     my $host_mode = exists($opt{host}) || exists($opt{port});
@@ -272,7 +307,7 @@ sub new ($class, %opt) {
             qw(owns_socket unlink unlink_on_close permissions);
     } else {
         @inapplicable = grep { $supplied{$_} }
-            qw(owns_socket reuseaddr reuseport v6only);
+            qw(owns_socket reuseaddr reuseport v6only bind_device);
     }
     croak 'new(): options not valid for this socket source: '
         . join(', ', @inapplicable) if @inapplicable;
@@ -285,23 +320,32 @@ sub new ($class, %opt) {
         my $accepting = getsockopt($fh, SOL_SOCKET, SO_ACCEPTCONN);
         croak 'new(): fh is not a listening socket'
             if !defined($accepting) || !unpack('i', $accepting);
-        _set_adopted_flags($fh);
         $owns_socket = _boolean(
             'owns_socket', delete($opt{owns_socket}) // 0,
         );
         my $local = Linux::Event::Address->new(getsockname($fh));
         $family = $local->family_number;
+        croak 'new(): fh must use an IPv4, IPv6, or Unix address family'
+            if !defined($family) || ($family != AF_INET
+                && $family != AF_INET6 && $family != AF_UNIX);
+        croak 'new(): bind_device is valid only for TCP listeners'
+            if defined($bind_device)
+            && $family != AF_INET && $family != AF_INET6;
+        _set_adopted_flags($fh);
+        Linux::Event::_SocketConfig::bind_device($fh, $bind_device)
+            if defined $bind_device;
         $host = $local->host;
         $port = $local->port;
     } elsif ($host_mode) {
         $host = delete $opt{host};
         $port = delete $opt{port};
         croak 'new(): host is required' if !defined $host;
-        croak 'new(): host must be a non-empty string'
-            if ref($host) || $host eq '';
+        croak 'new(): host must be a non-empty string without NUL bytes'
+            if ref($host) || $host eq '' || $host =~ /\0/;
         $port = _integer('port', $port, 0, 65535);
         ($fh, $family) = _create_inet_listener(
             $host, $port, $backlog, $reuseaddr, $reuseport, $v6only,
+            $bind_device,
         );
         my $local = Linux::Event::Address->new(getsockname($fh));
         $host = $local->host;
@@ -309,8 +353,8 @@ sub new ($class, %opt) {
         $owns_socket = 1;
     } else {
         $path = delete $opt{unix};
-        croak 'new(): unix must be a non-empty string'
-            if !defined($path) || ref($path) || $path eq '';
+        croak 'new(): unix must be a non-empty path without NUL bytes'
+            if !defined($path) || ref($path) || $path eq '' || $path =~ /\0/;
         ($fh, $family) = _create_unix_listener(
             $path, $backlog, $unlink_existing, $permissions,
         );
@@ -332,7 +376,7 @@ sub new ($class, %opt) {
         max_accept_per_tick => $maximum,
         edge_triggered      => $edge,
         owns_socket         => $owns_socket ? 1 : 0,
-        unlink_on_close     => ($path && $unlink_on_close) ? 1 : 0,
+        unlink_on_close     => (defined($path) && $unlink_on_close) ? 1 : 0,
         state               => 'unattached',
         watcher             => undef,
         accepted            => 0,
@@ -346,15 +390,32 @@ sub new ($class, %opt) {
 sub _attach_to_loop ($self, $loop) {
     croak 'add(): Listener is not unattached'
         if $self->{state} ne 'unattached' || $self->{loop};
+    my $watcher = eval {
+        $loop->watch(
+            fh   => $self->{fh},
+            data => $self,
+            read => \&_accept_ready,
+            error => \&_listener_error_ready,
+            edge_triggered => $self->{edge_triggered} ? 1 : 0,
+            _callback_data_arg => 1,
+        );
+    };
+    if (!$watcher) {
+        my $failure = $@ || 'could not register Listener socket';
+        die $failure if blessed($failure)
+            && $failure->isa('Linux::Event::Error');
+        die Linux::Event::Error->new(
+            type      => 'setup',
+            operation => 'watch',
+            fatal     => 0,
+            message   => "$failure",
+            host      => $self->{host},
+            port      => $self->{port},
+            path      => $self->{unix},
+            family    => $self->{family},
+        );
+    }
     $self->{loop} = $loop;
-    my $watcher = $loop->watch(
-        fh   => $self->{fh},
-        data => $self,
-        read => \&_accept_ready,
-        error => \&_listener_error_ready,
-        edge_triggered => $self->{edge_triggered} ? 1 : 0,
-        _callback_data_arg => 1,
-    );
     $self->{watcher} = $watcher;
     $self->{state} = 'listening';
     return $self;
@@ -485,12 +546,18 @@ sub _listener_error_ready ($self) {
         path      => $self->{unix},
     );
     $self->{last_error} = $error;
-    $self->_shutdown('failed');
-    $self->{descriptor}{on_error}->($self, $error);
+    $self->_shutdown('failed', 1);
+    my $reported = eval {
+        $self->{descriptor}{on_error}->($self, $error);
+        1;
+    };
+    my $failure = $@;
+    $self->{loop} = undef;
+    die $failure if !$reported;
     return;
 }
 
-sub _shutdown ($self, $state) {
+sub _shutdown ($self, $state, $retain_loop = 0) {
     return if $self->is_terminal;
     $self->{state} = $state;
     if (my $watcher = delete $self->{watcher}) {
@@ -499,9 +566,10 @@ sub _shutdown ($self, $state) {
     if (defined(my $fh = delete $self->{fh})) {
         close $fh if $self->{owns_socket};
     }
-    if ($self->{unix} && $self->{unlink_on_close}) {
+    if (defined($self->{unix}) && $self->{unlink_on_close}) {
         unlink $self->{unix} if -S $self->{unix};
     }
+    $self->{loop} = undef if !$retain_loop;
     return;
 }
 
@@ -509,8 +577,6 @@ sub close ($self) {
     $self->_shutdown('closed');
     return $self;
 }
-
-sub cancel ($self) { return $self->close }
 
 sub detach ($self) {
     return undef if $self->is_terminal;

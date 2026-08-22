@@ -119,6 +119,61 @@ like($@, qr/unknown options: imaginary/,
     'unknown TLS declaration option is named');
 
 $ok = eval q{
+    package T::TLSNulServerName;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::TLS server_name => "example.test\0.invalid";
+    sub on_data ($stream, $bytes) { return }
+    1;
+};
+ok(!$ok, 'TLS declaration rejects strings containing NUL bytes');
+like($@, qr/server_name must be a non-empty string without NUL bytes/,
+    'TLS NUL-byte error identifies the option');
+
+$ok = eval q{
+    package T::TLSWideALPN;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::TLS alpn => ["\x{100}"];
+    sub on_data ($stream, $bytes) { return }
+    1;
+};
+ok(!$ok, 'TLS declaration rejects non-byte ALPN values');
+like($@, qr/ALPN protocol must be a byte string/,
+    'wide-character ALPN error identifies the byte-string contract');
+
+$ok = eval q{
+    package T::TLSHugeTimeout;
+    use parent 'Linux::Event::Stream';
+    use Linux::Event::TLS
+        handshake_timeout =>
+            '99999999999999999999999999999999999999999999999999';
+    sub on_data ($stream, $bytes) { return }
+    1;
+};
+ok(!$ok, 'TLS declaration rejects a timeout outside native timer range');
+like($@, qr/(?:finite number|supported timer range)/,
+    'oversized TLS timeout fails during declaration');
+
+like(exception(sub { Linux::Event::TLS->client(
+    server_name => 'localhost', # required
+    verify      => 2,           # invalid
+) }), qr/verify must be 0 or 1/,
+    'direct TLS client helper validates verification policy');
+like(exception(sub { Linux::Event::TLS->client(
+    server_name => '[]', # invalid after bracket normalization
+) }), qr/server_name must not be empty after removing brackets/,
+    'direct TLS client helper rejects an empty normalized identity');
+like(exception(sub { Linux::Event::TLS->client(
+    server_name => 'localhost',                    # required
+    alpn => [map { 'x' x 255 } 1 .. 256],          # invalid total size
+) }), qr/ALPN protocol list must not exceed 65535 bytes/,
+    'TLS rejects an ALPN list that cannot fit its wire extension');
+like(exception(sub { Linux::Event::TLS->server(
+    cert_file => "/tmp/cert\0.pem", # invalid NUL
+    key_file  => '/tmp/key.pem',     # required
+) }), qr/cert_file must be a non-empty string without NUL bytes/,
+    'direct TLS server helper rejects NUL in credential path');
+
+$ok = eval q{
     package T::TLSPairedCredential;
     use parent 'Linux::Event::Stream';
     use Linux::Event::TLS cert_file => '/tmp/certificate.pem';
@@ -151,3 +206,8 @@ close $left;
 close $right;
 
 done_testing;
+
+sub exception ($code) {
+    local $@;
+    return eval { $code->(); 1 } ? '' : "$@";
+}

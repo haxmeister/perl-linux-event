@@ -31,7 +31,7 @@ my $stream = ClientStream->connect(
 );
 ```
 
-The same options work with `new(fh => ...)`. A Listener-created Stream uses the
+The same options work with `new(fh => $connected_socket)`. A Listener-created Stream uses the
 accepted Stream subclass's `stream_options` defaults. An explicit zero
 constructor value disables a nonzero subclass default. Constructor overrides
 remain in force across `transition_to`; policy that was not overridden changes

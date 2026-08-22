@@ -3,9 +3,10 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
+use Scalar::Util qw(blessed);
 use Linux::Event::Error;
 use parent 'Linux::Event::Listener::_Engine';
 
@@ -30,13 +31,36 @@ sub stream_class ($self) { $self->{stream_class} }
 
 sub _accept_client ($self, $fh, $peer) {
     my $class = $self->{stream_class};
-    my $stream = $class->new(
-        fh        => $fh,
-        peer      => $peer,
-        data      => $self->data,
-        _accepted => 1,
-    );
-    $stream->_attach_to_loop($self->loop);
+    my $stream;
+    my $prepared = eval {
+        $stream = $class->new(
+            fh        => $fh,
+            peer      => $peer,
+            data      => $self->data,
+            _accepted => 1,
+        );
+        $stream->_attach_to_loop($self->loop);
+        1;
+    };
+    if (!$prepared) {
+        my $failure = $@;
+        eval { $stream->close; 1 } if $stream;
+        my $error = blessed($failure)
+            && $failure->isa('Linux::Event::Error')
+            ? $failure
+            : Linux::Event::Error->new(
+                type      => 'setup',
+                operation => 'accepted_stream',
+                message   => "$failure" || 'accepted Stream setup failed',
+                fatal     => 0,
+                host      => $self->host,
+                port      => $self->port,
+                family    => $self->family,
+            );
+        $self->{last_error} = $error;
+        $self->{descriptor}{on_error}->($self, $error);
+        return;
+    }
     if (my $callback = $self->{descriptor}{on_accept}) {
         my $ok = eval { $callback->($self, $stream); 1 };
         if (!$ok) {
@@ -66,6 +90,8 @@ sub _accept_client ($self, $fh, $peer) {
 sub on_error ($self, $error) {
     die "listener failed: $error\n";
 }
+
+sub CLONE_SKIP ($class) { 1 }
 
 1;
 
@@ -196,6 +222,7 @@ TCP socket options are:
       reuseaddr    => 1,              # default
       reuseport    => 0,              # default
       v6only       => 1,              # optional; kernel default if omitted
+      bind_device  => 'eth0',         # optional
   );
 
 Unix socket options are:
@@ -217,6 +244,10 @@ Adopted-socket options are:
   );
 
 Source-specific options are rejected for other source types.
+C<bind_device> applies Linux C<SO_BINDTODEVICE> before a created TCP socket is
+bound. It is also accepted for an adopted Internet listener. The process must
+have the privilege required by the kernel; failure throws a structured
+C<socket_configuration> Error naming C<bind_device>.
 
 =head1 ACCEPTED STREAMS
 
@@ -298,10 +329,10 @@ throw a structured Error.
 Disable or re-enable acceptance without closing the listening socket. Both
 return the Listener.
 
-=head2 close / cancel
+=head2 close
 
-Stop accepting, cancel native registration, close an owned handle, and remove
-an owned Unix path when configured. C<cancel> is an alias for C<close>.
+Stop accepting, remove native registration, close an owned handle, and remove
+an owned Unix path when configured. A terminal Listener releases its Loop.
 
 =head2 detach
 
@@ -310,8 +341,9 @@ ownership to the caller. Returns undef after a terminal state.
 
 =head2 loop / fh / fd / host / port / path
 
-Return attachment and bound-socket information. Fields that do not apply to the
-socket family are undefined.
+Return attachment and bound-socket information. C<loop> is undef before
+attachment and after terminal cleanup. Fields that do not apply to the socket
+family are undefined.
 
 =head2 family / family_number / is_tcp / is_unix
 

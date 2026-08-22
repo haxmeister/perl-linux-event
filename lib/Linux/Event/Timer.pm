@@ -3,9 +3,10 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
+use POSIX qw(isfinite);
 use Scalar::Util qw(looks_like_number);
 
 require Linux::Event::Loop;
@@ -25,12 +26,14 @@ sub _descriptor_for ($class) {
 }
 
 sub _seconds ($method, $name, $value, $positive) {
+    my $seconds = !defined($value) || ref($value)
+        || !looks_like_number($value) ? undef : 0 + $value;
     croak "$method(): $name must be a "
         . ($positive ? 'positive' : 'non-negative')
         . ' number of seconds'
-        if !defined($value) || ref($value) || !looks_like_number($value)
-        || $value < 0 || ($positive && $value == 0);
-    return 0 + $value;
+        if !defined($seconds) || !isfinite($seconds)
+        || $seconds < 0 || ($positive && $seconds == 0);
+    return $seconds;
 }
 
 sub _schedule ($method, $option) {
@@ -68,6 +71,8 @@ sub _schedule ($method, $option) {
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
     my $loop = delete $option{loop};
+    croak 'new(): loop must be an object implementing add()'
+        if defined($loop) && (!ref($loop) || !$loop->can('add'));
     my $data = delete $option{data};
     my ($absolute, $first, $every) = _schedule('new', \%option);
     my $timer = $class->_new_native(
@@ -81,6 +86,18 @@ sub reschedule ($self, %option) {
     my ($absolute, $first, $every) = _schedule('reschedule', \%option);
     return $self->_reschedule_native($absolute, $first, $every);
 }
+
+sub CLONE ($class) {
+    %CLASS_DESCRIPTOR = ();
+    return;
+}
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Timer::_Descriptor;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Timer;
 
 1;
 
@@ -104,8 +121,8 @@ Linux::Event::Timer - subclass-defined timers for Linux::Event
 
   my $loop = Linux::Event::Loop->new;
   my $timer = $loop->add(LE::Heartbeat->new(
-      every => 30,
-      data  => $connection,
+      every => 30,          # required recurring interval
+      data  => $connection, # optional
   ));
   $loop->run;
 
@@ -131,7 +148,7 @@ The base class cannot be constructed directly. A subclass must define:
 
   sub on_timer ($timer) {
       my $context = $timer->data;
-      ...;
+      $context->{stream}->close;
   }
 
 The resolved CV is cached once per subclass and called directly without Perl
@@ -140,19 +157,19 @@ application state belongs in C<data>.
 
 =head1 CONSTRUCTION
 
-=head2 new(after => $seconds, ...)
+=head2 new(after => $seconds, data => $value)
 
 Creates a one-shot relative Timer. The delay begins when the Timer is attached,
 not when a detached object is constructed. Zero schedules the callback for a
 subsequent Loop turn and never calls it inline.
 
-=head2 new(at => $deadline, ...)
+=head2 new(at => $deadline, data => $value)
 
 Creates a one-shot Timer for an absolute monotonic deadline expressed in
 seconds. Use C<< Linux::Event::Timer->now >> to obtain the current clock. A
 deadline already in the past fires on a subsequent Loop turn.
 
-=head2 new(every => $seconds, ...)
+=head2 new(every => $seconds, data => $value)
 
 Creates a fixed-rate recurring Timer whose first expiration occurs after one
 interval. The interval must be positive.

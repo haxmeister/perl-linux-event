@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
@@ -17,6 +17,13 @@ sub add ($self, $object) {
     $object->_attach_to_loop($self);
     return $object;
 }
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::_Registration;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Loop;
 
 1;
 
@@ -32,7 +39,8 @@ Linux::Event::Loop - Linux-native epoll event loop
 
   my $loop = Linux::Event::Loop->new;
   my $stream = $loop->add(MyStream->connect(
-      host => '127.0.0.1', port => 9999,
+      host => '127.0.0.1', # required
+      port => 9999,        # required
   ));
   $loop->run;
 
@@ -43,14 +51,22 @@ buffer, and readiness dispatch. It is the only public loop class.
 
 High-level objects may be attached in either of two equivalent ways:
 
-  my $stream = MyStream->connect(loop => $loop, ...);
+  my $stream = MyStream->connect(
+      loop => $loop,        # optional: attach immediately
+      host => '127.0.0.1',  # required
+      port => 9999,         # required
+  );
 
-  my $stream = MyStream->connect(...);
+  my $stream = MyStream->connect(
+      host => '127.0.0.1', # required
+      port => 9999,        # required
+  );
   $loop->add($stream);
 
 C<add> invokes the concrete object's attachment implementation and
-returns the same object. Stream, Listener, Timer, and Signal reject attachment
-to a second Loop or attachment after reaching a terminal state.
+returns the same object. Stream, Listener, Datagram, Timer, Signal, Wakeup, and
+Process reject attachment to a second Loop or attachment after reaching a
+terminal state.
 
 C<watch> is the low-level descriptor API. It registers immediately and returns
 an opaque native registration handle. The handle is not a public class or a
@@ -61,16 +77,32 @@ subclassing API.
 =head2 add($object)
 
 Attaches a detached L<Linux::Event::Stream>, L<Linux::Event::Listener>,
-L<Linux::Event::Timer>, or L<Linux::Event::Signal> and returns that exact
-object. The object becomes owned by this Loop. Attaching it again, attaching it
-to another Loop, or attaching a terminal object throws an exception.
+L<Linux::Event::Datagram>, L<Linux::Event::Timer>,
+L<Linux::Event::Signal>, L<Linux::Event::Wakeup>, or
+L<Linux::Event::Process> and returns that exact object. The object becomes
+owned by this Loop. Attaching it again, attaching it to another Loop, or
+attaching a terminal object throws an exception.
 
 The following are equivalent:
 
-  my $a = MyStream->connect(loop => $loop, host => $host, port => $port);
-  my $b = $loop->add(MyStream->connect(host => $host, port => $port));
+  my $a = MyStream->connect(
+      loop => $loop,       # optional: attach immediately
+      host => '127.0.0.1', # required
+      port => 9999,        # required
+  );
+  my $b = $loop->add(MyStream->connect(
+      host => '127.0.0.1', # required
+      port => 9999,        # required
+  ));
 
-  my $timer = $loop->add(MyTimer->new(after => 0.25));
+  my $timer = $loop->add(MyTimer->new(
+      after => 0.25, # required one-shot delay
+  ));
+
+  my $socket = $loop->add(MyDatagram->new(
+      host => '0.0.0.0', # required
+      port => 9999,      # required
+  ));
 
 The C<loop> constructor option and C<add> are both primary public APIs.
 Timer construction and scheduling deliberately use this generic attachment
@@ -78,7 +110,7 @@ path; Loop has no Timer-specific factory methods.
 
 =head1 RAW DESCRIPTOR API
 
-=head2 watch(fh => $fh, ...) / watch(fd => $fd, ...)
+=head2 watch(fh => $fh, read => $callback) / watch(fd => $fd, read => $callback)
 
 Registers exactly one filehandle or integer descriptor. Supported options are:
 
@@ -119,7 +151,7 @@ Registering an fd that is already registered replaces its native registration
 with C<EPOLL_CTL_MOD>. Cancelling the obsolete handle cannot remove the new
 registration.
 
-=head2 watch_fd($fd, ...)
+=head2 watch_fd($fd, read => $callback)
 
 Low-level positional form used by Linux::Event internals and specialized code.
 It creates the same native registration and has the same dispatch path as
@@ -172,6 +204,13 @@ event array. C<callback_scope_limit> and C<set_callback_scope_limit> control
 bounded Perl temporary scopes. C<enable_watcher_reclaim> exposes an
 experimental native memory/throughput tradeoff. The measured defaults should
 normally remain unchanged.
+
+=head1 INTERPRETER OWNERSHIP
+
+A Loop and every native object it owns belong to the Perl interpreter that
+created them. They are not cloned into a new ithread. Only a cloned
+L<Linux::Event::Wakeup> handle may signal its owner through eventfd; it cannot
+manage the Loop, invoke callbacks, or access owner-interpreter data.
 
 =head1 PLATFORM
 

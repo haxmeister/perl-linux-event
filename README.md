@@ -1,35 +1,40 @@
 # Linux::Event
 
-Linux::Event is a Linux-only event and stream-processing foundation for Perl.
-It combines an XS-first `epoll` reactor with inbound and outbound connection
-acquisition, a native buffered Stream layer, and an OpenSSL TLS transport in
-one distribution.
+Linux::Event is a Linux-only asynchronous I/O foundation for Perl. It combines
+an XS-first `epoll` reactor with timers, synchronous signal handling, eventfd
+wakeups, inbound and outbound byte streams, packet-preserving datagrams,
+pidfd processes, and an OpenSSL TLS transport in one distribution.
 
 The public model is deliberately small. `Linux::Event::Loop` owns readiness
-and scheduled work; `Linux::Event::Stream` owns established and connecting
-byte streams; `Linux::Event::Listener` owns listening sockets;
-`Linux::Event::Timer` owns a scheduled callback; and `Linux::Event::Signal`
-owns synchronous signalfd subscriptions. There is no public Watcher,
-IO, Connect, or Connector class. Native epoll registrations remain opaque, so
-one logical object may use several kernel event sources without exposing them
-as more application objects.
+and scheduled work; `Linux::Event::Stream` and `Linux::Event::Datagram` own
+byte and packet sockets; `Linux::Event::Listener` owns listening sockets;
+`Linux::Event::Timer`, `Linux::Event::Signal`, and
+`Linux::Event::Wakeup` own scheduled, signal, and external-notification
+activities; and `Linux::Event::Process` owns pidfd lifecycle and optional
+stdio. There is no public Watcher, IO, Connect, Connector, Poster, or Process
+watcher class. Native epoll registrations remain opaque, so one logical object
+may use several kernel event sources without exposing them as application
+objects.
 
 ## Public modules
 
 - `Linux::Event::Loop` - epoll engine and object attachment
 - `Linux::Event::Stream` - TCP/Unix stream endpoints and outbound connection
 - `Linux::Event::Listener` - TCP/Unix listening endpoints
+- `Linux::Event::Datagram` - connected/unconnected UDP and Unix packet sockets
 - `Linux::Event::Timer` - subclass-defined one-shot and recurring timers
 - `Linux::Event::Signal` - subclass-defined synchronous signal subscriptions
+- `Linux::Event::Wakeup` - subclass-defined eventfd notifications
+- `Linux::Event::Process` - pidfd lifecycle and asynchronous standard I/O
 - `Linux::Event::TLS` - declarative OpenSSL policy for Stream subclasses
 - `Linux::Event::Framer::*` - native framing declarations for Stream types
 - `Linux::Event::Error` - shared structured failure value
 - `Linux::Event::Address` - lazy IPv4, IPv6, and Unix address value
 
-`Linux::Event::Listener::_Engine`, `Linux::Event::Stream::_Connection`, and
-`Linux::Event::Stream::_Resolver` are private implementation packages.
-Signal's descriptor and service packages are private as well. Applications
-must not construct, subclass, or depend on them.
+`Linux::Event::Listener::_Engine`, `Linux::Event::Stream::_Connection`,
+`Linux::Event::Stream::_Resolver`, and the internal socket configuration and
+deadline packages are private implementation details. Applications must not
+construct, subclass, or depend on them.
 
 ## Current capabilities
 
@@ -52,6 +57,8 @@ must not construct, subclass, or depend on them.
 - `add()` sets the Loop and returns the same object
 - raw `watch()` returning an already-attached opaque registration handle
 - no generic Perl dispatch layer in the readiness hot path
+- interpreter-local Loop ownership; only Wakeup's eventfd signal handle may
+  cross an ithread or post-fork boundary
 
 ### Timer
 
@@ -72,6 +79,33 @@ must not construct, subclass, or depend on them.
 - exact restoration of mask entries changed by Linux::Event
 - safe self/cross-cancellation and deterministic Loop-destruction cleanup
 
+### Wakeup
+
+- public eventfd notification object with cached `on_wakeup($wakeup, $count)`
+- coalesced counter delivery on the owning Loop thread
+- cloned ithread handles and forked children may signal but cannot manage the
+  Loop, callbacks, or application data
+- no threaded-Perl requirement and no unsafe arbitrary-coderef post queue
+- application payloads remain in an explicit thread-safe queue or IPC channel
+
+### Datagram
+
+- connected and unconnected UDP plus filesystem Unix datagrams
+- exact packet boundaries and lazy peer Address values
+- asynchronous hostname resolution for connected UDP
+- native `recvmsg(MSG_TRUNC)` oversized-packet detection
+- whole-packet output queues, byte/packet hard limits, and soft backpressure
+- strict Internet/Unix option applicability and ownership-safe path cleanup
+
+### Process
+
+- side-effect-free detached specifications and native `posix_spawnp` on attach
+- pidfd lifecycle, `waitid(P_PIDFD)` status, and pidfd identity-safe signals
+- inherited, null, piped, caller-filehandle, and merged stderr/stdout modes
+- asynchronous stdout/stderr, graceful queued stdin, and SIGPIPE isolation
+- existing-child observation with optional non-reaping non-child mode
+- no ambiguous process `cancel` operation
+
 ### Stream connection
 
 - `MyStream->connect()` as the sole public outbound connection API
@@ -82,6 +116,8 @@ must not construct, subclass, or depend on them.
 - typed resolve, socket, connect, and timeout errors
 - loop-dispatched immediate outcomes and silent cancellation
 - output may be queued before attachment or readiness
+- optional numeric local source binding and interface binding
+- class and constructor TCP/buffer policy plus a controlled socket hook
 
 ### Listener
 
@@ -92,6 +128,20 @@ must not construct, subclass, or depend on them.
 - optional `on_accept($listener, $stream)` after construction and attachment
 - lazy peer-address conversion and typed runtime errors
 - no temporary accepted-socket registration before Stream construction
+
+### Socket configuration
+
+- constructor values override cached class policy for one Stream or Datagram
+- omitted values leave Linux kernel configuration unchanged
+- TCP_NODELAY, keepalive tuning, TCP_USER_TIMEOUT, and socket buffers
+- listener reuse, IPv6-only, and interface binding policy
+- live getters/setters for meaningful established-socket values
+- typed `socket_configuration` failures with operation and option context
+- socket policy runs before connect, accepted TLS startup, or adopted transport
+
+Most clients should omit `local_host` and `local_port`; Linux then chooses the
+source address and ephemeral source port. These options select the local side
+of an outbound connection and do not replace its remote `host` and `port`.
 
 Use Listener `on_accept` for immediate connection accounting or admission
 policy. Use Stream `on_ready` when the connection is application-ready; for TLS
@@ -180,8 +230,8 @@ deadline owners. Expiration delivers a typed `timeout` error through
 
 ## Loop attachment
 
-Stream, Listener, Timer, and Signal accept `loop => $loop`, and may instead be
-constructed detached and added later:
+Stream, Listener, Datagram, Timer, Signal, Wakeup, and Process accept
+`loop => $loop`, and may instead be constructed detached and added later:
 
 ```perl
 use Linux::Event::Listener;
@@ -199,6 +249,20 @@ my $heartbeat = $loop->add(Heartbeat->new(every => 30));
 
 my $shutdown = $loop->add(ShutdownSignal->new(
     signals => [SIGINT, SIGTERM],
+));
+
+my $udp = $loop->add(MetricsDatagram->new(
+    host => '0.0.0.0', # required
+    port => 9000,      # required
+));
+
+my $wakeup = $loop->add(ResultWakeup->new(
+    data => $result_queue, # optional
+));
+
+my $worker = $loop->add(WorkerProcess->spawn(
+    command => ['/usr/bin/worker', '--once'], # required
+    stdout  => 'pipe',                        # optional; default inherit
 ));
 ```
 
@@ -251,6 +315,87 @@ my $shutdown = $loop->add(ShutdownSignal->new(
 ));
 ```
 
+## Wakeup example
+
+Wakeup makes a Loop notice results stored in a separate safe channel. It does
+not attempt to move a Perl callback between interpreters:
+
+```perl
+use threads;
+use Thread::Queue;
+
+package ResultWakeup;
+use parent 'Linux::Event::Wakeup';
+
+sub on_wakeup ($wakeup, $count) {
+    while (defined(my $result = $wakeup->data->dequeue_nb)) {
+        say "result: $result";
+    }
+    $wakeup->loop->stop;
+}
+
+package main;
+my $results = Thread::Queue->new;
+my $wakeup = $loop->add(ResultWakeup->new(
+    data => $results, # optional
+));
+my $thread = threads->create(sub {
+    $results->enqueue('complete');
+    $wakeup->signal;
+    return 1;
+});
+$thread->join;
+$loop->run;
+```
+
+Native extensions and forked children can signal the same way without a
+threaded Perl. See [`docs/WAKEUP-DESIGN.md`](docs/WAKEUP-DESIGN.md) for the
+ownership boundary and why there is no arbitrary `$loop->post($coderef)` API.
+
+## Datagram example
+
+```perl
+package EchoDatagram;
+use parent 'Linux::Event::Datagram';
+
+sub on_datagram ($socket, $payload, $peer) {
+    $socket->send($payload, to => $peer);
+}
+
+package main;
+my $server = $loop->add(EchoDatagram->new(
+    host => '0.0.0.0', # required
+    port => 9999,      # required
+));
+$loop->run;
+```
+
+Connected Datagram objects use `send($payload)` without `to`; hostname
+resolution occurs through the same native resolver workers as Stream.
+
+## Process example
+
+```perl
+package CaptureProcess;
+use parent 'Linux::Event::Process';
+
+sub on_stdout ($process, $bytes) { print $bytes }
+sub on_exit ($process) {
+    say "exit=" . ($process->exit_code // 'signal');
+    $process->loop->stop;
+}
+
+package main;
+my $process = $loop->add(CaptureProcess->spawn(
+    command => ['/usr/bin/uname', '-a'], # required
+    stdout  => 'pipe',                   # optional; default inherit
+));
+$loop->run;
+```
+
+Process construction is side-effect free until Loop attachment. Spawning uses
+native `posix_spawnp`, not Perl code in a post-fork child.
+
 ## Build and test
 
 ```bash
@@ -259,10 +404,11 @@ make
 make test
 ```
 
-All seven native extensions are built into the same `blib` tree. Building TLS
-requires OpenSSL 1.1.1 or newer, including its development headers and
-libraries. To use that copy
-without installing it:
+All ten native extensions are built into the same `blib` tree. The supported
+runtime is Linux 5.4 or newer. Building requires Linux pidfd syscall headers, a
+libc with `posix_spawn_file_actions_addchdir_np`, and OpenSSL 1.1.1 or newer
+development headers and libraries. Perl 5.36 or newer is required; Perl
+ithreads are not. To use the built copy without installing it:
 
 ```bash
 export PERL5LIB="$PWD/blib/lib:$PWD/blib/arch"
@@ -340,7 +486,8 @@ my $server = Linux::Event::Listener->new(
 
 Listener calls `on_accept` immediately after attaching the accepted Stream;
 the Stream's `on_ready` waits until the server handshake completes. Outbound
-TLS defaults SNI and hostname verification to the `connect(host => ...)` value.
+TLS defaults SNI and hostname verification to the
+`connect(host => 'service.example')` value.
 
 ## Line echo server
 
@@ -369,7 +516,12 @@ $loop->run;
 
 Runnable versions are
 [`examples/line-echo-server.pl`](examples/line-echo-server.pl) and
-[`examples/line-echo-client.pl`](examples/line-echo-client.pl).
+[`examples/line-echo-client.pl`](examples/line-echo-client.pl). Datagram,
+Wakeup, and Process examples are
+[`examples/udp-echo-server.pl`](examples/udp-echo-server.pl),
+[`examples/udp-echo-client.pl`](examples/udp-echo-client.pl),
+[`examples/wakeup-thread.pl`](examples/wakeup-thread.pl), and
+[`examples/process-capture.pl`](examples/process-capture.pl).
 
 ## Raw Stream example
 
@@ -525,15 +677,19 @@ memory against the versioned object-configured baseline.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor and Stream architecture
 - [`docs/TIMER-DESIGN.md`](docs/TIMER-DESIGN.md) - Timer API, scheduler, and lifecycle semantics
 - [`docs/SIGNAL-DESIGN.md`](docs/SIGNAL-DESIGN.md) - signalfd fan-out, mask ownership, and lifecycle
+- [`docs/WAKEUP-DESIGN.md`](docs/WAKEUP-DESIGN.md) - eventfd notification and interpreter ownership
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
+- [`docs/SOCKET-CONFIGURATION.md`](docs/SOCKET-CONFIGURATION.md) - socket policy, local binding, and hooks
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - declarative TLS and the internal transport contract
 - [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
 - [`docs/STREAM-DEADLINES.md`](docs/STREAM-DEADLINES.md) - established inactivity and operation deadlines
 - [`docs/LISTENER-DESIGN.md`](docs/LISTENER-DESIGN.md) - inbound acquisition and accept policy
+- [`docs/DATAGRAM-DESIGN.md`](docs/DATAGRAM-DESIGN.md) - packet I/O, queues, and ownership
+- [`docs/PROCESS-DESIGN.md`](docs/PROCESS-DESIGN.md) - pidfd lifecycle, spawning, and stdio
 - [`docs/CHOOSING-A-FRAMER.md`](docs/CHOOSING-A-FRAMER.md) - choosing a native framing family
 - [`docs/FRAMING.md`](docs/FRAMING.md) - declarations, wire formats, and extension policy
 - [`docs/XS-ROADMAP.md`](docs/XS-ROADMAP.md) - remaining native work
-- [`bench/README.md`](bench/README.md) - reactor, Timer, Signal, and Stream benchmarks
+- [`bench/README.md`](bench/README.md) - reactor, Timer, Signal, Wakeup, Datagram, Process, and Stream benchmarks
 - [`docs/DEVELOPMENT-HISTORY.md`](docs/DEVELOPMENT-HISTORY.md) - historical optimization notes
 
 ## Project direction
@@ -546,8 +702,14 @@ Stream's fd operations pass through an exact-version native transport contract
 while its ordinary `plain` provider retains a specialized direct-syscall path.
 `Linux::Event::TLS` ships in this distribution as a separate native extension
 and attaches at construction without making TLS a framer or adding OpenSSL
-policy to XSLoop or the plain Stream path. See
+policy to the core Loop or plain Stream path. See
 [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md).
+
+Version 0.101 completes the original essential runtime set: shared timers,
+eventfd wakeups, asynchronous DNS and Happy Eyeballs, signalfd signals,
+pidfd processes, packet-preserving datagrams, established Stream deadlines,
+and production socket configuration. Further work is optimization or expansion
+of general protocol facilities rather than a missing lifecycle primitive.
 
 ## License
 

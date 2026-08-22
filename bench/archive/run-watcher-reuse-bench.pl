@@ -81,7 +81,7 @@ sub run_case ($system, $count, $cycles, $repeat) {
             pipe(my $r, my $w) or die "pipe failed: $!";
             $r->blocking(0);
             $w->blocking(0);
-            my $watcher = $loop->watch_fd(fileno($r), fh => $r, callback_args => 0, lean => 1, read => sub {});
+            my $watcher = $loop->watch_fd(fileno($r), fh => $r, no_args => 1, lean => 1, read => sub {});
             push @items, [$watcher, $r, $w];
             $created++;
         }

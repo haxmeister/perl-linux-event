@@ -2,13 +2,34 @@
 
 This file preserves the benchmark/optimization phase notes that previously occupied the project README. It is historical material, not the current public API documentation.
 
+## Essential completion release (0.101)
+
+Version 0.101 turns the development series into one stable public release. The
+shared Timer scheduler, asynchronous Resolver and Happy Eyeballs connection
+path, Signal service, established Stream deadlines, declarative TLS Streams,
+Listener acceptance, and native framing catalog remain intact.
+
+The release adds four final production surfaces. Wakeup provides a restricted
+eventfd notification boundary for native producers, fork children, and cloned
+ithread signalling handles. Common Stream socket policy covers local binding,
+TCP and buffer configuration, interface binding, and a cached advanced hook.
+Datagram adds packet-preserving UDP and Unix sockets. Process adds
+`posix_spawnp`, pidfd lifecycle and signalling, decoded status, and asynchronous
+standard I/O.
+
+All high-level resources follow detached construction plus `Loop->add()` or the
+equivalent `loop` constructor option. The only low-level exception is raw
+`Loop->watch()`, which continues to return an opaque registration. The current
+API and guarantees are documented in module POD and the focused design files;
+the older sections below remain an implementation history only.
+
 ## Public hierarchy simplification (0.100_025)
 
 The 0.100_024 Watcher/IO/Connect/Listen migration exposed too many overlapping
 public concepts. Version 0.100_025 removes those compatibility layers. Loop,
 Stream, and Listener now express ownership directly; raw `watch()` results are
 opaque native registration handles. `MyStream->connect()` is the outbound
-entry point and `Linux::Event::Listener->new(stream_class => ...)` is the
+entry point and `Linux::Event::Listener` with a configured `stream_class` is the
 inbound entry point.
 
 Both `loop => $loop` and detached construction plus `Loop->add()` are supported

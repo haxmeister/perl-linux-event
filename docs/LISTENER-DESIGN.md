@@ -50,8 +50,9 @@ An adopted handle defaults to caller ownership; pass `owns_socket => 1` to
 transfer it. `host => '*'` binds a passive wildcard address. When `port => 0`
 is used, `port()` reports the assigned port after construction.
 
-TCP options include `backlog`, `reuseaddr`, `reuseport`, and `v6only`. Unix
-options include `backlog`, `unlink`, `unlink_on_close`, and `permissions`.
+TCP options include `backlog`, `reuseaddr`, `reuseport`, `v6only`, and optional
+`bind_device` (`SO_BINDTODEVICE`). Unix options include `backlog`, `unlink`,
+`unlink_on_close`, and `permissions`.
 Source-specific options are rejected when used with another source, preventing
 configuration that appears to work but has no effect.
 
@@ -65,6 +66,7 @@ my $tcp = Linux::Event::Listener->new(
     reuseaddr    => 1,              # default
     reuseport    => 0,              # default
     v6only       => 1,              # optional; kernel default if omitted
+    bind_device  => 'eth0',         # optional
 );
 
 my $unix = Linux::Event::Listener->new(
@@ -115,9 +117,10 @@ formatting.
 
 ## Accepted Stream policy
 
-Accepted connection policy belongs to the Stream subclass. General buffering
-and deadline defaults use `stream_options`. TLS is declared once on that same
-class:
+Accepted connection policy belongs to the Stream subclass. General buffering,
+deadline, and accepted-socket defaults use `stream_options`. Built-in socket
+policy and `configure_socket($stream, $fh, 'accepted', $peer)` run before plain
+readiness or TLS startup. TLS is declared once on that same class:
 
 ```perl
 package SecureServerStream;
@@ -129,8 +132,9 @@ use Linux::Event::TLS
 
 sub stream_options ($class) {
     return (
-        idle_timeout => 60, # optional; default 0
-        max_buffer   => 8 * 1024 * 1024,
+        idle_timeout => 60,                # optional; default 0
+        max_buffer   => 8 * 1024 * 1024,   # default
+        tcp_nodelay  => 1,                 # optional
     );
 }
 
@@ -154,8 +158,9 @@ options hook.
 
 `pause()` and `resume()` control acceptance without closing the socket.
 `close()` ends Listener ownership. `detach()` cancels readiness and returns the
-still-open listener handle. `state()` reports `unattached`, `listening`,
-`paused`, `closed`, `failed`, or `detached`.
+still-open listener handle. Terminal cleanup releases the Loop reference.
+`state()` reports `unattached`, `listening`, `paused`, `closed`, `failed`, or
+`detached`.
 
 Runtime failures use `Linux::Event::Error`. Resource exhaustion errors such as
 `EMFILE` pause acceptance before notification to avoid a readable-backlog error

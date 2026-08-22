@@ -21,6 +21,9 @@ my $stream = ClientStream->connect(
     port    => 443,                # required
     timeout => 10,                 # default
     data    => $state,             # optional
+    local_host  => '192.0.2.20',   # optional numeric source address
+    local_port  => 0,              # optional source port
+    tcp_nodelay => 1,              # optional socket policy
 );
 ```
 
@@ -54,6 +57,24 @@ Exactly one address mode is required:
 disables the connection deadline. The deadline covers hostname resolution and
 every socket attempt. Numeric IPv4/IPv6 literals, Unix addresses, and packed
 sockaddrs bypass the resolver.
+
+Most clients omit `local_host` and `local_port`. Linux then chooses the source
+address and ephemeral source port. Local binding constrains the source side;
+it never replaces the remote `host` and `port`. `local_host` is numeric only,
+and its family must match the chosen peer candidate. `bind_device` optionally
+applies `SO_BINDTODEVICE` before local bind and connect.
+
+## Socket configuration order
+
+Class `stream_options` and constructor socket values are applied to every new
+candidate before local binding and connect. Constructor values win over class
+policy, while an omitted value leaves the kernel default unchanged. The cached
+`configure_socket($stream, $fh, 'connect', $address)` hook runs after built-in
+policy and before bind/connect. A hook or socket-policy failure is terminal and
+does not become an unexplained candidate fallback.
+
+See `SOCKET-CONFIGURATION.md` for TCP_NODELAY, keepalive, TCP_USER_TIMEOUT,
+buffers, live setters, and accepted/adopted roles.
 
 ## State sequence
 
@@ -100,8 +121,10 @@ workers. Workers call `getaddrinfo`, copy complete address results into native
 memory, and write the service eventfd. They never enter the Perl interpreter or
 touch Perl values. The Loop watches that eventfd through its ordinary raw
 `watch()` mechanism, drains completions on the Loop thread, and resumes the
-private connection engine there. This is intentionally not a public eventfd,
-poster, or general cross-thread callback API.
+private connection engine there. This private typed queue is not routed through
+the public Wakeup callback API: the resolver already owns a fixed native result
+schema, cancellation table, and lifetime. Applications use Wakeup only with
+their own safe result channel.
 
 IPv6 and IPv4 candidates are interleaved. The first connection attempt starts
 immediately; while it remains pending, the next family starts after 250 ms.

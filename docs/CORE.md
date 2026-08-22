@@ -1,8 +1,8 @@
 # Core Reactor Guide
 
 This document describes the low-level Linux::Event XS reactor. Applications
-that want owned buffered byte-stream I/O should use a
-`Linux::Event::Stream` subclass on top of this layer.
+that want resource ownership should normally use Stream, Listener, Datagram,
+Timer, Signal, Wakeup, or Process on top of this layer.
 
 ## Mental model
 
@@ -35,8 +35,8 @@ my $loop = Linux::Event::Loop->new;
 
 Each loop owns one epoll instance, an event buffer, a native fd-indexed
 registration registry, and its attached high-level objects. Stream, Listener,
-Timer, and Signal accept `loop => $loop` or attach through
-`$loop->add($object)`.
+Datagram, Timer, Signal, Wakeup, and Process accept `loop => $loop` or attach
+through `$loop->add($object)`.
 `watch()` is the immediate raw-descriptor API.
 
 ## Registering a handle
@@ -47,9 +47,16 @@ Normal application code should label the watched resource explicitly:
 my $registration = $loop->watch(
     fh    => $fh,
     data  => { connection_id => 42 },
-    read  => sub ($registration) { ... },
-    write => sub ($registration) { ... },
-    error => sub ($registration) { ... },
+    read  => sub ($registration) {
+        my $count = sysread($registration->fh, my $bytes, 8192);
+        $registration->cancel if defined($count) && $count == 0;
+    },
+    write => sub ($registration) {
+        $registration->disable_write;
+    },
+    error => sub ($registration) {
+        $registration->cancel;
+    },
 );
 ```
 
@@ -64,7 +71,7 @@ If an application has only a raw descriptor, use:
 ```perl
 my $registration = $loop->watch(
     fd   => $fd,
-    read => sub ($registration) { ... },
+    read => sub ($registration) { $registration->cancel },
 );
 ```
 
@@ -75,7 +82,9 @@ has no stored filehandle, so `$registration->fh` is `undef`.
 The lower-level positional method remains available:
 
 ```perl
-$loop->watch_fd($fd, read => sub ($watcher) { ... });
+$loop->watch_fd($fd, read => sub ($registration) {
+    $registration->cancel;
+});
 ```
 
 `watch_fd` is retained for low-level/internal code and unusual
@@ -268,3 +277,8 @@ The raw reactor does not own:
 Those responsibilities belong to `Linux::Event::Stream` subclasses. Keeping
 that separation gives Linux::Event both a low-level general reactor and a
 high-level native stream-processing path.
+
+Packet boundaries belong to Datagram, listening ownership to Listener,
+eventfd clone rules to Wakeup, and pidfd/stdio lifecycle to Process. Raw
+`watch` remains appropriate when an application intentionally owns a different
+descriptor protocol and all of its cleanup rules.

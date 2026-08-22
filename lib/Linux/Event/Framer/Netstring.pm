@@ -3,6 +3,8 @@ use v5.36;
 use strict;
 use warnings;
 
+our $VERSION = '0.101';
+
 use Carp qw(croak);
 use bytes ();
 
@@ -38,7 +40,8 @@ Linux::Event::Framer::Netstring - native netstring framing declaration
 
   package NetstringStream;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Netstring', max_frame => 1_048_576;
+  use Linux::Event::Framer 'Netstring',
+      max_frame => 1_048_576; # optional
 
 =head1 DESCRIPTION
 

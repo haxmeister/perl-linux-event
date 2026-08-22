@@ -8,7 +8,9 @@ $_->blocking(0) for ($r, $w);
 my $loop = Linux::Event::Loop->new;
 my $fired = 0;
 my $cb = sub { $fired++ };
-my $watcher = $loop->watch_fd(fileno($r), fh => $r, callback_args => 0, read => $cb);
+my $watcher = $loop->watch_fd(
+    fileno($r), fh => $r, no_args => 1, read => $cb,
+);
 
 syswrite($w, "x");
 $loop->run_once(100);

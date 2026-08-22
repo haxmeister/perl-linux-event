@@ -86,7 +86,7 @@ until callback return so `$timer` and its data remain safe for the duration of
 that callback.
 
 Timer callbacks may directly modify the rest of an application through
-`data`—for example, close a Stream, stop a Listener, update shared state, or
+`data`--for example, close a Stream, stop a Listener, update shared state, or
 schedule other Timers. No application container or subclass cross-link is
 required.
 

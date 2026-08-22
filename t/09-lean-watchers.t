@@ -12,7 +12,7 @@ my $watcher;
 $watcher = $loop->watch_fd(
     fileno($r),
     fh => $r,
-    callback_args => 0,
+    no_args => 1,
     lean => 1,
     read => sub {
         sysread($r, my $buf, 16);

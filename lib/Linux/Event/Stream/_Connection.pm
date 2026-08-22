@@ -3,11 +3,12 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
 use Errno ();
-use Scalar::Util qw(refaddr);
+use POSIX qw(isfinite);
+use Scalar::Util qw(blessed refaddr);
 use Socket qw(
     AF_INET AF_INET6 AF_UNIX
     SOCK_STREAM SOCK_NONBLOCK SOCK_CLOEXEC
@@ -19,6 +20,8 @@ use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
 use Linux::Event::Error;
 use Linux::Event::Stream::_Resolver ();
+use Linux::Event::Address;
+use Linux::Event::_SocketConfig ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -29,7 +32,12 @@ sub _timeout ($value) {
         if ref($value)
         || $value !~ /\A(?:\d+(?:\.\d*)?|\.\d+)\z/
         || $value < 0;
-    return 0 + $value;
+    $value = 0 + $value;
+    croak 'new(): timeout must be a finite number of seconds'
+        if !isfinite($value);
+    croak 'new(): timeout exceeds the supported timer range'
+        if $value > 2_147_483_647;
+    return $value;
 }
 
 sub _target_error_fields ($self) {
@@ -66,6 +74,35 @@ sub new ($class, %opt) {
     croak 'new(): stream must be a Linux::Event::Stream object'
         if !ref($stream) || !$stream->isa('Linux::Event::Stream');
     my $timeout = _timeout(delete $opt{timeout});
+    my $socket_policy = delete $opt{socket_policy};
+    croak 'new(): internal socket_policy must be a hash reference'
+        if ref($socket_policy) ne 'HASH';
+    my $bind_device = delete $opt{bind_device};
+    croak 'new(): bind_device must be a non-empty interface name'
+        if defined($bind_device)
+        && (ref($bind_device) || $bind_device eq '' || $bind_device =~ /\0/);
+    my $has_local_host = exists $opt{local_host};
+    my $local_host = delete $opt{local_host};
+    my $has_local_port = exists $opt{local_port};
+    my $local_port = delete $opt{local_port};
+    $local_port = 0 if !$has_local_port;
+    croak 'new(): local_port must be an integer between 0 and 65535'
+        if !defined($local_port) || ref($local_port)
+        || $local_port !~ /\A\d+\z/
+        || $local_port > 65535;
+    my ($local_family, $local_packed);
+    if ($has_local_host) {
+        croak 'new(): local_host must be a non-empty numeric IP address'
+            if !defined($local_host) || ref($local_host) || $local_host eq '';
+        $local_packed = inet_pton(AF_INET, $local_host);
+        $local_family = AF_INET if defined $local_packed;
+        if (!defined $local_packed) {
+            $local_packed = inet_pton(AF_INET6, $local_host);
+            $local_family = AF_INET6 if defined $local_packed;
+        }
+        croak 'new(): local_host must be a numeric IPv4 or IPv6 address'
+            if !defined $local_family;
+    }
 
     my $host_mode = exists($opt{host}) || exists($opt{port});
     my $unix_mode = exists $opt{unix};
@@ -81,8 +118,8 @@ sub new ($class, %opt) {
         $host = delete $opt{host};
         $port = delete $opt{port};
         croak 'new(): host is required' if !defined $host;
-        croak 'new(): host must be a non-empty string'
-            if ref($host) || $host eq '';
+        croak 'new(): host must be a non-empty string without NUL bytes'
+            if ref($host) || $host eq '' || $host =~ /\0/;
         croak 'new(): port is required' if !defined $port;
         croak 'new(): port must be an integer'
             if ref($port) || $port !~ /\A\d+\z/;
@@ -93,10 +130,13 @@ sub new ($class, %opt) {
             if exists $opt{family};
     } elsif ($unix_mode) {
         $unix = delete $opt{unix};
-        croak 'new(): unix must be a non-empty string'
-            if !defined($unix) || ref($unix) || $unix eq '';
+        croak 'new(): unix must be a non-empty path without NUL bytes'
+            if !defined($unix) || ref($unix) || $unix eq '' || $unix =~ /\0/;
         croak 'new(): family is not allowed with unix'
             if exists $opt{family};
+        croak 'new(): local_host, local_port, and bind_device are not valid '
+            . 'for Unix connections'
+            if $has_local_host || $has_local_port || defined $bind_device;
     } else {
         $sockaddr = delete $opt{sockaddr};
         $family = delete $opt{family};
@@ -107,6 +147,10 @@ sub new ($class, %opt) {
         croak 'new(): family must be a non-negative integer'
             if ref($family) || $family !~ /\A\d+\z/;
         $family = 0 + $family;
+        croak 'new(): local_host, local_port, and bind_device require an '
+            . 'IPv4 or IPv6 sockaddr'
+            if ($has_local_host || $has_local_port || defined $bind_device)
+            && $family != AF_INET && $family != AF_INET6;
     }
     croak 'new(): unknown options: ' . join(', ', sort keys %opt) if %opt;
 
@@ -128,6 +172,14 @@ sub new ($class, %opt) {
         next_attempt  => 1,
         last_errno    => undef,
         last_operation => undef,
+        socket_policy => $socket_policy,
+        bind_device   => $bind_device,
+        local_host    => $local_host,
+        local_port    => 0 + $local_port,
+        local_bind    => ($has_local_host || $has_local_port) ? 1 : 0,
+        local_family  => $local_family,
+        local_packed  => $local_packed,
+        compatible_candidate_seen => 0,
         timer_fd      => undef,
         timer_watcher => undef,
         pending_result => undef,
@@ -164,15 +216,35 @@ sub _attach_to_loop ($self, $loop) {
         if $self->{state} ne 'detached' || $self->{loop};
     $self->{loop} = $loop;
     $self->{state} = 'pending';
-    $self->{deadline_at} = _now() + $self->{timeout}
-        if $self->{timeout} > 0;
-    $self->_rearm_timer if defined $self->{deadline_at};
-    if ($self->{pending_result}) {
-        $self->_rearm_timer;
-    } elsif ($self->{needs_resolution}) {
-        $self->_start_resolution;
-    } else {
-        $self->_attempt_next;
+    my $attached = eval {
+        $self->{deadline_at} = _now() + $self->{timeout}
+            if $self->{timeout} > 0;
+        $self->_rearm_timer if defined $self->{deadline_at};
+        if ($self->{pending_result}) {
+            $self->_rearm_timer;
+        } elsif ($self->{needs_resolution}) {
+            $self->_start_resolution;
+        } else {
+            $self->_attempt_next;
+        }
+        1;
+    };
+    if (!$attached) {
+        my $failure = $@ || 'connection attachment failed';
+        eval { $self->_cancel_resolution; 1 };
+        eval { $self->_close_attempts; 1 };
+        eval { $self->_close_timer; 1 };
+        $self->{loop} = undef;
+        $self->{state} = 'detached';
+        $self->{pending_result} = undef;
+        $self->{deadline_at} = undef;
+        $self->{fallback_at} = undef;
+        $self->{candidate_at} = 0;
+        $self->{attempt_count} = 0;
+        $self->{last_errno} = undef;
+        $self->{last_operation} = undef;
+        $self->{compatible_candidate_seen} = 0;
+        die $failure;
     }
     return $self;
 }
@@ -334,6 +406,9 @@ sub _attempt_next ($self) {
 
     while ($self->{candidate_at} < @{ $self->{candidates} }) {
         my $candidate = $self->{candidates}[ $self->{candidate_at}++ ];
+        next if defined($self->{local_family})
+            && $candidate->{family} != $self->{local_family};
+        $self->{compatible_candidate_seen} = 1;
         my $fh;
         $self->{attempt_count}++;
         if (!socket(
@@ -345,6 +420,58 @@ sub _attempt_next ($self) {
             $self->{last_errno} = 0 + $!;
             $self->{last_operation} = 'socket';
             next;
+        }
+
+        my $configured = eval {
+            Linux::Event::_SocketConfig::apply_policy(
+                $fh, $candidate->{family}, $self->{socket_policy},
+            );
+            Linux::Event::_SocketConfig::bind_device(
+                $fh, $self->{bind_device},
+            ) if defined $self->{bind_device};
+            $self->{stream}->_configure_socket(
+                $fh, 'connect',
+                Linux::Event::Address->new($candidate->{sockaddr}),
+            );
+            if ($self->{local_bind}) {
+                my $packed = defined($self->{local_family})
+                    ? $self->{local_packed}
+                    : $candidate->{family} == AF_INET
+                        ? inet_pton(AF_INET, '0.0.0.0')
+                        : inet_pton(AF_INET6, '::');
+                my $sockaddr = $candidate->{family} == AF_INET
+                    ? pack_sockaddr_in($self->{local_port}, $packed)
+                    : pack_sockaddr_in6($self->{local_port}, $packed);
+                if (!bind($fh, $sockaddr)) {
+                    my $errno = 0 + $!;
+                    local $! = $errno;
+                    die Linux::Event::Error->new(
+                        type      => 'socket_configuration',
+                        operation => 'bind',
+                        option    => defined($self->{local_host})
+                            ? 'local_host' : 'local_port',
+                        errno     => $errno,
+                        message   => "$!",
+                        host      => $self->{local_host},
+                        port      => $self->{local_port},
+                    );
+                }
+            }
+            1;
+        };
+        if (!$configured) {
+            my $failure = $@;
+            close $fh;
+            my $error = blessed($failure)
+                && $failure->isa('Linux::Event::Error')
+                ? $failure
+                : Linux::Event::Error->new(
+                    type      => 'socket_configuration',
+                    operation => 'configure_socket',
+                    message   => "$failure" || 'socket configuration failed',
+                );
+            $self->_queue_error($error);
+            return;
         }
 
         my $id = $self->{next_attempt}++;
@@ -365,14 +492,25 @@ sub _attempt_next ($self) {
         if ($errno == Errno::EINPROGRESS()
             || $errno == Errno::EALREADY()
             || $errno == Errno::EWOULDBLOCK()) {
-            my $watcher = $self->{loop}->watch_fd(
-                fileno($fh),
-                fh    => $fh,
-                data  => $attempt,
-                write => \&_attempt_ready,
-                error => \&_attempt_ready,
-                _callback_data_arg => 1,
-            );
+            my $watcher = eval {
+                $self->{loop}->watch_fd(
+                    fileno($fh),
+                    fh    => $fh,
+                    data  => $attempt,
+                    write => \&_attempt_ready,
+                    error => \&_attempt_ready,
+                    _callback_data_arg => 1,
+                );
+            };
+            if (!$watcher) {
+                my $message = "$@" || 'could not register connection socket';
+                $self->_close_attempt($attempt);
+                $self->_queue_error($self->_error(
+                    type => 'setup', operation => 'watch',
+                    message => $message,
+                ));
+                return;
+            }
             $attempt->{watcher} = $watcher;
             $self->{fallback_at} = _now() + 0.250
                 if $self->{candidate_at} < @{ $self->{candidates} };
@@ -389,6 +527,17 @@ sub _attempt_next ($self) {
     $self->{fallback_at} = undef;
     $self->_rearm_timer;
     return if keys %{ $self->{attempts} };
+
+    if (defined($self->{local_family})
+        && !$self->{compatible_candidate_seen}) {
+        $self->_queue_error($self->_error(
+            type      => 'socket_configuration',
+            operation => 'bind',
+            option    => 'local_host',
+            message   => 'local_host address family does not match any peer address',
+        ));
+        return;
+    }
 
     my $errno = $self->{last_errno} // Errno::EIO();
     my $operation = $self->{last_operation} // 'connect';
@@ -431,12 +580,19 @@ sub _attempt_ready ($attempt) {
 sub _ensure_timer ($self) {
     return $self->{timer_fd} if defined $self->{timer_fd};
     my $fd = __PACKAGE__->_timerfd_new;
-    my $watcher = $self->{loop}->watch(
-        fd   => $fd,
-        data => $self,
-        read => \&_timer_ready,
-        _callback_data_arg => 1,
-    );
+    my $watcher = eval {
+        $self->{loop}->watch(
+            fd   => $fd,
+            data => $self,
+            read => \&_timer_ready,
+            _callback_data_arg => 1,
+        );
+    };
+    if (!$watcher) {
+        my $failure = $@ || 'could not register connection timer';
+        __PACKAGE__->_timerfd_close($fd);
+        die $failure;
+    }
     $self->{timer_fd} = $fd;
     $self->{timer_watcher} = $watcher;
     return $fd;

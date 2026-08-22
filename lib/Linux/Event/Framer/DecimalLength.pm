@@ -3,6 +3,8 @@ use v5.36;
 use strict;
 use warnings;
 
+our $VERSION = '0.101';
+
 use Carp qw(croak);
 use bytes ();
 
@@ -49,7 +51,8 @@ Linux::Event::Framer::DecimalLength - native decimal-length framing declaration
   package SyslogStream;
   use parent 'Linux::Event::Stream';
   use Linux::Event::Framer 'DecimalLength',
-      separator => ' ', max_frame => 1_048_576;
+      separator => ' ',       # default
+      max_frame => 1_048_576; # optional
 
 =head1 DESCRIPTION
 

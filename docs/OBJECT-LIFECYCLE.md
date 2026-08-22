@@ -27,6 +27,18 @@ my $timer = SessionTimer->new(
 my $signal = ShutdownSignal->new(
     loop => $loop, signals => [SIGINT, SIGTERM], data => $server,
 );
+
+my $datagram = MetricsDatagram->new(
+    loop => $loop, host => '0.0.0.0', port => 9000,
+);
+
+my $wakeup = ResultWakeup->new(
+    loop => $loop, data => $result_queue,
+);
+
+my $process = WorkerProcess->spawn(
+    loop => $loop, command => ['/usr/bin/worker', '--once'],
+);
 ```
 
 An object may instead be constructed detached and passed to `add()`:
@@ -47,6 +59,18 @@ my $timer = $loop->add(SessionTimer->new(
 
 my $signal = $loop->add(ShutdownSignal->new(
     signals => [SIGINT, SIGTERM], data => $server,
+));
+
+my $datagram = $loop->add(MetricsDatagram->new(
+    host => '0.0.0.0', port => 9000,
+));
+
+my $wakeup = $loop->add(ResultWakeup->new(
+    data => $result_queue,
+));
+
+my $process = $loop->add(WorkerProcess->spawn(
+    command => ['/usr/bin/worker', '--once'],
 ));
 ```
 
@@ -73,6 +97,13 @@ different parts of an application.
 - Loop retains active Signal objects through one shared native signalfd
   service. Cancellation or Loop destruction restores Loop-owned mask entries
   and releases retained data.
+- Datagram owns created sockets and Unix paths. Adopted handles default to
+  caller ownership. `detach()` returns an open handle and disables path
+  removal.
+- Wakeup owns one eventfd and its Loop registration. Only `signal()` may be
+  used from a cloned ithread handle or forked child.
+- Loop retains a running Process. Process owns its pidfd and pipe ends but does
+  not implicitly signal a child on destruction.
 - `add()` returns the exact object it received; it does not wrap or replace it.
 
 Violations are rejected synchronously. This makes the Loop registry and native
@@ -105,6 +136,14 @@ objects on one Loop share one signalfd and native fan-out registry. One object
 may subscribe to several numbers and several objects may subscribe to the same
 number on that Loop.
 
+Wakeup is a logical notification rather than an eventfd registration handle.
+Its eventfd counter says that external work may be available; the associated
+thread-safe queue or IPC channel remains the source of payloads.
+
+Datagram owns a packet socket and whole-packet output queue. Process may own a
+pidfd plus four registrations: pidfd, stdin, stdout, and stderr. These remain
+one application object because their lifecycle and callbacks are inseparable.
+
 ## Raw descriptor registrations
 
 Low-level applications can register a descriptor directly:
@@ -112,7 +151,10 @@ Low-level applications can register a descriptor directly:
 ```perl
 my $registration = $loop->watch(
     fh   => $fh,
-    read => sub ($registration) { ... },
+    read => sub ($registration) {
+        my $count = sysread($registration->fh, my $bytes, 8192);
+        $registration->cancel if defined($count) && $count == 0;
+    },
 );
 ```
 
@@ -136,3 +178,22 @@ returns so callback-local access remains safe.
 Signal cancellation follows the same terminal rule. Self-cancellation and
 cross-cancellation during fan-out are safe; callback-local data remains visible
 until the active callback returns.
+
+Datagram `close()` releases an owned socket and path and calls `on_close`;
+`detach()` transfers the handle without calling `on_close`. Process has no
+generic cancellation method: applications close stdin or send an explicit
+signal and retain the Loop until `on_exit`.
+
+## Interpreter ownership
+
+Loop and every native resource-owning object are confined to their creating
+Perl interpreter and opt out of ithread cloning. Wakeup is the single narrow
+exception: the clone contains only enough scalar state to write the shared
+eventfd through its own descriptor duplicate. It does not clone the Loop graph,
+callbacks, registrations, or owner data. This prevents double-close and
+native-pointer reuse across interpreters.
+
+Class declarations remain available in a child ithread. Stream, Timer, and
+Signal rebuild their immutable native class descriptors there on first use, so
+the child may create its own independent resources and Loop. An object created
+before the thread boundary still belongs only to its original interpreter.

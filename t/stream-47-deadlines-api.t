@@ -139,6 +139,8 @@ for my $case (
     [ write_timeout => [], qr/write_timeout must be a non-negative/ ],
     [ idle_timeout => 'Inf', qr/idle_timeout must be a non-negative/ ],
     [ read_timeout => 'NaN', qr/read_timeout must be a non-negative/ ],
+    [ write_timeout => '99999999999999999999',
+        qr/write_timeout exceeds the supported timer range/ ],
 ) {
     my ($left, $right) = pair();
     my ($name, $value, $pattern) = @$case;
@@ -172,6 +174,8 @@ for my $case (
         qr/after must be a non-negative/ ],
     [ { after => 1, operation => 'x', extra => 1 },
         qr/unknown deadline options: extra/ ],
+    [ { after => '99999999999999999999', operation => 'x' },
+        qr/after exceeds the supported timer range/ ],
 ) {
     my ($left, $right) = pair();
     my ($deadline, $pattern) = @$case;

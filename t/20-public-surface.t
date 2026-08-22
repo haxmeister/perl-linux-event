@@ -10,6 +10,7 @@ my $root = File::Spec->catdir($Bin, '..');
 
 for my $required (
     'README.md',
+    'LICENSE',
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
     'docs/XS-ROADMAP.md',
@@ -21,6 +22,10 @@ for my $required (
     'docs/LISTENER-DESIGN.md',
     'docs/TIMER-DESIGN.md',
     'docs/SIGNAL-DESIGN.md',
+    'docs/WAKEUP-DESIGN.md',
+    'docs/SOCKET-CONFIGURATION.md',
+    'docs/DATAGRAM-DESIGN.md',
+    'docs/PROCESS-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
@@ -29,6 +34,9 @@ for my $required (
     'bench/run-reactor-comparison.pl',
     'bench/run-resolver-microbench.pl',
     'bench/run-signal-microbench.pl',
+    'bench/run-wakeup-microbench.pl',
+    'bench/run-datagram-microbench.pl',
+    'bench/run-process-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -53,12 +61,16 @@ for my $required (
     'lib/Linux/Event/TLS.pm',
     'lib/Linux/Event/Loop.pm',
     'lib/Linux/Event/Signal.pm',
+    'lib/Linux/Event/Wakeup.pm',
     'lib/Linux/Event/Listener.pm',
     'lib/Linux/Event/Listener/_Engine.pm',
     'lib/Linux/Event/Stream.pm',
     'lib/Linux/Event/Stream/_Connection.pm',
     'lib/Linux/Event/Stream/_Resolver.pm',
     'lib/Linux/Event/Timer.pm',
+    'lib/Linux/Event/Datagram.pm',
+    'lib/Linux/Event/Process.pm',
+    'lib/Linux/Event/_SocketConfig.pm',
     'xstls/Makefile.PL',
     'xstls/TLS.xs',
     'xstls/check_openssl.c',
@@ -68,9 +80,21 @@ for my $required (
     'xsresolver/Resolver.xs',
     'xssignal/Makefile.PL',
     'xssignal/Signal.xs',
+    'xswakeup/Makefile.PL',
+    'xswakeup/Wakeup.xs',
+    'xsdatagram/Makefile.PL',
+    'xsdatagram/Datagram.xs',
+    'xsprocess/Makefile.PL',
+    'xsprocess/Process.xs',
+    'xsprocess/check_spawn_chdir.c',
     'xslistener/Makefile.PL',
     'xslistener/Listener.xs',
     'examples/line-echo-server.pl',
+    'examples/line-echo-client.pl',
+    'examples/udp-echo-server.pl',
+    'examples/udp-echo-client.pl',
+    'examples/wakeup-thread.pl',
+    'examples/process-capture.pl',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");
 }
@@ -87,6 +111,10 @@ for my $live (
     'docs/LISTENER-DESIGN.md',
     'docs/TIMER-DESIGN.md',
     'docs/SIGNAL-DESIGN.md',
+    'docs/WAKEUP-DESIGN.md',
+    'docs/SOCKET-CONFIGURATION.md',
+    'docs/DATAGRAM-DESIGN.md',
+    'docs/PROCESS-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
     'bench/README.md',
@@ -95,6 +123,9 @@ for my $live (
     'bench/run-reactor-comparison.pl',
     'bench/run-resolver-microbench.pl',
     'bench/run-signal-microbench.pl',
+    'bench/run-wakeup-microbench.pl',
+    'bench/run-datagram-microbench.pl',
+    'bench/run-process-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -124,6 +155,9 @@ my %allowed = map { $_ => 1 } qw(
     run-reactor-comparison.pl
     run-resolver-microbench.pl
     run-signal-microbench.pl
+    run-wakeup-microbench.pl
+    run-datagram-microbench.pl
+    run-process-microbench.pl
     run-callback-ceiling.pl
     run-stream-lifecycle-bench.pl
     run-stream-microbench.pl

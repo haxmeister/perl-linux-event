@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
@@ -17,6 +18,7 @@ typedef struct ler_request {
     uint64_t id;
     char *host;
     char *service;
+    int socktype;
     struct ler_request *next;
 } ler_request;
 
@@ -128,13 +130,20 @@ ler_worker(void *argument)
 
         completion = (ler_completion *)calloc(1, sizeof(*completion));
         if (!completion) {
-            ler_free_request(request);
+            struct timespec retry_delay = { 0, 1000000 };
+            pthread_mutex_lock(&resolver->mutex);
+            request->next = resolver->request_head;
+            resolver->request_head = request;
+            if (!resolver->request_tail)
+                resolver->request_tail = request;
+            pthread_mutex_unlock(&resolver->mutex);
+            nanosleep(&retry_delay, NULL);
             continue;
         }
         completion->id = request->id;
         memset(&hints, 0, sizeof(hints));
         hints.ai_family = AF_UNSPEC;
-        hints.ai_socktype = SOCK_STREAM;
+        hints.ai_socktype = request->socktype;
         error = getaddrinfo(request->host, request->service, &hints, &addresses);
         completion->resolver_error = error;
         completion->system_errno = error == EAI_SYSTEM ? errno : 0;
@@ -257,10 +266,11 @@ event_fd(self)
     RETVAL
 
 UV
-submit(self, host, service)
+submit(self, host, service, socktype = SOCK_STREAM)
     SV *self
     SV *host
     SV *service
+    int socktype
   PREINIT:
     ler_resolver *resolver;
     ler_request *request;
@@ -271,6 +281,8 @@ submit(self, host, service)
     resolver = ler_from_sv(self);
     if (!resolver || resolver->owner_pid != getpid())
         croak("native resolver cannot be used after fork");
+    if (socktype != SOCK_STREAM && socktype != SOCK_DGRAM)
+        croak("resolver socktype must be SOCK_STREAM or SOCK_DGRAM");
     host_bytes = SvPV(host, host_length);
     service_bytes = SvPV(service, service_length);
     if (memchr(host_bytes, '\0', host_length) || memchr(service_bytes, '\0', service_length))
@@ -280,6 +292,7 @@ submit(self, host, service)
         croak("cannot allocate resolver request");
     request->host = strndup(host_bytes, host_length);
     request->service = strndup(service_bytes, service_length);
+    request->socktype = socktype;
     if (!request->host || !request->service) {
         ler_free_request(request);
         croak("cannot copy resolver request");

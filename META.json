@@ -1,5 +1,5 @@
 {
-   "abstract" : "Linux-native event reactor and stream processing foundation",
+   "abstract" : "Linux-native reactor, streams, datagrams, and processes",
    "author" : [
       "Joshua S. Day <hax@cpan.org>"
    ],
@@ -17,6 +17,23 @@
       "directory" : [
          "t",
          "inc"
+      ],
+      "package" : [
+         "Linux::Event::_Registration",
+         "Linux::Event::_SocketConfig",
+         "Linux::Event::Datagram::_ReadyTimer",
+         "Linux::Event::Listener::_Engine",
+         "Linux::Event::Signal::_Descriptor",
+         "Linux::Event::Signal::_Engine",
+         "Linux::Event::Signal::_Service",
+         "Linux::Event::Stream::_Connection",
+         "Linux::Event::Stream::_Deadline",
+         "Linux::Event::Stream::_Resolver",
+         "Linux::Event::Stream::_Resolver::_Native",
+         "Linux::Event::Stream::XSDescriptor",
+         "Linux::Event::Stream::XSState",
+         "Linux::Event::Timer::_Descriptor",
+         "Linux::Event::Wakeup::_OwnerState"
       ]
    },
    "prereqs" : {
@@ -27,21 +44,26 @@
       },
       "configure" : {
          "requires" : {
+            "ExtUtils::CBuilder" : "0",
             "ExtUtils::MakeMaker" : "0"
          }
       },
       "runtime" : {
          "requires" : {
+            "Socket" : "2.033",
             "perl" : "5.036000"
+         }
+      },
+      "test" : {
+         "requires" : {
+            "Test::More" : "0"
          }
       }
    },
-   "release_status" : "unstable",
+   "release_status" : "stable",
    "resources" : {
-      "repository" : {
-         "url" : "https://github.com/haxmeister/perl-linux-event"
-      }
+      "homepage" : "https://github.com/haxmeister/perl-linux-event"
    },
-   "version" : "0.100_030",
+   "version" : "0.101",
    "x_serialization_backend" : "JSON::PP version 4.16"
 }

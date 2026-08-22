@@ -1,5 +1,44 @@
 Revision history for Linux-Event
 
+0.101  2026-08-21
+    - Publish the completed API as a stable release and synchronize every
+      bundled Perl and XS component at version 0.101.
+    - Add Linux::Event::Wakeup, a subclass-defined eventfd boundary with
+      coalesced Loop-thread callbacks, safe fork signalling, and per-ithread
+      descriptor duplication that keeps callbacks and data owner-confined.
+    - Add production Stream socket policy at class and construction time:
+      local address/port binding, TCP_NODELAY, keepalive tuning,
+      TCP_USER_TIMEOUT in seconds, send/receive buffers, SO_BINDTODEVICE, live
+      getters/setters, and a cached configure_socket hook.
+    - Apply Stream socket policy before outbound bind/connect and before
+      accepted or adopted transport attachment; expose local addresses and
+      report family/configuration failures as structured Error values.
+    - Extend the private asynchronous resolver with SOCK_DGRAM requests while
+      preserving its typed native completion queue and cancellation model.
+    - Add Linux::Event::Datagram for connected and unconnected UDP and Unix
+      datagrams, native recvmsg/sendto packet I/O, lazy peer Addresses, whole-
+      packet queues, soft backpressure, hard byte/packet limits, truncation
+      detection, socket policy, ownership, detach, and Unix-path cleanup.
+    - Add Linux::Event::Process using posix_spawnp, pidfd_open,
+      waitid(P_PIDFD), and pidfd_send_signal, with asynchronous pipe stdio,
+      decoded exit status, replacement environments, cwd support, SIGPIPE-safe
+      stdin, atomic close-on-exec pipes, child-side closure of caller stdio
+      source descriptors, deterministic final output draining, and
+      partial-failure cleanup.
+    - Make native resource objects interpreter-owned and non-clonable except
+      for Wakeup's deliberately restricted signalling handle; rebuild cached
+      native class descriptors lazily in a child ithread and reject stale
+      Wakeup handles round-tripped from a worker interpreter.
+    - Complete API, lifecycle, failure, ownership, thread/fork, local-binding,
+      Datagram, and Process regression tests, including callback-exception and
+      descriptor-reuse safety cases.
+    - Add focused Wakeup, Datagram, and Process examples and microbenchmarks;
+      update architecture, lifecycle, transport, roadmap, and module POD around
+      the completed public surface with concrete annotated examples.
+    - Harden distribution configuration for Linux, required libc/OpenSSL
+      capabilities, CPAN metadata, manifest coverage, and clean distribution
+      testing.
+
 0.100_030  2026-08-21
     - Make TLS declarative Stream policy: use Linux::Event::TLS on a Stream
       subclass and let connect or Listener acceptance select the client or

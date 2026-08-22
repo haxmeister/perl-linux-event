@@ -3,6 +3,8 @@ use v5.36;
 use strict;
 use warnings;
 
+our $VERSION = '0.101';
+
 use Carp qw(croak);
 use bytes ();
 
@@ -52,7 +54,8 @@ Linux::Event::Framer::Varint - native unsigned LEB128 framing declaration
 
   package CompactStream;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Varint', max_frame => 1_048_576;
+  use Linux::Event::Framer 'Varint',
+      max_frame => 1_048_576; # optional
 
 =head1 DESCRIPTION
 

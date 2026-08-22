@@ -36,6 +36,27 @@ is($failed->state, 'closed', 'failed Stream closes');
 is($failed->last_error, $ERROR, 'Stream retains terminal Error');
 is($READY // 0, 0, 'failure does not call on_ready');
 
+our $THROW_CLOSE = 0;
+{
+    package T::ThrowingErrorStream;
+    use parent 'Linux::Event::Stream';
+    sub on_data ($stream, $bytes) { }
+    sub on_error ($stream, $error) { die "stream error callback failed\n" }
+    sub on_close ($stream) { $main::THROW_CLOSE++ }
+}
+
+my $throw_loop = Linux::Event::Loop->new;
+my $throwing = T::ThrowingErrorStream->connect(
+    loop => $throw_loop, sockaddr => '', family => 9999, timeout => 1,
+);
+my $throw_error = eval { $throw_loop->run; '' } // $@;
+like("$throw_error", qr/stream error callback failed/,
+    'on_error exception propagates from Loop dispatch');
+is($throwing->state, 'closed',
+    'on_error exception cannot strand a failed Stream');
+is($THROW_CLOSE, 1,
+    'failed Stream still performs its one close notification');
+
 {
     package T::ClosedClientStream;
     use parent 'Linux::Event::Stream';

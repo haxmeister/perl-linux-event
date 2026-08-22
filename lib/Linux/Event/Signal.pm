@@ -3,10 +3,11 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Carp qw(croak);
 use Hash::Util::FieldHash qw(fieldhash);
+use POSIX qw(SIGKILL SIGRTMAX SIGSTOP);
 use Scalar::Util qw(weaken);
 
 require Linux::Event::Loop;
@@ -36,6 +37,14 @@ sub _numbers ($value) {
         croak 'new(): every signal must be a positive integer'
             if !defined($number) || ref($number) || $number !~ /\A\d+\z/
             || $number == 0;
+        my $digits = "$number";
+        $digits =~ s/\A0+//;
+        my $maximum = '' . SIGRTMAX;
+        croak "signal number $number cannot be used with signalfd"
+            if length($digits) > length($maximum)
+            || (length($digits) == length($maximum)
+                && $digits gt $maximum)
+            || $number == SIGKILL || $number == SIGSTOP;
         $number = 0 + $number;
         push @unique, $number if !$seen{$number}++;
     }
@@ -45,6 +54,9 @@ sub _numbers ($value) {
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
     my $loop = delete $option{loop};
+    croak 'new(): loop must be an object implementing add() and watch()'
+        if defined($loop) && (!ref($loop) || !$loop->can('add')
+            || !$loop->can('watch'));
     my $data = delete $option{data};
     croak 'new(): signals is required' if !exists $option{signals};
     my $numbers = _numbers(delete $option{signals});
@@ -62,10 +74,26 @@ sub _attach_to_loop ($self, $loop) {
     return $self->_attach_native($loop, $engine->{native});
 }
 
+sub CLONE ($class) {
+    %CLASS_DESCRIPTOR = ();
+    %ENGINE_FOR_LOOP = ();
+    return;
+}
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Signal::_Descriptor;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Signal::_Service;
+sub CLONE_SKIP ($class) { 1 }
+
 package Linux::Event::Signal::_Engine;
 use v5.36;
 use strict;
 use warnings;
+
+sub CLONE_SKIP ($class) { 1 }
 
 sub _new ($class, $loop) {
     my $self = bless {
@@ -106,8 +134,8 @@ Linux::Event::Signal - subclass-defined Linux signalfd subscriptions
 
   package main;
   my $shutdown = $loop->add(LE::Shutdown->new(
-      signals => [SIGINT, SIGTERM],
-      data    => { server => $server },
+      signals => [SIGINT, SIGTERM],  # required
+      data    => { server => $server }, # optional
   ));
 
 =head1 DESCRIPTION
@@ -125,7 +153,8 @@ drain; counts are broadcast, never divided among subscribers.
 =head1 DEFINING A SIGNAL TYPE
 
   sub on_signal ($signal, $number, $count) {
-      ...;
+      $signal->data->{received}{$number} += $count;
+      $signal->loop->stop;
   }
 
 The resolved callback is cached once per subclass. C<$number> is the numeric
@@ -135,9 +164,7 @@ signalfd observes them. Real-time signals remain queued individually.
 
 =head1 CONSTRUCTION
 
-=head2 new(signals => $number, ...)
-
-=head2 new(signals => \@numbers, ...)
+=head2 new(signals => $number | \@numbers, data => $value)
 
 Creates a detached subscription for one or more positive numeric signals.
 Duplicates are removed while preserving their first occurrence. C<SIGKILL>

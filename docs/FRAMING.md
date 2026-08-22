@@ -12,7 +12,8 @@ use Linux::Event::Framer 'LengthPrefix',
     bytes => 4, endian => 'big', max_frame => 16 * 1024 * 1024;
 
 sub on_message ($stream, $message) {
-    ...
+    $stream->data->{messages}++;
+    $stream->send($message);
 }
 ```
 
@@ -85,7 +86,9 @@ use parent 'Linux::Event::Stream';
 sub on_data ($stream, $bytes) {
     my $state = $stream->data;
     $state->{input} .= $bytes;
-    ...
+    while ($state->{input} =~ s/\A([^\n]*\n)//) {
+        push @{ $state->{records} }, $1;
+    }
 }
 ```
 
@@ -108,8 +111,8 @@ package AuditedMessageStream;
 use parent 'MessageStream';
 
 sub on_message ($stream, $message) {
-    audit($stream->data, $message);
-    ...
+    push @{ $stream->data->{audit_log} }, length($message);
+    $stream->send($message);
 }
 ```
 

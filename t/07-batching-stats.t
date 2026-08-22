@@ -14,7 +14,7 @@ $r->blocking(0);
 $w->blocking(0);
 my $called = 0;
 my $watcher;
-$watcher = $loop->watch_fd(fileno($r), fh => $r, callback_args => 0, read => sub {
+$watcher = $loop->watch_fd(fileno($r), fh => $r, no_args => 1, read => sub {
     $called++;
     sysread($r, my $buf, 16);
     $watcher->cancel;

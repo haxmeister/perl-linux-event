@@ -527,7 +527,7 @@ sub setup_linuxevent ($sockets, $c, $phase) {
     for my $sock (@$sockets) {
         my $w = $loop->watch(
             fh => $sock,
-            callback_args => 0,
+            no_args => 1,
             lean => 1,
             read => sub { echo_read($sock, $c, $phase); },
             error => sub { reactor_error($c, $phase); },

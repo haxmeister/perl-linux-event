@@ -3,6 +3,8 @@ use v5.36;
 use strict;
 use warnings;
 
+our $VERSION = '0.101';
+
 use Carp qw(croak);
 use bytes ();
 
@@ -39,7 +41,8 @@ Linux::Event::Framer::Fixed - native fixed-size framing declaration
 
   package RecordStream;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Fixed', size => 32;
+  use Linux::Event::Framer 'Fixed',
+      size => 32; # required
 
 =head1 DESCRIPTION
 

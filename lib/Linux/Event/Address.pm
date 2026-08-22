@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.100_030';
+our $VERSION = '0.101';
 
 use Socket qw(
     AF_INET AF_INET6 AF_UNIX
@@ -77,8 +77,8 @@ Linux::Event::Address - lazy socket-address value
 
 =head1 DESCRIPTION
 
-Represents a packed IPv4, IPv6, or Unix socket address. Listener uses it for
-accepted peer and bound local addresses. The packed sockaddr is retained
+Represents a packed IPv4, IPv6, or Unix socket address. Stream, Listener, and
+Datagram use it for peer and local addresses. The packed sockaddr is retained
 without conversion; textual parsing occurs only when an accessor is used.
 Accessors that do not apply to the address family return undef.
 
@@ -95,7 +95,7 @@ constant.
 
 =head2 host / port
 
-Return TCP peer details when applicable.
+Return Internet host and port details when applicable.
 
 =head2 path
 
@@ -107,8 +107,8 @@ Return IPv6 ancillary address fields.
 
 =head1 PERFORMANCE
 
-Listener creates Address values directly from the packed sockaddr returned by
-C<accept4>. Applications that do not inspect a peer avoid address-to-text
-conversion entirely.
+Listener and Datagram create Address values directly from packed sockaddrs
+returned by C<accept4> and C<recvmsg>. Applications that do not inspect an
+address avoid address-to-text conversion entirely.
 
 =cut

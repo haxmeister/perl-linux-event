@@ -1139,7 +1139,6 @@ static int le_watch_parse_common_option(const char *key, SV *val, le_watch_opts_
     else if (strEQ(key, "error")) opt->error_cb = val;
     else if (strEQ(key, "oneshot")) opt->oneshot = SvTRUE(val) ? 1 : 0;
     else if (strEQ(key, "edge_triggered")) opt->edge_triggered = SvTRUE(val) ? 1 : 0;
-    else if (strEQ(key, "callback_args")) opt->callback_args = SvIV(val) ? 1 : 0;
     else if (strEQ(key, "no_args")) {
         if (SvTRUE(val)) opt->callback_args = 0;
     }
@@ -1147,7 +1146,7 @@ static int le_watch_parse_common_option(const char *key, SV *val, le_watch_opts_
         opt->callback_arg_data = SvTRUE(val) ? 1 : 0;
         if (opt->callback_arg_data) opt->callback_args = 1;
     }
-    else if (strEQ(key, "lean") || strEQ(key, "no_accessor_refs")) {
+    else if (strEQ(key, "lean")) {
         opt->lean = SvTRUE(val) ? 1 : 0;
     }
     else if (strEQ(key, "_bench_native_echo")) {
@@ -1230,6 +1229,17 @@ static int le_fd_from_fh(SV *fh) {
     return fd;
 }
 
+static int le_fd_from_sv(SV *value, const char *method) {
+    NV number;
+    if (!value || !SvOK(value) || SvROK(value) || !looks_like_number(value))
+        croak("%s(): fd must be a non-negative integer", method);
+    number = SvNV(value);
+    if (!isfinite(number) || number < 0.0 || number > (NV)INT_MAX
+            || number != (NV)(int)number)
+        croak("%s(): fd must be a non-negative integer", method);
+    return (int)number;
+}
+
 MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::Loop
 PROTOTYPES: DISABLE
 
@@ -1247,7 +1257,13 @@ new(CLASS)
     loop->events = (struct epoll_event *)calloc(loop->event_cap, sizeof(struct epoll_event));
     loop->reg_cap = LE_INITIAL_REGISTRY;
     loop->registry = (le_watcher_t **)calloc(loop->reg_cap, sizeof(le_watcher_t *));
-    if (!loop->events || !loop->registry) croak("calloc loop internals failed");
+    if (!loop->events || !loop->registry) {
+        if (loop->events) free(loop->events);
+        if (loop->registry) free(loop->registry);
+        close(loop->epoll_fd);
+        free(loop);
+        croak("calloc loop internals failed");
+    }
     RETVAL = sv_setref_pv(newSV(0), CLASS, (void*)loop);
   OUTPUT:
     RETVAL
@@ -1256,7 +1272,9 @@ void
 DESTROY(loop_obj)
     SV *loop_obj
   CODE:
-    le_loop_destroy(le_loop_from_sv(loop_obj));
+    le_loop_t *loop = le_loop_from_sv(loop_obj);
+    sv_setiv(SvRV(loop_obj), 0);
+    le_loop_destroy(loop);
 
 void
 stop(loop_obj)
@@ -1511,30 +1529,24 @@ watch(loop_obj, ...)
     if (has_fh) {
         fd = le_fd_from_fh(opt.fh);
     } else {
-        IV iv;
-        NV nv;
-        if (!fd_sv || !SvOK(fd_sv) || !looks_like_number(fd_sv))
-            croak("watch(): fd must be a non-negative integer");
-        iv = SvIV(fd_sv);
-        nv = SvNV(fd_sv);
-        if (iv < 0 || iv > INT_MAX || (NV)iv != nv)
-            croak("watch(): fd must be a non-negative integer");
-        fd = (int)iv;
+        fd = le_fd_from_sv(fd_sv, "watch");
     }
     RETVAL = le_watch_register(loop_obj, loop, fd, &opt);
   OUTPUT:
     RETVAL
 
 SV *
-watch_fd(loop_obj, fd, ...)
+watch_fd(loop_obj, fd_sv, ...)
     SV *loop_obj
-    int fd
+    SV *fd_sv
   PREINIT:
     int i;
+    int fd;
     le_loop_t *loop;
     le_watch_opts_t opt;
   CODE:
     loop = le_loop_from_sv(loop_obj);
+    fd = le_fd_from_sv(fd_sv, "watch_fd");
     if (items < 2 || ((items - 2) % 2) != 0)
         croak("watch_fd requires fd plus key/value pairs");
     le_watch_opts_init(&opt);
@@ -1550,11 +1562,14 @@ watch_fd(loop_obj, fd, ...)
     RETVAL
 
 void
-unwatch_fd(loop_obj, fd)
+unwatch_fd(loop_obj, fd_sv)
     SV *loop_obj
-    int fd
+    SV *fd_sv
+  PREINIT:
+    int fd;
   CODE:
     le_loop_t *loop = le_loop_from_sv(loop_obj);
+    fd = le_fd_from_sv(fd_sv, "unwatch_fd");
     if (fd < 0 || (size_t)fd >= loop->reg_cap) XSRETURN_EMPTY;
     le_watcher_t *w = loop->registry[fd];
     if (!w) XSRETURN_EMPTY;
@@ -1565,12 +1580,15 @@ unwatch_fd(loop_obj, fd)
 
 
 int
-run_once(loop_obj, timeout_ms = -1)
+run_once(loop_obj, timeout_value = -1)
     SV *loop_obj
-    int timeout_ms
+    IV timeout_value
   PREINIT:
-    int n; le_loop_t *loop; unsigned long long t0; unsigned long long dispatch_t0;
+    int n; int timeout_ms; le_loop_t *loop; unsigned long long t0; unsigned long long dispatch_t0;
   CODE:
+    if (timeout_value > INT_MAX)
+        croak("run_once timeout is too large");
+    timeout_ms = timeout_value < 0 ? -1 : (int)timeout_value;
     loop = le_loop_from_sv(loop_obj);
     loop->run_once_calls++;
     if (loop->stop_flag) { RETVAL = 0; }
@@ -1621,26 +1639,34 @@ run_for(loop_obj, seconds)
     le_loop_t *loop;
     int n;
     int timeout_ms;
+    unsigned long long duration_ns;
     unsigned long long now_ns;
     unsigned long long deadline_ns;
     unsigned long long remaining_ns;
+    unsigned long long remaining_ms;
     unsigned long long t0;
     unsigned long long dispatch_t0;
   CODE:
-    if (seconds < 0.0) croak("run_for seconds must be >= 0");
+    if (!isfinite(seconds) || seconds < 0.0)
+        croak("run_for seconds must be a finite non-negative number");
+    if (seconds >= 18446744073.0) croak("run_for seconds too large");
+    now_ns = le_now_ns();
+    duration_ns = (unsigned long long)(seconds * 1000000000.0);
+    if (duration_ns > ULLONG_MAX - now_ns)
+        croak("run_for deadline overflow");
+    deadline_ns = now_ns + duration_ns;
     loop = le_loop_from_sv(loop_obj);
     loop->run_for_calls++;
     loop->stop_flag = 0;
-    now_ns = le_now_ns();
-    if (seconds >= 18446744073.0) croak("run_for seconds too large");
-    deadline_ns = now_ns + (unsigned long long)(seconds * 1000000000.0);
 
     while (!loop->stop_flag) {
         now_ns = le_now_ns();
         if (now_ns >= deadline_ns) break;
         remaining_ns = deadline_ns - now_ns;
-        timeout_ms = (int)((remaining_ns + 999999ULL) / 1000000ULL);
-        if (timeout_ms < 0) timeout_ms = 0;
+        remaining_ms = remaining_ns / 1000000ULL
+            + (remaining_ns % 1000000ULL != 0);
+        timeout_ms = remaining_ms > (unsigned long long)INT_MAX
+            ? INT_MAX : (int)remaining_ms;
 
         t0 = loop->profile_enabled ? le_now_ns() : 0;
         n = epoll_wait(loop->epoll_fd, loop->events, (int)loop->event_cap, timeout_ms);

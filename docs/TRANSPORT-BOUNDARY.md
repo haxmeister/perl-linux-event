@@ -51,7 +51,7 @@ operation out of Perl and keeps `end()` transport-neutral.
 ## TLS behavior
 
 `Linux::Event::TLS` is the distribution's focused OpenSSL transport, not a
-framer and not an XSLoop feature. Application code declares its policy on the
+framer and not a reactor-core feature. Application code declares its policy on the
 Stream type:
 
 ```perl
@@ -143,11 +143,11 @@ that needs it.
 
 The Linux-Event distribution builds TLS and therefore requires OpenSSL 1.1.1
 or newer development files. The dependency remains mechanically isolated:
-`Linux::Event::TLS` is its own native extension, while XSLoop and XSStream do
-not link OpenSSL. An ordinary plain Stream allocates no TLS state, calls no
+`Linux::Event::TLS` is its own native extension, while the reactor and plain
+Stream extensions do not link OpenSSL. An ordinary plain Stream allocates no TLS state, calls no
 OpenSSL code, and retains its specialized direct-syscall path.
 
 The common native contract is exact-versioned. Stream retains the provider
 object so its native operations table and OpenSSL state remain alive until
 connection destruction. The TLS extension includes the canonical ABI header
-from XSStream rather than carrying a second copy.
+from the Stream extension rather than carrying a second copy.

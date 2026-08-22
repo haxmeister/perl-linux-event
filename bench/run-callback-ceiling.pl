@@ -229,7 +229,7 @@ sub run_case ($system, $count, $repeat) {
     my $server_w;
     $server_w = $loop->watch(
         fh => $server,
-        callback_args => 0,
+        no_args => 1,
         lean => 1,
         read => sub {
             while (my $sock = $server->accept) {
@@ -246,7 +246,7 @@ sub run_case ($system, $count, $repeat) {
                 if ($system eq 'native') {
                     $cw = $loop->watch(
                         fh => $sock,
-                        callback_args => 0,
+                        no_args => 1,
                         lean => 1,
                         _bench_native_echo => 1,
                         error => $on_error,
@@ -255,7 +255,7 @@ sub run_case ($system, $count, $repeat) {
                 elsif ($system eq 'native-empty') {
                     $cw = $loop->watch(
                         fh => $sock,
-                        callback_args => 0,
+                        no_args => 1,
                         lean => 1,
                         _bench_native_echo => 2,
                         read => $empty_cb,
@@ -265,7 +265,7 @@ sub run_case ($system, $count, $repeat) {
                 else {
                     $cw = $loop->watch(
                         fh => $sock,
-                        callback_args => 0,
+                        no_args => 1,
                         lean => 1,
                         read => sub {
                             echo_read($sock, \%c, sub {

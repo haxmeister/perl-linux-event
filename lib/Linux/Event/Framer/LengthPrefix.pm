@@ -3,6 +3,8 @@ use v5.36;
 use strict;
 use warnings;
 
+our $VERSION = '0.101';
+
 use Carp qw(croak);
 use bytes ();
 
@@ -64,7 +66,9 @@ Linux::Event::Framer::LengthPrefix - native binary length framing declaration
   package MessageStream;
   use parent 'Linux::Event::Stream';
   use Linux::Event::Framer 'LengthPrefix',
-      bytes => 2, endian => 'big', max_frame => 1_048_576;
+      bytes     => 2,         # optional; default 4
+      endian    => 'big',     # default
+      max_frame => 1_048_576; # optional
 
 =head1 DESCRIPTION
 

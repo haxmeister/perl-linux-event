@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use POSIX qw(INFINITY NAN);
 use Time::HiRes qw(sleep);
 
 use Linux::Event::Loop;
@@ -38,8 +39,15 @@ like(exception(sub { T::Timer::Basic->new(after => -1) }),
     qr/after must be a non-negative number/, 'negative delay is rejected');
 like(exception(sub { T::Timer::Basic->new(after => 'later') }),
     qr/after must be a non-negative number/, 'nonnumeric delay is rejected');
+like(exception(sub { T::Timer::Basic->new(after => NAN) }),
+    qr/after must be a non-negative number/, 'NaN delay is rejected');
+like(exception(sub { T::Timer::Basic->new(every => INFINITY) }),
+    qr/every must be a positive number/, 'infinite interval is rejected');
 like(exception(sub { T::Timer::Basic->new(after => 1, mystery => 1) }),
     qr/unknown options: mystery/, 'unknown construction option is rejected');
+like(exception(sub { T::Timer::Basic->new(after => 1, loop => 'invalid') }),
+    qr/loop must be an object implementing add/,
+    'loop constructor option is validated consistently');
 
 my $loop = Linux::Event::Loop->new;
 my $data = { name => 'detached' };
