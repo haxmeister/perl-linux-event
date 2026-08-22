@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use Config ();
 use lib 't/lib';
 
 use Linux::Event::Loop;
@@ -12,6 +13,13 @@ sub exception ($code) {
     local $@;
     return eval { $code->(); 1 } ? '' : "$@";
 }
+
+my $interpreter_id = Linux::Event::Wakeup::_interpreter_id();
+like("$interpreter_id", qr/\A\d+\z/,
+    'interpreter identity is an unsigned integer');
+is($interpreter_id, 0,
+    'non-multiplicity Perl uses the sole interpreter identity')
+    if !$Config::Config{usemultiplicity};
 
 {
     package T::Wakeup;

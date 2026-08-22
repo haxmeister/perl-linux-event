@@ -40,5 +40,5 @@ requires:
   perl: '5.036000'
 resources:
   homepage: https://github.com/haxmeister/perl-linux-event
-version: '0.101'
+version: '0.102'
 x_serialization_backend: 'CPAN::Meta::YAML version 0.018'

@@ -15,7 +15,11 @@ PROTOTYPES: DISABLE
 UV
 _interpreter_id()
     CODE:
+#ifdef PERL_IMPLICIT_CONTEXT
         RETVAL = PTR2UV(aTHX);
+#else
+        RETVAL = 0;
+#endif
     OUTPUT:
         RETVAL
 

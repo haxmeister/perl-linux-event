@@ -1,5 +1,13 @@
 Revision history for Linux-Event
 
+0.102  2026-08-21
+    - Fix Linux::Event::Wakeup compilation on Perl builds without
+      PERL_IMPLICIT_CONTEXT, including ordinary non-threaded Perl. Such builds
+      now use the sole interpreter identity while threaded/multiplicity builds
+      retain pointer-based interpreter ownership checks.
+    - Add regression coverage for interpreter identity on both multiplicity
+      and non-multiplicity Perl configurations.
+
 0.101  2026-08-21
     - Publish the completed API as a stable release and synchronize every
       bundled Perl and XS component at version 0.101.
