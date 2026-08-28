@@ -52,7 +52,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Perl
         uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
@@ -83,7 +83,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up latest Perl
         uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
@@ -112,4 +112,14 @@ jobs:
           perl -MCPAN::Meta::YAML -e 'CPAN::Meta::YAML->read("META.yml")'
 
       - name: Validate POD
-        run: find lib -name '*.pm' -print0 | xargs -0 -n1 podchecker
+        run: |
+          perl -MCPAN::Meta -MPod::Checker -e '
+            $meta = CPAN::Meta->load_file("META.json")->as_struct;
+            $errors = 0;
+            for $name (sort keys %{$meta->{provides}}) {
+              $errors += Pod::Checker::podchecker(
+                $meta->{provides}{$name}{file}
+              );
+            }
+            exit($errors ? 1 : 0);
+          '
