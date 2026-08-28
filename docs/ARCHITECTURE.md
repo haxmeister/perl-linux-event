@@ -209,7 +209,9 @@ operation deadline. Native Stream state records successful I/O timestamps only
 when inactivity tracking is enabled; progress never enters Perl merely to
 reschedule the heap. When an old deadline arrives, the private callback checks
 the latest snapshot and either expires the Stream or moves the same Timer.
-Ordinary Streams perform no activity clock reads.
+Ordinary Streams perform no activity clock reads, and pause, resume, EOF, and
+output drain skip deadline candidate rebuilding unless the corresponding read
+or write timeout is active.
 
 ## Signal delivery layer
 
