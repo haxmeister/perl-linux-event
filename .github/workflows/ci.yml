@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTOMATED_TESTING: 1
+
+jobs:
+  test:
+    name: Perl ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - perl: "5.36"
+            threaded: false
+            label: "5.36"
+          - perl: "5.38"
+            threaded: false
+            label: "5.38"
+          - perl: "5.40"
+            threaded: false
+            label: "5.40"
+          - perl: "5.42"
+            threaded: false
+            label: "5.42"
+          - perl: "5.44"
+            threaded: false
+            label: "5.44"
+          - perl: "5"
+            threaded: false
+            label: "latest"
+          - perl: "5.36"
+            threaded: true
+            label: "5.36 threaded"
+          - perl: "5"
+            threaded: true
+            label: "latest threaded"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: ${{ matrix.perl }}
+          multi-thread: ${{ matrix.threaded }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+
+      - name: Install Perl dependencies
+        run: cpanm --notest --installdeps .
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+
+      - name: Test
+        run: make test
+
+  distribution:
+    name: Distribution integrity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up latest Perl
+        uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5"
+          multi-thread: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+
+      - name: Install Perl dependencies
+        run: cpanm --notest --installdeps .
+
+      - name: Build and test distribution
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+          make disttest
+          make distcheck
+
+      - name: Validate metadata
+        run: |
+          perl -MCPAN::Meta -e 'CPAN::Meta->load_file("META.json")'
+          perl -MCPAN::Meta::YAML -e 'CPAN::Meta::YAML->read("META.yml")'
+
+      - name: Validate POD
+        run: find lib -name '*.pm' -print0 | xargs -0 -n1 podchecker
