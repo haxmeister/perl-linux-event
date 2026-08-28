@@ -250,10 +250,28 @@ message-boundary detection. A new general family needs a declarative module,
 corresponding XS parser mode, wire-contract tests, and a native-framer benchmark
 row. Its exact package name becomes the declaration name automatically.
 
-## Priority 2 - Native Stream watcher-state transitions
+## Priority 2 - Stream watcher-state transitions (measured)
 
-Reduce remaining Perl transitions for writable interest, read suspension,
-close, and half-close when profiling shows the boundary is material.
+The watcher-state boundary has now been profiled before any ownership change.
+`bench/run-stream-watcher-state-bench.pl` separates kernel `epoll_ctl` cost from
+Stream coordination and covers lifecycle, forced-EAGAIN, close, half-close,
+handshake, and TLS shutdown transitions.
+
+The first profile found that ordinary Streams rebuilt an empty deadline
+candidate set on pause, resume, write-queue drain, and EOF. Guarding that work
+by the relevant read or write timeout reduced median pause/resume CPU from
+3.559 to 1.533 microseconds per cycle and forced-EAGAIN queue/drain CPU from
+18.854 to 18.122 microseconds per cycle on the measurement host. The public API
+and deadline behavior did not change.
+
+Do not add the proposed cross-extension watcher ABI now. The two required
+`EPOLL_CTL_MOD` calls consume about 0.48 microseconds of an 18.12-microsecond
+forced-EAGAIN cycle and cannot be removed while retaining level-triggered
+correctness. Initial registration's one `MOD` is below one percent of Stream
+attachment CPU, while plain close and half-close expose no repeated interest
+transition. Loop remains the sole epoll owner and Stream retains an opaque
+registration. Reopen this item only if a representative application profile
+shows the remaining boundary is material.
 
 ## Priority 3 - Callback coalescing/batching
 
