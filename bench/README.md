@@ -440,3 +440,41 @@ Transitions are normally rare semantic operations, so this is primarily a
 regression and architecture benchmark rather than a throughput leaderboard.
 Compare CPU microseconds per transition first and keep the contract, cases,
 pool size, Perl, compiler flags, and host identical.
+
+## 7. Stream watcher-state profiling
+
+`run-stream-watcher-state-bench.pl` profiles the mechanical readiness changes
+that remain split between Stream's Perl lifecycle and the native Loop. It is a
+diagnostic decision benchmark, separate from protocol-class transitions and
+the release performance-regression suite. The cases cover:
+
+- direct watcher read-interest toggles and native XSState pause toggles
+- public Stream pause/resume
+- raw registration and Stream attachment lifecycle
+- plain half-close and close on already-attached Streams
+- a forced EAGAIN output queue/drain cycle
+- TLS handshake and close-notify shutdown retry directions
+
+Loop profiling is deliberately enabled, so every row reports process CPU plus
+`EPOLL_CTL_ADD`, `MOD`, and `DEL` calls and native nanoseconds per operation.
+Run the complete contract with:
+
+```bash
+perl -Mblib bench/run-stream-watcher-state-bench.pl \
+  --operations=10000 \
+  --pool=256 \
+  --warmup=1000 \
+  --repeats=7 \
+  --tls-pairs=64 \
+  --json=bench/results/stream-watcher-state.json
+```
+
+Interpret the raw watcher row as the floor for two real `epoll_ctl` interest
+changes. The XSState-only row shows boundary cost without a syscall. Compare
+`stream-pause-resume` with both before proposing combined native coordination.
+The lifecycle rows expose the current initial `ADD` followed by `MOD`; the
+queued-write row prefills the socket send buffer to force EAGAIN, then validates
+exactly one enable/disable pair while delivering every byte. TLS rows retain
+provider `WANT_READ` and `WANT_WRITE` counters.
+Compare reports only under the same contract, configuration, build, kernel,
+Perl, power mode, and host load.
