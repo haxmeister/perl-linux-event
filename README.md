@@ -3,6 +3,8 @@
 [![CPAN version](https://badge.fury.io/pl/Linux-Event.svg)](https://metacpan.org/dist/Linux-Event)
 [![CPANTS Kwalitee](https://cpants.cpanauthors.org/dist/Linux-Event.svg)](https://cpants.cpanauthors.org/dist/Linux-Event)
 [![CI](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/haxmeister/perl-linux-event/actions/workflows/ci.yml)
+[![License](https://img.shields.io/cpan/l/Linux-Event.svg)](https://github.com/haxmeister/perl-linux-event/blob/main/LICENSE)
+[![Perl](https://img.shields.io/badge/perl-5.36%2B-blue.svg)](https://www.perl.org/)
 
 Linux::Event is a Linux-only asynchronous I/O foundation for Perl. It combines
 an XS-first `epoll` reactor with timers, synchronous signal handling, eventfd
