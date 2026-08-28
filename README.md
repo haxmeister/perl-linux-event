@@ -53,6 +53,7 @@ details. Applications must not construct, subclass, or depend on them.
 - no-argument callback fast path and bounded callback scopes
 - runtime read/write interest changes
 - profiling and statistics support
+- query-driven object, resource, liveness, and pressure introspection
 
 ### Object lifecycle
 
@@ -682,6 +683,7 @@ memory against the versioned object-configured baseline.
 
 - [`docs/CORE.md`](docs/CORE.md) - raw reactor and registration API
 - [`docs/OBJECT-LIFECYCLE.md`](docs/OBJECT-LIFECYCLE.md) - Loop attachment and resource ownership
+- [`docs/INTROSPECTION.md`](docs/INTROSPECTION.md) - Loop objects, resources, liveness, pressure, and profiling
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - native reactor and Stream architecture
 - [`docs/TIMER-DESIGN.md`](docs/TIMER-DESIGN.md) - Timer API, scheduler, and lifecycle semantics
 - [`docs/SIGNAL-DESIGN.md`](docs/SIGNAL-DESIGN.md) - signalfd fan-out, mask ownership, and lifecycle

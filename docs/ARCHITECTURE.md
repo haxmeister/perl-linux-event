@@ -173,6 +173,17 @@ Stream can own attempt and deadline registrations until connection completes,
 then retains the same public identity while its established socket is
 registered with the native Stream engine.
 
+The introspection layer enumerates the existing native Timer heap, watcher
+ownership, Signal service, Wakeup owner state, and resolver requests only when
+queried. It does not maintain a duplicate public-object registry. Queries
+validate ownership and lifecycle against each object's authoritative state.
+Native resource queries scan the existing fd registry; they do not mirror it
+in Perl. One private flag
+on a native registration distinguishes direct user `watch()` calls from the
+backing registrations owned by high-level objects, so liveness reports remain
+actionable instead of listing implementation fds twice. None of this work runs
+in readiness dispatch.
+
 ## Timer scheduler layer
 
 Every Loop lazily creates one nonblocking, close-on-exec timerfd when its first

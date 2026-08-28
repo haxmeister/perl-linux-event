@@ -464,6 +464,7 @@ sub _attach_to_loop ($self, $loop) {
     my $watcher = eval {
         $loop->watch(
             fh   => $self->{fh},
+            _internal => 1,
             data => $self,
             read => \&_accept_ready,
             error => \&_listener_error_ready,

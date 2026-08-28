@@ -225,6 +225,7 @@ sub _install_deadline ($self, $stream, $operation) {
     return if $stream->_has_transport_deadline_watcher;
     my $watcher = $stream->loop->watch(
         fd   => $fd,
+        _internal => 1,
         data => {
             provider  => $self,
             stream    => $stream,

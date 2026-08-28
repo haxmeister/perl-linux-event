@@ -44,6 +44,7 @@ docs/CORE.md
 docs/DATAGRAM-DESIGN.md
 docs/DEVELOPMENT-HISTORY.md
 docs/FRAMING.md
+docs/INTROSPECTION.md
 docs/LISTENER-DESIGN.md
 docs/OBJECT-LIFECYCLE.md
 docs/PROCESS-DESIGN.md
@@ -78,6 +79,7 @@ lib/Linux/Event/Framer/U32BE.pm
 lib/Linux/Event/Framer/Varint.pm
 lib/Linux/Event/Listener.pm
 lib/Linux/Event/Loop.pm
+lib/Linux/Event/Loop/Introspection.pm
 lib/Linux/Event/Process.pm
 lib/Linux/Event/Signal.pm
 lib/Linux/Event/Stream.pm
@@ -127,6 +129,8 @@ t/30-ithread-class-descriptors.t
 t/31-registration-lifecycle-regressions.t
 t/32-loop-dispatch-recovery.t
 t/33-loop-driver-contract.t
+t/34-loop-introspection.t
+t/35-loop-introspection-types.t
 t/connect-13-benchmark-smoke.t
 t/datagram-00-api.t
 t/datagram-10-udp.t

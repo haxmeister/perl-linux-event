@@ -26,6 +26,8 @@ use Linux::Event::_SocketConfig ();
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
 
+sub _introspection_owner ($self) { $self->{stream} }
+
 sub _timeout ($value) {
     $value = 10 if !defined $value;
     croak 'new(): timeout must be a non-negative number of seconds'
@@ -495,6 +497,7 @@ sub _attempt_next ($self) {
             my $watcher = eval {
                 $self->{loop}->watch_fd(
                     fileno($fh),
+                    _internal => 1,
                     fh    => $fh,
                     data  => $attempt,
                     write => \&_attempt_ready,
@@ -583,6 +586,7 @@ sub _ensure_timer ($self) {
     my $watcher = eval {
         $self->{loop}->watch(
             fd   => $fd,
+            _internal => 1,
             data => $self,
             read => \&_timer_ready,
             _callback_data_arg => 1,

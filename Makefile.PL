@@ -62,6 +62,7 @@ WriteMakefile(
         no_index => {
             package => [qw(
                 Linux::Event::_Registration
+                Linux::Event::Loop::Introspection
                 Linux::Event::_Resolver
                 Linux::Event::_Resolver::_Native
                 Linux::Event::_SocketConfig

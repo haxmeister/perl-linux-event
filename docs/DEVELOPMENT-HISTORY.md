@@ -343,8 +343,8 @@ Phase20 is intended to be a measurement branch, not a hot-path rewrite. Normal b
 New XSLoop methods:
 
 ```perl
-$loop->enable_profile(1);   # enable nanosecond timing buckets
-$loop->enable_profile(0);   # disable timing
+$loop->profile(1);   # enable nanosecond timing buckets
+$loop->profile(0);   # disable timing
 $loop->reset_stats;         # clear counters/timers, preserving profile flag
 my $stats = $loop->stats;
 ```
@@ -358,7 +358,6 @@ dispatch_events
 epoll_wait_ns
 epoll_ctl_add_ns / epoll_ctl_mod_ns / epoll_ctl_del_ns
 watcher_lookup_ns
-callback_ns
 dispatch_ns
 ```
 

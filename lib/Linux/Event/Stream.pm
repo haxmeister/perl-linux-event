@@ -569,6 +569,7 @@ sub _attach_to_loop ($self, $loop) {
     my $watcher = eval {
         $loop->watch_fd(
             fileno($self->{fh}),
+            _internal => 1,
             fh    => $self->{fh},
             data  => $self->{xs_state},
             read  => \&Linux::Event::Stream::XSState::_read_ready,
@@ -621,6 +622,7 @@ sub _connect_succeeded ($self, $fh) {
     my $watcher = eval {
         $self->{loop}->watch_fd(
             fileno($self->{fh}),
+            _internal => 1,
             fh    => $self->{fh},
             data  => $self->{xs_state},
             read  => \&Linux::Event::Stream::XSState::_read_ready,
