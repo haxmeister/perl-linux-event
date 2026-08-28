@@ -255,7 +255,8 @@ sub _xs_output_limit ($self, $pending_bytes, $limit) {
 sub _xs_write_empty ($self) {
     return if $self->{closed};
     $self->{deadline_write_started} = undef;
-    $self->_rearm_stream_deadline if $self->{deadline_started};
+    $self->_rearm_stream_deadline
+        if $self->{deadline_started} && $self->{timeout}{write_timeout} > 0;
     $self->{watcher}->disable_write if $self->{watcher};
     $self->_finish_write_side if $self->{write_ending} && !$self->{write_ended};
     return;
@@ -1089,7 +1090,8 @@ sub pause_read ($self) {
     $self->{read_paused} = 1;
     $self->{xs_state}->_pause if $self->{xs_state};
     $self->{watcher}->disable_read if $self->{watcher};
-    $self->_rearm_stream_deadline if $self->{deadline_started};
+    $self->_rearm_stream_deadline
+        if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     return $self;
 }
 
@@ -1097,10 +1099,11 @@ sub resume_read ($self) {
     return $self if $self->{closed} || $self->{read_eof} || !$self->{read_paused};
     $self->{read_paused} = 0;
     $self->{deadline_read_started} = _deadline_now()
-        if $self->{deadline_started};
+        if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     $self->{xs_state}->_resume if $self->{xs_state};
     $self->{watcher}->enable_read if $self->{watcher};
-    $self->_rearm_stream_deadline if $self->{deadline_started};
+    $self->_rearm_stream_deadline
+        if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     return $self;
 }
 
@@ -1273,7 +1276,8 @@ sub _mark_eof ($self) {
     return if $self->{read_eof} || $self->{closed};
     $self->{read_eof} = 1;
     $self->{watcher}->disable_read if $self->{watcher};
-    $self->_rearm_stream_deadline if $self->{deadline_started};
+    $self->_rearm_stream_deadline
+        if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
 
     if (my $callback = $self->{descriptor}{callbacks}{on_eof}) {
         $callback->($self);
