@@ -23,6 +23,29 @@ equivalent `loop` constructor option. The only low-level exception is raw
 API and guarantees are documented in module POD and the focused design files;
 the older sections below remain an implementation history only.
 
+## Stream watcher-state profiling (post-0.104)
+
+The proposed native Stream-to-Loop watcher ABI was measured before changing
+ownership. The versioned `run-stream-watcher-state-bench.pl` separates direct
+watcher toggles, XSState pause flags, public pause/resume, registration churn,
+forced write EAGAIN, close, half-close, and TLS retry directions. It records
+process CPU together with exact `epoll_ctl` calls and opt-in native timing.
+
+The profile found unnecessary deadline work rather than an epoll ownership
+problem. Established Streams marked deadline readiness even with no deadline
+policy, so ordinary pause/resume and output drain rebuilt an empty candidate
+set and resume read the monotonic clock. Guarding those operations by the
+relevant timeout reduced median pause/resume CPU from 3.559 to 1.533
+microseconds per cycle and forced-EAGAIN queue/drain CPU from 18.854 to 18.122
+microseconds per cycle on the measurement host.
+
+The remaining two `EPOLL_CTL_MOD` calls consumed about 0.48 microseconds of the
+18.12-microsecond EAGAIN cycle. Initial registration's one `MOD` was below one
+percent of attachment cost, and plain close/half-close had no repeating
+interest churn. That evidence did not justify coupling two native extensions
+through a new lifetime-sensitive ABI, so Loop remains the sole epoll owner and
+Stream continues to retain an opaque registration.
+
 ## Public hierarchy simplification (0.100_025)
 
 The 0.100_024 Watcher/IO/Connect/Listen migration exposed too many overlapping
