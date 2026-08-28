@@ -43,6 +43,7 @@ for my $required (
     'bench/run-stream-microbench.pl',
     'bench/run-tls-microbench.pl',
     'bench/run-stream-transition-bench.pl',
+    'bench/run-stream-watcher-state-bench.pl',
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
@@ -133,6 +134,7 @@ for my $live (
     'bench/run-stream-microbench.pl',
     'bench/run-tls-microbench.pl',
     'bench/run-stream-transition-bench.pl',
+    'bench/run-stream-watcher-state-bench.pl',
     'bench/run-framing-microbench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
@@ -165,6 +167,7 @@ my %allowed = map { $_ => 1 } qw(
     run-stream-microbench.pl
     run-tls-microbench.pl
     run-stream-transition-bench.pl
+    run-stream-watcher-state-bench.pl
     run-framing-microbench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
