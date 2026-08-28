@@ -32,6 +32,7 @@ bench/run-signal-microbench.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/run-stream-transition-bench.pl
+bench/run-stream-watcher-state-bench.pl
 bench/run-timer-microbench.pl
 bench/run-tls-microbench.pl
 bench/run-wakeup-microbench.pl
@@ -211,6 +212,7 @@ t/stream-50-tcp-socket-options.t
 t/stream-51-local-bind-errors.t
 t/stream-52-preconnect-backpressure.t
 t/stream-53-adopted-and-callback-close.t
+t/stream-54-watcher-state-benchmark-smoke.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
