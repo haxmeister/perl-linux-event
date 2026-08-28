@@ -721,6 +721,13 @@ pidfd processes, packet-preserving datagrams, established Stream deadlines,
 and production socket configuration. Further work is optimization or expansion
 of general protocol facilities rather than a missing lifecycle primitive.
 
+Future, Promise, and async/await runtimes are explicitly outside the core
+roadmap. Independent distributions may build them from Loop driving, zero-delay
+Timers, object cancellation, deadlines, semantic callbacks, structured errors,
+and Wakeup. Linux::Event will consider a missing general reactor primitive when
+an external implementation proves it cannot be expressed safely, but it will
+not absorb Future-specific policy or continuation scheduling.
+
 ## License
 
 This project is distributed under the same terms as Perl itself.

@@ -310,6 +310,7 @@ The raw reactor does not own:
 - framing or codecs
 - application backpressure policy
 - protocol parsing
+- Future, Promise, or async/await scheduling
 
 Those responsibilities belong to `Linux::Event::Stream` subclasses. Keeping
 that separation gives Linux::Event both a low-level general reactor and a
@@ -319,3 +320,9 @@ Packet boundaries belong to Datagram, listening ownership to Listener,
 eventfd clone rules to Wakeup, and pidfd/stdio lifecycle to Process. Raw
 `watch` remains appropriate when an application intentionally owns a different
 descriptor protocol and all of its cleanup rules.
+
+Third-party asynchronous abstractions may compose the public driver, Timer,
+object lifecycle, deadline, error, and Wakeup primitives. Their continuation,
+microtask, and Future policies remain outside the core distribution. A missing
+general reactor primitive may be considered when an external implementation
+demonstrates that the existing surface cannot express it safely.

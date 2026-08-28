@@ -201,6 +201,35 @@ The essential completion surface is complete in version 0.101. The remaining
 items below are optional expansion and evidence-driven optimization, not
 release blockers.
 
+## Permanent boundary - asynchronous abstractions
+
+Future, Promise, and async/await runtimes are not part of the Linux::Event core
+roadmap. They belong in independent distributions built on the public reactor
+and object APIs. Core must not acquire Future-specific return values,
+continuation scheduling, callback setters, hidden microtask policy, or an
+arbitrary coderef posting queue.
+
+Linux::Event must nevertheless remain sufficient for a third-party adapter to
+provide those abstractions. The supported primitive surface includes:
+
+- persistent and single-iteration Loop driving;
+- non-inline next-turn delivery through a zero-delay Timer;
+- explicit object cancellation, deadlines, and structured errors;
+- semantic Stream, Listener, Datagram, Process, Timer, and Signal callbacks;
+- output-drain and terminal lifecycle notifications; and
+- Wakeup notification for work published through an application-owned safe
+  cross-thread or cross-process channel.
+
+The cached subclass-callback model is intentional. An adapter may provide its
+own concrete subclasses and keep pending operations in application state; core
+will not add per-instance callback mutation merely to imitate another runtime.
+
+A new general-purpose primitive should be considered only when an external
+proof of concept demonstrates that an asynchronous abstraction cannot be
+implemented safely with the existing API. Any such addition must solve a
+reactor-level ownership, cancellation, ordering, or wakeup problem independent
+of Futures and async/await.
+
 ## Priority 1 - General native framing families
 
 Expand the built-in framing catalog while keeping one rule: built-in boundary
