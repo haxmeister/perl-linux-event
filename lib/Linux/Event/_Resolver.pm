@@ -1,9 +1,9 @@
-package Linux::Event::Stream::_Resolver;
+package Linux::Event::_Resolver;
 use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.102';
+our $VERSION = '0.103';
 
 use Hash::Util::FieldHash qw(fieldhash);
 use Scalar::Util qw(weaken);
@@ -20,7 +20,7 @@ sub for_loop ($class, $loop) {
 sub _new ($class, $loop) {
     my $self = bless {
         loop     => $loop,
-        native   => Linux::Event::Stream::_Resolver::_Native->new(2),
+        native   => Linux::Event::_Resolver::_Native->new(2),
         requests => {},
     }, $class;
     weaken($self->{loop});
@@ -63,9 +63,9 @@ sub DESTROY ($self) {
 
 sub CLONE_SKIP ($class) { 1 }
 
-package Linux::Event::Stream::_Resolver::_Native;
+package Linux::Event::_Resolver::_Native;
 sub CLONE_SKIP ($class) { 1 }
 
-package Linux::Event::Stream::_Resolver;
+package Linux::Event::_Resolver;
 
 1;
