@@ -1,5 +1,12 @@
 Revision history for Linux-Event
 
+0.104  2026-08-28
+    - Make the performance-regression and Timer benchmark smoke tests portable
+      to systems whose process CPU clock does not advance for extremely small
+      workloads. The benchmarks still reject non-positive timing samples.
+    - Publish complete META spec 2 repository, bugtracker, and public-module
+      provider metadata, plus security and contribution policies.
+
 0.103  2026-08-27
     - Make raw Loop registration handles stable lifecycle tokens. Cancelled,
       replaced, and Loop-destroyed handles are now inert even after native

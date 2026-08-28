@@ -15,9 +15,10 @@ my $script = File::Spec->catfile(
 my $temporary = tempdir(CLEANUP => 1);
 my $json = File::Spec->catfile($temporary, 'timer.json');
 
+# Ten expirations can complete within one process-CPU clock tick on some hosts.
 is(system(
     $^X, $script,
-    '--counts=10',
+    '--counts=100000',
     '--repeats=1',
     "--json=$json",
 ), 0, 'Timer microbenchmark smoke run succeeds');

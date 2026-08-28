@@ -37,6 +37,7 @@ bench/run-tls-microbench.pl
 bench/run-wakeup-microbench.pl
 bench/STREAM-COMPETITOR-PLAN.md
 Changes
+CONTRIBUTING.md
 docs/ARCHITECTURE.md
 docs/CHOOSING-A-FRAMER.md
 docs/CORE.md
@@ -91,6 +92,7 @@ MANIFEST.SKIP
 META.json			Module JSON meta-data (added by MakeMaker)
 META.yml			Module YAML meta-data (added by MakeMaker)
 README.md
+SECURITY.md
 t/00-load.t
 t/01-pipe-read.t
 t/02-watch-options.t

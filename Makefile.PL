@@ -4,6 +4,39 @@ use ExtUtils::MakeMaker;
 
 die "Linux::Event supports Linux only\n" if $^O ne 'linux';
 
+my @public_modules = qw(
+    Linux::Event
+    Linux::Event::Address
+    Linux::Event::Datagram
+    Linux::Event::Error
+    Linux::Event::Framer
+    Linux::Event::Framer::DecimalLength
+    Linux::Event::Framer::Delimiter
+    Linux::Event::Framer::Fixed
+    Linux::Event::Framer::LengthPrefix
+    Linux::Event::Framer::Netstring
+    Linux::Event::Framer::U32BE
+    Linux::Event::Framer::Varint
+    Linux::Event::Listener
+    Linux::Event::Loop
+    Linux::Event::Process
+    Linux::Event::Signal
+    Linux::Event::Stream
+    Linux::Event::TLS
+    Linux::Event::Timer
+    Linux::Event::Wakeup
+);
+
+my $distribution_version = MM->parse_version('lib/Linux/Event.pm');
+my %provides = map {
+    my $file = "lib/$_.pm";
+    $file =~ s{::}{/}g;
+    $_ => {
+        file    => $file,
+        version => $distribution_version,
+    };
+} @public_modules;
+
 WriteMakefile(
     NAME             => 'Linux::Event',
     VERSION_FROM     => 'lib/Linux/Event.pm',
@@ -23,6 +56,9 @@ WriteMakefile(
         'Socket' => '2.033',
     },
     META_MERGE       => {
+        'meta-spec' => {
+            version => 2,
+        },
         no_index => {
             package => [qw(
                 Linux::Event::_Registration
@@ -41,6 +77,7 @@ WriteMakefile(
                 Linux::Event::Wakeup::_OwnerState
             )],
         },
+        provides => \%provides,
         resources => {
             homepage   => 'https://github.com/haxmeister/perl-linux-event',
             bugtracker => {
