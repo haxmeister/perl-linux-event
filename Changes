@@ -1,6 +1,15 @@
 Revision history for Linux-Event
 
 0.104  2026-08-28
+    - Split the Stream XS implementation into separately compiled state,
+      transport, callback, input, delivery, read, write, transition, and
+      per-framer C units behind one private header and one unchanged extension.
+    - Move Stream subclass declarations, option validation, callback
+      resolution, and immutable descriptor caching into the private
+      Linux::Event::Stream::_Descriptor module while retaining Stream.pm as the
+      public connection-lifecycle implementation.
+    - Keep the deliberately tiny deadline Timer type beside Stream lifecycle
+      policy, avoiding a new public module or unnecessary implementation layer.
     - Make the performance-regression and Timer benchmark smoke tests portable
       to systems whose process CPU clock does not advance for extremely small
       workloads. The benchmarks still reject non-positive timing samples.

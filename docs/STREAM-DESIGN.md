@@ -67,6 +67,10 @@ once:
 Subsequent construction retrieves that descriptor from the class cache. The
 Perl object and native connection state each retain a reference to it.
 
+The private `Linux::Event::Stream::_Descriptor` module owns declarations,
+validation, callback resolution, and this cache. `Stream.pm` retains the public
+connection lifecycle and delegates only class-level descriptor construction.
+
 Immutable descriptor state includes:
 
 - named callback CVs
@@ -96,6 +100,13 @@ optional `data`, constructor timeout overrides, one optional operation
 deadline, effective acquisition socket policy, local/peer Addresses, and
 semantic lifecycle flags. It does not contain callback option hashes or a
 framer object.
+
+The native implementation remains one `Linux::Event::Stream` XS extension,
+but its mechanisms are separate translation units. `Stream.xs` is the binding
+surface; read, write, transport, input, delivery, transition, and callback
+mechanics have corresponding `stream_*.c` files; and every built-in framing
+family has a directly named `framer_*.c` parser. Shared mutable state and
+private function contracts live in `stream_internal.h`.
 
 ## Socket configuration
 

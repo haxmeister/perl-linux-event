@@ -72,6 +72,7 @@ WriteMakefile(
                 Linux::Event::Signal::_Service
                 Linux::Event::Stream::_Connection
                 Linux::Event::Stream::_Deadline
+                Linux::Event::Stream::_Descriptor
                 Linux::Event::Stream::XSDescriptor
                 Linux::Event::Stream::XSState
                 Linux::Event::Timer::_Descriptor

@@ -70,6 +70,7 @@ for my $required (
     'lib/Linux/Event/Listener.pm',
     'lib/Linux/Event/Stream.pm',
     'lib/Linux/Event/Stream/_Connection.pm',
+    'lib/Linux/Event/Stream/_Descriptor.pm',
     'lib/Linux/Event/Timer.pm',
     'lib/Linux/Event/Datagram.pm',
     'lib/Linux/Event/Process.pm',

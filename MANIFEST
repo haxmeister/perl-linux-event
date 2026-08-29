@@ -87,6 +87,7 @@ lib/Linux/Event/Process.pm
 lib/Linux/Event/Signal.pm
 lib/Linux/Event/Stream.pm
 lib/Linux/Event/Stream/_Connection.pm
+lib/Linux/Event/Stream/_Descriptor.pm
 lib/Linux/Event/Timer.pm
 lib/Linux/Event/TLS.pm
 lib/Linux/Event/Wakeup.pm

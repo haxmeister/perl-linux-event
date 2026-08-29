@@ -169,6 +169,23 @@ The Stream extension does not include private reactor headers. Loop passes
 watcher data directly to Stream's private readiness entry points, preserving a
 generic readiness core and an independently testable buffered Stream layer.
 
+Stream's native implementation is one XS extension built from focused private
+translation units. `Stream.xs` contains only the Perl/native binding surface;
+`stream_read.c`, `stream_write.c`, `stream_transport.c`, `stream_input.c`,
+`stream_delivery.c`, `stream_transition.c`, and `stream_callbacks.c` own their
+named mechanisms. Each built-in framing family has a matching `framer_*.c`
+parser. `stream_internal.h` is the sole shared native state and helper contract.
+These files link into the same extension and introduce no additional Perl or
+dynamic-loading boundary.
+
+At the Perl layer, `Linux::Event::Stream` remains the public lifecycle object.
+The private `_Descriptor` module owns subclass declarations, option validation,
+callback resolution, and the immutable descriptor cache. The deliberately tiny
+deadline Timer type remains next to Stream's lifecycle methods rather than
+creating another implementation layer. Connection acquisition remains in the
+existing private `_Connection` engine. None of these source boundaries add
+public classes or change Stream identity.
+
 ## Public ownership layer
 
 `Linux::Event::Loop->add()` accepts distribution objects that implement Loop
