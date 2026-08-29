@@ -185,6 +185,25 @@ It reports complete child lifecycles per second and parent CPU microseconds per
 child. Keep the executable, concurrency, libc, kernel, process limits, and host
 load identical when comparing reports.
 
+`run-process-pipe-drain-bench.pl` isolates Process stdout and stderr draining.
+Children are spawned and registered before a one-byte gate starts the timed
+output workload:
+
+```bash
+perl -Mblib bench/run-process-pipe-drain-bench.pl \
+  --engines=perl,native --streams=stdout,stderr,both \
+  --workers=1,8,32 --read-sizes=4096,65536 \
+  --bytes-per-stream=16777216 --warmups=1 --repeats=7 \
+  --json=bench/results/process-pipe-drain.json
+```
+
+The benchmark verifies exact byte and EOF delivery and reports throughput,
+parent CPU per KiB, callback size, and raw paired samples. Add
+`--heartbeat-us=1000` to run a recurring Timer fairness probe under saturated
+pipe output. `perl` is the retained reference implementation used only by the
+benchmark; `native` is the production path. Neither engine changes callback
+chunking or the configured `max_reads_per_tick` limit.
+
 ## Listener lifecycle microbenchmark
 
 Run the permanent inbound connection benchmark from the distribution root:

@@ -28,6 +28,7 @@ bench/run-listen-microbench.pl
 bench/run-native-framers-microbench.pl
 bench/run-performance-regression.pl
 bench/run-process-microbench.pl
+bench/run-process-pipe-drain-bench.pl
 bench/run-reactor-comparison.pl
 bench/run-resolver-microbench.pl
 bench/run-signal-microbench.pl
@@ -156,6 +157,7 @@ t/process-11-observe-signal.t
 t/process-12-options-and-errors.t
 t/process-13-benchmark-smoke.t
 t/process-14-stdin-output-limit.t
+t/process-15-native-pipe-drain.t
 t/resolver-13-benchmark-smoke.t
 t/signal-00-api.t
 t/signal-10-delivery.t

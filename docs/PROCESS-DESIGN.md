@@ -82,6 +82,13 @@ Each standard descriptor accepts:
 stderr callbacks require a stderr pipe, and `on_stdin_drain` requires a stdin
 pipe. Impossible combinations fail during construction.
 
+Process drains readable stdout and stderr pipes in XS. Each successful native
+read still invokes the cached callback once with that read's byte string, so
+moving the mechanical loop below Perl does not aggregate output or change
+callback chunking. `read_size` remains the maximum callback size and
+`max_reads_per_tick` remains the per-descriptor fairness bound. EAGAIN, EOF,
+and hard read errors return to Perl for lifecycle and error policy.
+
 ## Standard input and backpressure
 
 `write_stdin` writes immediately when possible and queues the remainder. It

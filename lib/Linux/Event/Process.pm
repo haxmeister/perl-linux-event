@@ -18,6 +18,8 @@ require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
 
 my %CLASS_DESCRIPTOR;
+# Private control retained only for the paired pipe-drain benchmark.
+our $_PIPE_DRAIN_ENGINE = 'native';
 
 sub _integer ($target, $name, $value, $minimum, $maximum = 2_147_483_647) {
     croak "$target $name must be an integer"
@@ -427,6 +429,23 @@ sub _stderr_ready ($self) { $self->_read_output('stderr', 0) }
 sub _read_output ($self, $name, $unbounded) {
     my $fh = $self->{"${name}_fh"} or return;
     my $maximum = $unbounded ? 0 : $self->{descriptor}{options}{max_reads_per_tick};
+    if ($_PIPE_DRAIN_ENGINE eq 'native') {
+        my $callback = $self->{descriptor}{callbacks}{"on_$name"};
+        my ($status, $errno) = _drain_pipe(
+            $self, $callback, fileno($fh),
+            $self->{descriptor}{options}{read_size}, $maximum,
+        );
+        if ($status == 1) {
+            $self->_close_output($name, 1);
+        } elsif ($status == 2) {
+            $self->_close_output($name, 1);
+            $self->_report(Linux::Event::Error->new(
+                type => 'process_io', operation => "read_$name",
+                errno => $errno, message => _message($errno),
+            ));
+        }
+        return;
+    }
     my $reads = 0;
     while (!$maximum || $reads++ < $maximum) {
         my $count = sysread(
@@ -841,6 +860,10 @@ termination, but status accessors remain undefined.
 Callback CVs are resolved once per subclass. C<on_exit> runs once after native
 reaping and after buffered stdout and stderr have been drained. The Process
 still exposes its Loop during that callback.
+
+XS drains stdout and stderr pipes up to C<max_reads_per_tick>. Each native read
+still invokes the corresponding callback once, and C<read_size> remains the
+maximum byte-string size. Native draining does not coalesce callback chunks.
 
 Define an output or EOF callback only when the corresponding descriptor uses
 C<pipe>. Define C<on_stdin_drain> only with C<stdin =E<gt> 'pipe'>. Process

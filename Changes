@@ -1,5 +1,14 @@
 Revision history for Linux-Event
 
+Unreleased
+    - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
+      a private native drain helper while preserving read_size,
+      max_reads_per_tick, callback chunking, EOF ordering, and error behavior.
+    - Add a gated Process pipe benchmark that excludes spawning and watcher
+      registration from its timed interval, compares the retained Perl
+      reference with native draining, records parent CPU, and optionally
+      measures recurring-Timer fairness.
+
 0.105  2026-08-29
     - Add query-driven Loop introspection through running, count, has, objects,
       inspect, census, resources, why_alive, and pressure. Optional profile,

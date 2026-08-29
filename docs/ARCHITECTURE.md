@@ -356,7 +356,9 @@ post-fork child. The Loop may register pidfd, stdin, stdout, and stderr, all
 routed back to one Process object.
 
 pidfd readiness uses `waitid(P_PIDFD)` for decoded exit identity. Pipe output
-is drained before `on_exit`; queued stdin uses a SIGPIPE-safe native write
-helper. Signals use `pidfd_send_signal`, avoiding numeric PID reuse. Setup
+is drained by a Process-specific native read loop before `on_exit`. Each read
+retains its existing callback boundary and the configured per-tick fairness
+cap. Queued stdin uses a SIGPIPE-safe native write helper. Signals use
+`pidfd_send_signal`, avoiding numeric PID reuse. Setup
 failure after spawn kills and reaps the exact child before partial ownership is
 released.

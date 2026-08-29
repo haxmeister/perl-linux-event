@@ -346,8 +346,26 @@ connection completion remains in Perl.
 
 ## Priority 5 - Additional Linux fd drain helpers
 
-Profile native draining or aggregation for additional descriptor families only
-when Perl currently receives repetitive mechanical events.
+The descriptor-family audit found Timer, Signal, Wakeup, Resolver, Listener,
+Datagram, Stream, and pidfd mechanics already native. Connection and TLS
+timerfds produce single cold deadline events, while raw watchers have
+application-defined semantics. Only Process stdout and stderr pipes retained a
+repetitive mechanical Perl read loop.
+
+The 2026-08-29 experiment compared that loop with a private Process XS helper.
+Pre-spawned children waited behind a start gate so timed intervals excluded
+spawn and watcher setup. Balanced seven-repeat matrices covered stdout,
+stderr, and both pipes with 1, 8, and 32 workers. Independent 4 KiB matrices
+improved by paired medians of 27.8 and 25.1 percent; 8, 16, and 32 KiB rows
+improved by 19.4, 5.3, and 3.3 percent. Two default 64 KiB matrices were neutral
+overall, with a combined 126-pair median of 0.2 percent. Parent CPU fell in
+every 4 KiB case. A saturated recurring-Timer probe found no fairness
+regression at either one or 64 reads per descriptor turn.
+
+The helper is retained as a private Process implementation detail. It invokes
+the existing callback once per native read and preserves `read_size`,
+`max_reads_per_tick`, EOF ordering, and Perl error policy. It does not add a
+generic Loop drain API or aggregate application-visible output chunks.
 
 ## Priority 6 - Buffer representation experiments
 
