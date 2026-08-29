@@ -330,6 +330,20 @@ high-churn connection workloads justify it, native code may:
 The public Stream connection contract must not change merely to eliminate a
 few cold Perl calls.
 
+The 2026-08-29 experiment moved the readiness-time `SO_ERROR` probe into native
+Loop dispatch while leaving candidate policy and Stream handoff unchanged. A
+balanced 600,000-connection loopback TCP comparison at concurrency 10 measured
+aggregate medians of 10,614.7 connections/second for the Perl probe and
+10,741.6 for the native probe. That apparent 1.2% advantage did not survive
+paired analysis: the repeat-pair median was -0.5%, with run variance much
+larger than the difference. The special watcher path was therefore removed.
+
+Do not revisit native completion merely to relocate `getsockopt(SO_ERROR)`.
+A future experiment needs a workload dominated by multiple simultaneous
+Happy Eyeballs attempts, failed candidates, or deadline cancellation, and must
+move that coordination as one unit. Ordinary successful single-candidate
+connection completion remains in Perl.
+
 ## Priority 5 - Additional Linux fd drain helpers
 
 Profile native draining or aggregation for additional descriptor families only
