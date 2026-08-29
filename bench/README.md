@@ -92,6 +92,7 @@ zero-delay expiration delivery:
 perl -Mblib bench/run-timer-microbench.pl \
   --counts=1000,10000,100000 \
   --repeats=5 \
+  --cpu-clock=auto \
   --json=bench/results/timer-microbench.json
 ```
 
@@ -99,6 +100,14 @@ The lifecycle and reschedule rows count one operation per Timer. The expiration
 row schedules an equal-deadline cohort and runs the Loop until all callbacks
 have completed. Use the standard performance-regression suite for release
 gating; use this benchmark to diagnose Timer-specific scaling.
+
+The default `--cpu-clock=auto` measures process CPU with
+`CLOCK_PROCESS_CPUTIME_ID`, then falls back to Perl's process `times()` when
+that clock does not advance. `--cpu-clock=times` selects the portable fallback
+directly. If neither source advances, wall throughput remains valid and the
+JSON report records `cpu_clock` as `unavailable` with null CPU fields instead
+of treating a host timing limitation as a benchmark or installation failure.
+This nullable CPU-time schema is `benchmark_contract_version` 2.
 
 ## Signal microbenchmark
 

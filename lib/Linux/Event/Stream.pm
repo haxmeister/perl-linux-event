@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.104';
+our $VERSION = '0.105';
 
 use Carp qw(croak);
 use Fcntl qw(F_GETFD F_GETFL F_SETFD F_SETFL FD_CLOEXEC O_NONBLOCK);
@@ -1634,9 +1634,9 @@ its current chunk with C<< input => $bytes >>:
 
 Existing native input is ordered before the explicit C<input> suffix. Complete
 target frames may be delivered before C<transition_to> returns when the method
-is called outside input dispatch. During C<on_data> or C<on_message>, target
-dispatch begins after the old callback returns. Code should normally return
-immediately after requesting a transition.
+is called outside input dispatch. During C<on_data>, C<on_message>, or
+C<on_messages>, target dispatch begins after the old callback returns. Code
+should normally return immediately after requesting a transition.
 
 Read pause is retained and continues to gate preserved input. Queued output
 keeps its original byte ordering; only later C<send> calls use the new outbound

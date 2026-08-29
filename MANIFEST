@@ -135,6 +135,7 @@ t/32-loop-dispatch-recovery.t
 t/33-loop-driver-contract.t
 t/34-loop-introspection.t
 t/35-loop-introspection-types.t
+t/36-configure-platform.t
 t/connect-13-benchmark-smoke.t
 t/datagram-00-api.t
 t/datagram-10-udp.t
@@ -251,14 +252,14 @@ xsresolver/Makefile.PL
 xsresolver/Resolver.xs
 xssignal/Makefile.PL
 xssignal/Signal.xs
-xsstream/Makefile.PL
-xsstream/Stream.xs
 xsstream/framer_decimal.c
 xsstream/framer_delimiter.c
 xsstream/framer_fixed.c
 xsstream/framer_length.c
 xsstream/framer_netstring.c
 xsstream/framer_varint.c
+xsstream/Makefile.PL
+xsstream/Stream.xs
 xsstream/stream_callbacks.c
 xsstream/stream_delivery.c
 xsstream/stream_input.c

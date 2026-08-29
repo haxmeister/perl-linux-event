@@ -2,7 +2,10 @@ use strict;
 use warnings;
 use ExtUtils::MakeMaker;
 
-die "Linux::Event supports Linux only\n" if $^O ne 'linux';
+if ($^O ne 'linux') {
+    print "OS unsupported: Linux::Event supports Linux only\n";
+    exit 0;
+}
 
 my @public_modules = qw(
     Linux::Event

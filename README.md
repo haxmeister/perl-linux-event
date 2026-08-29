@@ -196,6 +196,29 @@ my $server = ServerListener->new(
 The raw reactor never performs application I/O automatically. Stream is the
 higher-level layer for applications that want owned byte-stream I/O.
 
+### Stream callback batching
+
+Callback batching is an explicit class policy for pipelined workloads. A
+framed Stream replaces one-message delivery with bounded arrays like this:
+
+```perl
+sub stream_options ($class) {
+    return message_batch_size => 32;
+}
+
+sub on_messages ($stream, $messages) {
+    process_message($stream, $_) for @$messages;
+}
+```
+
+`on_message` and `on_messages` are mutually exclusive. XS flushes a partial
+array when the current read drain reaches `EAGAIN`, so it never waits for a
+future message merely to reach 32. A raw Stream may instead set
+`read_batch_bytes` to combine successful reads up to a byte bound before
+calling `on_data`. Both settings default to zero. Pause, close, and protocol
+transition take effect at the selected batch boundary, so negotiation streams
+that must transition after one specific message should keep `on_message`.
+
 ### Established Stream deadlines
 
 Stream subclasses may cache connection-wide inactivity defaults with their
@@ -277,6 +300,27 @@ my $worker = $loop->add(WorkerProcess->spawn(
 These are equivalent attachment styles. `add()` stores the Loop, starts the
 object, and returns that same object. An object can be attached only once and
 cannot move between Loops.
+
+## Loop introspection
+
+Loop diagnostics query existing native and service state only when requested:
+
+```perl
+my $objects   = $loop->objects;
+my $snapshot  = $loop->inspect($objects->[0]);
+my $census    = $loop->census;
+my $resources = $loop->resources;
+my $reasons   = $loop->why_alive;
+my $pressure  = $loop->pressure;
+```
+
+`running` is O(1). Object and resource queries enumerate authoritative
+registries and do not maintain a duplicate public-object registry in the hot
+path. `profile(1)`, `stats`, and `reset_stats` provide opt-in native timing and
+counters; profiling changes the measured workload and should remain disabled
+for ordinary throughput comparisons. See
+[`docs/INTROSPECTION.md`](docs/INTROSPECTION.md) for exact return shapes and
+costs.
 
 ## Timer example
 
@@ -415,7 +459,9 @@ make test
 All ten native extensions are built into the same `blib` tree. The supported
 runtime is Linux 5.4 or newer. Building requires Linux pidfd syscall headers, a
 libc with `posix_spawn_file_actions_addchdir_np`, and OpenSSL 1.1.1 or newer
-development headers and libraries. Perl 5.36 or newer is required; Perl
+development headers and libraries. On another operating system, configuration
+prints `OS unsupported` and exits successfully so CPAN Testers records `NA`
+rather than a misleading build failure. Perl 5.36 or newer is required; Perl
 ithreads are not. To use the built copy without installing it:
 
 ```bash

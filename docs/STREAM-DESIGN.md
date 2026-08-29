@@ -247,12 +247,12 @@ transition delivers that suffix as one raw chunk. Raw callbacks receive their
 current kernel-read chunk directly, so they pass their unconsumed suffix with
 `input => $bytes`; it is appended after any native suffix.
 
-Every native parser snapshots its descriptor before invoking `on_message`. If
-the callback transitions, that parser returns immediately. The input driver
-then resumes under the new descriptor without issuing another `read()`. This
-prevents old parser constants from being used after a reentrant descriptor
-swap and supports clients that pipeline new-protocol bytes with an upgrade
-request.
+Every native parser snapshots its descriptor before invoking `on_message` or
+`on_messages`. If the callback transitions, that parser returns immediately.
+The input driver then resumes under the new descriptor without issuing another
+`read()`. This prevents old parser constants from being used after a reentrant
+descriptor swap and supports clients that pipeline new-protocol bytes with an
+upgrade request.
 
 Transition validation and replacement are atomic. The new raw scratch buffer
 and optional preserved-input storage are allocated before live state changes.
@@ -260,10 +260,11 @@ The target `max_buffer` is checked against existing plus explicit input. A
 nonzero target `max_pending_bytes` is also checked against existing queued
 output. On failure, the old Perl type, descriptor, and buffers remain active.
 
-When called during `on_data` or `on_message`, target input callbacks are delayed
-until the old callback returns; callers should return immediately after the
-transition. Outside input dispatch, already-complete target input may be
-delivered before `transition_to()` returns. Pause state always gates delivery.
+When called during `on_data`, `on_message`, or `on_messages`, target input
+callbacks are delayed until the old callback returns; callers should return
+immediately after the transition. Outside input dispatch, already-complete
+target input may be delivered before `transition_to()` returns. Pause state
+always gates delivery.
 
 ## Lifecycle
 

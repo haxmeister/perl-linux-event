@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.104';
+our $VERSION = '0.105';
 
 use Carp qw(croak);
 use POSIX qw(isfinite);
@@ -386,8 +386,8 @@ when that role is instantiated.
 Stream continues to own buffering, framing, backpressure, established
 deadlines, and descriptor readiness. OpenSSL owns TLS protocol state,
 cryptography, verification, ALPN, and close notification. C<on_data> and
-C<on_message> receive plaintext. C<on_ready> runs only after handshake and
-verification succeed.
+C<on_message> receive plaintext, as does each message passed to
+C<on_messages>. C<on_ready> runs only after handshake and verification succeed.
 
 C<< $stream->end >> drains plaintext output and sends C<close_notify>.
 C<< $stream->close >> is immediate. A TLS Stream cannot be detached because

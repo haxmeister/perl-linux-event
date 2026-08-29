@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.104';
+our $VERSION = '0.105';
 
 use Carp qw(croak);
 use Hash::Util::FieldHash qw(fieldhash);

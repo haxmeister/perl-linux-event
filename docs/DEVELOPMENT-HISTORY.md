@@ -23,7 +23,7 @@ equivalent `loop` constructor option. The only low-level exception is raw
 API and guarantees are documented in module POD and the focused design files;
 the older sections below remain an implementation history only.
 
-## Stream watcher-state profiling (post-0.104)
+## Stream watcher-state profiling (0.105)
 
 The proposed native Stream-to-Loop watcher ABI was measured before changing
 ownership. The versioned `run-stream-watcher-state-bench.pl` separates direct
