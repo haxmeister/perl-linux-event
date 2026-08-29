@@ -145,8 +145,6 @@ sub for_class ($class) {
         } else {
             croak "$class defines on_messages() without enabling message_batch_size"
                 if $callback{on_messages};
-            croak "$class declares a framer but does not define on_message()"
-                if !$callback{on_message};
         }
     } else {
         croak "$class has no framer and must define on_data()"

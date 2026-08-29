@@ -15,6 +15,7 @@ use utf8 ();
 use Linux::Event::Stream::_Connection ();
 use Linux::Event::Stream::_Descriptor ();
 use Linux::Event::Error;
+use Linux::Event::Future ();
 use Linux::Event::Address;
 use Linux::Event::_SocketConfig ();
 
@@ -923,6 +924,27 @@ sub send ($self, $payload) {
     return $self->write($bytes);
 }
 
+sub _recv_slow ($self) {
+    croak 'recv(): requires a framed Stream subclass'
+        if !$self->{descriptor}{framer};
+    croak 'recv(): cannot be combined with on_message() or on_messages()'
+        if $self->{descriptor}{callbacks}{on_message}
+        || $self->{descriptor}{callbacks}{on_messages};
+    if ($self->{closed}) {
+        my $error = $self->{last_error} // Linux::Event::Error->new(
+            type      => 'closed',
+            operation => 'recv',
+            message   => 'Stream is closed',
+        );
+        return Linux::Event::Future->AWAIT_NEW_FAIL($error);
+    }
+    croak 'recv(): Stream must be attached to a Loop'
+        if !$self->{loop};
+    croak 'recv(): Stream is not established';
+}
+
+*recv = \&_recv_fast;
+
 sub end ($self, $final_bytes = undef) {
     return $self
         if $self->{closed} || $self->{write_ending} || $self->{write_ended};
@@ -1001,7 +1023,11 @@ sub detach ($self) {
     my $fh = $self->{fh};
     $self->_cancel_stream_deadline;
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close;
+        $xs_state->_close(Linux::Event::Error->new(
+            type      => 'detached',
+            operation => 'recv',
+            message   => 'Stream was detached',
+        ));
     }
     if (my $watcher = delete $self->{watcher}) {
         $watcher->cancel;
@@ -1123,6 +1149,7 @@ sub _transport_deadline_expired ($self, $operation, $message) {
 sub _mark_eof ($self) {
     return if $self->{read_eof} || $self->{closed};
     $self->{read_eof} = 1;
+    $self->{xs_state}->_recv_eof if $self->{xs_state};
     $self->{watcher}->disable_read if $self->{watcher};
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
@@ -1156,6 +1183,7 @@ sub _fail_framing ($self, $message) {
 sub _fail ($self, $error) {
     return if $self->{closed};
     $self->{last_error} = $error;
+    $self->{xs_state}->_recv_fail($error) if $self->{xs_state};
     my $failure;
     if (my $callback = $self->{descriptor}{callbacks}{on_error}) {
         my $reported = eval { $callback->($self, $error); 1 };
@@ -1181,7 +1209,15 @@ sub _close_now ($self, $close_fh) {
     $self->_destroy_transport_deadline;
 
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close;
+        my $error = $self->{last_error};
+        if (!$error && !$self->{read_eof}) {
+            $error = Linux::Event::Error->new(
+                type      => 'closed',
+                operation => 'recv',
+                message   => 'Stream is closed',
+            );
+        }
+        $xs_state->_close($error);
     }
     if (my $watcher = delete $self->{watcher}) {
         $watcher->cancel;
@@ -1292,7 +1328,21 @@ A raw subclass defines C<on_data> and does not declare a framer:
       $stream->write($bytes);
   }
 
-A framed subclass imports one native built-in and defines C<on_message>:
+A framed subclass imports one native built-in. Future-first code may omit
+message callbacks and await C<recv>:
+
+  package LineStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  package main;
+  use Linux::Event;
+
+  async sub receive_line ($stream) {
+      return await $stream->recv;
+  }
+
+Callback-driven code may instead define C<on_message>:
 
   package LineStream;
   use parent 'Linux::Event::Stream';
@@ -1324,9 +1374,9 @@ C<on_messages> does not enable batching; the positive class option makes the
 different callback boundary explicit.
 
 Framed and raw modes are mutually exclusive. A subclass with no framer must
-define C<on_data>; a framed subclass must define C<on_message>, or explicitly
-enable C<message_batch_size> and define C<on_messages>. The base class cannot
-be instantiated directly.
+define C<on_data>. A framed subclass either omits message callbacks and uses
+C<recv>, defines C<on_message>, or explicitly enables C<message_batch_size>
+and defines C<on_messages>. The base class cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
@@ -1604,6 +1654,18 @@ for accepted cooperative backpressure.
 
 Available only to framed subclasses. Applies the subclass's declared outbound
 wire framing and then uses C<write>. Serialization remains separate.
+
+=head2 recv
+
+Available to framed subclasses that omit C<on_message> and C<on_messages>.
+Returns a L<Linux::Event::Future> for the next complete decoded message. Clean
+EOF produces C<undef>; I/O, framing, timeout, and explicit-close failures throw
+a L<Linux::Event::Error> when awaited.
+
+One receive may be pending per Stream. Already-decoded messages remain ordered
+in native connection state until requested. Cancelling a pending receive does
+not consume the next message. Callback delivery and Future delivery cannot be
+combined on the same Stream class.
 
 =head2 pause_read / resume_read
 

@@ -95,6 +95,76 @@
 
 #include "stream_internal.h"
 
+static SV *
+les_recv_request(pTHX_ les_xsstate_t *st, SV *loop_obj)
+{
+    SV *future;
+    SV *message;
+
+    if (st->descriptor->read_mode == LES_READ_DELIVER)
+        croak("recv(): requires a framed Stream subclass");
+    if (st->descriptor->message_cb || st->descriptor->message_batch_cb)
+        croak("recv(): cannot be combined with message callbacks");
+    if (st->recv_future && les_future_is_ready(aTHX_ st->recv_future)) {
+        SvREFCNT_dec(st->recv_future);
+        st->recv_future = NULL;
+    }
+    if (st->recv_future)
+        croak("recv(): another receive is already pending");
+
+    if (st->recv_queue && av_count(st->recv_queue) > 0) {
+        message = av_shift(st->recv_queue);
+        future = les_new_done_future(aTHX_ loop_obj, message);
+        SvREFCNT_dec(message);
+    } else if (st->read_eof) {
+        future = les_new_done_future(aTHX_ loop_obj, &PL_sv_undef);
+    } else if (st->closed) {
+        SV *failure = sv_2mortal(newSVpvs("Stream is closed"));
+        future = les_new_future(aTHX_ loop_obj);
+        les_future_fail(aTHX_ future, failure);
+    } else {
+        future = les_new_future(aTHX_ loop_obj);
+        st->recv_future = SvREFCNT_inc_simple_NN(future);
+    }
+    return future;
+}
+
+MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream
+PROTOTYPES: DISABLE
+
+SV *
+_recv_fast(stream_obj)
+    SV *stream_obj
+  PREINIT:
+    HV *stream_hv;
+    SV **state_slot;
+    SV **loop_slot;
+    dSP;
+  CODE:
+    if (!SvROK(stream_obj) || SvTYPE(SvRV(stream_obj)) != SVt_PVHV)
+        croak("recv(): invocant must be a Stream object");
+    stream_hv = (HV *)SvRV(stream_obj);
+    state_slot = hv_fetch(stream_hv, "xs_state", 8, 0);
+    if (state_slot && *state_slot && SvOK(*state_slot)) {
+        loop_slot = hv_fetch(stream_hv, "loop", 4, 0);
+        RETVAL = les_recv_request(aTHX_ les_state_from_sv(*state_slot),
+            loop_slot && *loop_slot ? *loop_slot : &PL_sv_undef);
+    } else {
+        ENTER;
+        SAVETMPS;
+        PUSHMARK(SP);
+        PUSHs(stream_obj);
+        PUTBACK;
+        call_method("_recv_slow", G_SCALAR);
+        SPAGAIN;
+        RETVAL = SvREFCNT_inc(POPs);
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+    }
+  OUTPUT:
+    RETVAL
+
 MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
@@ -146,9 +216,6 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
         croak("message_batch_size requires framed mode");
     if (read_mode != LES_READ_DELIVER && read_batch_bytes)
         croak("read_batch_bytes requires raw mode");
-    if (read_mode != LES_READ_DELIVER && !message_batch_size
-        && (!message_cb || !SvOK(message_cb)))
-        croak("on_message callback required for framed Stream descriptor");
     if (read_mode != LES_READ_DELIVER && message_batch_size
         && (!message_batch_cb || !SvOK(message_batch_cb)))
         croak("on_messages callback required for batched framed Stream descriptor");
@@ -291,6 +358,7 @@ DESTROY(state_obj)
     if (st) {
         les_clear_write_queue(st);
         les_discard_message_batch(st);
+        les_discard_recv_state(st);
         if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
         if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
         if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
@@ -472,17 +540,50 @@ _transition_ready(state_obj)
     }
     LEAVE;
 
-void
-_close(state_obj)
+SV *
+_recv(state_obj, loop_obj)
     SV *state_obj
+    SV *loop_obj
+  CODE:
+    RETVAL = les_recv_request(aTHX_ les_state_from_sv(state_obj), loop_obj);
+  OUTPUT:
+    RETVAL
+
+void
+_recv_eof(state_obj)
+    SV *state_obj
+  CODE:
+    les_recv_eof(aTHX_ les_state_from_sv(state_obj));
+
+void
+_recv_fail(state_obj, failure)
+    SV *state_obj
+    SV *failure
+  CODE:
+    les_recv_fail(aTHX_ les_state_from_sv(state_obj), failure);
+
+void
+_close(state_obj, failure = &PL_sv_undef)
+    SV *state_obj
+    SV *failure
   PREINIT:
     les_xsstate_t *st;
   CODE:
     st = les_state_from_sv(state_obj);
     if (!st->closed) {
+        if (st->read_eof)
+            les_recv_eof(aTHX_ st);
+        else if (failure && SvOK(failure))
+            les_recv_fail(aTHX_ st, failure);
+        else {
+            SV *message = sv_2mortal(newSVpvs(
+                "Stream closed while recv was pending"));
+            les_recv_fail(aTHX_ st, message);
+        }
         st->closed = 1;
         les_clear_write_queue(st);
         les_discard_message_batch(st);
+        les_discard_recv_state(st);
         st->input_start = 0;
         st->input_len = 0;
     }

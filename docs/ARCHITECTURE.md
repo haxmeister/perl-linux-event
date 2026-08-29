@@ -151,10 +151,13 @@ case is one predictable native branch and otherwise follows the unchanged
 write path.
 
 Raw input drains into a reusable native read buffer and crosses into Perl for
-`on_data`. Framed input drains directly into native connection storage, runs
-the built-in parser there, and crosses into Perl only for complete
-`on_message` values or semantic errors. Both paths recheck pause and close state
-after callbacks.
+`on_data`. Framed input drains directly into native connection storage and runs
+the built-in parser there. A complete message either crosses into an existing
+callback boundary or enters the native Future receive queue. Future delivery
+finishes the current parser batch before waking one suspended receiver, so the
+remaining messages can be consumed by already-ready awaits without recursive
+parser entry. Callback delivery continues to recheck pause and close after
+each Perl boundary.
 
 The zero/default descriptor values retain those ordinary callback boundaries.
 A raw descriptor may instead set `read_batch_bytes`, in which case native

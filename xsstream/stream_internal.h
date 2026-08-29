@@ -103,6 +103,12 @@ typedef struct les_xsstate_s {
     UV message_batch_count;
     UV message_batch_bytes;
 
+    /* Future-first framed delivery. Callback descriptors leave these empty.
+     * A callback-free framed descriptor permits one pending recv Future and
+     * retains already-decoded messages in native storage. */
+    AV *recv_queue;
+    SV *recv_future;
+
     /* Non-zero while an input callback/parser stack is active. A descriptor
      * transition swaps configuration immediately, but buffered bytes are not
      * dispatched recursively from inside the old callback. */
@@ -205,7 +211,16 @@ void les_call_empty(pTHX_ les_xsstate_t *st);
 void les_discard_message_batch(les_xsstate_t *st);
 void les_flush_message_batch(pTHX_ les_xsstate_t *st);
 void les_emit_message(pTHX_ les_xsstate_t *st, SV *message);
+void les_flush_recv_future(pTHX_ les_xsstate_t *st);
 void les_flush_raw_batch(pTHX_ les_xsstate_t *st);
+SV *les_new_future(pTHX_ SV *loop_sv);
+SV *les_new_done_future(pTHX_ SV *loop_sv, SV *result);
+int les_future_is_ready(pTHX_ SV *future);
+void les_future_done(pTHX_ SV *future, SV *result);
+void les_future_fail(pTHX_ SV *future, SV *failure);
+void les_discard_recv_state(les_xsstate_t *st);
+void les_recv_eof(pTHX_ les_xsstate_t *st);
+void les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure);
 
 void les_clear_write_queue(les_xsstate_t *st);
 void les_queue_bytes(

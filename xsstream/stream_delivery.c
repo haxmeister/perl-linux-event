@@ -1,4 +1,101 @@
 #include "stream_internal.h"
+#include "../xsfuture/future_native.h"
+
+static const lef_native_api_t *
+les_future_api(pTHX)
+{
+    SV **slot;
+    const lef_native_api_t *api;
+
+    slot = hv_fetch(PL_modglobal, LEF_NATIVE_API_KEY,
+        LEF_NATIVE_API_KEY_LEN, 0);
+    if (!slot || !*slot || !SvIOK(*slot))
+        croak("Linux::Event::Future native API is unavailable");
+    api = INT2PTR(const lef_native_api_t *, SvIV(*slot));
+    if (!api || api->version != LEF_NATIVE_API_VERSION
+        || api->size < sizeof(lef_native_api_t))
+        croak("Linux::Event::Future native API is incompatible");
+    return api;
+}
+
+SV *
+les_new_future(pTHX_ SV *loop_sv)
+{
+    return les_future_api(aTHX)->new_pending(aTHX_
+        loop_sv && SvOK(loop_sv) ? loop_sv : &PL_sv_undef);
+}
+
+SV *
+les_new_done_future(pTHX_ SV *loop_sv, SV *result)
+{
+    return les_future_api(aTHX)->new_done_one(aTHX_
+        loop_sv && SvOK(loop_sv) ? loop_sv : &PL_sv_undef, result);
+}
+
+int
+les_future_is_ready(pTHX_ SV *future)
+{
+    return les_future_api(aTHX)->is_ready(aTHX_ future);
+}
+
+void
+les_future_done(pTHX_ SV *future, SV *result)
+{
+    les_future_api(aTHX)->done_one(aTHX_ future, result);
+}
+
+void
+les_future_fail(pTHX_ SV *future, SV *failure)
+{
+    les_future_api(aTHX)->fail(aTHX_ future, failure);
+}
+
+void
+les_discard_recv_state(les_xsstate_t *st)
+{
+    if (!st)
+        return;
+    if (st->recv_queue) {
+        SvREFCNT_dec((SV *)st->recv_queue);
+        st->recv_queue = NULL;
+    }
+    if (st->recv_future) {
+        SvREFCNT_dec(st->recv_future);
+        st->recv_future = NULL;
+    }
+}
+
+void
+les_recv_eof(pTHX_ les_xsstate_t *st)
+{
+    SV *future;
+
+    if (!st || !st->recv_future)
+        return;
+    future = st->recv_future;
+    st->recv_future = NULL;
+    ENTER;
+    SAVEFREESV(future);
+    if (!les_future_is_ready(aTHX_ future))
+        les_future_done(aTHX_ future, &PL_sv_undef);
+    LEAVE;
+}
+
+void
+les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure)
+{
+    SV *future;
+
+    if (!st || !st->recv_future)
+        return;
+    future = st->recv_future;
+    st->recv_future = NULL;
+    ENTER;
+    SAVEFREESV(future);
+    if (!les_future_is_ready(aTHX_ future))
+        les_future_fail(aTHX_ future, failure);
+    LEAVE;
+}
 
 void
 les_discard_message_batch(les_xsstate_t *st)
@@ -42,6 +139,12 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
     UV bytes;
 
     st->frames_emitted++;
+    if (!st->descriptor->message_cb && !st->descriptor->message_batch_cb) {
+        if (!st->recv_queue)
+            st->recv_queue = newAV();
+        av_push(st->recv_queue, SvREFCNT_inc_simple_NN(message));
+        return;
+    }
     if (!st->descriptor->message_batch_size) {
         st->message_callback_calls++;
         les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
@@ -66,6 +169,30 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
     if (st->message_batch_count >= st->descriptor->message_batch_size
         || st->message_batch_bytes >= st->descriptor->max_buffer)
         les_flush_message_batch(aTHX_ st);
+}
+
+void
+les_flush_recv_future(pTHX_ les_xsstate_t *st)
+{
+    SV *future;
+    SV *message;
+
+    if (!st || !st->recv_future || !st->recv_queue
+        || av_count(st->recv_queue) == 0)
+        return;
+    future = st->recv_future;
+    if (les_future_is_ready(aTHX_ future)) {
+        SvREFCNT_dec(future);
+        st->recv_future = NULL;
+        return;
+    }
+    message = av_shift(st->recv_queue);
+    st->recv_future = NULL;
+    ENTER;
+    SAVEFREESV(future);
+    SAVEFREESV(message);
+    les_future_done(aTHX_ future, message);
+    LEAVE;
 }
 
 void

@@ -29,7 +29,7 @@ WriteMakefile(
         framer_decimal
     )),
     depend           => {
-        '$(OBJECT)' => 'stream_internal.h stream_transport_abi.h',
+        '$(OBJECT)' => 'stream_internal.h stream_transport_abi.h ../xsfuture/future_native.h',
     },
     clean            => { FILES => 'Stream.c' },
 );

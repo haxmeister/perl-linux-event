@@ -51,6 +51,7 @@
       },
       "runtime" : {
          "requires" : {
+            "Future::AsyncAwait" : "0.71",
             "Socket" : "2.033",
             "perl" : "5.036000"
          }
@@ -108,6 +109,10 @@
       },
       "Linux::Event::Framer::Varint" : {
          "file" : "lib/Linux/Event/Framer/Varint.pm",
+         "version" : "0.105"
+      },
+      "Linux::Event::Future" : {
+         "file" : "lib/Linux/Event/Future.pm",
          "version" : "0.105"
       },
       "Linux::Event::Listener" : {

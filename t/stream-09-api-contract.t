@@ -72,9 +72,18 @@ like($error, qr/base class/, 'base-class error is clear');
 ok(!$made, 'raw subclass must define on_data');
 like($error, qr/must define on_data/, 'missing raw callback error is clear');
 
-($made, $error) = construction_error('T::API::FramedMissing');
-ok(!$made, 'framed subclass must define on_message');
-like($error, qr/does not define on_message/, 'missing framed callback error is clear');
+socketpair(my $future_left, my $future_right,
+    AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
+my $future_stream = T::API::FramedMissing->new(
+    loop => $loop,
+    fh   => $future_left,
+);
+isa_ok($future_stream, 'T::API::FramedMissing',
+    'framed subclass may select Future delivery by omitting callbacks');
+isa_ok($future_stream->recv, 'Linux::Event::Future',
+    'callback-free framed Stream exposes recv');
+$future_stream->close;
+close $future_right;
 
 ($made, $error) = construction_error('T::API::FramedMixed');
 ok(!$made, 'framed subclass cannot also define on_data');

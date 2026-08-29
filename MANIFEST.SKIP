@@ -16,6 +16,7 @@
 ^xswakeup/(?:Makefile$|MYMETA\.(?:json|yml)$|Wakeup\.(?:c|o|bs|xsc)$|blib(?:/|$))
 ^xsdatagram/(?:Makefile$|MYMETA\.(?:json|yml)$|Datagram\.(?:c|o|bs|xsc)$|blib(?:/|$))
 ^xsprocess/(?:Makefile$|MYMETA\.(?:json|yml)$|Process\.(?:c|o|bs|xsc)$|check_spawn_chdir(?:\.o)?$|blib(?:/|$))
+^xsfuture/(?:Makefile$|MYMETA\.(?:json|yml)$|Future\.(?:c|o|bs|xsc)$|blib(?:/|$))
 ^Linux-Event-[^/]+(?:/|\.tar(?:\.gz)?$)
 ^bench/results/.*\.(?:json|html)$
 ^\.prove$

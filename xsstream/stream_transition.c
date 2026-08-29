@@ -30,6 +30,12 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
         croak("transition_to(): target descriptor is closed");
     if (next_descriptor == st->descriptor)
         croak("transition_to(): target Stream type is already active");
+    if ((st->recv_future
+            || (st->recv_queue && av_count(st->recv_queue) > 0))
+        && (next_descriptor->read_mode == LES_READ_DELIVER
+            || next_descriptor->message_cb
+            || next_descriptor->message_batch_cb))
+        croak("transition_to(): pending Future receives require a Future-delivery target");
 
     if (input_sv && SvOK(input_sv))
         injected = SvPVbyte(input_sv, injected_len);

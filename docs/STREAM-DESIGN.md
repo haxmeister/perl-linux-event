@@ -40,6 +40,11 @@ my $stream = $loop->add(ChatStream->new(
 ));
 ```
 
+A Future-first framed type declares the same native framer but omits
+`on_message`. Its application code uses `await $stream->recv`; the native
+parser and descriptor remain shared, while complete messages target a single
+receive waiter or the connection's ordered native receive queue.
+
 The established constructor also accepts `loop => $loop`. Outbound
 `ChatStream->connect(host => 'chat.example', port => 443)` follows the same
 rule: pass `loop` for immediate
@@ -169,13 +174,17 @@ Zero is the default and retains ordinary delivery.
 
 ```text
 EPOLLIN -> XS read drain -> native input storage -> native parser
-        -> on_message($stream, $message)
+        -> on_message($stream, $message) or native recv Future
 ```
 
 Complete built-in frames are detected without delivering intermediate read
 chunks to Perl. Multiple messages can be emitted from one readiness event.
 Partial prefixes, delimiters, and payloads remain in connection-local native
-state. The loop rechecks pause and close state after every callback.
+state. Callback-free framed descriptors retain decoded messages in native
+connection order, finish the current parser batch, and then complete one
+pending `recv`. The resumed coroutine consumes the remaining batch through
+already-ready Futures without recursively entering the parser once per frame.
+The loop rechecks pause and close state after every boundary that can run Perl.
 
 A positive framed-only `message_batch_size` replaces `on_message` with the
 mutually exclusive callback `on_messages($stream, $messages)`. XS accumulates

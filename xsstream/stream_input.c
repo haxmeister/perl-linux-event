@@ -107,6 +107,8 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
             les_process_buffered(aTHX_ st);
             if (flush_batch && st->descriptor == descriptor)
                 les_flush_message_batch(aTHX_ st);
+            if (st->descriptor == descriptor)
+                les_flush_recv_future(aTHX_ st);
         }
 
         if (st->descriptor != descriptor)

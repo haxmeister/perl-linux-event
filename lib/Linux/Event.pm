@@ -5,6 +5,22 @@ use warnings;
 
 our $VERSION = '0.105';
 
+use Carp qw(croak);
+use Linux::Event::Future ();
+
+sub import ($class, @argument) {
+    croak 'Linux::Event fixes future_class to Linux::Event::Future'
+        if grep { $_ eq 'future_class' } @argument;
+    require Future::AsyncAwait;
+    my $caller = caller;
+    Future::AsyncAwait->import_into(
+        $caller,
+        future_class => 'Linux::Event::Future',
+        @argument,
+    );
+    return;
+}
+
 1;
 
 __END__
@@ -42,6 +58,11 @@ Every attachable public object accepts C<loop =E<gt> $loop>. It can instead be
 constructed detached and passed to C<< $loop->add($object) >>. C<add> sets the
 Loop, starts the object's activity, and returns the same object.
 
+C<use Linux::Event> also lexically enables C<async> and C<await> and selects
+L<Linux::Event::Future> for coroutine completion values. Application files do
+not need a separate C<use Future::AsyncAwait> declaration. Importing the main
+module with an empty import list leaves syntax unchanged.
+
 =head1 MAIN MODULES
 
 =over 4
@@ -50,6 +71,11 @@ Loop, starts the object's activity, and returns the same object.
 
 XS-first epoll reactor, native watcher registry, query-driven introspection,
 and optional profiling.
+
+=item * L<Linux::Event::Future>
+
+Native awaitable completion state used by Future-first operations and by
+C<async> subs compiled through C<use Linux::Event>.
 
 =item * L<Linux::Event::Stream>
 

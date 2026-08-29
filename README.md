@@ -11,6 +11,12 @@ an XS-first `epoll` reactor with timers, synchronous signal handling, eventfd
 wakeups, inbound and outbound byte streams, packet-preserving datagrams,
 pidfd processes, and an OpenSSL TLS transport in one distribution.
 
+The `feature/future-first` branch is testing a native awaitable contract.
+`use Linux::Event` enables `async` and `await`, `Linux::Event::Future` stores
+completion state in XS, and callback-free framed Stream subclasses can await
+`recv`. The callback path remains available as a comparison control while the
+contract is evaluated.
+
 The public model is deliberately small. `Linux::Event::Loop` owns readiness
 and scheduled work; `Linux::Event::Stream` and `Linux::Event::Datagram` own
 byte and packet sockets; `Linux::Event::Listener` owns listening sockets;
@@ -34,6 +40,7 @@ objects.
 - `Linux::Event::Process` - pidfd lifecycle and asynchronous standard I/O
 - `Linux::Event::TLS` - declarative OpenSSL policy for Stream subclasses
 - `Linux::Event::Framer::*` - native framing declarations for Stream types
+- `Linux::Event::Future` - native awaitable completion state
 - `Linux::Event::Error` - shared structured failure value
 - `Linux::Event::Address` - lazy IPv4, IPv6, and Unix address value
 
@@ -777,12 +784,11 @@ pidfd processes, packet-preserving datagrams, established Stream deadlines,
 and production socket configuration. Further work is optimization or expansion
 of general protocol facilities rather than a missing lifecycle primitive.
 
-Future, Promise, and async/await runtimes are explicitly outside the core
-roadmap. Independent distributions may build them from Loop driving, zero-delay
-Timers, object cancellation, deadlines, semantic callbacks, structured errors,
-and Wakeup. Linux::Event will consider a missing general reactor primitive when
-an external implementation proves it cannot be expressed safely, but it will
-not absorb Future-specific policy or continuation scheduling.
+The `feature/future-first` experiment now places Future completion state and
+Stream receive waiters in native storage while `Future::AsyncAwait` supplies
+the XS coroutine transformation. See
+[`docs/FUTURE-FIRST-CONTRACT.md`](docs/FUTURE-FIRST-CONTRACT.md) for the first
+vertical slice and the decisions deliberately left for later slices.
 
 ## License
 

@@ -1,6 +1,17 @@
 Revision history for Linux-Event
 
 Unreleased
+    - Begin the Future-first contract with a native Linux::Event::Future,
+      lexical async/await import from Linux::Event, Loop root-Future driving,
+      and callback-free framed Stream recv while retaining callback delivery
+      as an experiment control.
+    - Add a focused microbenchmark that holds the native delimiter and AF_UNIX
+      transport paths constant while comparing on_message with await recv.
+    - Optimize framed Future receive with a versioned private XS completion
+      API, inline one-result and one-continuation Future storage, an XS recv
+      hot path, and parse-batch wakeup. Decoded messages from one native read
+      are queued before one suspended coroutine is resumed, allowing the
+      remaining messages to use the cheaper already-ready await path.
     - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
       a private native drain helper while preserving read_size,
       max_reads_per_tick, callback chunking, EOF ordering, and error behavior.

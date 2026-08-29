@@ -1,9 +1,10 @@
 # Benchmark Guide
 
-The benchmark directory contains current reactor, callback, Timer, Signal, Stream
-transport, framing, native-framer, and lifecycle measurements. Older optimization
-experiments are preserved under `bench/archive/` and are not the recommended
-way to measure the current implementation.
+The benchmark directory contains current reactor, callback, Future receive,
+Timer, Signal, Stream transport, framing, native-framer, and lifecycle
+measurements. Older optimization experiments are preserved under
+`bench/archive/` and are not the recommended way to measure the current
+implementation.
 
 ## Release performance-regression suite
 
@@ -81,6 +82,23 @@ perl -Mblib bench/run-callback-batching-fairness.pl \
 This is a deliberate saturation diagnostic, not ordinary application latency.
 It makes the existing drain-until-EAGAIN fairness boundary visible while
 checking that explicit callback batching does not introduce a new one.
+
+## Future receive microbenchmark
+
+`run-future-recv-microbench.pl` holds the AF_UNIX transport, delimiter framer,
+payload, and native read path constant while comparing `on_message` delivery
+with a serial `await $stream->recv` consumer:
+
+```bash
+perl -Mblib bench/run-future-recv-microbench.pl \
+  --messages=20000 --payload-size=32 --warmup=1 --repeat=5
+```
+
+The reported Future/callback rate exposes the cost of the first Future receive
+contract. It is diagnostic rather than a release threshold: later native
+completion-queue and batching work may intentionally change that ratio.
+Warmup runs are excluded, and callback/Future samples alternate order to
+reduce code-cache and CPU-frequency ordering bias.
 
 ## Timer microbenchmark
 
