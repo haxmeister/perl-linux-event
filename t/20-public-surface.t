@@ -38,6 +38,8 @@ for my $required (
     'bench/run-wakeup-microbench.pl',
     'bench/run-datagram-microbench.pl',
     'bench/run-process-microbench.pl',
+    'bench/run-callback-batching-fairness.pl',
+    'bench/run-callback-batching-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -162,6 +164,8 @@ my %allowed = map { $_ => 1 } qw(
     run-wakeup-microbench.pl
     run-datagram-microbench.pl
     run-process-microbench.pl
+    run-callback-batching-fairness.pl
+    run-callback-batching-microbench.pl
     run-callback-ceiling.pl
     run-stream-lifecycle-bench.pl
     run-stream-microbench.pl

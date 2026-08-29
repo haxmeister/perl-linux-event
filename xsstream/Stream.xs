@@ -215,6 +215,8 @@ typedef struct les_write_seg_s {
 
 typedef struct les_descriptor_s {
     size_t read_size;
+    UV read_batch_bytes;
+    UV message_batch_size;
     int read_mode;
     UV max_buffer;
 
@@ -234,6 +236,7 @@ typedef struct les_descriptor_s {
 
     SV *deliver_cb;
     SV *message_cb;
+    SV *message_batch_cb;
     SV *drain_cb;
     SV *eof_cb;
     SV *read_error_cb;
@@ -265,6 +268,13 @@ typedef struct les_xsstate_s {
 
     /* Per-connection delimiter scan state. */
     size_t delimiter_scan;
+
+    /* A framed batch exists only while native input is being drained. The AV
+     * owns its message SVs and is detached before entering Perl, so callback
+     * exceptions cannot leave a live batch pointing at mortal storage. */
+    AV *message_batch;
+    UV message_batch_count;
+    UV message_batch_bytes;
 
     /* Non-zero while an input callback/parser stack is active. A descriptor
      * transition swaps configuration immediately, but buffered bytes are not
@@ -298,11 +308,17 @@ typedef struct les_xsstate_s {
     unsigned long long eof_count;
     unsigned long long read_error_count;
     unsigned long long delivery_calls;
+    unsigned long long read_batch_flushes;
+    unsigned long long read_batch_peak_bytes;
     unsigned long long input_appends;
     unsigned long long input_compactions;
     unsigned long long input_peak_bytes;
     unsigned long long delimiter_searches;
     unsigned long long frames_emitted;
+    unsigned long long message_callback_calls;
+    unsigned long long message_batch_calls;
+    unsigned long long message_batch_peak_messages;
+    unsigned long long message_batch_peak_bytes;
     unsigned long long framing_error_count;
     unsigned long long transition_count;
 
@@ -507,18 +523,82 @@ les_call_deliver(pTHX_ les_xsstate_t *st, SV *bytes)
 }
 
 static void
-les_call_message(pTHX_ les_xsstate_t *st, SV *message)
+les_discard_message_batch(les_xsstate_t *st)
 {
-    if (!st->descriptor->message_cb)
+    if (!st || !st->message_batch)
         return;
+    SvREFCNT_dec((SV *)st->message_batch);
+    st->message_batch = NULL;
+    st->message_batch_count = 0;
+    st->message_batch_bytes = 0;
+}
+
+static void
+les_flush_message_batch(pTHX_ les_xsstate_t *st)
+{
+    AV *batch;
+    SV *batch_rv;
+    SV *callback;
+    UV count;
+
+    if (!st || !st->message_batch || st->message_batch_count == 0)
+        return;
+
+    batch = st->message_batch;
+    count = st->message_batch_count;
+    callback = st->descriptor->message_batch_cb;
+    st->message_batch = NULL;
+    st->message_batch_count = 0;
+    st->message_batch_bytes = 0;
+
+    batch_rv = sv_2mortal(newRV_noinc((SV *)batch));
+    st->message_batch_calls++;
+    if (count > st->message_batch_peak_messages)
+        st->message_batch_peak_messages = count;
+    les_call_two(aTHX_ callback, st->stream_sv, batch_rv);
+}
+
+static void
+les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
+{
+    UV bytes;
+
     st->frames_emitted++;
-    les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
+    if (!st->descriptor->message_batch_size) {
+        st->message_callback_calls++;
+        les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
+        return;
+    }
+
+    if (!st->message_batch)
+        st->message_batch = newAV();
+    bytes = (UV)SvCUR(message);
+    av_push(st->message_batch, SvREFCNT_inc_simple_NN(message));
+    st->message_batch_count++;
+    if (bytes > (UV)-1 - st->message_batch_bytes)
+        st->message_batch_bytes = (UV)-1;
+    else
+        st->message_batch_bytes += bytes;
+    if (st->message_batch_bytes > st->message_batch_peak_bytes)
+        st->message_batch_peak_bytes = st->message_batch_bytes;
+
+    /* max_buffer also bounds the aggregate retained by one batch. Because the
+     * current message has already been decoded, the peak is less than two
+     * max_buffer values even when one frame crosses the remaining budget. */
+    if (st->message_batch_count >= st->descriptor->message_batch_size
+        || st->message_batch_bytes >= st->descriptor->max_buffer)
+        les_flush_message_batch(aTHX_ st);
 }
 
 static void
 les_call_framing_error(pTHX_ les_xsstate_t *st, const char *message)
 {
+    les_descriptor_t *descriptor = st->descriptor;
     SV *msg;
+
+    les_flush_message_batch(aTHX_ st);
+    if (st->closed || st->read_paused || st->descriptor != descriptor)
+        return;
     if (!st->descriptor->framing_error_cb)
         return;
     st->framing_error_count++;
@@ -732,6 +812,29 @@ les_input_consume(les_xsstate_t *st, size_t count)
         st->input_start = 0;
 }
 
+static void
+les_flush_raw_batch(pTHX_ les_xsstate_t *st)
+{
+    const char *data;
+    size_t len;
+    SV *bytes;
+
+    if (!st || !st->input_len || st->descriptor->read_mode != LES_READ_DELIVER
+        || !st->descriptor->read_batch_bytes)
+        return;
+
+    data = les_input_data(st);
+    len = st->input_len;
+    if ((UV)len > st->descriptor->read_batch_bytes)
+        len = (size_t)st->descriptor->read_batch_bytes;
+    bytes = sv_2mortal(newSVpvn(data, (STRLEN)len));
+    les_input_consume(st, len);
+    st->read_batch_flushes++;
+    if ((unsigned long long)len > st->read_batch_peak_bytes)
+        st->read_batch_peak_bytes = (unsigned long long)len;
+    les_call_deliver(aTHX_ st, bytes);
+}
+
 static size_t
 les_find_bytes(const char *hay, size_t hlen, const char *needle, size_t nlen, size_t start)
 {
@@ -805,7 +908,7 @@ les_process_delimiter(pTHX_ les_xsstate_t *st)
             size_t msglen = st->descriptor->include_delimiter ? consume : pos;
             SV *message = sv_2mortal(newSVpvn(data, (STRLEN)msglen));
             les_input_consume(st, consume);
-            les_call_message(aTHX_ st, message);
+            les_emit_message(aTHX_ st, message);
             if (st->descriptor != descriptor)
                 return;
         }
@@ -868,7 +971,7 @@ les_process_fixed(pTHX_ les_xsstate_t *st)
         const char *data = les_input_data(st);
         SV *message = sv_2mortal(newSVpvn(data, (STRLEN)size));
         les_input_consume(st, size);
-        les_call_message(aTHX_ st, message);
+        les_emit_message(aTHX_ st, message);
         if (st->descriptor != descriptor)
             return;
     }
@@ -920,7 +1023,7 @@ les_process_length(pTHX_ les_xsstate_t *st)
         msglen = st->descriptor->include_prefix ? total : (size_t)payload_len;
         message = sv_2mortal(newSVpvn(data + offset, (STRLEN)msglen));
         les_input_consume(st, total);
-        les_call_message(aTHX_ st, message);
+        les_emit_message(aTHX_ st, message);
         if (st->descriptor != descriptor)
             return;
     }
@@ -1017,7 +1120,7 @@ les_process_netstring(pTHX_ les_xsstate_t *st)
         payload_offset = (size_t)payload_offset_uv;
         message = sv_2mortal(newSVpvn(data + payload_offset, (STRLEN)payload_len));
         les_input_consume(st, total);
-        les_call_message(aTHX_ st, message);
+        les_emit_message(aTHX_ st, message);
         if (st->descriptor != descriptor)
             return;
     }
@@ -1096,7 +1199,7 @@ les_process_varint(pTHX_ les_xsstate_t *st)
         msglen = st->descriptor->include_prefix ? total : (size_t)payload_len;
         message = sv_2mortal(newSVpvn((const char *)data + offset, (STRLEN)msglen));
         les_input_consume(st, total);
-        les_call_message(aTHX_ st, message);
+        les_emit_message(aTHX_ st, message);
         if (st->descriptor != descriptor)
             return;
     }
@@ -1176,7 +1279,7 @@ les_process_decimal_length(pTHX_ les_xsstate_t *st)
         msglen = st->descriptor->include_prefix ? total : (size_t)payload_len;
         message = sv_2mortal(newSVpvn((const char *)data + offset, (STRLEN)msglen));
         les_input_consume(st, total);
-        les_call_message(aTHX_ st, message);
+        les_emit_message(aTHX_ st, message);
         if (st->descriptor != descriptor)
             return;
     }
@@ -1202,27 +1305,37 @@ les_process_buffered(pTHX_ les_xsstate_t *st)
 /*
  * Dispatch bytes that were already in native storage when the Stream changed
  * protocol. Framed-to-framed transitions reinterpret the untouched suffix
- * with the new parser. Framed-to-raw transitions deliver that suffix once as
- * an ordinary raw chunk. A callback may transition again; in that case the
- * loop restarts under the newest descriptor without recursive parser entry.
+ * with the new parser. Framed-to-raw transitions deliver that suffix under
+ * the target's ordinary or explicitly batched raw policy. A callback may
+ * transition again; in that case the loop restarts under the newest
+ * descriptor without recursive parser entry.
  */
 static void
-les_process_existing_input(pTHX_ les_xsstate_t *st)
+les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
 {
     while (!st->closed && !st->read_paused && !st->read_eof && st->input_len) {
         les_descriptor_t *descriptor = st->descriptor;
 
         if (descriptor->read_mode == LES_READ_DELIVER) {
-            const char *data = les_input_data(st);
-            size_t len = st->input_len;
-            SV *bytes = sv_2mortal(newSVpvn(data, (STRLEN)len));
-            les_input_consume(st, len);
-            les_call_deliver(aTHX_ st, bytes);
+            if (descriptor->read_batch_bytes) {
+                les_flush_raw_batch(aTHX_ st);
+            } else {
+                const char *data = les_input_data(st);
+                size_t len = st->input_len;
+                SV *bytes = sv_2mortal(newSVpvn(data, (STRLEN)len));
+                les_input_consume(st, len);
+                les_call_deliver(aTHX_ st, bytes);
+            }
         } else {
             les_process_buffered(aTHX_ st);
+            if (flush_batch && st->descriptor == descriptor)
+                les_flush_message_batch(aTHX_ st);
         }
 
         if (st->descriptor != descriptor)
+            continue;
+        if (descriptor->read_mode == LES_READ_DELIVER
+            && descriptor->read_batch_bytes && st->input_len)
             continue;
         return;
     }
@@ -1354,21 +1467,41 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         /* A parser callback may have changed the descriptor while leaving an
          * already-read suffix in native storage. Reinterpret that suffix
          * before requesting more kernel data. */
-        les_process_existing_input(aTHX_ st);
+        if (st->descriptor->read_mode != LES_READ_DELIVER
+            || !st->descriptor->read_batch_bytes)
+            les_process_existing_input(aTHX_ st, 0);
         if (st->closed || st->read_paused || st->read_eof)
             break;
 
         want = st->descriptor->read_size;
 
         if (st->descriptor->read_mode == LES_READ_DELIVER) {
-            target = st->read_buffer;
+            if (st->descriptor->read_batch_bytes) {
+                UV remaining;
+
+                if ((UV)st->input_len >= st->descriptor->read_batch_bytes) {
+                    les_flush_raw_batch(aTHX_ st);
+                    continue;
+                }
+                remaining = st->descriptor->read_batch_bytes - (UV)st->input_len;
+                if ((UV)want > remaining)
+                    want = (size_t)remaining;
+                les_input_reserve(st, want);
+                target = st->input_buffer + st->input_start + st->input_len;
+            } else {
+                target = st->read_buffer;
+            }
         } else {
             if (st->descriptor->max_buffer) {
                 if (st->input_len >= st->descriptor->max_buffer) {
+                    les_descriptor_t *descriptor = st->descriptor;
                     char msg[128];
                     snprintf(msg, sizeof(msg), "input buffer exceeds max_buffer=%llu",
                         (unsigned long long)st->descriptor->max_buffer);
                     les_call_framing_error(aTHX_ st, msg);
+                    if (!st->closed && !st->read_paused
+                        && st->descriptor != descriptor)
+                        continue;
                     break;
                 }
                 if ((UV)want > st->descriptor->max_buffer - (UV)st->input_len)
@@ -1390,9 +1523,15 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             les_note_read_activity(aTHX_ st);
 
             if (st->descriptor->read_mode == LES_READ_DELIVER) {
-                SV *bytes = sv_2mortal(newSVpvn(
-                    st->read_buffer, (STRLEN)result.count));
-                les_call_deliver(aTHX_ st, bytes);
+                if (st->descriptor->read_batch_bytes) {
+                    st->input_len += (size_t)result.count;
+                    if ((UV)st->input_len >= st->descriptor->read_batch_bytes)
+                        les_flush_raw_batch(aTHX_ st);
+                } else {
+                    SV *bytes = sv_2mortal(newSVpvn(
+                        st->read_buffer, (STRLEN)result.count));
+                    les_call_deliver(aTHX_ st, bytes);
+                }
             } else {
                 st->input_len += (size_t)result.count;
                 st->input_appends++;
@@ -1403,6 +1542,15 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         }
 
         if (result.status == LES_TRANSPORT_EOF) {
+            les_descriptor_t *descriptor = st->descriptor;
+            if (descriptor->read_mode == LES_READ_DELIVER)
+                les_flush_raw_batch(aTHX_ st);
+            else
+                les_flush_message_batch(aTHX_ st);
+            if (st->closed || st->read_paused)
+                break;
+            if (st->descriptor != descriptor)
+                continue;
             st->read_eof = 1;
             st->eof_count++;
             les_call_eof(aTHX_ st);
@@ -1416,13 +1564,30 @@ les_read_ready(pTHX_ les_xsstate_t *st)
 
         if (result.status == LES_TRANSPORT_WANT_READ
             || result.status == LES_TRANSPORT_WANT_WRITE) {
+            les_descriptor_t *descriptor = st->descriptor;
             st->read_eagain_count++;
+            if (descriptor->read_mode == LES_READ_DELIVER)
+                les_flush_raw_batch(aTHX_ st);
+            else
+                les_flush_message_batch(aTHX_ st);
+            if (!st->closed && !st->read_paused
+                && st->descriptor != descriptor)
+                continue;
             break;
         }
 
         {
             int err = result.error;
+            les_descriptor_t *descriptor = st->descriptor;
             st->read_error_count++;
+            if (descriptor->read_mode == LES_READ_DELIVER)
+                les_flush_raw_batch(aTHX_ st);
+            else
+                les_flush_message_batch(aTHX_ st);
+            if (st->closed || st->read_paused)
+                break;
+            if (st->descriptor != descriptor)
+                continue;
             les_call_read_error(aTHX_ st, err);
             break;
         }
@@ -1629,9 +1794,11 @@ MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, read_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix)
+new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, message_batch_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix)
     const char *CLASS
     UV read_size
+    UV read_batch_bytes
+    UV message_batch_size
     UV high_watermark
     UV low_watermark
     UV max_pending_bytes
@@ -1639,6 +1806,7 @@ new(CLASS, read_size, high_watermark, low_watermark, max_pending_bytes, max_buff
     int read_mode
     SV *deliver_cb
     SV *message_cb
+    SV *message_batch_cb
     SV *drain_cb
     SV *eof_cb
     SV *read_error_cb
@@ -1659,6 +1827,8 @@ new(CLASS, read_size, high_watermark, low_watermark, max_pending_bytes, max_buff
     const char *delimiter = NULL;
   CODE:
     if (read_size == 0) croak("read_size must be > 0");
+    if (read_batch_bytes > (UV)(size_t)-1)
+        croak("read_batch_bytes exceeds native size_t");
     if (low_watermark > high_watermark)
         croak("low_watermark must be <= high_watermark");
     if (read_mode != LES_READ_DELIVER
@@ -1667,9 +1837,16 @@ new(CLASS, read_size, high_watermark, low_watermark, max_pending_bytes, max_buff
     if (read_mode == LES_READ_DELIVER
         && (!deliver_cb || !SvOK(deliver_cb)))
         croak("on_data callback required for raw Stream descriptor");
-    if (read_mode != LES_READ_DELIVER
+    if (read_mode == LES_READ_DELIVER && message_batch_size)
+        croak("message_batch_size requires framed mode");
+    if (read_mode != LES_READ_DELIVER && read_batch_bytes)
+        croak("read_batch_bytes requires raw mode");
+    if (read_mode != LES_READ_DELIVER && !message_batch_size
         && (!message_cb || !SvOK(message_cb)))
         croak("on_message callback required for framed Stream descriptor");
+    if (read_mode != LES_READ_DELIVER && message_batch_size
+        && (!message_batch_cb || !SvOK(message_batch_cb)))
+        croak("on_messages callback required for batched framed Stream descriptor");
     if (read_mode != LES_READ_DELIVER
         && (!framing_error_cb || !SvOK(framing_error_cb)))
         croak("framing error callback required for framed Stream descriptor");
@@ -1693,6 +1870,8 @@ new(CLASS, read_size, high_watermark, low_watermark, max_pending_bytes, max_buff
     if (!descriptor) croak("calloc XSDescriptor failed");
 
     descriptor->read_size = (size_t)read_size;
+    descriptor->read_batch_bytes = read_batch_bytes;
+    descriptor->message_batch_size = message_batch_size;
     descriptor->high_watermark = high_watermark;
     descriptor->low_watermark = low_watermark;
     descriptor->max_pending_bytes = max_pending_bytes;
@@ -1719,6 +1898,8 @@ new(CLASS, read_size, high_watermark, low_watermark, max_pending_bytes, max_buff
 
     descriptor->deliver_cb = les_store_optional_cb(deliver_cb, "on_data callback");
     descriptor->message_cb = les_store_optional_cb(message_cb, "on_message callback");
+    descriptor->message_batch_cb = les_store_optional_cb(message_batch_cb,
+        "on_messages callback");
     descriptor->drain_cb = les_store_optional_cb(drain_cb, "on_drain callback");
     descriptor->eof_cb = les_store_cb(eof_cb, "EOF callback");
     descriptor->read_error_cb = les_store_cb(read_error_cb, "read error callback");
@@ -1741,6 +1922,7 @@ DESTROY(descriptor_obj)
     if (descriptor) {
         if (descriptor->deliver_cb) SvREFCNT_dec(descriptor->deliver_cb);
         if (descriptor->message_cb) SvREFCNT_dec(descriptor->message_cb);
+        if (descriptor->message_batch_cb) SvREFCNT_dec(descriptor->message_batch_cb);
         if (descriptor->drain_cb) SvREFCNT_dec(descriptor->drain_cb);
         if (descriptor->eof_cb) SvREFCNT_dec(descriptor->eof_cb);
         if (descriptor->read_error_cb) SvREFCNT_dec(descriptor->read_error_cb);
@@ -1803,6 +1985,7 @@ DESTROY(state_obj)
     st = les_state_from_sv(state_obj);
     if (st) {
         les_clear_write_queue(st);
+        les_discard_message_batch(st);
         if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
         if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
         if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
@@ -1916,7 +2099,7 @@ _resume(state_obj)
             ENTER;
             SAVEINT(st->input_dispatch_depth);
             st->input_dispatch_depth++;
-            les_process_existing_input(aTHX_ st);
+            les_process_existing_input(aTHX_ st, 1);
             LEAVE;
         }
     }
@@ -1979,7 +2162,7 @@ _transition_ready(state_obj)
         ENTER;
         SAVEINT(st->input_dispatch_depth);
         st->input_dispatch_depth++;
-        les_process_existing_input(aTHX_ st);
+        les_process_existing_input(aTHX_ st, 1);
         LEAVE;
     }
     LEAVE;
@@ -1994,6 +2177,7 @@ _close(state_obj)
     if (!st->closed) {
         st->closed = 1;
         les_clear_write_queue(st);
+        les_discard_message_batch(st);
         st->input_start = 0;
         st->input_len = 0;
     }
@@ -2056,12 +2240,26 @@ stats(state_obj)
     hv_stores(hv, "eof_count", newSVuv(st->eof_count));
     hv_stores(hv, "read_error_count", newSVuv(st->read_error_count));
     hv_stores(hv, "delivery_calls", newSVuv(st->delivery_calls));
+    hv_stores(hv, "read_batch_bytes",
+        newSVuv(st->descriptor->read_batch_bytes));
+    hv_stores(hv, "read_batch_flushes", newSVuv(st->read_batch_flushes));
+    hv_stores(hv, "read_batch_peak_bytes",
+        newSVuv(st->read_batch_peak_bytes));
     hv_stores(hv, "input_appends", newSVuv(st->input_appends));
     hv_stores(hv, "input_compactions", newSVuv(st->input_compactions));
     hv_stores(hv, "input_peak_bytes", newSVuv(st->input_peak_bytes));
     hv_stores(hv, "input_buffered_bytes", newSVuv(st->input_len));
     hv_stores(hv, "delimiter_searches", newSVuv(st->delimiter_searches));
     hv_stores(hv, "frames_emitted", newSVuv(st->frames_emitted));
+    hv_stores(hv, "message_batch_size",
+        newSVuv(st->descriptor->message_batch_size));
+    hv_stores(hv, "message_callback_calls",
+        newSVuv(st->message_callback_calls));
+    hv_stores(hv, "message_batch_calls", newSVuv(st->message_batch_calls));
+    hv_stores(hv, "message_batch_peak_messages",
+        newSVuv(st->message_batch_peak_messages));
+    hv_stores(hv, "message_batch_peak_bytes",
+        newSVuv(st->message_batch_peak_bytes));
     hv_stores(hv, "framing_error_count", newSVuv(st->framing_error_count));
     hv_stores(hv, "transition_count", newSVuv(st->transition_count));
 

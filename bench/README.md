@@ -43,6 +43,45 @@ Use `--quick` only while developing the harness. Release decisions should use
 the default seven repeats and full workload sizes. Do not compare reports from
 different machines, Perl builds, power modes, or competing system load.
 
+## Callback batching microbenchmarks
+
+`run-callback-batching-microbench.pl` sends pipelined payloads from an isolated
+producer over both AF_UNIX socketpairs and TCP loopback. It compares ordinary
+raw/framed callbacks with explicit raw byte aggregates and framed message
+arrays, recording receiver CPU, throughput, native reads, and actual Perl
+callback counts:
+
+```bash
+perl -Mblib bench/run-callback-batching-microbench.pl \
+  --messages=1000000 --bytes=64 --read-size=4096 \
+  --raw-batch-bytes=0,16384,65536,262144 \
+  --message-batch-sizes=0,1,4,16,32,64,256 \
+  --transports=unix,tcp --warmup=1 --repeats=7 \
+  --json=bench/results/callback-batching.json
+```
+
+Zero selects the ordinary callback contract. The framed workload is pipelined
+because a serial request/reply test exposes only one message at a time and
+cannot measure message batching. For raw policy decisions, repeat the sweep
+with the production `read_size`; a batch limit at or below that size cannot
+coalesce complete reads.
+
+`run-callback-batching-fairness.pl` places a timestamped fixed-frame probe next
+to a continuously readable framed Stream. It reports hot-stream throughput and
+probe p50/p99/maximum latency:
+
+```bash
+perl -Mblib bench/run-callback-batching-fairness.pl \
+  --duration=0.5 --ping-interval-us=2000 --bytes=64 --read-size=4096 \
+  --batch-sizes=0,16,32,64 --transports=unix,tcp \
+  --warmup=1 --repeats=5 \
+  --json=bench/results/callback-batching-fairness.json
+```
+
+This is a deliberate saturation diagnostic, not ordinary application latency.
+It makes the existing drain-until-EAGAIN fairness boundary visible while
+checking that explicit callback batching does not introduce a new one.
+
 ## Timer microbenchmark
 
 `run-timer-microbench.pl` isolates the native scheduler at increasing heap

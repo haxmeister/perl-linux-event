@@ -177,6 +177,7 @@ my $server = ServerListener->new(
 - subclass-defined behavior with one cached descriptor per Stream type
 - named callback CVs resolved once and called directly
 - native read draining and framed-input storage
+- opt-in bounded raw-read coalescing and framed `on_messages` arrays
 - native immediate writes and segmented `writev()` queue draining
 - versioned transport ABI with a specialized plain path and built-in OpenSSL
   `Linux::Event::TLS` provider support
@@ -652,6 +653,15 @@ sub stream_options ($class) {
     );
 }
 ```
+
+Both batching options default to zero and are alternatives, not settings for
+the same subclass. Raw `read_batch_bytes => 256 * 1024` combines
+successful reads only until its byte limit or the current drain reaches
+EAGAIN. Framed `message_batch_size => 32` requires
+`on_messages($stream, $messages)` instead of `on_message`; it never delays
+input to fill an array. Pause, close, and protocol transition take effect at
+the explicit batch boundary, so message-sensitive negotiation streams should
+keep ordinary `on_message`.
 
 Watermarks are cooperative: a false `write()` return still means the bytes
 were accepted and the producer should wait for `on_drain`. The same return,

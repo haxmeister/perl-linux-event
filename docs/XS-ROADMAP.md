@@ -275,11 +275,45 @@ shows the remaining boundary is material.
 
 ## Priority 3 - Callback coalescing/batching
 
-Investigate fewer Perl entries without changing the ordinary one-message API:
+This item has now been implemented and measured without changing the ordinary
+callback contract. Both class options default to zero and the zero modes do not
+allocate batch containers:
 
-- drain multiple reads before notifying Perl
-- optionally deliver multiple complete frames together
-- keep batching explicit where it changes application semantics
+- raw `read_batch_bytes` combines successful reads up to a native byte bound
+  and still flushes at EAGAIN, EOF, or error;
+- framed `message_batch_size` explicitly replaces `on_message` with
+  `on_messages($stream, $messages)` and flushes without waiting for later input;
+- pause, close, and transition act at the selected batch boundary.
+
+The August 28, 2026 pipelined 64-byte sweep used 1,000,000 messages, 4 KiB
+native reads, one warmup, and five measured repeats. The focused 16/32/64
+comparison produced these medians on the measurement host:
+
+| Transport | Ordinary | Batch 16 | Batch 32 | Batch 64 |
+|---|---:|---:|---:|---:|
+| AF_UNIX | 129.7 MiB/s | 263.4 MiB/s | 276.2 MiB/s | 305.6 MiB/s |
+| TCP loopback | 126.8 MiB/s | 227.0 MiB/s | 282.1 MiB/s | 311.3 MiB/s |
+
+Batch 32 removed 96.9 percent of message-callback entries and provided the most
+balanced cross-transport throughput/latency point. Batch 64 is available for
+throughput-oriented protocols; protocols with message-by-message transition
+semantics retain ordinary delivery. Batch size one is intentionally valid as a
+contract/control case but was slower than `on_message` because it constructs an
+array without amortizing a callback.
+
+With Stream's normal 64 KiB read size, a 64 KiB raw batch provided no material
+benefit. A 256 KiB raw aggregate reduced median TCP callback count by 74.1
+percent and improved median payload throughput by 18.4 percent; a 1 MiB bound
+improved it by 24.1 percent but increases retained memory and pause granularity.
+Raw coalescing therefore remains explicit and has no nonzero recommended
+default.
+
+The saturated-producer fairness diagnostic found no new batching regression:
+batching generally reached EAGAIN sooner and reduced probe latency. It also
+made an older policy visible: an indefinitely readable Stream can retain one
+readiness turn until EAGAIN and delay unrelated descriptors. Any future read
+budget must be evaluated as a separate fairness change rather than hidden in
+the batching API.
 
 ## Priority 4 - Native connect attempt completion
 

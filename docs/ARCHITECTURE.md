@@ -156,6 +156,15 @@ the built-in parser there, and crosses into Perl only for complete
 `on_message` values or semantic errors. Both paths recheck pause and close state
 after callbacks.
 
+The zero/default descriptor values retain those ordinary callback boundaries.
+A raw descriptor may instead set `read_batch_bytes`, in which case native
+storage combines successful reads and flushes at its byte bound or EAGAIN. A
+framed descriptor may set `message_batch_size` and cache `on_messages`; complete
+message SVs are then owned by one bounded AV until count, EAGAIN, EOF, error, or
+the aggregate byte guard flushes it. The AV is detached from native state
+before entering Perl, so callback exceptions cannot leave mortal values owned
+by the connection. Close clears any undispatched native aggregate.
+
 The Stream extension does not include private reactor headers. Loop passes
 watcher data directly to Stream's private readiness entry points, preserving a
 generic readiness core and an independently testable buffered Stream layer.

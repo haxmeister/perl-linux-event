@@ -71,6 +71,8 @@ sub _stream_options_for ($class) {
         low_watermark    =>   262_144,
         max_pending_bytes =>         0,
         read_size        =>    65_536,
+        read_batch_bytes =>         0,
+        message_batch_size =>       0,
         max_buffer       => 8_388_608,
         idle_timeout     =>         0,
         read_timeout     =>         0,
@@ -104,6 +106,10 @@ sub _stream_options_for ($class) {
         if $option{max_pending_bytes} !~ /\A\d+\z/;
     croak "$class read_size must be a positive integer"
         if $option{read_size} !~ /\A\d+\z/ || $option{read_size} <= 0;
+    croak "$class read_batch_bytes must be a non-negative integer"
+        if $option{read_batch_bytes} !~ /\A\d+\z/;
+    croak "$class message_batch_size must be a non-negative integer"
+        if $option{message_batch_size} !~ /\A\d+\z/;
     croak "$class max_buffer must be a positive integer"
         if $option{max_buffer} !~ /\A\d+\z/ || $option{max_buffer} <= 0;
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
@@ -161,27 +167,44 @@ sub _descriptor_for ($class) {
 
     my $framer = _framer_for($class);
     my $tls = _tls_for($class);
+    my $option = _stream_options_for($class);
     my %callback = map { $_ => scalar $class->can($_) }
-        qw(on_data on_message on_drain on_eof on_error on_close
+        qw(on_data on_message on_messages on_drain on_eof on_error on_close
            on_ready on_transport_ready configure_socket);
 
     if ($framer) {
-        croak "$class declares a framer but does not define on_message()"
-            if !$callback{on_message};
+        croak "$class read_batch_bytes is available only to raw Streams"
+            if $option->{read_batch_bytes};
         croak "$class cannot define on_data() when it declares a framer"
             if $callback{on_data};
+        if ($option->{message_batch_size}) {
+            croak "$class enables message_batch_size but does not define on_messages()"
+                if !$callback{on_messages};
+            croak "$class cannot define both on_message() and on_messages()"
+                if $callback{on_message};
+        } else {
+            croak "$class defines on_messages() without enabling message_batch_size"
+                if $callback{on_messages};
+            croak "$class declares a framer but does not define on_message()"
+                if !$callback{on_message};
+        }
     } else {
         croak "$class has no framer and must define on_data()"
             if !$callback{on_data};
         croak "$class defines on_message() but does not declare a framer"
             if $callback{on_message};
+        croak "$class defines on_messages() but does not declare a framer"
+            if $callback{on_messages};
+        croak "$class message_batch_size is available only to framed Streams"
+            if $option->{message_batch_size};
     }
 
-    my $option = _stream_options_for($class);
     my $native = $framer ? { %{ $framer->{native} } } : { read_mode => 0 };
 
     my $xs = Linux::Event::Stream::XSDescriptor->new(
         $option->{read_size},
+        $option->{read_batch_bytes},
+        $option->{message_batch_size},
         $option->{high_watermark},
         $option->{low_watermark},
         $option->{max_pending_bytes},
@@ -189,6 +212,7 @@ sub _descriptor_for ($class) {
         $native->{read_mode},
         $callback{on_data},
         $callback{on_message},
+        $callback{on_messages},
         $callback{on_drain} ? \&_xs_drain : undef,
         \&_xs_read_eof,
         \&_xs_read_error,
@@ -1454,9 +1478,31 @@ A framed subclass imports one native built-in and defines C<on_message>:
       $stream->send($message);
   }
 
+High-throughput framed protocols may explicitly replace one-message delivery
+with bounded array delivery:
+
+  package PipelinedStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub stream_options ($class) {
+      return message_batch_size => 32;
+  }
+
+  sub on_messages ($stream, $messages) {
+      for my $message (@$messages) {
+          process_message($stream, $message);
+      }
+  }
+
+C<on_message> and C<on_messages> are mutually exclusive. Merely defining
+C<on_messages> does not enable batching; the positive class option makes the
+different callback boundary explicit.
+
 Framed and raw modes are mutually exclusive. A subclass with no framer must
-define C<on_data>; a framed subclass must define C<on_message>. The base class
-cannot be instantiated directly.
+define C<on_data>; a framed subclass must define C<on_message>, or explicitly
+enable C<message_batch_size> and define C<on_messages>. The base class cannot
+be instantiated directly.
 
 =head1 CONSTRUCTOR
 
@@ -1571,13 +1617,30 @@ per connection:
       );
   }
 
-The defaults are 65,536 bytes per read, a 1 MiB high watermark, a 256 KiB low
-watermark, no hard pending-output limit, and an 8 MiB maximum framed input
-buffer. Set C<max_pending_bytes> to a positive byte count to impose a hard
-limit; zero keeps the default unlimited policy. Established timeout defaults
-are zero, which disables them. Constructor values take precedence for one
-Stream and survive protocol transitions; non-overridden values change to the
-target subclass's defaults.
+The defaults are 65,536 bytes per read, no raw read batching, ordinary
+one-message framed delivery, a 1 MiB high watermark, a 256 KiB low watermark,
+no hard pending-output limit, and an 8 MiB maximum framed input buffer. Set
+C<max_pending_bytes> to a positive byte count to impose a hard limit; zero
+keeps the default unlimited policy. Established timeout defaults are zero,
+which disables them. Constructor values take precedence for one Stream and
+survive protocol transitions; non-overridden values change to the target
+subclass's defaults.
+
+The batching settings are alternatives for different subclass modes, so they
+are not combined in the general example above.
+
+C<read_batch_bytes> is available only to a raw Stream. A positive value makes
+XS combine successful reads up to that many bytes before calling C<on_data>.
+It flushes a partial batch at C<EAGAIN>, EOF, or an error, without waiting for
+future input. The limit is also the native retained-memory bound for this
+aggregation. Values at or below C<read_size> do not coalesce full reads.
+
+C<message_batch_size> is available only to a framed Stream. A positive value
+requires C<on_messages> instead of C<on_message>. XS flushes when the message
+limit is reached or the current native read drain is exhausted. It never waits
+to fill a batch. C<max_buffer> also forces a flush when the accumulated
+message payload reaches that byte budget, keeping one batch below twice that
+bound even when the final frame crosses the remaining budget.
 
 =head1 SOCKET CONFIGURATION
 
@@ -1646,8 +1709,12 @@ Subclasses may define these ordinary named methods:
       $stream->write($bytes);
   }
 
-  sub on_message ($stream, $message) {        # required for framed Stream
+  sub on_message ($stream, $message) {        # ordinary framed mode
       $stream->send($message);
+  }
+
+  sub on_messages ($stream, $messages) {      # framed batch mode only
+      $stream->send($_) for @$messages;
   }
 
   sub on_drain ($stream) {                    # optional
@@ -1680,6 +1747,13 @@ for an asynchronous non-plain transport. Most applications need only
 C<on_ready>.
 
 Application callback exceptions are not swallowed.
+
+For ordinary framed delivery, pause, close, and protocol transition take effect
+after each C<on_message>. In batch mode they take effect after the complete
+array passed to C<on_messages>; every element in that array has already been
+parsed under the current Stream type. Complete pending messages are delivered
+before EOF or a later framing error. Protocol-negotiation boundaries that must
+transition after one particular message should retain C<on_message>.
 
 =head1 METHODS
 
@@ -1861,7 +1935,12 @@ families should be implemented as native Linux::Event built-ins.
 Native code drains reads, detects built-in frame boundaries, performs immediate
 writes, drains segmented queues with C<writev>, and accounts for backpressure.
 The class descriptor moves immutable callbacks and parser configuration out of
-each connection. Perl is entered for semantic C<on_data> or C<on_message>
-delivery and lifecycle policy.
+each connection. Perl is entered for semantic C<on_data>, C<on_message>, or
+C<on_messages> delivery and lifecycle policy. The zero batching defaults keep
+the ordinary callback path free of batch allocation or array construction.
+
+Use C<bench/run-callback-batching-microbench.pl> for pipelined throughput and
+callback-count sweeps. Use C<bench/run-callback-batching-fairness.pl> to observe
+a latency-sensitive descriptor beside a continuously readable Stream.
 
 =cut

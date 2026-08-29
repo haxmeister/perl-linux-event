@@ -56,8 +56,8 @@ attachment or omit it and use `Loop->add()`. Inbound acquisition belongs to
 The first construction of each concrete subclass performs all class-level work
 once:
 
-1. resolve `on_data`, `on_message`, and optional lifecycle methods through the
-   class MRO;
+1. resolve `on_data`, `on_message`, `on_messages`, and optional lifecycle
+   methods through the class MRO;
 2. resolve the nearest inherited native framer declaration;
 3. call and validate `stream_options`;
 4. validate that the class is either raw or framed, never both;
@@ -73,6 +73,8 @@ Immutable descriptor state includes:
 - native read mode and framing constants
 - delimiter or prefix policy where applicable
 - `read_size`
+- raw `read_batch_bytes`
+- framed `message_batch_size`
 - high and low output watermarks
 - optional hard `max_pending_bytes`
 - framed `max_buffer`
@@ -139,6 +141,19 @@ The reusable native read buffer is copied into a Perl byte scalar only after a
 successful read. XS continues until EAGAIN unless the callback pauses or closes
 the Stream.
 
+A positive raw-only `read_batch_bytes` class option selects an alternate
+explicit path:
+
+```text
+EPOLLIN -> XS read drain -> bounded native aggregate
+        -> on_data($stream, $bytes)
+```
+
+The aggregate flushes at the byte limit, EAGAIN, EOF, or error; it never waits
+for a later readiness event. Pause, close, and transition therefore take effect
+at an explicit aggregate boundary rather than after every successful read.
+Zero is the default and retains ordinary delivery.
+
 ### Framed subclass
 
 ```text
@@ -150,6 +165,15 @@ Complete built-in frames are detected without delivering intermediate read
 chunks to Perl. Multiple messages can be emitted from one readiness event.
 Partial prefixes, delimiters, and payloads remain in connection-local native
 state. The loop rechecks pause and close state after every callback.
+
+A positive framed-only `message_batch_size` replaces `on_message` with the
+mutually exclusive callback `on_messages($stream, $messages)`. XS accumulates
+complete messages in an array and flushes at the configured message count,
+when the current read drain reaches EAGAIN, before EOF or framing error, or when
+accumulated payload reaches `max_buffer`. It does not delay input to fill a
+batch. Pause, close, and protocol transition take effect after the complete
+delivered array; every element in that array was parsed under the old
+descriptor. Zero is the default and allocates no batch array.
 
 ## Output path
 
@@ -262,6 +286,8 @@ or framing errors.
 sub stream_options ($class) {
     return {
         read_size         => 65_536,
+        read_batch_bytes  => 0,
+        message_batch_size => 0,
         high_watermark    => 1_048_576,
         low_watermark     => 262_144,
         max_pending_bytes => 0,
@@ -273,6 +299,11 @@ sub stream_options ($class) {
 It runs once per concrete subclass. Unknown options, invalid integers, and a low
 watermark above the high watermark fail before connection registration. The
 hard output limit is a non-negative byte count; zero disables it.
+
+`read_batch_bytes` is valid only for raw subclasses. `message_batch_size` is
+valid only for framed subclasses and requires `on_messages` in place of
+`on_message`. Both defaults are zero, preserving the ordinary callback
+contract without allocating batch containers.
 
 ## Framing policy
 
@@ -295,13 +326,16 @@ fresh closure allocation and are invoked through cached CVs rather than method
 lookup.
 
 It does not remove the intentional Perl crossing for semantic `on_data` or
-`on_message` work. It also does not make application state global: `data`, input
-storage, parser progress, output, and lifecycle remain connection-local.
+`on_message` work. Explicit batching can amortize that crossing across raw
+bytes or complete framed messages. It also does not make application state
+global: `data`, input storage, parser progress, output, and lifecycle remain
+connection-local.
 
 Use `bench/run-stream-lifecycle-bench.pl` for constructor and retained-memory
 effects, `bench/run-stream-microbench.pl` for raw transport overhead and the
-cost of enabling a hard output limit, and the framing benchmarks for parser
-work.
+cost of enabling a hard output limit, the framing benchmarks for parser work,
+and the callback-batching throughput and fairness benchmarks for the explicit
+batch policies.
 
 The provider contract and the bundled TLS implementation are specified in
 `TRANSPORT-BOUNDARY.md`.

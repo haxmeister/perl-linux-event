@@ -18,6 +18,8 @@ bench/archive/run-phase18.pl
 bench/archive/run-watcher-reuse-bench.pl
 bench/README.md
 bench/results/.gitkeep
+bench/run-callback-batching-fairness.pl
+bench/run-callback-batching-microbench.pl
 bench/run-callback-ceiling.pl
 bench/run-connect-microbench.pl
 bench/run-datagram-microbench.pl
@@ -213,6 +215,10 @@ t/stream-51-local-bind-errors.t
 t/stream-52-preconnect-backpressure.t
 t/stream-53-adopted-and-callback-close.t
 t/stream-54-watcher-state-benchmark-smoke.t
+t/stream-55-callback-batching.t
+t/stream-56-message-batch-framers.t
+t/stream-57-callback-batching-benchmark-smoke.t
+t/stream-58-callback-batching-fairness-smoke.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
