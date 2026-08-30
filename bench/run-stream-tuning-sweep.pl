@@ -3,6 +3,23 @@ use v5.36;
 use strict;
 use warnings;
 
+use FindBin qw($Bin);
+use lib "$Bin/../blib/arch", "$Bin/../lib";
+
+BEGIN {
+    my @required = (
+        "$Bin/../blib/arch/auto/Linux/Event/Loop/Loop.so",
+        "$Bin/../blib/arch/auto/Linux/Event/Stream/Stream.so",
+    );
+    my @missing = grep { !-f $_ } @required;
+    if (@missing) {
+        die "run-stream-tuning-sweep.pl requires a current in-tree build.\n"
+            . "Missing built XS files:\n  " . join("\n  ", @missing) . "\n"
+            . "Run:\n  perl Makefile.PL && make\n"
+            . "Then rerun the benchmark; no -I or -Mblib flags are required.\n";
+    }
+}
+
 use Getopt::Long qw(GetOptions);
 use IO::Socket::INET;
 use JSON::PP;
