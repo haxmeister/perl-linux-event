@@ -28,6 +28,10 @@
 #define LES_READ_VARINT    6
 #define LES_READ_DECIMAL   7
 
+#define LES_RECV_MODE_SINGLE 0
+#define LES_RECV_MODE_BATCH  1
+#define LES_RECV_MODE_DIRECT (-1)
+
 typedef struct les_plain_transport_s {
     int fd;
 } les_plain_transport_t;
@@ -105,8 +109,10 @@ typedef struct les_xsstate_s {
     UV message_batch_bytes;
 
     /* Future-first framed delivery. Callback descriptors leave these empty.
-     * A callback-free framed descriptor permits one pending receive Future and
-     * retains already-decoded messages in a native ring queue. */
+     * A callback-free framed descriptor permits one pending receive operation
+     * and retains already-decoded messages in a native ring queue. Ordinary
+     * recv uses modes 0/1; the private direct-awaitable experiment reuses the
+     * same slot with mode -1, avoiding another per-connection field. */
     SV **recv_queue;
     size_t recv_queue_capacity;
     size_t recv_queue_head;
@@ -232,6 +238,11 @@ int les_future_done_if_pending(pTHX_ SV *future, SV *result);
 int les_future_done_if_pending_take(pTHX_ SV *future, SV *result);
 void les_future_fail(pTHX_ SV *future, SV *failure);
 int les_future_fail_if_pending(pTHX_ SV *future, SV *failure);
+SV *les_new_direct_awaitable(pTHX);
+int les_direct_is_ready(pTHX_ SV *awaitable);
+void les_direct_done_ref(pTHX_ SV *awaitable, SV *result);
+void les_direct_done_take(pTHX_ SV *awaitable, SV *result);
+void les_direct_fail(pTHX_ SV *awaitable, SV *failure);
 void les_discard_recv_state(les_xsstate_t *st);
 void les_recv_eof(pTHX_ les_xsstate_t *st);
 void les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure);
