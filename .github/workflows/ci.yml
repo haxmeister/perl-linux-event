@@ -80,6 +80,10 @@ jobs:
         if: matrix.label == 'latest'
         run: perl -Mblib .github/direct-awaitable-experiment.pl --iterations=50000 --repeat=7 --warmup=2
 
+      - name: Direct Stream recv payload comparison
+        if: matrix.label == 'latest'
+        run: perl -Mblib .github/direct-stream-recv-bench.pl --repeat=5 --warmup=1
+
   distribution:
     name: Distribution integrity
     runs-on: ubuntu-24.04
