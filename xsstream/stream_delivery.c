@@ -1,5 +1,6 @@
 #include "stream_internal.h"
 #include "../xsfuture/future_native.h"
+#include "../xsdirect/direct_awaitable_native.h"
 
 static const lef_native_api_t *
 les_future_api(pTHX)
@@ -15,6 +16,23 @@ les_future_api(pTHX)
     if (!api || api->version != LEF_NATIVE_API_VERSION
         || api->size < sizeof(lef_native_api_t))
         croak("Linux::Event::Future native API is incompatible");
+    return api;
+}
+
+static const leda_native_api_t *
+les_direct_api(pTHX)
+{
+    SV **slot;
+    const leda_native_api_t *api;
+
+    slot = hv_fetch(PL_modglobal, LEDA_NATIVE_API_KEY,
+        LEDA_NATIVE_API_KEY_LEN, 0);
+    if (!slot || !*slot || !SvIOK(*slot))
+        croak("Linux::Event::DirectAwaitable native API is unavailable");
+    api = INT2PTR(const leda_native_api_t *, SvIV(*slot));
+    if (!api || api->version != LEDA_NATIVE_API_VERSION
+        || api->size < sizeof(leda_native_api_t))
+        croak("Linux::Event::DirectAwaitable native API is incompatible");
     return api;
 }
 
@@ -77,6 +95,36 @@ les_future_fail_if_pending(pTHX_ SV *future, SV *failure)
         future, failure);
 }
 
+SV *
+les_new_direct_awaitable(pTHX)
+{
+    return les_direct_api(aTHX)->new_pending(aTHX);
+}
+
+int
+les_direct_is_ready(pTHX_ SV *awaitable)
+{
+    return les_direct_api(aTHX)->is_ready(aTHX_ awaitable);
+}
+
+void
+les_direct_done_ref(pTHX_ SV *awaitable, SV *result)
+{
+    les_direct_api(aTHX)->done_ref(aTHX_ awaitable, result);
+}
+
+void
+les_direct_done_take(pTHX_ SV *awaitable, SV *result)
+{
+    les_direct_api(aTHX)->done_take(aTHX_ awaitable, result);
+}
+
+void
+les_direct_fail(pTHX_ SV *awaitable, SV *failure)
+{
+    les_direct_api(aTHX)->fail(aTHX_ awaitable, failure);
+}
+
 void
 les_discard_recv_state(les_xsstate_t *st)
 {
@@ -100,7 +148,7 @@ les_discard_recv_state(les_xsstate_t *st)
         SvREFCNT_dec(st->recv_future);
         st->recv_future = NULL;
     }
-    st->recv_batch_mode = 0;
+    st->recv_batch_mode = LES_RECV_MODE_SINGLE;
     st->recv_batch_max = 0;
 }
 
@@ -184,19 +232,25 @@ void
 les_recv_eof(pTHX_ les_xsstate_t *st)
 {
     SV *future;
+    int mode;
 
     if (!st || !st->recv_future)
         return;
-    les_flush_recv_future(aTHX_ st);
+    if (st->recv_batch_mode != LES_RECV_MODE_DIRECT)
+        les_flush_recv_future(aTHX_ st);
     if (!st->recv_future)
         return;
     future = st->recv_future;
+    mode = st->recv_batch_mode;
     st->recv_future = NULL;
-    st->recv_batch_mode = 0;
+    st->recv_batch_mode = LES_RECV_MODE_SINGLE;
     st->recv_batch_max = 0;
     ENTER;
     SAVEFREESV(future);
-    les_future_done_if_pending(aTHX_ future, &PL_sv_undef);
+    if (mode == LES_RECV_MODE_DIRECT)
+        les_direct_done_ref(aTHX_ future, &PL_sv_undef);
+    else
+        les_future_done_if_pending(aTHX_ future, &PL_sv_undef);
     LEAVE;
 }
 
@@ -204,19 +258,25 @@ void
 les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure)
 {
     SV *future;
+    int mode;
 
     if (!st || !st->recv_future)
         return;
-    les_flush_recv_future(aTHX_ st);
+    if (st->recv_batch_mode != LES_RECV_MODE_DIRECT)
+        les_flush_recv_future(aTHX_ st);
     if (!st->recv_future)
         return;
     future = st->recv_future;
+    mode = st->recv_batch_mode;
     st->recv_future = NULL;
-    st->recv_batch_mode = 0;
+    st->recv_batch_mode = LES_RECV_MODE_SINGLE;
     st->recv_batch_max = 0;
     ENTER;
     SAVEFREESV(future);
-    les_future_fail_if_pending(aTHX_ future, failure);
+    if (mode == LES_RECV_MODE_DIRECT)
+        les_direct_fail(aTHX_ future, failure);
+    else
+        les_future_fail_if_pending(aTHX_ future, failure);
     LEAVE;
 }
 
@@ -263,6 +323,21 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
 
     st->frames_emitted++;
     if (!st->descriptor->message_cb && !st->descriptor->message_batch_cb) {
+        if (st->recv_future && st->recv_batch_mode == LES_RECV_MODE_DIRECT) {
+            SV *awaitable = st->recv_future;
+            SV *owned_message = SvREFCNT_inc_simple_NN(message);
+
+            /* Clear the pending slot before invoking the F::AA continuation.
+             * The resumed async sub may synchronously install its next recv. */
+            st->recv_future = NULL;
+            st->recv_batch_mode = LES_RECV_MODE_SINGLE;
+            st->recv_batch_max = 0;
+            ENTER;
+            SAVEFREESV(awaitable);
+            les_direct_done_take(aTHX_ awaitable, owned_message);
+            LEAVE;
+            return;
+        }
         les_recv_queue_push(aTHX_ st, message);
         return;
     }
@@ -298,20 +373,21 @@ les_flush_recv_future(pTHX_ les_xsstate_t *st)
     SV *future;
     SV *message;
 
-    if (!st || !st->recv_future || st->recv_queue_count == 0)
+    if (!st || !st->recv_future || st->recv_queue_count == 0
+        || st->recv_batch_mode == LES_RECV_MODE_DIRECT)
         return;
     future = st->recv_future;
     if (les_future_is_ready(aTHX_ future)) {
         SvREFCNT_dec(future);
         st->recv_future = NULL;
-        st->recv_batch_mode = 0;
+        st->recv_batch_mode = LES_RECV_MODE_SINGLE;
         st->recv_batch_max = 0;
         return;
     }
-    if (st->recv_batch_mode) {
+    if (st->recv_batch_mode == LES_RECV_MODE_BATCH) {
         SV *batch = les_make_recv_batch(st, st->recv_batch_max);
         st->recv_future = NULL;
-        st->recv_batch_mode = 0;
+        st->recv_batch_mode = LES_RECV_MODE_SINGLE;
         st->recv_batch_max = 0;
         ENTER;
         SAVEFREESV(future);
@@ -322,7 +398,7 @@ les_flush_recv_future(pTHX_ les_xsstate_t *st)
     }
     message = les_recv_queue_pop(st);
     st->recv_future = NULL;
-    st->recv_batch_mode = 0;
+    st->recv_batch_mode = LES_RECV_MODE_SINGLE;
     st->recv_batch_max = 0;
     ENTER;
     SAVEFREESV(future);
