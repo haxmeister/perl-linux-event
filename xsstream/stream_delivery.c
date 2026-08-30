@@ -235,8 +235,7 @@ les_recv_eof(pTHX_ les_xsstate_t *st)
 
     if (!st || !st->recv_future)
         return;
-    if (st->recv_batch_mode != LES_RECV_MODE_DIRECT)
-        les_flush_recv_future(aTHX_ st);
+    les_flush_recv_future(aTHX_ st);
     if (!st->recv_future)
         return;
     future = st->recv_future;
@@ -261,8 +260,7 @@ les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure)
 
     if (!st || !st->recv_future)
         return;
-    if (st->recv_batch_mode != LES_RECV_MODE_DIRECT)
-        les_flush_recv_future(aTHX_ st);
+    les_flush_recv_future(aTHX_ st);
     if (!st->recv_future)
         return;
     future = st->recv_future;
@@ -322,21 +320,10 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
 
     st->frames_emitted++;
     if (!st->descriptor->message_cb && !st->descriptor->message_batch_cb) {
-        if (st->recv_future && st->recv_batch_mode == LES_RECV_MODE_DIRECT) {
-            SV *awaitable = st->recv_future;
-            SV *owned_message = SvREFCNT_inc_simple_NN(message);
-
-            /* Clear the pending slot before invoking the F::AA continuation.
-             * The resumed async sub may synchronously install its next recv. */
-            st->recv_future = NULL;
-            st->recv_batch_mode = LES_RECV_MODE_SINGLE;
-            st->recv_batch_max = 0;
-            ENTER;
-            SAVEFREESV(awaitable);
-            les_direct_done_take(aTHX_ awaitable, owned_message);
-            LEAVE;
-            return;
-        }
+        /* Receive-style delivery always enters the native queue first. This
+         * intentionally keeps coroutine resumption out of the framer/parser
+         * stack; les_flush_recv_future() performs the handoff at the existing
+         * receive flush boundary after native parsing has been amortized. */
         les_recv_queue_push(aTHX_ st, message);
         return;
     }
@@ -371,11 +358,25 @@ les_flush_recv_future(pTHX_ les_xsstate_t *st)
 {
     SV *future;
     SV *message;
+    int mode;
 
-    if (!st || !st->recv_future || st->recv_queue_count == 0
-        || st->recv_batch_mode == LES_RECV_MODE_DIRECT)
+    if (!st || !st->recv_future || st->recv_queue_count == 0)
         return;
     future = st->recv_future;
+    mode = st->recv_batch_mode;
+
+    if (mode == LES_RECV_MODE_DIRECT) {
+        message = les_recv_queue_pop(st);
+        st->recv_future = NULL;
+        st->recv_batch_mode = LES_RECV_MODE_SINGLE;
+        st->recv_batch_max = 0;
+        ENTER;
+        SAVEFREESV(future);
+        les_direct_done_take(aTHX_ future, message);
+        LEAVE;
+        return;
+    }
+
     if (les_future_is_ready(aTHX_ future)) {
         SvREFCNT_dec(future);
         st->recv_future = NULL;
@@ -383,7 +384,7 @@ les_flush_recv_future(pTHX_ les_xsstate_t *st)
         st->recv_batch_max = 0;
         return;
     }
-    if (st->recv_batch_mode == LES_RECV_MODE_BATCH) {
+    if (mode == LES_RECV_MODE_BATCH) {
         SV *batch = les_make_recv_batch(st, st->recv_batch_max);
         st->recv_future = NULL;
         st->recv_batch_mode = LES_RECV_MODE_SINGLE;
