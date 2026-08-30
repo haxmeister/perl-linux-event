@@ -2,6 +2,7 @@
 #include "perl.h"
 #include "XSUB.h"
 #include "direct_awaitable_native.h"
+#include "../xsstream/stream_internal.h"
 
 enum {
     LEDA_PENDING = 0,
@@ -27,6 +28,39 @@ leda_from_sv(SV *obj)
     if (!state)
         croak("Linux::Event::DirectAwaitable object is destroyed");
     return state;
+}
+
+static les_xsstate_t *
+leda_stream_state_from_sv(SV *obj)
+{
+    les_xsstate_t *state;
+
+    if (!sv_isobject(obj) || !SvROK(obj)
+        || !sv_derived_from(obj, "Linux::Event::Stream::XSState"))
+        croak("direct recv requires a Linux::Event::Stream::XSState object");
+    state = INT2PTR(les_xsstate_t *, SvIV((SV *)SvRV(obj)));
+    if (!state)
+        croak("Stream XSState object is destroyed");
+    return state;
+}
+
+static SV *
+leda_stream_queue_pop(les_xsstate_t *st)
+{
+    SV *message;
+
+    if (!st || st->recv_queue_count == 0)
+        return NULL;
+    message = st->recv_queue[st->recv_queue_head];
+    st->recv_queue[st->recv_queue_head] = NULL;
+    st->recv_queue_head =
+        (st->recv_queue_head + 1) % st->recv_queue_capacity;
+    st->recv_queue_count--;
+    if (st->recv_queue_count == 0) {
+        st->recv_queue_head = 0;
+        st->recv_queue_tail = 0;
+    }
+    return message;
 }
 
 static SV *
@@ -156,6 +190,40 @@ new(CLASS)
     const char *CLASS
   CODE:
     RETVAL = leda_new(CLASS);
+  OUTPUT:
+    RETVAL
+
+SV *
+_recv_stream_state(CLASS, state_obj)
+    const char *CLASS
+    SV *state_obj
+  PREINIT:
+    les_xsstate_t *st;
+    SV *message;
+    SV *failure;
+  CODE:
+    st = leda_stream_state_from_sv(state_obj);
+    if (st->descriptor->read_mode == LES_READ_DELIVER)
+        croak("direct recv requires a framed Stream subclass");
+    if (st->descriptor->message_cb || st->descriptor->message_batch_cb)
+        croak("direct recv cannot be combined with message callbacks");
+    if (st->recv_future)
+        croak("direct recv: another receive is already pending");
+
+    RETVAL = leda_new(CLASS);
+    if (st->recv_queue_count) {
+        message = leda_stream_queue_pop(st);
+        leda_done_take(aTHX_ leda_from_sv(RETVAL), message);
+    } else if (st->read_eof) {
+        leda_done_ref(aTHX_ leda_from_sv(RETVAL), &PL_sv_undef);
+    } else if (st->closed) {
+        failure = sv_2mortal(newSVpvs("Stream is closed"));
+        leda_fail(aTHX_ leda_from_sv(RETVAL), failure);
+    } else {
+        st->recv_future = SvREFCNT_inc_simple_NN(RETVAL);
+        st->recv_batch_mode = LES_RECV_MODE_DIRECT;
+        st->recv_batch_max = 0;
+    }
   OUTPUT:
     RETVAL
 
