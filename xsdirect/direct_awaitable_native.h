@@ -11,8 +11,10 @@
 typedef struct leda_native_api_s {
     unsigned int version;
     size_t size;
+    SV *(*new_pending)(pTHX);
     int (*is_ready)(pTHX_ SV *awaitable);
     void (*done_ref)(pTHX_ SV *awaitable, SV *result);
+    void (*done_take)(pTHX_ SV *awaitable, SV *result);
     void (*fail)(pTHX_ SV *awaitable, SV *failure);
 } leda_native_api_t;
 
