@@ -32,6 +32,12 @@ les_new_done_future(pTHX_ SV *loop_sv, SV *result)
         loop_sv && SvOK(loop_sv) ? loop_sv : &PL_sv_undef, result);
 }
 
+SV *
+les_new_done_future_take(pTHX_ SV *result)
+{
+    return les_future_api(aTHX)->new_done_one_take(aTHX_ result);
+}
+
 int
 les_future_is_ready(pTHX_ SV *future)
 {
@@ -44,25 +50,134 @@ les_future_done(pTHX_ SV *future, SV *result)
     les_future_api(aTHX)->done_one(aTHX_ future, result);
 }
 
+int
+les_future_done_if_pending(pTHX_ SV *future, SV *result)
+{
+    return les_future_api(aTHX)->done_one_if_pending(aTHX_
+        future, result);
+}
+
+int
+les_future_done_if_pending_take(pTHX_ SV *future, SV *result)
+{
+    return les_future_api(aTHX)->done_one_if_pending_take(aTHX_
+        future, result);
+}
+
 void
 les_future_fail(pTHX_ SV *future, SV *failure)
 {
     les_future_api(aTHX)->fail(aTHX_ future, failure);
 }
 
+int
+les_future_fail_if_pending(pTHX_ SV *future, SV *failure)
+{
+    return les_future_api(aTHX)->fail_if_pending(aTHX_
+        future, failure);
+}
+
 void
 les_discard_recv_state(les_xsstate_t *st)
 {
+    size_t index;
+
     if (!st)
         return;
     if (st->recv_queue) {
-        SvREFCNT_dec((SV *)st->recv_queue);
+        for (index = 0; index < st->recv_queue_capacity; index++) {
+            if (st->recv_queue[index])
+                SvREFCNT_dec(st->recv_queue[index]);
+        }
+        free(st->recv_queue);
         st->recv_queue = NULL;
     }
+    st->recv_queue_capacity = 0;
+    st->recv_queue_head = 0;
+    st->recv_queue_tail = 0;
+    st->recv_queue_count = 0;
     if (st->recv_future) {
         SvREFCNT_dec(st->recv_future);
         st->recv_future = NULL;
     }
+    st->recv_batch_mode = 0;
+    st->recv_batch_max = 0;
+}
+
+static void
+les_recv_queue_grow(pTHX_ les_xsstate_t *st)
+{
+    size_t capacity;
+    size_t index;
+    SV **next;
+
+    capacity = st->recv_queue_capacity ? st->recv_queue_capacity * 2 : 64;
+    if (capacity < st->recv_queue_capacity
+        || capacity > (size_t)-1 / sizeof(*next))
+        croak("Stream receive queue size overflow");
+
+    next = (SV **)calloc(capacity, sizeof(*next));
+    if (!next)
+        croak("calloc Stream receive queue failed");
+
+    for (index = 0; index < st->recv_queue_count; index++) {
+        size_t source = (st->recv_queue_head + index)
+            % st->recv_queue_capacity;
+        next[index] = st->recv_queue[source];
+    }
+
+    free(st->recv_queue);
+    st->recv_queue = next;
+    st->recv_queue_capacity = capacity;
+    st->recv_queue_head = 0;
+    st->recv_queue_tail = st->recv_queue_count;
+}
+
+void
+les_recv_queue_push(pTHX_ les_xsstate_t *st, SV *message)
+{
+    if (st->recv_queue_count == st->recv_queue_capacity)
+        les_recv_queue_grow(aTHX_ st);
+
+    st->recv_queue[st->recv_queue_tail] =
+        SvREFCNT_inc_simple_NN(message);
+    st->recv_queue_tail =
+        (st->recv_queue_tail + 1) % st->recv_queue_capacity;
+    st->recv_queue_count++;
+}
+
+SV *
+les_recv_queue_pop(les_xsstate_t *st)
+{
+    SV *message;
+
+    if (!st || st->recv_queue_count == 0)
+        return NULL;
+
+    message = st->recv_queue[st->recv_queue_head];
+    st->recv_queue[st->recv_queue_head] = NULL;
+    st->recv_queue_head =
+        (st->recv_queue_head + 1) % st->recv_queue_capacity;
+    st->recv_queue_count--;
+    if (st->recv_queue_count == 0) {
+        st->recv_queue_head = 0;
+        st->recv_queue_tail = 0;
+    }
+    return message;
+}
+
+SV *
+les_make_recv_batch(les_xsstate_t *st, UV maximum)
+{
+    AV *batch = newAV();
+    UV count = 0;
+
+    while (count < maximum && st->recv_queue_count) {
+        SV *message = les_recv_queue_pop(st);
+        av_push(batch, message);
+        count++;
+    }
+    return newRV_noinc((SV *)batch);
 }
 
 void
@@ -72,12 +187,16 @@ les_recv_eof(pTHX_ les_xsstate_t *st)
 
     if (!st || !st->recv_future)
         return;
+    les_flush_recv_future(aTHX_ st);
+    if (!st->recv_future)
+        return;
     future = st->recv_future;
     st->recv_future = NULL;
+    st->recv_batch_mode = 0;
+    st->recv_batch_max = 0;
     ENTER;
     SAVEFREESV(future);
-    if (!les_future_is_ready(aTHX_ future))
-        les_future_done(aTHX_ future, &PL_sv_undef);
+    les_future_done_if_pending(aTHX_ future, &PL_sv_undef);
     LEAVE;
 }
 
@@ -88,12 +207,16 @@ les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure)
 
     if (!st || !st->recv_future)
         return;
+    les_flush_recv_future(aTHX_ st);
+    if (!st->recv_future)
+        return;
     future = st->recv_future;
     st->recv_future = NULL;
+    st->recv_batch_mode = 0;
+    st->recv_batch_max = 0;
     ENTER;
     SAVEFREESV(future);
-    if (!les_future_is_ready(aTHX_ future))
-        les_future_fail(aTHX_ future, failure);
+    les_future_fail_if_pending(aTHX_ future, failure);
     LEAVE;
 }
 
@@ -140,9 +263,7 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
 
     st->frames_emitted++;
     if (!st->descriptor->message_cb && !st->descriptor->message_batch_cb) {
-        if (!st->recv_queue)
-            st->recv_queue = newAV();
-        av_push(st->recv_queue, SvREFCNT_inc_simple_NN(message));
+        les_recv_queue_push(aTHX_ st, message);
         return;
     }
     if (!st->descriptor->message_batch_size) {
@@ -177,21 +298,36 @@ les_flush_recv_future(pTHX_ les_xsstate_t *st)
     SV *future;
     SV *message;
 
-    if (!st || !st->recv_future || !st->recv_queue
-        || av_count(st->recv_queue) == 0)
+    if (!st || !st->recv_future || st->recv_queue_count == 0)
         return;
     future = st->recv_future;
     if (les_future_is_ready(aTHX_ future)) {
         SvREFCNT_dec(future);
         st->recv_future = NULL;
+        st->recv_batch_mode = 0;
+        st->recv_batch_max = 0;
         return;
     }
-    message = av_shift(st->recv_queue);
+    if (st->recv_batch_mode) {
+        SV *batch = les_make_recv_batch(st, st->recv_batch_max);
+        st->recv_future = NULL;
+        st->recv_batch_mode = 0;
+        st->recv_batch_max = 0;
+        ENTER;
+        SAVEFREESV(future);
+        if (!les_future_done_if_pending_take(aTHX_ future, batch))
+            SvREFCNT_dec(batch);
+        LEAVE;
+        return;
+    }
+    message = les_recv_queue_pop(st);
     st->recv_future = NULL;
+    st->recv_batch_mode = 0;
+    st->recv_batch_max = 0;
     ENTER;
     SAVEFREESV(future);
-    SAVEFREESV(message);
-    les_future_done(aTHX_ future, message);
+    if (!les_future_done_if_pending_take(aTHX_ future, message))
+        SvREFCNT_dec(message);
     LEAVE;
 }
 

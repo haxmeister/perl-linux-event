@@ -19,7 +19,8 @@ is($?, 0, 'Future receive benchmark exits successfully');
 my $result = eval { decode_json($output) };
 ok($result, 'Future receive benchmark emits JSON');
 is($result->{messages}, 200, 'benchmark records message count');
-for my $kind (qw(callback future)) {
+is($result->{batch_size}, 32, 'benchmark records batch size');
+for my $kind (qw(callback future batch)) {
     ok($result->{cases}{$kind}{seconds} > 0,
         "$kind benchmark duration is positive");
     ok($result->{cases}{$kind}{messages_per_second} > 0,
@@ -27,5 +28,7 @@ for my $kind (qw(callback future)) {
 }
 ok($result->{future_to_callback_rate} > 0,
     'benchmark reports a positive comparison ratio');
+ok($result->{batch_to_callback_rate} > 0,
+    'benchmark reports a positive batch comparison ratio');
 
 done_testing;

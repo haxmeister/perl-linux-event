@@ -699,6 +699,7 @@ are cached once:
 sub stream_options ($class) {
     return (
         read_size         => 32_768,
+        read_budget_bytes => 1 * 1024 * 1024,
         high_watermark    => 2 * 1024 * 1024,
         low_watermark     => 512 * 1024,
         max_pending_bytes => 8 * 1024 * 1024,
@@ -706,6 +707,10 @@ sub stream_options ($class) {
     );
 }
 ```
+
+`read_budget_bytes` limits the successful bytes consumed by one readiness
+turn so a continuously readable connection returns control to the reactor.
+The default is 1 MiB; zero selects an unlimited drain.
 
 Both batching options default to zero and are alternatives, not settings for
 the same subclass. Raw `read_batch_bytes => 256 * 1024` combines
@@ -715,6 +720,18 @@ EAGAIN. Framed `message_batch_size => 32` requires
 input to fill an array. Pause, close, and protocol transition take effect at
 the explicit batch boundary, so message-sensitive negotiation streams should
 keep ordinary `on_message`.
+
+Callback-free framed subclasses can instead await one decoded message with
+`recv`, or amortize Future and coroutine overhead across messages already
+available in one native drain:
+
+```perl
+my $messages = await $stream->recv_batch(32);
+```
+
+`recv_batch` returns up to the requested maximum without waiting for future
+network input to fill the array. It preserves wire order and shares `recv`'s
+one-active-reader rule.
 
 Watermarks are cooperative: a false `write()` return still means the bytes
 were accepted and the producer should wait for `on_drain`. The same return,

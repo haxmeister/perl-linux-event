@@ -229,6 +229,16 @@ lef_set_done(pTHX_ lef_future_t *future, I32 first, I32 last, SV **stack)
 }
 
 static void
+lef_set_done_take(pTHX_ lef_future_t *future, SV *result)
+{
+    lef_require_pending(future);
+    future->result = result;
+    future->state = LEF_DONE;
+    lef_discard_cancel_state(future);
+    lef_notify_ready(aTHX_ future);
+}
+
+static void
 lef_set_failed(pTHX_ lef_future_t *future, SV *failure)
 {
     lef_require_pending(future);
@@ -241,8 +251,8 @@ lef_set_failed(pTHX_ lef_future_t *future, SV *failure)
 static SV *
 lef_api_new_pending(pTHX_ SV *loop_sv)
 {
-    PERL_UNUSED_CONTEXT;
-    return lef_new("Linux::Event::Future", loop_sv);
+    return lef_new_stash(gv_stashpv("Linux::Event::Future", GV_ADD),
+        loop_sv && SvOK(loop_sv) ? loop_sv : &PL_sv_undef);
 }
 
 static int
@@ -255,11 +265,24 @@ lef_api_is_ready(pTHX_ SV *future_obj)
 static SV *
 lef_api_new_done_one(pTHX_ SV *loop_sv, SV *result)
 {
-    SV *future_obj = lef_new("Linux::Event::Future", loop_sv);
+    SV *future_obj = lef_new_stash(
+        gv_stashpv("Linux::Event::Future", GV_ADD),
+        loop_sv && SvOK(loop_sv) ? loop_sv : &PL_sv_undef);
     lef_future_t *future = lef_from_sv(future_obj);
 
     future->result = SvREFCNT_inc_simple_NN(result);
     future->state = LEF_DONE;
+    return future_obj;
+}
+
+static SV *
+lef_api_new_done_one_take(pTHX_ SV *result)
+{
+    SV *future_obj = lef_new_stash(
+        gv_stashpv("Linux::Event::Future", GV_ADD), &PL_sv_undef);
+    lef_future_t *future = lef_from_sv(future_obj);
+
+    lef_set_done_take(aTHX_ future, result);
     return future_obj;
 }
 
@@ -272,10 +295,45 @@ lef_api_done_one(pTHX_ SV *future_obj, SV *result)
     lef_set_done(aTHX_ lef_from_sv(future_obj), 0, 0, values);
 }
 
+static int
+lef_api_done_one_if_pending(pTHX_ SV *future_obj, SV *result)
+{
+    lef_future_t *future = lef_from_sv(future_obj);
+    SV *values[1];
+
+    if (future->state != LEF_PENDING)
+        return 0;
+    values[0] = result;
+    lef_set_done(aTHX_ future, 0, 0, values);
+    return 1;
+}
+
+static int
+lef_api_done_one_if_pending_take(pTHX_ SV *future_obj, SV *result)
+{
+    lef_future_t *future = lef_from_sv(future_obj);
+
+    if (future->state != LEF_PENDING)
+        return 0;
+    lef_set_done_take(aTHX_ future, result);
+    return 1;
+}
+
 static void
 lef_api_fail(pTHX_ SV *future_obj, SV *failure)
 {
     lef_set_failed(aTHX_ lef_from_sv(future_obj), failure);
+}
+
+static int
+lef_api_fail_if_pending(pTHX_ SV *future_obj, SV *failure)
+{
+    lef_future_t *future = lef_from_sv(future_obj);
+
+    if (future->state != LEF_PENDING)
+        return 0;
+    lef_set_failed(aTHX_ future, failure);
+    return 1;
 }
 
 static const lef_native_api_t lef_native_api = {
@@ -283,9 +341,13 @@ static const lef_native_api_t lef_native_api = {
     sizeof(lef_native_api_t),
     lef_api_new_pending,
     lef_api_new_done_one,
+    lef_api_new_done_one_take,
     lef_api_is_ready,
     lef_api_done_one,
-    lef_api_fail
+    lef_api_done_one_if_pending,
+    lef_api_done_one_if_pending_take,
+    lef_api_fail,
+    lef_api_fail_if_pending
 };
 
 MODULE = Linux::Event::Future    PACKAGE = Linux::Event::Future

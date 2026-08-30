@@ -86,19 +86,21 @@ checking that explicit callback batching does not introduce a new one.
 ## Future receive microbenchmark
 
 `run-future-recv-microbench.pl` holds the AF_UNIX transport, delimiter framer,
-payload, and native read path constant while comparing `on_message` delivery
-with a serial `await $stream->recv` consumer:
+payload, and native read path constant while comparing `on_message` delivery,
+a serial `await $stream->recv` consumer, and batched
+`await $stream->recv_batch` delivery:
 
 ```bash
 perl -Mblib bench/run-future-recv-microbench.pl \
-  --messages=20000 --payload-size=32 --warmup=1 --repeat=5
+  --messages=20000 --payload-size=32 --batch-size=32 \
+  --warmup=1 --repeat=5
 ```
 
-The reported Future/callback rate exposes the cost of the first Future receive
-contract. It is diagnostic rather than a release threshold: later native
-completion-queue and batching work may intentionally change that ratio.
-Warmup runs are excluded, and callback/Future samples alternate order to
-reduce code-cache and CPU-frequency ordering bias.
+The reported Future/callback and batch/callback rates separate the cost of one
+Future per message from one Future per bounded native batch. They are
+diagnostics rather than release thresholds. Warmup runs are excluded, and the
+three delivery modes rotate order to reduce code-cache and CPU-frequency
+ordering bias.
 
 ## Timer microbenchmark
 

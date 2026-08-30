@@ -95,27 +95,34 @@
 
 #include "stream_internal.h"
 
+static void
+les_prepare_recv_request(pTHX_ les_xsstate_t *st, const char *operation)
+{
+    if (st->descriptor->read_mode == LES_READ_DELIVER)
+        croak("%s(): requires a framed Stream subclass", operation);
+    if (st->descriptor->message_cb || st->descriptor->message_batch_cb)
+        croak("%s(): cannot be combined with message callbacks", operation);
+    if (st->recv_future && les_future_is_ready(aTHX_ st->recv_future)) {
+        SvREFCNT_dec(st->recv_future);
+        st->recv_future = NULL;
+        st->recv_batch_mode = 0;
+        st->recv_batch_max = 0;
+    }
+    if (st->recv_future)
+        croak("%s(): another receive is already pending", operation);
+}
+
 static SV *
 les_recv_request(pTHX_ les_xsstate_t *st, SV *loop_obj)
 {
     SV *future;
     SV *message;
 
-    if (st->descriptor->read_mode == LES_READ_DELIVER)
-        croak("recv(): requires a framed Stream subclass");
-    if (st->descriptor->message_cb || st->descriptor->message_batch_cb)
-        croak("recv(): cannot be combined with message callbacks");
-    if (st->recv_future && les_future_is_ready(aTHX_ st->recv_future)) {
-        SvREFCNT_dec(st->recv_future);
-        st->recv_future = NULL;
-    }
-    if (st->recv_future)
-        croak("recv(): another receive is already pending");
+    les_prepare_recv_request(aTHX_ st, "recv");
 
-    if (st->recv_queue && av_count(st->recv_queue) > 0) {
-        message = av_shift(st->recv_queue);
-        future = les_new_done_future(aTHX_ loop_obj, message);
-        SvREFCNT_dec(message);
+    if (st->recv_queue_count) {
+        message = les_recv_queue_pop(st);
+        future = les_new_done_future_take(aTHX_ message);
     } else if (st->read_eof) {
         future = les_new_done_future(aTHX_ loop_obj, &PL_sv_undef);
     } else if (st->closed) {
@@ -125,6 +132,33 @@ les_recv_request(pTHX_ les_xsstate_t *st, SV *loop_obj)
     } else {
         future = les_new_future(aTHX_ loop_obj);
         st->recv_future = SvREFCNT_inc_simple_NN(future);
+    }
+    return future;
+}
+
+static SV *
+les_recv_batch_request(pTHX_ les_xsstate_t *st, SV *loop_obj, UV maximum)
+{
+    SV *future;
+
+    if (maximum == 0)
+        croak("recv_batch(): maximum must be greater than zero");
+    les_prepare_recv_request(aTHX_ st, "recv_batch");
+
+    if (st->recv_queue_count) {
+        SV *batch = les_make_recv_batch(st, maximum);
+        future = les_new_done_future_take(aTHX_ batch);
+    } else if (st->read_eof) {
+        future = les_new_done_future(aTHX_ loop_obj, &PL_sv_undef);
+    } else if (st->closed) {
+        SV *failure = sv_2mortal(newSVpvs("Stream is closed"));
+        future = les_new_future(aTHX_ loop_obj);
+        les_future_fail(aTHX_ future, failure);
+    } else {
+        future = les_new_future(aTHX_ loop_obj);
+        st->recv_future = SvREFCNT_inc_simple_NN(future);
+        st->recv_batch_mode = 1;
+        st->recv_batch_max = maximum;
     }
     return future;
 }
@@ -165,13 +199,51 @@ _recv_fast(stream_obj)
   OUTPUT:
     RETVAL
 
+SV *
+_recv_batch_fast(stream_obj, maximum)
+    SV *stream_obj
+    UV maximum
+  PREINIT:
+    HV *stream_hv;
+    SV **state_slot;
+    SV **loop_slot;
+    dSP;
+  CODE:
+    if (!SvROK(stream_obj) || SvTYPE(SvRV(stream_obj)) != SVt_PVHV)
+        croak("recv_batch(): invocant must be a Stream object");
+    if (maximum == 0)
+        croak("recv_batch(): maximum must be greater than zero");
+    stream_hv = (HV *)SvRV(stream_obj);
+    state_slot = hv_fetch(stream_hv, "xs_state", 8, 0);
+    if (state_slot && *state_slot && SvOK(*state_slot)) {
+        loop_slot = hv_fetch(stream_hv, "loop", 4, 0);
+        RETVAL = les_recv_batch_request(aTHX_ les_state_from_sv(*state_slot),
+            loop_slot && *loop_slot ? *loop_slot : &PL_sv_undef, maximum);
+    } else {
+        ENTER;
+        SAVETMPS;
+        PUSHMARK(SP);
+        PUSHs(stream_obj);
+        PUSHs(sv_2mortal(newSVuv(maximum)));
+        PUTBACK;
+        call_method("_recv_batch_slow", G_SCALAR);
+        SPAGAIN;
+        RETVAL = SvREFCNT_inc(POPs);
+        PUTBACK;
+        FREETMPS;
+        LEAVE;
+    }
+  OUTPUT:
+    RETVAL
+
 MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, message_batch_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix)
+new(CLASS, read_size, read_budget_bytes, read_batch_bytes, message_batch_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, message_batch_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix)
     const char *CLASS
     UV read_size
+    UV read_budget_bytes
     UV read_batch_bytes
     UV message_batch_size
     UV high_watermark
@@ -202,6 +274,8 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     const char *delimiter = NULL;
   CODE:
     if (read_size == 0) croak("read_size must be > 0");
+    if (read_budget_bytes > (UV)(size_t)-1)
+        croak("read_budget_bytes exceeds native size_t");
     if (read_batch_bytes > (UV)(size_t)-1)
         croak("read_batch_bytes exceeds native size_t");
     if (low_watermark > high_watermark)
@@ -242,6 +316,7 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     if (!descriptor) croak("calloc XSDescriptor failed");
 
     descriptor->read_size = (size_t)read_size;
+    descriptor->read_budget_bytes = read_budget_bytes;
     descriptor->read_batch_bytes = read_batch_bytes;
     descriptor->message_batch_size = message_batch_size;
     descriptor->high_watermark = high_watermark;
@@ -472,7 +547,7 @@ _resume(state_obj)
             ENTER;
             SAVEINT(st->input_dispatch_depth);
             st->input_dispatch_depth++;
-            les_process_existing_input(aTHX_ st, 1);
+            les_process_existing_input(aTHX_ st, 1, 1);
             LEAVE;
         }
     }
@@ -535,7 +610,7 @@ _transition_ready(state_obj)
         ENTER;
         SAVEINT(st->input_dispatch_depth);
         st->input_dispatch_depth++;
-        les_process_existing_input(aTHX_ st, 1);
+        les_process_existing_input(aTHX_ st, 1, 1);
         LEAVE;
     }
     LEAVE;
@@ -546,6 +621,17 @@ _recv(state_obj, loop_obj)
     SV *loop_obj
   CODE:
     RETVAL = les_recv_request(aTHX_ les_state_from_sv(state_obj), loop_obj);
+  OUTPUT:
+    RETVAL
+
+SV *
+_recv_batch(state_obj, loop_obj, maximum)
+    SV *state_obj
+    SV *loop_obj
+    UV maximum
+  CODE:
+    RETVAL = les_recv_batch_request(aTHX_ les_state_from_sv(state_obj),
+        loop_obj, maximum);
   OUTPUT:
     RETVAL
 
@@ -648,6 +734,8 @@ stats(state_obj)
     hv_stores(hv, "delivery_calls", newSVuv(st->delivery_calls));
     hv_stores(hv, "read_batch_bytes",
         newSVuv(st->descriptor->read_batch_bytes));
+    hv_stores(hv, "read_budget_bytes",
+        newSVuv(st->descriptor->read_budget_bytes));
     hv_stores(hv, "read_batch_flushes", newSVuv(st->read_batch_flushes));
     hv_stores(hv, "read_batch_peak_bytes",
         newSVuv(st->read_batch_peak_bytes));

@@ -41,6 +41,7 @@ typedef struct les_write_seg_s {
 
 typedef struct les_descriptor_s {
     size_t read_size;
+    UV read_budget_bytes;
     UV read_batch_bytes;
     UV message_batch_size;
     int read_mode;
@@ -104,10 +105,16 @@ typedef struct les_xsstate_s {
     UV message_batch_bytes;
 
     /* Future-first framed delivery. Callback descriptors leave these empty.
-     * A callback-free framed descriptor permits one pending recv Future and
-     * retains already-decoded messages in native storage. */
-    AV *recv_queue;
+     * A callback-free framed descriptor permits one pending receive Future and
+     * retains already-decoded messages in a native ring queue. */
+    SV **recv_queue;
+    size_t recv_queue_capacity;
+    size_t recv_queue_head;
+    size_t recv_queue_tail;
+    size_t recv_queue_count;
     SV *recv_future;
+    int recv_batch_mode;
+    UV recv_batch_max;
 
     /* Non-zero while an input callback/parser stack is active. A descriptor
      * transition swaps configuration immediately, but buffered bytes are not
@@ -212,12 +219,19 @@ void les_discard_message_batch(les_xsstate_t *st);
 void les_flush_message_batch(pTHX_ les_xsstate_t *st);
 void les_emit_message(pTHX_ les_xsstate_t *st, SV *message);
 void les_flush_recv_future(pTHX_ les_xsstate_t *st);
+void les_recv_queue_push(pTHX_ les_xsstate_t *st, SV *message);
+SV *les_recv_queue_pop(les_xsstate_t *st);
+SV *les_make_recv_batch(les_xsstate_t *st, UV maximum);
 void les_flush_raw_batch(pTHX_ les_xsstate_t *st);
 SV *les_new_future(pTHX_ SV *loop_sv);
 SV *les_new_done_future(pTHX_ SV *loop_sv, SV *result);
+SV *les_new_done_future_take(pTHX_ SV *result);
 int les_future_is_ready(pTHX_ SV *future);
 void les_future_done(pTHX_ SV *future, SV *result);
+int les_future_done_if_pending(pTHX_ SV *future, SV *result);
+int les_future_done_if_pending_take(pTHX_ SV *future, SV *result);
 void les_future_fail(pTHX_ SV *future, SV *failure);
+int les_future_fail_if_pending(pTHX_ SV *future, SV *failure);
 void les_discard_recv_state(les_xsstate_t *st);
 void les_recv_eof(pTHX_ les_xsstate_t *st);
 void les_recv_fail(pTHX_ les_xsstate_t *st, SV *failure);
@@ -242,7 +256,7 @@ void les_process_varint(pTHX_ les_xsstate_t *st);
 void les_process_decimal_length(pTHX_ les_xsstate_t *st);
 void les_process_buffered(pTHX_ les_xsstate_t *st);
 void les_process_existing_input(
-    pTHX_ les_xsstate_t *st, int flush_batch);
+    pTHX_ les_xsstate_t *st, int flush_batch, int flush_future);
 
 void les_transition_descriptor(
     pTHX_ les_xsstate_t *st, SV *descriptor_obj, SV *input_sv);

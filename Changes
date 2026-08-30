@@ -12,6 +12,16 @@ Unreleased
       hot path, and parse-batch wakeup. Decoded messages from one native read
       are queued before one suspended coroutine is resumed, allowing the
       remaining messages to use the cheaper already-ready await path.
+    - Add recv_batch(maximum) for framed Future consumers. Native ring-queue
+      storage, ownership-transfer completion, cancellation-safe pending
+      delivery, and one Future/coroutine resumption per bounded message batch
+      substantially reduce high-rate asynchronous delivery overhead.
+    - Bound one native Stream read-ready drain to 1 MiB by default, flush
+      pending Future receives at the scheduling boundary, and expose
+      read_budget_bytes with zero restoring unlimited drain behavior.
+    - Extend the Future receive microbenchmark with recv_batch delivery and a
+      configurable batch size while retaining callback and scalar recv
+      controls.
     - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
       a private native drain helper while preserving read_size,
       max_reads_per_tick, callback chunking, EOF ordering, and error behavior.

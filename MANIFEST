@@ -230,6 +230,7 @@ t/stream-57-callback-batching-benchmark-smoke.t
 t/stream-58-callback-batching-fairness-smoke.t
 t/stream-59-future-recv.t
 t/stream-60-future-recv-benchmark-smoke.t
+t/stream-61-future-recv-batch.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t

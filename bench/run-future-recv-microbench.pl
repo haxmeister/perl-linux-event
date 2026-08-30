@@ -47,11 +47,24 @@ async sub consume_messages ($stream, $target) {
     return $count;
 }
 
+async sub consume_batches ($stream, $target, $maximum) {
+    my $count = 0;
+    while ($count < $target) {
+        my $batch = await $stream->recv_batch($maximum);
+        die "unexpected EOF after $count messages" if !defined $batch;
+        $count += @$batch;
+        die "batch consumer received too many messages"
+            if $count > $target;
+    }
+    return $count;
+}
+
 my $messages = 20_000;
 my $payload_size = 32;
 my $repeat = 5;
 my $warmup = 1;
 my $mode = 'all';
+my $batch_size = 32;
 my $json = 0;
 
 GetOptions(
@@ -60,6 +73,7 @@ GetOptions(
     'repeat=i'       => \$repeat,
     'warmup=i'       => \$warmup,
     'mode=s'         => \$mode,
+    'batch-size=i'   => \$batch_size,
     'json!'          => \$json,
 ) or die "invalid options\n";
 
@@ -67,8 +81,10 @@ die "messages must be positive\n" if $messages < 1;
 die "payload-size must be non-negative\n" if $payload_size < 0;
 die "repeat must be positive\n" if $repeat < 1;
 die "warmup must be non-negative\n" if $warmup < 0;
-die "mode must be callback, future, or all\n"
-    if $mode ne 'callback' && $mode ne 'future' && $mode ne 'all';
+die "batch-size must be positive\n" if $batch_size < 1;
+die "mode must be callback, future, batch, or all\n"
+    if $mode ne 'callback' && $mode ne 'future'
+    && $mode ne 'batch' && $mode ne 'all';
 
 my $payload = 'x' x $payload_size;
 my $wire = ($payload . "\n") x $messages;
@@ -96,12 +112,15 @@ sub run_once ($kind) {
         fh   => $producer_fh,
     );
     my $task = $kind eq 'future'
-        ? consume_messages($receiver, $messages) : undef;
+        ? consume_messages($receiver, $messages)
+        : $kind eq 'batch'
+            ? consume_batches($receiver, $messages, $batch_size)
+            : undef;
 
     my $started = clock_gettime(CLOCK_MONOTONIC);
     $producer->write($wire);
     my $count;
-    if ($kind eq 'future') {
+    if ($kind eq 'future' || $kind eq 'batch') {
         $count = $loop->run($task);
     } else {
         $loop->run;
@@ -126,7 +145,7 @@ sub summarize ($seconds) {
     };
 }
 
-my @kind = $mode eq 'all' ? qw(callback future) : ($mode);
+my @kind = $mode eq 'all' ? qw(callback future batch) : ($mode);
 if ($warmup) {
     for (1 .. $warmup) {
         run_once($_) for @kind;
@@ -141,6 +160,7 @@ my %case = map { $_ => summarize($seconds{$_}) } @kind;
 my $result = {
     messages     => $messages,
     payload_size => $payload_size,
+    batch_size   => $batch_size,
     repeat       => $repeat,
     warmup       => $warmup,
     cases        => \%case,
@@ -150,13 +170,19 @@ if (exists $case{callback} && exists $case{future}) {
         $case{future}{messages_per_second}
         / $case{callback}{messages_per_second};
 }
+if (exists $case{callback} && exists $case{batch}) {
+    $result->{batch_to_callback_rate} =
+        $case{batch}{messages_per_second}
+        / $case{callback}{messages_per_second};
+}
 
 if ($json) {
     say encode_json($result);
     exit 0;
 }
 
-say "messages=$messages payload_size=$payload_size repeat=$repeat warmup=$warmup";
+say "messages=$messages payload_size=$payload_size batch_size=$batch_size "
+    . "repeat=$repeat warmup=$warmup";
 for my $kind (@kind) {
     printf "%s %.0f messages/s (%.6f s)\n",
         $kind,
@@ -165,3 +191,5 @@ for my $kind (@kind) {
 }
 printf "future/callback rate %.3f\n", $result->{future_to_callback_rate}
     if exists $result->{future_to_callback_rate};
+printf "batch/callback rate %.3f\n", $result->{batch_to_callback_rate}
+    if exists $result->{batch_to_callback_rate};
