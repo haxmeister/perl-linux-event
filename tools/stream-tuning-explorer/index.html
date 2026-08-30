@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Linux::Event Stream Tuning Explorer</title>
+<link rel="stylesheet" href="explorer.css">
+</head>
+<body>
+<header>
+  <div>
+    <h1>Linux::Event Stream Tuning Explorer</h1>
+    <p>Visualize inbound Stream throughput across message sizes and tuning combinations.</p>
+  </div>
+  <div class="header-actions">
+    <button id="reset">Reset defaults</button>
+    <button id="copy" class="primary">Copy stream_options</button>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="card chart-card">
+      <div class="chart-head">
+        <div>
+          <h2 id="chart-title">Messages/sec vs message size</h2>
+          <div class="sub" id="chart-subtitle">Logarithmic message-size axis, 16 B to 200 KB.</div>
+        </div>
+        <div class="status-row">
+          <span id="data-badge" class="badge preview">HEURISTIC PREVIEW</span>
+          <select id="y-scale" aria-label="Y-axis scale">
+            <option value="linear">Linear Y</option>
+            <option value="log">Log Y</option>
+          </select>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+        <div id="tooltip" class="tooltip"></div>
+      </div>
+      <div class="legend">
+        <span><i class="swatch selected"></i>Selected tuning</span>
+        <span><i class="swatch default"></i>Stream defaults</span>
+        <span><i class="swatch best"></i>Best known envelope</span>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="card info-card"><div class="label">Selected source</div><div id="source-card" class="value">Preview</div></div>
+      <div class="card info-card"><div class="label">Peak throughput</div><div id="peak-card" class="value">-</div></div>
+      <div class="card info-card"><div class="label">Peak message size</div><div id="peak-size-card" class="value">-</div></div>
+      <div class="card info-card"><div class="label">Measured series loaded</div><div id="series-card" class="value">0</div></div>
+    </div>
+
+    <div class="note" id="truth-note">
+      Preview mode is a deliberately simple heuristic so the UI is usable before data is loaded. It is not a Linux::Event benchmark result. Load JSON from the sweep benchmark for measured or measured-interpolated curves.
+    </div>
+  </section>
+
+  <aside>
+    <div class="card controls">
+      <h2>Inbound Stream tuning</h2>
+
+      <div class="select-grid">
+        <label>Mode
+          <select id="mode">
+            <option value="framed">Framed</option>
+            <option value="raw">Raw</option>
+          </select>
+        </label>
+        <label>Transport
+          <select id="transport">
+            <option value="unix">UNIX socket</option>
+            <option value="tcp">TCP loopback</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="control">
+        <label><span>read_size</span><span class="help">native syscall read size</span></label>
+        <div class="control-row">
+          <input id="read-size" type="range" min="0" step="1">
+          <output id="read-size-out" class="output"></output>
+        </div>
+      </div>
+
+      <div class="control">
+        <label><span>read_budget_bytes</span><span class="help">0 = drain to EAGAIN</span></label>
+        <div class="control-row">
+          <input id="read-budget" type="range" min="0" step="1">
+          <output id="read-budget-out" class="output"></output>
+        </div>
+      </div>
+
+      <div class="control">
+        <label><span id="batch-label">message_batch_size</span><span id="batch-help" class="help">0 = on_message</span></label>
+        <div class="control-row">
+          <input id="batch" type="range" min="0" step="1">
+          <output id="batch-out" class="output"></output>
+        </div>
+      </div>
+
+      <div class="control">
+        <label><span>max_buffer</span><span class="help">framed input safety limit</span></label>
+        <div class="control-row">
+          <input id="max-buffer" type="range" min="0" step="1">
+          <output id="max-buffer-out" class="output"></output>
+        </div>
+      </div>
+
+      <hr>
+      <div class="data-box">
+        <strong>Benchmark data</strong>
+        <small id="data-summary">No benchmark JSON loaded.</small>
+        <div class="data-actions">
+          <button id="load-data">Load sweep JSON</button>
+          <button id="clear-data">Clear data</button>
+          <input id="file-input" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+
+      <hr>
+      <strong>Current class policy</strong>
+      <pre id="snippet"></pre>
+    </div>
+  </aside>
+</main>
+
+<script src="explorer.js"></script>
+</body>
+</html>

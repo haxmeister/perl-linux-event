@@ -35,6 +35,7 @@ bench/run-signal-microbench.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/run-stream-transition-bench.pl
+bench/run-stream-tuning-sweep.pl
 bench/run-stream-watcher-state-bench.pl
 bench/run-timer-microbench.pl
 bench/run-tls-microbench.pl
@@ -225,6 +226,7 @@ t/stream-56-message-batch-framers.t
 t/stream-57-callback-batching-benchmark-smoke.t
 t/stream-58-callback-batching-fairness-smoke.t
 t/stream-59-native-consumer-abi.t
+t/stream-60-tuning-explorer.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
@@ -240,6 +242,10 @@ t/wakeup-10-fork.t
 t/wakeup-11-thread.t
 t/wakeup-12-lifecycle.t
 t/wakeup-13-benchmark-smoke.t
+tools/stream-tuning-explorer/explorer.css
+tools/stream-tuning-explorer/explorer.js
+tools/stream-tuning-explorer/index.html
+tools/stream-tuning-explorer/README.md
 xsconnection/Connection.xs
 xsconnection/Makefile.PL
 xsdatagram/Datagram.xs
