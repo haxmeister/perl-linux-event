@@ -16,34 +16,58 @@ use Linux::Event::Future;
 
     sub new ($class) {
         return bless {
-            ready    => 0,
-            result   => undef,
+            state    => 'pending',
+            results  => [],
+            failure  => undef,
             callback => undef,
         }, $class;
     }
 
-    sub complete ($self, $result) {
-        die "direct awaitable completed twice" if $self->{ready};
-        $self->{result} = $result;
-        $self->{ready} = 1;
+    sub _notify ($self) {
         if (my $callback = delete $self->{callback}) {
             $callback->();
         }
         return;
     }
 
-    sub AWAIT_IS_READY ($self) { !!$self->{ready} }
+    sub complete ($self, @results) {
+        die "direct awaitable completed twice" if $self->{state} ne 'pending';
+        $self->{results} = [@results];
+        $self->{state} = 'done';
+        $self->_notify;
+        return;
+    }
+
+    sub AWAIT_CLONE ($self) {
+        return ref($self)->new;
+    }
+
+    sub AWAIT_DONE ($self, @results) {
+        $self->complete(@results);
+        return;
+    }
+
+    sub AWAIT_FAIL ($self, $failure) {
+        die "direct awaitable completed twice" if $self->{state} ne 'pending';
+        $self->{failure} = $failure;
+        $self->{state} = 'failed';
+        $self->_notify;
+        return;
+    }
+
+    sub AWAIT_IS_READY ($self) { $self->{state} ne 'pending' }
     sub AWAIT_IS_CANCELLED ($self) { 0 }
 
     sub AWAIT_GET ($self) {
-        die "direct awaitable is not ready" if !$self->{ready};
-        return $self->{result};
+        die "direct awaitable is not ready" if $self->{state} eq 'pending';
+        die $self->{failure} if $self->{state} eq 'failed';
+        return wantarray ? $self->{results}->@* : $self->{results}[0];
     }
 
     sub AWAIT_ON_READY ($self, $callback) {
         die "direct awaitable callback must be a coderef"
             if ref($callback) ne 'CODE';
-        if ($self->{ready}) {
+        if ($self->{state} ne 'pending') {
             $callback->();
         } else {
             die "direct awaitable already has a waiter"
@@ -71,7 +95,7 @@ die "iterations must be positive\n" if $iterations < 1;
 die "repeat must be positive\n" if $repeat < 1;
 die "warmup must be non-negative\n" if $warmup < 0;
 
-async sub consume_future ($loop, $reader, $iterations, $pending_ref) {
+async sub consume_future ($loop, $iterations, $pending_ref) {
     my $count = 0;
     while ($count < $iterations) {
         my $future = Linux::Event::Future->new($loop);
@@ -83,7 +107,7 @@ async sub consume_future ($loop, $reader, $iterations, $pending_ref) {
     return $count;
 }
 
-async sub consume_direct ($reader, $iterations, $pending_ref) {
+async sub consume_direct ($iterations, $pending_ref) {
     my $count = 0;
     while ($count < $iterations) {
         my $awaitable = LE::Experiment::DirectAwaitable->new;
@@ -131,11 +155,21 @@ sub run_once ($kind) {
     }
 
     my $task = $kind eq 'future'
-        ? consume_future($loop, $reader, $iterations, \$pending)
-        : consume_direct($reader, $iterations, \$pending);
+        ? consume_future($loop, $iterations, \$pending)
+        : consume_direct($iterations, \$pending);
+
+    my $done = Linux::Event::Future->new($loop);
+    $task->AWAIT_ON_READY(sub {
+        my $count = eval { $task->AWAIT_GET };
+        if ($@) {
+            $done->fail($@);
+        } else {
+            $done->done($count);
+        }
+    });
 
     my $started = clock_gettime(CLOCK_MONOTONIC);
-    my $count = $loop->run($task);
+    my $count = $loop->run($done);
     my $elapsed = clock_gettime(CLOCK_MONOTONIC) - $started;
 
     die "$kind completed $count of $iterations iterations\n"
