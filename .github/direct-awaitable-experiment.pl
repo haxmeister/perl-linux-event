@@ -6,80 +6,13 @@ use warnings;
 use Getopt::Long qw(GetOptions);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
+use XSLoader;
 
 use Linux::Event;
 use Linux::Event::Loop;
 use Linux::Event::Future;
 
-{
-    package LE::Experiment::DirectAwaitable;
-
-    sub new ($class) {
-        return bless {
-            state    => 'pending',
-            results  => [],
-            failure  => undef,
-            callback => undef,
-        }, $class;
-    }
-
-    sub _notify ($self) {
-        if (my $callback = delete $self->{callback}) {
-            $callback->();
-        }
-        return;
-    }
-
-    sub complete ($self, @results) {
-        die "direct awaitable completed twice" if $self->{state} ne 'pending';
-        $self->{results} = [@results];
-        $self->{state} = 'done';
-        $self->_notify;
-        return;
-    }
-
-    sub AWAIT_CLONE ($self) {
-        return ref($self)->new;
-    }
-
-    sub AWAIT_DONE ($self, @results) {
-        $self->complete(@results);
-        return;
-    }
-
-    sub AWAIT_FAIL ($self, $failure) {
-        die "direct awaitable completed twice" if $self->{state} ne 'pending';
-        $self->{failure} = $failure;
-        $self->{state} = 'failed';
-        $self->_notify;
-        return;
-    }
-
-    sub AWAIT_IS_READY ($self) { $self->{state} ne 'pending' }
-    sub AWAIT_IS_CANCELLED ($self) { 0 }
-
-    sub AWAIT_GET ($self) {
-        die "direct awaitable is not ready" if $self->{state} eq 'pending';
-        die $self->{failure} if $self->{state} eq 'failed';
-        return wantarray ? $self->{results}->@* : $self->{results}[0];
-    }
-
-    sub AWAIT_ON_READY ($self, $callback) {
-        die "direct awaitable callback must be a coderef"
-            if ref($callback) ne 'CODE';
-        if ($self->{state} ne 'pending') {
-            $callback->();
-        } else {
-            die "direct awaitable already has a waiter"
-                if $self->{callback};
-            $self->{callback} = $callback;
-        }
-        return;
-    }
-
-    sub AWAIT_ON_CANCEL ($self, $callback) { return }
-    sub AWAIT_CHAIN_CANCEL ($self, $target) { return }
-}
+XSLoader::load('Linux::Event::DirectAwaitable', $Linux::Event::VERSION);
 
 my $iterations = 50_000;
 my $repeat = 7;
@@ -110,7 +43,7 @@ async sub consume_future ($loop, $iterations, $pending_ref) {
 async sub consume_direct ($iterations, $pending_ref) {
     my $count = 0;
     while ($count < $iterations) {
-        my $awaitable = LE::Experiment::DirectAwaitable->new;
+        my $awaitable = Linux::Event::DirectAwaitable->new;
         $$pending_ref = $awaitable;
         my $byte = await $awaitable;
         die "unexpected direct byte" if !defined($byte) || length($byte) != 1;
@@ -203,10 +136,10 @@ my $future_rate = $iterations / $future_seconds;
 my $direct_rate = $iterations / $direct_seconds;
 my $ratio = $direct_rate / $future_rate;
 
-say "direct-awaitable experiment";
+say "direct-awaitable XS experiment";
 say "iterations=$iterations repeat=$repeat warmup=$warmup";
 printf "future %.0f resumes/s (%.6f s)\n", $future_rate, $future_seconds;
-printf "direct %.0f resumes/s (%.6f s)\n", $direct_rate, $direct_seconds;
-printf "direct/future %.3fx\n", $ratio;
+printf "direct-xs %.0f resumes/s (%.6f s)\n", $direct_rate, $direct_seconds;
+printf "direct-xs/future %.3fx\n", $ratio;
 say "future samples: " . join(' ', map { sprintf '%.6f', $_ } $samples{future}->@*);
-say "direct samples: " . join(' ', map { sprintf '%.6f', $_ } $samples{direct}->@*);
+say "direct-xs samples: " . join(' ', map { sprintf '%.6f', $_ } $samples{direct}->@*);
