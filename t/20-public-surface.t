@@ -28,6 +28,7 @@ for my $required (
     'docs/PROCESS-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
+    'docs/FUTURE-FIRST-CONTRACT.md',
     'docs/INTROSPECTION.md',
     'bench/README.md',
     'bench/run-connect-microbench.pl',
@@ -48,6 +49,7 @@ for my $required (
     'bench/run-stream-transition-bench.pl',
     'bench/run-stream-watcher-state-bench.pl',
     'bench/run-framing-microbench.pl',
+    'bench/run-future-recv-microbench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
     'bench/run-timer-microbench.pl',
@@ -63,6 +65,7 @@ for my $required (
     'lib/Linux/Event/Framer/Netstring.pm',
     'lib/Linux/Event/Framer/U32BE.pm',
     'lib/Linux/Event/Framer/Varint.pm',
+    'lib/Linux/Event/Future.pm',
     'lib/Linux/Event/TLS.pm',
     'lib/Linux/Event/Loop.pm',
     'lib/Linux/Event/Loop/Introspection.pm',
@@ -82,6 +85,8 @@ for my $required (
     'xstls/check_openssl.c',
     'xsconnection/Makefile.PL',
     'xsconnection/Connection.xs',
+    'xsfuture/Makefile.PL',
+    'xsfuture/Future.xs',
     'xsresolver/Makefile.PL',
     'xsresolver/Resolver.xs',
     'xssignal/Makefile.PL',
@@ -123,6 +128,7 @@ for my $live (
     'docs/PROCESS-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
+    'docs/FUTURE-FIRST-CONTRACT.md',
     'docs/INTROSPECTION.md',
     'bench/README.md',
     'bench/run-connect-microbench.pl',
@@ -140,6 +146,7 @@ for my $live (
     'bench/run-stream-transition-bench.pl',
     'bench/run-stream-watcher-state-bench.pl',
     'bench/run-framing-microbench.pl',
+    'bench/run-future-recv-microbench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
     'bench/run-timer-microbench.pl',
@@ -176,6 +183,7 @@ my %allowed = map { $_ => 1 } qw(
     run-stream-transition-bench.pl
     run-stream-watcher-state-bench.pl
     run-framing-microbench.pl
+    run-future-recv-microbench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
     run-timer-microbench.pl

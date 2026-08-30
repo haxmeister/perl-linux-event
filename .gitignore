@@ -8,6 +8,7 @@
 /pm_to_blib
 /blib/
 /Linux-Event-*.tar.gz
+/Linux-Event-*/
 /xsloop/Makefile
 /xsloop/Makefile.old
 /xsloop/MYMETA.json
@@ -98,6 +99,14 @@
 /xsprocess/check_spawn_chdir
 /xsprocess/check_spawn_chdir.o
 /xsprocess/pm_to_blib
+/xsfuture/Makefile
+/xsfuture/Makefile.old
+/xsfuture/MYMETA.json
+/xsfuture/MYMETA.yml
+/xsfuture/Future.bs
+/xsfuture/Future.c
+/xsfuture/Future.o
+/xsfuture/pm_to_blib
 *.bak
 *~
 *.xsc

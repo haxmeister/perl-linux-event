@@ -20,6 +20,7 @@ my @public_modules = qw(
     Linux::Event::Framer::Netstring
     Linux::Event::Framer::U32BE
     Linux::Event::Framer::Varint
+    Linux::Event::Future
     Linux::Event::Listener
     Linux::Event::Loop
     Linux::Event::Process
@@ -29,6 +30,12 @@ my @public_modules = qw(
     Linux::Event::Timer
     Linux::Event::Wakeup
 );
+
+my @xs_dirs = qw(
+    xsfuture xsloop xsstream xstls xsconnection xsresolver
+    xssignal xslistener xswakeup xsdatagram xsprocess
+);
+splice @xs_dirs, 1, 0, 'xsdirect' if -d 'xsdirect';
 
 my $distribution_version = MM->parse_version('lib/Linux/Event.pm');
 my %provides = map {
@@ -47,7 +54,7 @@ WriteMakefile(
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
-    DIR              => [qw(xsloop xsstream xstls xsconnection xsresolver xssignal xslistener xswakeup xsdatagram xsprocess)],
+    DIR              => \@xs_dirs,
     CONFIGURE_REQUIRES => {
         'ExtUtils::CBuilder'  => 0,
         'ExtUtils::MakeMaker' => 0,
@@ -56,7 +63,8 @@ WriteMakefile(
         'Test::More' => 0,
     },
     PREREQ_PM => {
-        'Socket' => '2.033',
+        'Future::AsyncAwait' => '0.71',
+        'Socket'             => '2.033',
     },
     META_MERGE       => {
         'meta-spec' => {

@@ -11,6 +11,7 @@ use_ok('Linux::Event::Datagram');
 use_ok('Linux::Event::Process');
 use_ok('Linux::Event::Error');
 use_ok('Linux::Event::Address');
+use_ok('Linux::Event::Future');
 my $loop = Linux::Event::Loop->new;
 ok($loop, 'created loop');
 done_testing;

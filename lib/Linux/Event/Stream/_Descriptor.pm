@@ -62,6 +62,7 @@ sub _stream_options_for ($class) {
         low_watermark    =>   262_144,
         max_pending_bytes =>         0,
         read_size        =>    65_536,
+        read_budget_bytes => 1_048_576,
         read_batch_bytes =>         0,
         message_batch_size =>       0,
         max_buffer       => 8_388_608,
@@ -97,6 +98,8 @@ sub _stream_options_for ($class) {
         if $option{max_pending_bytes} !~ /\A\d+\z/;
     croak "$class read_size must be a positive integer"
         if $option{read_size} !~ /\A\d+\z/ || $option{read_size} <= 0;
+    croak "$class read_budget_bytes must be a non-negative integer"
+        if $option{read_budget_bytes} !~ /\A\d+\z/;
     croak "$class read_batch_bytes must be a non-negative integer"
         if $option{read_batch_bytes} !~ /\A\d+\z/;
     croak "$class message_batch_size must be a non-negative integer"
@@ -145,8 +148,6 @@ sub for_class ($class) {
         } else {
             croak "$class defines on_messages() without enabling message_batch_size"
                 if $callback{on_messages};
-            croak "$class declares a framer but does not define on_message()"
-                if !$callback{on_message};
         }
     } else {
         croak "$class has no framer and must define on_data()"
@@ -163,6 +164,7 @@ sub for_class ($class) {
 
     my $xs = Linux::Event::Stream::XSDescriptor->new(
         $option->{read_size},
+        $option->{read_budget_bytes},
         $option->{read_batch_bytes},
         $option->{message_batch_size},
         $option->{high_watermark},

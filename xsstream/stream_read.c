@@ -24,6 +24,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
     SAVEINT(st->input_dispatch_depth);
     st->input_dispatch_depth++;
     st->read_ready_calls++;
+    size_t drain_bytes = 0;
+    int budget_limited = 0;
 
     while (!st->closed && !st->read_paused && !st->read_eof) {
         les_transport_result_t result;
@@ -35,11 +37,20 @@ les_read_ready(pTHX_ les_xsstate_t *st)
          * before requesting more kernel data. */
         if (st->descriptor->read_mode != LES_READ_DELIVER
             || !st->descriptor->read_batch_bytes)
-            les_process_existing_input(aTHX_ st, 0);
+            les_process_existing_input(aTHX_ st, 0, 0);
         if (st->closed || st->read_paused || st->read_eof)
             break;
 
+        if (st->descriptor->read_budget_bytes
+            && drain_bytes >= (size_t)st->descriptor->read_budget_bytes) {
+            budget_limited = 1;
+            break;
+        }
+
         want = st->descriptor->read_size;
+        if (st->descriptor->read_budget_bytes
+            && want > (size_t)st->descriptor->read_budget_bytes - drain_bytes)
+            want = (size_t)st->descriptor->read_budget_bytes - drain_bytes;
 
         if (st->descriptor->read_mode == LES_READ_DELIVER) {
             if (st->descriptor->read_batch_bytes) {
@@ -86,6 +97,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
 
         if (result.status == LES_TRANSPORT_OK && result.count > 0) {
             st->bytes_read += (unsigned long long)result.count;
+            drain_bytes += (size_t)result.count;
             les_note_read_activity(aTHX_ st);
 
             if (st->descriptor->read_mode == LES_READ_DELIVER) {
@@ -113,6 +125,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
                 les_flush_raw_batch(aTHX_ st);
             else
                 les_flush_message_batch(aTHX_ st);
+            if (st->descriptor == descriptor)
+                les_flush_recv_future(aTHX_ st);
             if (st->closed || st->read_paused)
                 break;
             if (st->descriptor != descriptor)
@@ -136,6 +150,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
                 les_flush_raw_batch(aTHX_ st);
             else
                 les_flush_message_batch(aTHX_ st);
+            if (st->descriptor == descriptor)
+                les_flush_recv_future(aTHX_ st);
             if (!st->closed && !st->read_paused
                 && st->descriptor != descriptor)
                 continue;
@@ -157,6 +173,16 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             les_call_read_error(aTHX_ st, err);
             break;
         }
+    }
+
+    if (budget_limited && !st->closed && !st->read_paused && !st->read_eof) {
+        les_descriptor_t *descriptor = st->descriptor;
+        if (descriptor->read_mode == LES_READ_DELIVER)
+            les_flush_raw_batch(aTHX_ st);
+        else
+            les_flush_message_batch(aTHX_ st);
+        if (st->descriptor == descriptor)
+            les_flush_recv_future(aTHX_ st);
     }
 
     LEAVE;

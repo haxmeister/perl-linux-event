@@ -15,6 +15,7 @@ use utf8 ();
 use Linux::Event::Stream::_Connection ();
 use Linux::Event::Stream::_Descriptor ();
 use Linux::Event::Error;
+use Linux::Event::Future ();
 use Linux::Event::Address;
 use Linux::Event::_SocketConfig ();
 
@@ -923,6 +924,53 @@ sub send ($self, $payload) {
     return $self->write($bytes);
 }
 
+sub _recv_slow ($self) {
+    croak 'recv(): requires a framed Stream subclass'
+        if !$self->{descriptor}{framer};
+    croak 'recv(): cannot be combined with on_message() or on_messages()'
+        if $self->{descriptor}{callbacks}{on_message}
+        || $self->{descriptor}{callbacks}{on_messages};
+    if ($self->{closed}) {
+        my $error = $self->{last_error} // Linux::Event::Error->new(
+            type      => 'closed',
+            operation => 'recv',
+            message   => 'Stream is closed',
+        );
+        return Linux::Event::Future->AWAIT_NEW_FAIL($error);
+    }
+    croak 'recv(): Stream must be attached to a Loop'
+        if !$self->{loop};
+    croak 'recv(): Stream is not established';
+}
+
+*recv = \&_recv_fast;
+
+sub _recv_batch_slow ($self, $maximum) {
+    croak 'recv_batch(): requires a framed Stream subclass'
+        if !$self->{descriptor}{framer};
+    croak 'recv_batch(): cannot be combined with on_message() or on_messages()'
+        if $self->{descriptor}{callbacks}{on_message}
+        || $self->{descriptor}{callbacks}{on_messages};
+    if ($self->{closed}) {
+        my $error = $self->{last_error} // Linux::Event::Error->new(
+            type      => 'closed',
+            operation => 'recv_batch',
+            message   => 'Stream is closed',
+        );
+        return Linux::Event::Future->AWAIT_NEW_FAIL($error);
+    }
+    croak 'recv_batch(): Stream must be attached to a Loop'
+        if !$self->{loop};
+    croak 'recv_batch(): Stream is not established';
+}
+
+sub recv_batch ($self, $maximum) {
+    croak 'recv_batch(): maximum must be a positive integer'
+        if !defined($maximum) || ref($maximum)
+        || "$maximum" !~ /\A[1-9]\d*\z/;
+    return $self->_recv_batch_fast(0 + $maximum);
+}
+
 sub end ($self, $final_bytes = undef) {
     return $self
         if $self->{closed} || $self->{write_ending} || $self->{write_ended};
@@ -1001,7 +1049,11 @@ sub detach ($self) {
     my $fh = $self->{fh};
     $self->_cancel_stream_deadline;
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close;
+        $xs_state->_close(Linux::Event::Error->new(
+            type      => 'detached',
+            operation => 'recv',
+            message   => 'Stream was detached',
+        ));
     }
     if (my $watcher = delete $self->{watcher}) {
         $watcher->cancel;
@@ -1123,6 +1175,7 @@ sub _transport_deadline_expired ($self, $operation, $message) {
 sub _mark_eof ($self) {
     return if $self->{read_eof} || $self->{closed};
     $self->{read_eof} = 1;
+    $self->{xs_state}->_recv_eof if $self->{xs_state};
     $self->{watcher}->disable_read if $self->{watcher};
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
@@ -1156,6 +1209,7 @@ sub _fail_framing ($self, $message) {
 sub _fail ($self, $error) {
     return if $self->{closed};
     $self->{last_error} = $error;
+    $self->{xs_state}->_recv_fail($error) if $self->{xs_state};
     my $failure;
     if (my $callback = $self->{descriptor}{callbacks}{on_error}) {
         my $reported = eval { $callback->($self, $error); 1 };
@@ -1181,7 +1235,15 @@ sub _close_now ($self, $close_fh) {
     $self->_destroy_transport_deadline;
 
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close;
+        my $error = $self->{last_error};
+        if (!$error && !$self->{read_eof}) {
+            $error = Linux::Event::Error->new(
+                type      => 'closed',
+                operation => 'recv',
+                message   => 'Stream is closed',
+            );
+        }
+        $xs_state->_close($error);
     }
     if (my $watcher = delete $self->{watcher}) {
         $watcher->cancel;
@@ -1292,7 +1354,21 @@ A raw subclass defines C<on_data> and does not declare a framer:
       $stream->write($bytes);
   }
 
-A framed subclass imports one native built-in and defines C<on_message>:
+A framed subclass imports one native built-in. Future-first code may omit
+message callbacks and await C<recv>:
+
+  package LineStream;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  package main;
+  use Linux::Event;
+
+  async sub receive_line ($stream) {
+      return await $stream->recv;
+  }
+
+Callback-driven code may instead define C<on_message>:
 
   package LineStream;
   use parent 'Linux::Event::Stream';
@@ -1324,9 +1400,9 @@ C<on_messages> does not enable batching; the positive class option makes the
 different callback boundary explicit.
 
 Framed and raw modes are mutually exclusive. A subclass with no framer must
-define C<on_data>; a framed subclass must define C<on_message>, or explicitly
-enable C<message_batch_size> and define C<on_messages>. The base class cannot
-be instantiated directly.
+define C<on_data>. A framed subclass either omits message callbacks and uses
+C<recv>, defines C<on_message>, or explicitly enables C<message_batch_size>
+and defines C<on_messages>. The base class cannot be instantiated directly.
 
 =head1 CONSTRUCTOR
 
@@ -1431,6 +1507,7 @@ per connection:
   sub stream_options ($class) {
       return (
           read_size         => 32_768,            # optional
+          read_budget_bytes => 1 * 1024 * 1024,  # optional; 0 = unlimited
           high_watermark    => 2 * 1024 * 1024,   # optional
           low_watermark     => 512 * 1024,        # optional
           max_pending_bytes => 8 * 1024 * 1024,   # optional
@@ -1441,10 +1518,12 @@ per connection:
       );
   }
 
-The defaults are 65,536 bytes per read, no raw read batching, ordinary
-one-message framed delivery, a 1 MiB high watermark, a 256 KiB low watermark,
-no hard pending-output limit, and an 8 MiB maximum framed input buffer. Set
-C<max_pending_bytes> to a positive byte count to impose a hard limit; zero
+The defaults are 65,536 bytes per read, a 1 MiB native read-drain budget, no
+raw read batching, ordinary one-message framed delivery, a 1 MiB high
+watermark, a 256 KiB low watermark, no hard pending-output limit, and an 8 MiB
+maximum framed input buffer. Set C<read_budget_bytes> to zero to remove the
+per-read-ready budget. Set C<max_pending_bytes> to a positive byte count to
+impose a hard limit; zero
 keeps the default unlimited policy. Established timeout defaults are zero,
 which disables them. Constructor values take precedence for one Stream and
 survive protocol transitions; non-overridden values change to the target
@@ -1465,6 +1544,13 @@ limit is reached or the current native read drain is exhausted. It never waits
 to fill a batch. C<max_buffer> also forces a flush when the accumulated
 message payload reaches that byte budget, keeping one batch below twice that
 bound even when the final frame crosses the remaining budget.
+
+C<read_budget_bytes> bounds the successful bytes consumed by one native read
+readiness turn. At the end of that turn, a pending Future receive is completed
+from the messages parsed during the turn and callback batches are flushed. It
+prevents a continuously readable connection from monopolising the reactor;
+zero restores an unlimited drain. This is a scheduling bound, not a framing
+bound, and it applies equally to raw and framed Streams.
 
 =head1 SOCKET CONFIGURATION
 
@@ -1604,6 +1690,27 @@ for accepted cooperative backpressure.
 
 Available only to framed subclasses. Applies the subclass's declared outbound
 wire framing and then uses C<write>. Serialization remains separate.
+
+=head2 recv
+
+Available to framed subclasses that omit C<on_message> and C<on_messages>.
+Returns a L<Linux::Event::Future> for the next complete decoded message. Clean
+EOF produces C<undef>; I/O, framing, timeout, and explicit-close failures throw
+a L<Linux::Event::Error> when awaited.
+
+One receive may be pending per Stream. Already-decoded messages remain ordered
+in native connection state until requested. Cancelling a pending receive does
+not consume the next message. Callback delivery and Future delivery cannot be
+combined on the same Stream class.
+
+=head2 recv_batch($maximum)
+
+Available under the same conditions as C<recv>. Returns a Future resolving to
+an array reference containing up to C<$maximum> currently available decoded
+messages. It flushes at the end of the current native read drain, before EOF,
+or before an error; it never waits for another network read merely to fill the
+array. An empty clean input stream resolves to C<undef>, matching C<recv>.
+C<recv> and C<recv_batch> share the one-active-reader rule.
 
 =head2 pause_read / resume_read
 

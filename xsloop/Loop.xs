@@ -1761,7 +1761,7 @@ run_once(loop_obj, timeout_value = -1)
     RETVAL
 
 void
-run(loop_obj)
+_run(loop_obj)
     SV *loop_obj
   PREINIT:
     le_loop_t *loop;

@@ -6,7 +6,7 @@ use warnings;
 our $VERSION = '0.105';
 
 use Carp qw(croak);
-use Scalar::Util qw(blessed);
+use Scalar::Util qw(blessed refaddr);
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -19,6 +19,21 @@ sub add ($self, $object) {
         if !blessed($object) || !$object->can('_attach_to_loop');
     $object->_attach_to_loop($self);
     return $object;
+}
+
+sub run ($self, $future = undef) {
+    return $self->_run if !defined $future;
+    croak 'run(): argument must implement the awaitable contract'
+        if !blessed($future)
+        || !$future->can('AWAIT_IS_READY')
+        || !$future->can('AWAIT_GET');
+    if ($future->isa('Linux::Event::Future')) {
+        my $owner = $future->loop;
+        croak 'run(): Future belongs to a different Loop'
+            if defined($owner) && refaddr($owner) != refaddr($self);
+    }
+    $self->run_once(-1) until $future->AWAIT_IS_READY;
+    return $future->AWAIT_GET;
 }
 
 sub CLONE_SKIP ($class) { 1 }
@@ -176,9 +191,12 @@ C<fh>.
 
 =head1 DRIVING THE LOOP
 
-=head2 run
+=head2 run / run($future)
 
-Waits and dispatches until C<stop> is called.
+Without an argument, waits and dispatches until C<stop> is called. With an
+awaitable argument, dispatches until it is ready and then returns its results
+or throws its failure in the caller's context. A L<Linux::Event::Future>
+associated with a different Loop is rejected.
 
 =head2 run_once($timeout_ms = -1)
 
