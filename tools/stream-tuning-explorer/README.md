@@ -25,17 +25,20 @@ Linux::Event benchmark results.
 
 ## Generate measured data
 
-Build Linux::Event first, then run the tuning sweep from the distribution root:
+Build Linux::Event first, then run the tuning sweep from the distribution root.
+The benchmark roots itself to this checkout's `lib/` and `blib/arch`, so it does
+not accidentally benchmark an older installed Linux::Event:
 
 ```sh
-perl -Iblib/lib -Iblib/arch bench/run-stream-tuning-sweep.pl \
+perl Makefile.PL && make
+perl bench/run-stream-tuning-sweep.pl \
   --json bench/results/stream-tuning.json
 ```
 
 For a denser sweep:
 
 ```sh
-perl -Iblib/lib -Iblib/arch bench/run-stream-tuning-sweep.pl \
+perl bench/run-stream-tuning-sweep.pl \
   --message-sizes=16,32,64,128,256,512,1024,2048,4096,8192,16384,32768,65536,131072,200000 \
   --read-sizes=4096,16384,65536,262144 \
   --read-budgets=0,65536,262144 \
