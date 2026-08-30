@@ -15,6 +15,7 @@
 #include <sys/uio.h>
 
 #include "stream_transport_abi.h"
+#include "stream_consumer_abi.h"
 
 #define LES_WRITE_FLOW_OK 0x01
 #define LES_WRITE_QUEUED  0x02
@@ -41,6 +42,7 @@ typedef struct les_write_seg_s {
 
 typedef struct les_descriptor_s {
     size_t read_size;
+    UV read_budget_bytes;
     UV read_batch_bytes;
     UV message_batch_size;
     int read_mode;
@@ -70,6 +72,9 @@ typedef struct les_descriptor_s {
     SV *output_limit_cb;
     SV *write_empty_cb;
     SV *framing_error_cb;
+
+    const les_consumer_ops_v1_t *consumer_ops;
+    SV *consumer_provider_sv;
 } les_descriptor_t;
 
 typedef struct les_xsstate_s {
@@ -84,7 +89,12 @@ typedef struct les_xsstate_s {
     /* Read engine. */
     char *read_buffer;      /* raw/deliver mode scratch storage */
     int read_paused;
+    int consumer_paused;
+    int consumer_terminal;
     int read_eof;
+
+    const les_consumer_ops_v1_t *consumer_ops;
+    void *consumer_context;
 
     /* Native framed-input storage. Logical bytes begin at input_start and
      * continue for input_len bytes. */
@@ -148,6 +158,10 @@ typedef struct les_xsstate_s {
     unsigned long long message_batch_peak_bytes;
     unsigned long long framing_error_count;
     unsigned long long transition_count;
+    unsigned long long consumer_message_calls;
+    unsigned long long consumer_pause_count;
+    unsigned long long consumer_resume_count;
+    unsigned long long consumer_event_calls;
 
     /* Write instrumentation. */
     unsigned long long write_submit_calls;
@@ -164,6 +178,8 @@ typedef struct les_xsstate_s {
     unsigned long long drain_calls;
     unsigned long long empty_calls;
 } les_xsstate_t;
+
+#define LES_INPUT_PAUSED(st) ((st)->read_paused || (st)->consumer_paused)
 
 
 extern const les_transport_ops_t les_plain_transport_ops;
@@ -206,6 +222,21 @@ void les_discard_message_batch(les_xsstate_t *st);
 void les_flush_message_batch(pTHX_ les_xsstate_t *st);
 void les_emit_message(pTHX_ les_xsstate_t *st, SV *message);
 void les_flush_raw_batch(pTHX_ les_xsstate_t *st);
+
+int les_consumer_create(pTHX_ les_xsstate_t *st);
+void les_consumer_destroy(pTHX_ les_xsstate_t *st);
+int les_consumer_message(pTHX_ les_xsstate_t *st, SV *message);
+void les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
+    const char *message);
+int les_consumer_resume(pTHX_ les_xsstate_t *st);
+void les_consumer_notify_paused(pTHX_ les_xsstate_t *st);
+SV *les_test_consumer_definition(pTHX_ const char *variant);
+void les_test_consumer_arm(pTHX_ les_xsstate_t *st, SV *callback);
+void les_test_consumer_cancel(pTHX_ les_xsstate_t *st);
+SV *les_test_consumer_take(pTHX_ les_xsstate_t *st);
+SV *les_test_consumer_events(pTHX_ les_xsstate_t *st);
+SV *les_test_consumer_stats(pTHX_ les_xsstate_t *st);
+UV les_test_consumer_destroy_count(void);
 
 void les_clear_write_queue(les_xsstate_t *st);
 void les_queue_bytes(

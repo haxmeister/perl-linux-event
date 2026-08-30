@@ -1,6 +1,15 @@
 Revision history for Linux-Event
 
 Unreleased
+    - Add a versioned native framed-message consumer ABI for separate XS
+      integrations. Providers own one context per Stream, receive borrowed
+      message SVs directly from every built-in native framer, control
+      pause/resume without a second core queue, and observe terminal input and
+      lifecycle events. The core remains callback/reactor-first and contains no
+      Future or async/await policy.
+    - Add optional read_budget_bytes fairness control while preserving the
+      existing unlimited drain as the default. Native consumer pause remains
+      independent from TLS handshake and shutdown progress.
     - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
       a private native drain helper while preserving read_size,
       max_reads_per_tick, callback chunking, EOF ordering, and error behavior.

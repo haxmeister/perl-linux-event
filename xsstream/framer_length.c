@@ -51,7 +51,7 @@ les_process_length(pTHX_ les_xsstate_t *st)
     les_descriptor_t *descriptor = st->descriptor;
     const size_t prefix = (size_t)st->descriptor->prefix_bytes;
 
-    while (!st->closed && !st->read_paused) {
+    while (!st->closed && !LES_INPUT_PAUSED(st)) {
         const char *data;
         UV payload_len;
         UV total_uv;

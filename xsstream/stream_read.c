@@ -9,7 +9,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
     if (st->transport_ops != &les_plain_transport_ops
         && !les_drive_transport(aTHX_ st, "handshake"))
         return;
-    if (st->read_paused) {
+    if (LES_INPUT_PAUSED(st)) {
         if (st->transport_ops != &les_plain_transport_ops) {
             if (st->pending_bytes)
                 les_write_ready(aTHX_ st);
@@ -25,7 +25,9 @@ les_read_ready(pTHX_ les_xsstate_t *st)
     st->input_dispatch_depth++;
     st->read_ready_calls++;
 
-    while (!st->closed && !st->read_paused && !st->read_eof) {
+    size_t drain_bytes = 0;
+
+    while (!st->closed && !LES_INPUT_PAUSED(st) && !st->read_eof) {
         les_transport_result_t result;
         char *target;
         size_t want;
@@ -36,10 +38,17 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         if (st->descriptor->read_mode != LES_READ_DELIVER
             || !st->descriptor->read_batch_bytes)
             les_process_existing_input(aTHX_ st, 0);
-        if (st->closed || st->read_paused || st->read_eof)
+        if (st->closed || LES_INPUT_PAUSED(st) || st->read_eof)
+            break;
+
+        if (st->descriptor->read_budget_bytes
+            && drain_bytes >= (size_t)st->descriptor->read_budget_bytes)
             break;
 
         want = st->descriptor->read_size;
+        if (st->descriptor->read_budget_bytes
+            && want > (size_t)st->descriptor->read_budget_bytes - drain_bytes)
+            want = (size_t)st->descriptor->read_budget_bytes - drain_bytes;
 
         if (st->descriptor->read_mode == LES_READ_DELIVER) {
             if (st->descriptor->read_batch_bytes) {
@@ -86,6 +95,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
 
         if (result.status == LES_TRANSPORT_OK && result.count > 0) {
             st->bytes_read += (unsigned long long)result.count;
+            drain_bytes += (size_t)result.count;
             les_note_read_activity(aTHX_ st);
 
             if (st->descriptor->read_mode == LES_READ_DELIVER) {
@@ -113,7 +123,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
                 les_flush_raw_batch(aTHX_ st);
             else
                 les_flush_message_batch(aTHX_ st);
-            if (st->closed || st->read_paused)
+            if (st->closed || LES_INPUT_PAUSED(st))
                 break;
             if (st->descriptor != descriptor)
                 continue;
@@ -136,7 +146,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
                 les_flush_raw_batch(aTHX_ st);
             else
                 les_flush_message_batch(aTHX_ st);
-            if (!st->closed && !st->read_paused
+            if (!st->closed && !LES_INPUT_PAUSED(st)
                 && st->descriptor != descriptor)
                 continue;
             break;
@@ -150,7 +160,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
                 les_flush_raw_batch(aTHX_ st);
             else
                 les_flush_message_batch(aTHX_ st);
-            if (st->closed || st->read_paused)
+            if (st->closed || LES_INPUT_PAUSED(st))
                 break;
             if (st->descriptor != descriptor)
                 continue;
@@ -158,6 +168,9 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             break;
         }
     }
+
+    if (!st->closed && st->descriptor->read_mode != LES_READ_DELIVER)
+        les_flush_message_batch(aTHX_ st);
 
     LEAVE;
 

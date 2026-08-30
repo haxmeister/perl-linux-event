@@ -24,6 +24,22 @@ use Linux::Event::Timer;
 }
 
 {
+    package T::ThreadDescriptor::ConsumerBase;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
+        );
+    }
+}
+
+{
+    package T::ThreadDescriptor::ConsumerLine;
+    use parent -norequire, 'T::ThreadDescriptor::ConsumerBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
     package T::ThreadDescriptor::Timer;
     use parent 'Linux::Event::Timer';
     sub on_timer ($self) { return }
@@ -39,6 +55,10 @@ socketpair(my $parent_stream_fh, my $parent_peer_fh,
     AF_UNIX, SOCK_STREAM, 0) or die "socketpair: $!";
 T::ThreadDescriptor::Stream->new(fh => $parent_stream_fh)->close;
 close $parent_peer_fh;
+socketpair(my $parent_consumer_fh, my $parent_consumer_peer,
+    AF_UNIX, SOCK_STREAM, 0) or die "consumer socketpair: $!";
+T::ThreadDescriptor::ConsumerLine->new(fh => $parent_consumer_fh)->close;
+close $parent_consumer_peer;
 T::ThreadDescriptor::Timer->new(after => 60)->cancel;
 T::ThreadDescriptor::Signal->new(signals => SIGUSR1)->cancel;
 
@@ -51,6 +71,14 @@ my $worker = threads->create(sub {
     push @result, $stream->isa('T::ThreadDescriptor::Stream');
     $stream->close;
     close $peer_fh;
+
+    socketpair(my $consumer_fh, my $consumer_peer,
+        AF_UNIX, SOCK_STREAM, 0) or die "consumer socketpair in child: $!";
+    my $consumer = T::ThreadDescriptor::ConsumerLine->new(fh => $consumer_fh);
+    push @result, $consumer->isa('T::ThreadDescriptor::ConsumerLine')
+        && $consumer->{xs_state}->consumer_paused;
+    $consumer->close;
+    close $consumer_peer;
 
     my $timer = T::ThreadDescriptor::Timer->new(after => 60);
     push @result, $timer->isa('T::ThreadDescriptor::Timer');
@@ -66,8 +94,8 @@ my $worker = threads->create(sub {
 my $result = $worker->join;
 is_deeply(
     $result,
-    [1, 1, 1],
-    'child ithread lazily rebuilds Stream, Timer, and Signal descriptors',
+    [1, 1, 1, 1],
+    'child ithread lazily rebuilds Stream, consumer, Timer, and Signal descriptors',
 );
 
 done_testing;

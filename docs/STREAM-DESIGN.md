@@ -59,9 +59,10 @@ once:
 1. resolve `on_data`, `on_message`, `on_messages`, and optional lifecycle
    methods through the class MRO;
 2. resolve the nearest inherited native framer declaration;
-3. call and validate `stream_options`;
-4. validate that the class is either raw or framed, never both;
-5. create one immutable XS descriptor holding parser config, Stream policy,
+3. resolve an optional inherited native message-consumer declaration;
+4. call and validate `stream_options`;
+5. validate that the class is either raw or framed, never both;
+6. create one immutable XS descriptor holding parser config, Stream policy,
    and callback references.
 
 Subsequent construction retrieves that descriptor from the class cache. The
@@ -77,6 +78,7 @@ Immutable descriptor state includes:
 - native read mode and framing constants
 - delimiter or prefix policy where applicable
 - `read_size`
+- optional per-readiness `read_budget_bytes`
 - raw `read_batch_bytes`
 - framed `message_batch_size`
 - high and low output watermarks
@@ -185,6 +187,19 @@ accumulated payload reaches `max_buffer`. It does not delay input to fill a
 batch. Pause, close, and protocol transition take effect after the complete
 delivered array; every element in that array was parsed under the old
 descriptor. Zero is the default and allocates no batch array.
+
+### Native consumer extension
+
+A framed subclass may replace `on_message` with one versioned native consumer
+provider. Stream sends each completed frame directly to the provider's
+per-connection context and honors its continue, pause, or close result before
+the parser advances. The message scalar is borrowed; a provider may retain the
+same scalar with a reference-count increment without copying its payload.
+
+This boundary is for separate XS integrations such as async/await runtimes. It
+contains no Future or continuation policy and does not expose Stream's private
+state. See `STREAM-CONSUMER-ABI.md` for ownership, reentrancy, terminal events,
+TLS behavior, transitions, and the v1 C tables.
 
 ## Output path
 
@@ -298,6 +313,7 @@ or framing errors.
 sub stream_options ($class) {
     return {
         read_size         => 65_536,
+        read_budget_bytes => 0,
         read_batch_bytes  => 0,
         message_batch_size => 0,
         high_watermark    => 1_048_576,
@@ -311,6 +327,9 @@ sub stream_options ($class) {
 It runs once per concrete subclass. Unknown options, invalid integers, and a low
 watermark above the high watermark fail before connection registration. The
 hard output limit is a non-negative byte count; zero disables it.
+
+`read_budget_bytes` limits transport bytes consumed by one readiness callback.
+Zero preserves the default drain-until-EAGAIN behavior.
 
 `read_batch_bytes` is valid only for raw subclasses. `message_batch_size` is
 valid only for framed subclasses and requires `on_messages` in place of

@@ -33,6 +33,12 @@ sub _declare_tls ($base, $target, $definition) {
     );
 }
 
+sub _declare_consumer ($base, $target, $definition) {
+    return Linux::Event::Stream::_Descriptor::declare_consumer(
+        $base, $target, $definition,
+    );
+}
+
 sub _timeout_value ($target, $name, $value) {
     my $seconds = !defined($value) || ref($value) || !looks_like_number($value)
         ? undef : 0 + $value;
@@ -124,10 +130,31 @@ sub _xs_drain ($self) {
     return;
 }
 
+sub _xs_consumer_paused ($self) {
+    return if $self->{closed};
+    $self->{watcher}->disable_read
+        if $self->{watcher} && $self->{xs_state}->transport_ready;
+    return;
+}
+
+sub _xs_consumer_resumed ($self) {
+    return if $self->{closed} || $self->{read_paused} || $self->{read_eof};
+    $self->{watcher}->enable_read
+        if $self->{watcher} && !$self->{xs_state}->consumer_paused;
+    return;
+}
+
+sub _xs_consumer_close ($self) {
+    $self->close if !$self->{closed};
+    return;
+}
+
 sub _xs_transport_event ($self, $status, $operation, $message) {
     return if $self->{closed};
 
     if ($status == 2) {
+        # Transport handshakes and shutdowns must make progress even when the
+        # application-facing consumer is paused.
         $self->{watcher}->enable_read if $self->{watcher};
         return;
     }
@@ -153,7 +180,8 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
             && $self->{transport}->can('_stream_transport_ready')) {
             $self->{transport}->_stream_transport_ready($self);
         }
-        if ($self->{read_paused} && $self->{watcher}) {
+        if (($self->{read_paused} || $self->{xs_state}->consumer_paused)
+            && $self->{watcher}) {
             $self->{watcher}->disable_read;
         }
         if (my $callback = $self->{descriptor}{callbacks}{on_transport_ready}) {
@@ -436,6 +464,9 @@ sub _attach_to_loop ($self, $loop) {
     $self->{watcher} = $watcher;
     $watcher->disable_write if !($initial_interest & 0x02);
     $watcher->disable_read if !($initial_interest & 0x01);
+    $watcher->disable_read
+        if $self->{xs_state}->consumer_paused
+            && $self->{xs_state}->transport_ready;
     my $transport = $self->{transport};
     if ($transport && $transport->can('_stream_transport_start')) {
         my $started = eval { $transport->_stream_transport_start($self); 1 };
@@ -490,6 +521,9 @@ sub _connect_succeeded ($self, $fh) {
     $self->{watcher} = $watcher;
     $watcher->disable_write if !($initial_interest & 0x02);
     $watcher->disable_read if !($initial_interest & 0x01);
+    $watcher->disable_read
+        if $self->{xs_state}->consumer_paused
+            && $self->{xs_state}->transport_ready;
     my $transport = $self->{transport};
     if ($transport && $transport->can('_stream_transport_start')) {
         my $started = eval { $transport->_stream_transport_start($self); 1 };
@@ -949,7 +983,8 @@ sub resume_read ($self) {
     $self->{deadline_read_started} = _deadline_now()
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     $self->{xs_state}->_resume if $self->{xs_state};
-    $self->{watcher}->enable_read if $self->{watcher};
+    $self->{watcher}->enable_read
+        if $self->{watcher} && !$self->{xs_state}->consumer_paused;
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     return $self;
@@ -1001,7 +1036,7 @@ sub detach ($self) {
     my $fh = $self->{fh};
     $self->_cancel_stream_deadline;
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close;
+        $xs_state->_close(5);
     }
     if (my $watcher = delete $self->{watcher}) {
         $watcher->cancel;
@@ -1181,7 +1216,7 @@ sub _close_now ($self, $close_fh) {
     $self->_destroy_transport_deadline;
 
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close;
+        $xs_state->_close(4);
     }
     if (my $watcher = delete $self->{watcher}) {
         $watcher->cancel;
@@ -1431,6 +1466,7 @@ per connection:
   sub stream_options ($class) {
       return (
           read_size         => 32_768,            # optional
+          read_budget_bytes => 1 * 1024 * 1024, # optional; 0 = unlimited
           high_watermark    => 2 * 1024 * 1024,   # optional
           low_watermark     => 512 * 1024,        # optional
           max_pending_bytes => 8 * 1024 * 1024,   # optional
@@ -1441,8 +1477,9 @@ per connection:
       );
   }
 
-The defaults are 65,536 bytes per read, no raw read batching, ordinary
-one-message framed delivery, a 1 MiB high watermark, a 256 KiB low watermark,
+The defaults are 65,536 bytes per read, an unlimited read drain, no raw read
+batching, ordinary one-message framed delivery, a 1 MiB high watermark, a
+256 KiB low watermark,
 no hard pending-output limit, and an 8 MiB maximum framed input buffer. Set
 C<max_pending_bytes> to a positive byte count to impose a hard limit; zero
 keeps the default unlimited policy. Established timeout defaults are zero,

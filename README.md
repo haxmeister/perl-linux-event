@@ -745,6 +745,7 @@ memory against the versioned object-configured baseline.
 - [`docs/SIGNAL-DESIGN.md`](docs/SIGNAL-DESIGN.md) - signalfd fan-out, mask ownership, and lifecycle
 - [`docs/WAKEUP-DESIGN.md`](docs/WAKEUP-DESIGN.md) - eventfd notification and interpreter ownership
 - [`docs/STREAM-DESIGN.md`](docs/STREAM-DESIGN.md) - Stream descriptor and lifecycle contract
+- [`docs/STREAM-CONSUMER-ABI.md`](docs/STREAM-CONSUMER-ABI.md) - native framed-message extension boundary
 - [`docs/SOCKET-CONFIGURATION.md`](docs/SOCKET-CONFIGURATION.md) - socket policy, local binding, and hooks
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - declarative TLS and the internal transport contract
 - [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
@@ -780,7 +781,8 @@ of general protocol facilities rather than a missing lifecycle primitive.
 Future, Promise, and async/await runtimes are explicitly outside the core
 roadmap. Independent distributions may build them from Loop driving, zero-delay
 Timers, object cancellation, deadlines, semantic callbacks, structured errors,
-and Wakeup. Linux::Event will consider a missing general reactor primitive when
+Wakeup, and the versioned native framed-message consumer boundary. Linux::Event
+will consider a missing general reactor primitive when
 an external implementation proves it cannot be expressed safely, but it will
 not absorb Future-specific policy or continuation scheduling.
 

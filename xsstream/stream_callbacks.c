@@ -69,6 +69,8 @@ les_call_framing_error(pTHX_ les_xsstate_t *st, const char *message)
     SV *msg;
 
     les_flush_message_batch(aTHX_ st);
+    les_consumer_event(aTHX_ st, LES_CONSUMER_EVENT_FRAMING_ERROR, 0,
+        message);
     if (st->closed || st->read_paused || st->descriptor != descriptor)
         return;
     if (!st->descriptor->framing_error_cb)
@@ -81,6 +83,7 @@ les_call_framing_error(pTHX_ les_xsstate_t *st, const char *message)
 void
 les_call_eof(pTHX_ les_xsstate_t *st)
 {
+    les_consumer_event(aTHX_ st, LES_CONSUMER_EVENT_EOF, 0, "");
     les_call_one(aTHX_ st->descriptor->eof_cb, st->stream_sv);
 }
 
@@ -88,6 +91,8 @@ void
 les_call_read_error(pTHX_ les_xsstate_t *st, int err)
 {
     SV *errno_sv = sv_2mortal(newSViv(err));
+    les_consumer_event(aTHX_ st, LES_CONSUMER_EVENT_READ_ERROR, err,
+        strerror(err));
     les_call_two(aTHX_ st->descriptor->read_error_cb, st->stream_sv, errno_sv);
 }
 

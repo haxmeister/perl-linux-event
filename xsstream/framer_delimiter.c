@@ -29,7 +29,7 @@ les_process_delimiter(pTHX_ les_xsstate_t *st)
 {
     les_descriptor_t *descriptor = st->descriptor;
 
-    while (!st->closed && !st->read_paused && st->input_len > 0) {
+    while (!st->closed && !LES_INPUT_PAUSED(st) && st->input_len > 0) {
         const char *data = les_input_data(st);
         size_t pos;
 

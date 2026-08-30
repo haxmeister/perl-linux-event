@@ -55,6 +55,7 @@ docs/PROCESS-DESIGN.md
 docs/SIGNAL-DESIGN.md
 docs/SOCKET-CONFIGURATION.md
 docs/STREAM-CONNECTIONS.md
+docs/STREAM-CONSUMER-ABI.md
 docs/STREAM-DEADLINES.md
 docs/STREAM-DESIGN.md
 docs/TIMER-DESIGN.md
@@ -223,6 +224,7 @@ t/stream-55-callback-batching.t
 t/stream-56-message-batch-framers.t
 t/stream-57-callback-batching-benchmark-smoke.t
 t/stream-58-callback-batching-fairness-smoke.t
+t/stream-59-native-consumer-abi.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
@@ -263,6 +265,8 @@ xsstream/framer_varint.c
 xsstream/Makefile.PL
 xsstream/Stream.xs
 xsstream/stream_callbacks.c
+xsstream/stream_consumer.c
+xsstream/stream_consumer_abi.h
 xsstream/stream_delivery.c
 xsstream/stream_input.c
 xsstream/stream_internal.h

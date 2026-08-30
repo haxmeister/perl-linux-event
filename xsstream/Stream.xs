@@ -99,9 +99,10 @@ MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, message_batch_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix)
+new(CLASS, read_size, read_budget_bytes, read_batch_bytes, message_batch_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, message_batch_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix, consumer_provider, consumer_abi_version, consumer_ops_address)
     const char *CLASS
     UV read_size
+    UV read_budget_bytes
     UV read_batch_bytes
     UV message_batch_size
     UV high_watermark
@@ -126,12 +127,18 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     int prefix_bytes
     int prefix_little
     int include_prefix
+    SV *consumer_provider
+    UV consumer_abi_version
+    UV consumer_ops_address
   PREINIT:
     les_descriptor_t *descriptor;
+    const les_consumer_ops_v1_t *consumer_ops = NULL;
     STRLEN delimiter_len = 0;
     const char *delimiter = NULL;
   CODE:
     if (read_size == 0) croak("read_size must be > 0");
+    if (read_budget_bytes > (UV)(size_t)-1)
+        croak("read_budget_bytes exceeds native size_t");
     if (read_batch_bytes > (UV)(size_t)-1)
         croak("read_batch_bytes exceeds native size_t");
     if (low_watermark > high_watermark)
@@ -147,6 +154,7 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     if (read_mode != LES_READ_DELIVER && read_batch_bytes)
         croak("read_batch_bytes requires raw mode");
     if (read_mode != LES_READ_DELIVER && !message_batch_size
+        && !consumer_ops_address
         && (!message_cb || !SvOK(message_cb)))
         croak("on_message callback required for framed Stream descriptor");
     if (read_mode != LES_READ_DELIVER && message_batch_size
@@ -160,6 +168,38 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     if (read_mode == LES_READ_LENGTH
         && prefix_bytes != 1 && prefix_bytes != 2 && prefix_bytes != 4)
         croak("prefix_bytes must be 1, 2, or 4 for native length framing");
+
+    if (consumer_ops_address) {
+        if (!consumer_provider || !SvOK(consumer_provider))
+            croak("native consumer provider is required");
+        if (consumer_abi_version != LES_CONSUMER_ABI_VERSION)
+            croak("consumer ABI version mismatch: got %llu, need %u",
+                (unsigned long long)consumer_abi_version,
+                LES_CONSUMER_ABI_VERSION);
+        consumer_ops = INT2PTR(const les_consumer_ops_v1_t *,
+            consumer_ops_address);
+        if (consumer_ops->abi_version != LES_CONSUMER_ABI_VERSION)
+            croak("consumer operations table has an incompatible ABI version");
+        if (consumer_ops->struct_size < sizeof(les_consumer_ops_v1_t))
+            croak("consumer operations table is smaller than ABI v1");
+        if (consumer_ops->flags & ~LES_CONSUMER_F_START_PAUSED)
+            croak("consumer operations table has unsupported flags");
+        if (!consumer_ops->name || !consumer_ops->name[0]
+            || !consumer_ops->create || !consumer_ops->message
+            || !consumer_ops->event || !consumer_ops->destroy)
+            croak("consumer operations table is incomplete");
+        if (read_mode == LES_READ_DELIVER)
+            croak("native consumer requires framed Stream mode");
+        if (message_cb && SvOK(message_cb))
+            croak("native consumer cannot be combined with on_message callback");
+        if (message_batch_cb && SvOK(message_batch_cb))
+            croak("native consumer cannot be combined with on_messages callback");
+        if (message_batch_size)
+            croak("native consumer cannot be combined with message batching");
+    } else if ((consumer_provider && SvOK(consumer_provider))
+        || consumer_abi_version) {
+        croak("native consumer declaration is incomplete");
+    }
 
     if (read_mode == LES_READ_DELIMITER || read_mode == LES_READ_DECIMAL) {
         if (!delimiter_sv || !SvOK(delimiter_sv))
@@ -175,6 +215,7 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     if (!descriptor) croak("calloc XSDescriptor failed");
 
     descriptor->read_size = (size_t)read_size;
+    descriptor->read_budget_bytes = read_budget_bytes;
     descriptor->read_batch_bytes = read_batch_bytes;
     descriptor->message_batch_size = message_batch_size;
     descriptor->high_watermark = high_watermark;
@@ -212,6 +253,9 @@ new(CLASS, read_size, read_batch_bytes, message_batch_size, high_watermark, low_
     descriptor->output_limit_cb = les_store_cb(output_limit_cb, "output limit callback");
     descriptor->write_empty_cb = les_store_cb(write_empty_cb, "write empty callback");
     descriptor->framing_error_cb = les_store_cb(framing_error_cb, "framing error callback");
+    descriptor->consumer_ops = consumer_ops;
+    if (consumer_ops)
+        descriptor->consumer_provider_sv = newSVsv(consumer_provider);
 
     RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)descriptor);
   OUTPUT:
@@ -235,6 +279,8 @@ DESTROY(descriptor_obj)
         if (descriptor->output_limit_cb) SvREFCNT_dec(descriptor->output_limit_cb);
         if (descriptor->write_empty_cb) SvREFCNT_dec(descriptor->write_empty_cb);
         if (descriptor->framing_error_cb) SvREFCNT_dec(descriptor->framing_error_cb);
+        if (descriptor->consumer_provider_sv)
+            SvREFCNT_dec(descriptor->consumer_provider_sv);
         free(descriptor->delimiter);
         free(descriptor);
         sv_setiv(SvRV(descriptor_obj), 0);
@@ -276,6 +322,15 @@ new(CLASS, stream, fd, descriptor_obj)
             croak("malloc XSState read buffer failed");
         }
     }
+    if (!les_consumer_create(aTHX_ st)) {
+        const char *consumer_name = descriptor->consumer_ops->name;
+        SvREFCNT_dec(st->descriptor_sv);
+        SvREFCNT_dec(st->stream_sv);
+        free(st->read_buffer);
+        free(st);
+        croak("native Stream consumer '%s' failed to create per-Stream context",
+            consumer_name);
+    }
 
     RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)st);
   OUTPUT:
@@ -291,6 +346,7 @@ DESTROY(state_obj)
     if (st) {
         les_clear_write_queue(st);
         les_discard_message_batch(st);
+        les_consumer_destroy(aTHX_ st);
         if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
         if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
         if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
@@ -400,7 +456,8 @@ _resume(state_obj)
     st = les_state_from_sv(state_obj);
     if (!st->closed && !st->read_eof) {
         st->read_paused = 0;
-        if (st->input_dispatch_depth == 0 && st->input_len) {
+        if (!st->consumer_paused && st->input_dispatch_depth == 0
+            && st->input_len) {
             ENTER;
             SAVEINT(st->input_dispatch_depth);
             st->input_dispatch_depth++;
@@ -462,7 +519,7 @@ _transition_ready(state_obj)
     ENTER;
     SAVEFREESV(SvREFCNT_inc(state_obj));
     st = les_state_from_sv(state_obj);
-    if (!st->closed && !st->read_paused && !st->read_eof
+    if (!st->closed && !LES_INPUT_PAUSED(st) && !st->read_eof
         && st->input_dispatch_depth == 0 && st->input_len) {
         ENTER;
         SAVEINT(st->input_dispatch_depth);
@@ -473,19 +530,38 @@ _transition_ready(state_obj)
     LEAVE;
 
 void
-_close(state_obj)
+_close(state_obj, consumer_event = 0)
     SV *state_obj
+    UV consumer_event
   PREINIT:
     les_xsstate_t *st;
   CODE:
     st = les_state_from_sv(state_obj);
     if (!st->closed) {
+        if (consumer_event)
+            les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
         st->closed = 1;
         les_clear_write_queue(st);
         les_discard_message_batch(st);
         st->input_start = 0;
         st->input_len = 0;
     }
+
+int
+consumer_paused(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = les_state_from_sv(state_obj)->consumer_paused ? 1 : 0;
+  OUTPUT:
+    RETVAL
+
+int
+_consumer_resume(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = les_consumer_resume(aTHX_ les_state_from_sv(state_obj));
+  OUTPUT:
+    RETVAL
 
 int
 is_read_eof(state_obj)
@@ -538,6 +614,8 @@ stats(state_obj)
     hv = newHV();
 
     hv_stores(hv, "read_ready_calls", newSVuv(st->read_ready_calls));
+    hv_stores(hv, "read_budget_bytes",
+        newSVuv(st->descriptor->read_budget_bytes));
     hv_stores(hv, "read_calls", newSVuv(st->read_calls));
     hv_stores(hv, "bytes_read", newSVuv(st->bytes_read));
     hv_stores(hv, "read_eagain_count", newSVuv(st->read_eagain_count));
@@ -567,6 +645,16 @@ stats(state_obj)
         newSVuv(st->message_batch_peak_bytes));
     hv_stores(hv, "framing_error_count", newSVuv(st->framing_error_count));
     hv_stores(hv, "transition_count", newSVuv(st->transition_count));
+    hv_stores(hv, "consumer_message_calls",
+        newSVuv(st->consumer_message_calls));
+    hv_stores(hv, "consumer_pause_count",
+        newSVuv(st->consumer_pause_count));
+    hv_stores(hv, "consumer_resume_count",
+        newSVuv(st->consumer_resume_count));
+    hv_stores(hv, "consumer_event_calls",
+        newSVuv(st->consumer_event_calls));
+    hv_stores(hv, "consumer_paused",
+        newSViv(st->consumer_paused ? 1 : 0));
 
     hv_stores(hv, "write_submit_calls", newSVuv(st->write_submit_calls));
     hv_stores(hv, "write_ready_calls", newSVuv(st->write_ready_calls));
@@ -589,5 +677,73 @@ stats(state_obj)
         newSVuv(st->activity_clock_calls));
 
     RETVAL = newRV_noinc((SV *)hv);
+  OUTPUT:
+    RETVAL
+
+void
+_test_consumer_arm(state_obj, callback = &PL_sv_undef)
+    SV *state_obj
+    SV *callback
+  CODE:
+    les_test_consumer_arm(aTHX_ les_state_from_sv(state_obj), callback);
+
+void
+_test_consumer_cancel(state_obj)
+    SV *state_obj
+  CODE:
+    les_test_consumer_cancel(aTHX_ les_state_from_sv(state_obj));
+
+SV *
+_test_consumer_take(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = les_test_consumer_take(aTHX_ les_state_from_sv(state_obj));
+  OUTPUT:
+    RETVAL
+
+SV *
+_test_consumer_events(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = les_test_consumer_events(aTHX_ les_state_from_sv(state_obj));
+  OUTPUT:
+    RETVAL
+
+SV *
+_test_consumer_stats(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = les_test_consumer_stats(aTHX_ les_state_from_sv(state_obj));
+  OUTPUT:
+    RETVAL
+
+MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream
+PROTOTYPES: DISABLE
+
+UV
+_native_consumer_abi_version(CLASS)
+    const char *CLASS
+  CODE:
+    PERL_UNUSED_VAR(CLASS);
+    RETVAL = LES_CONSUMER_ABI_VERSION;
+  OUTPUT:
+    RETVAL
+
+SV *
+_test_consumer_definition(CLASS, variant = "valid")
+    const char *CLASS
+    const char *variant
+  CODE:
+    PERL_UNUSED_VAR(CLASS);
+    RETVAL = les_test_consumer_definition(aTHX_ variant);
+  OUTPUT:
+    RETVAL
+
+UV
+_test_consumer_destroy_count(CLASS)
+    const char *CLASS
+  CODE:
+    PERL_UNUSED_VAR(CLASS);
+    RETVAL = les_test_consumer_destroy_count();
   OUTPUT:
     RETVAL
