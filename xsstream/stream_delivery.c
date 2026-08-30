@@ -42,6 +42,10 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
     UV bytes;
 
     st->frames_emitted++;
+    if (st->consumer_ops) {
+        les_consumer_message(aTHX_ st, message);
+        return;
+    }
     if (!st->descriptor->message_batch_size) {
         st->message_callback_calls++;
         les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);

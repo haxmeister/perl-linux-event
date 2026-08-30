@@ -14,6 +14,7 @@ use Linux::Event::_SocketConfig ();
 # readable connection-lifecycle implementation.
 my %FRAMER_DEFINITION;
 my %TLS_DEFINITION;
+my %CONSUMER_DEFINITION;
 my %CLASS_DESCRIPTOR;
 
 sub declare_framer ($base, $target, $definition) {
@@ -31,6 +32,41 @@ sub _framer_for ($class) {
     for my $package (@{ mro::get_linear_isa($class) }) {
         return $FRAMER_DEFINITION{$package}
             if exists $FRAMER_DEFINITION{$package};
+    }
+    return undef;
+}
+
+sub declare_consumer ($base, $target, $definition) {
+    croak 'a consumer may be declared only for a Linux::Event::Stream subclass'
+        if $target eq $base || !$target->isa($base);
+    croak "$target already has a Stream descriptor"
+        if exists $CLASS_DESCRIPTOR{$target};
+    croak "$target already declares a consumer"
+        if exists $CONSUMER_DEFINITION{$target};
+    croak 'consumer declaration must be a hash reference'
+        if ref($definition) ne 'HASH';
+    my @unknown = grep {
+        $_ ne 'provider' && $_ ne 'abi_version'
+            && $_ ne 'operations_address'
+    } keys %$definition;
+    croak 'consumer declaration has unknown fields: '
+        . join(', ', sort @unknown) if @unknown;
+    croak 'consumer declaration requires provider'
+        if !exists($definition->{provider}) || !defined($definition->{provider});
+    croak 'consumer declaration requires a positive integer abi_version'
+        if !defined($definition->{abi_version})
+        || $definition->{abi_version} !~ /\A[1-9]\d*\z/;
+    croak 'consumer declaration requires a positive operations_address'
+        if !defined($definition->{operations_address})
+        || $definition->{operations_address} !~ /\A[1-9]\d*\z/;
+    $CONSUMER_DEFINITION{$target} = { %$definition };
+    return;
+}
+
+sub _consumer_for ($class) {
+    for my $package (@{ mro::get_linear_isa($class) }) {
+        return $CONSUMER_DEFINITION{$package}
+            if exists $CONSUMER_DEFINITION{$package};
     }
     return undef;
 }
@@ -62,6 +98,7 @@ sub _stream_options_for ($class) {
         low_watermark    =>   262_144,
         max_pending_bytes =>         0,
         read_size        =>    65_536,
+        read_budget_bytes =>         0,
         read_batch_bytes =>         0,
         message_batch_size =>       0,
         max_buffer       => 8_388_608,
@@ -97,6 +134,8 @@ sub _stream_options_for ($class) {
         if $option{max_pending_bytes} !~ /\A\d+\z/;
     croak "$class read_size must be a positive integer"
         if $option{read_size} !~ /\A\d+\z/ || $option{read_size} <= 0;
+    croak "$class read_budget_bytes must be a non-negative integer"
+        if $option{read_budget_bytes} !~ /\A\d+\z/;
     croak "$class read_batch_bytes must be a non-negative integer"
         if $option{read_batch_bytes} !~ /\A\d+\z/;
     croak "$class message_batch_size must be a non-negative integer"
@@ -126,6 +165,7 @@ sub for_class ($class) {
         if !$class->isa('Linux::Event::Stream');
 
     my $framer = _framer_for($class);
+    my $consumer = _consumer_for($class);
     my $tls = _tls_for($class);
     my $option = _stream_options_for($class);
     my %callback = map { $_ => scalar $class->can($_) }
@@ -137,7 +177,14 @@ sub for_class ($class) {
             if $option->{read_batch_bytes};
         croak "$class cannot define on_data() when it declares a framer"
             if $callback{on_data};
-        if ($option->{message_batch_size}) {
+        if ($consumer) {
+            croak "$class native consumer cannot be combined with message_batch_size"
+                if $option->{message_batch_size};
+            croak "$class native consumer cannot be combined with on_message()"
+                if $callback{on_message};
+            croak "$class native consumer cannot be combined with on_messages()"
+                if $callback{on_messages};
+        } elsif ($option->{message_batch_size}) {
             croak "$class enables message_batch_size but does not define on_messages()"
                 if !$callback{on_messages};
             croak "$class cannot define both on_message() and on_messages()"
@@ -149,6 +196,8 @@ sub for_class ($class) {
                 if !$callback{on_message};
         }
     } else {
+        croak "$class native consumer requires a framed Stream"
+            if $consumer;
         croak "$class has no framer and must define on_data()"
             if !$callback{on_data};
         croak "$class defines on_message() but does not declare a framer"
@@ -163,6 +212,7 @@ sub for_class ($class) {
 
     my $xs = Linux::Event::Stream::XSDescriptor->new(
         $option->{read_size},
+        $option->{read_budget_bytes},
         $option->{read_batch_bytes},
         $option->{message_batch_size},
         $option->{high_watermark},
@@ -187,6 +237,9 @@ sub for_class ($class) {
         $native->{prefix_bytes} // 0,
         $native->{prefix_little} // 0,
         $native->{include_prefix} // 0,
+        $consumer ? $consumer->{provider} : undef,
+        $consumer ? $consumer->{abi_version} : 0,
+        $consumer ? $consumer->{operations_address} : 0,
     );
 
     my $descriptor = {
@@ -195,6 +248,7 @@ sub for_class ($class) {
         options   => $option,
         native    => $native,
         framer    => $framer,
+        consumer  => $consumer,
         tls       => $tls,
         callbacks => \%callback,
     };

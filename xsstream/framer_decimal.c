@@ -8,7 +8,7 @@ les_process_decimal_length(pTHX_ les_xsstate_t *st)
     les_descriptor_t *descriptor = st->descriptor;
     const unsigned char separator = (unsigned char)st->descriptor->delimiter[0];
 
-    while (!st->closed && !st->read_paused && st->input_len > 0) {
+    while (!st->closed && !LES_INPUT_PAUSED(st) && st->input_len > 0) {
         const unsigned char *data = (const unsigned char *)les_input_data(st);
         size_t i = 0;
         size_t prefix;

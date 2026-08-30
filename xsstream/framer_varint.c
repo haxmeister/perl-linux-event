@@ -7,7 +7,7 @@ les_process_varint(pTHX_ les_xsstate_t *st)
 {
     les_descriptor_t *descriptor = st->descriptor;
 
-    while (!st->closed && !st->read_paused && st->input_len > 0) {
+    while (!st->closed && !LES_INPUT_PAUSED(st) && st->input_len > 0) {
         const unsigned char *data = (const unsigned char *)les_input_data(st);
         const unsigned int uv_bits = (unsigned int)(sizeof(UV) * 8);
         UV payload_len = 0;

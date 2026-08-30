@@ -18,6 +18,7 @@ WriteMakefile(
         stream_callbacks
         stream_input
         stream_delivery
+        stream_consumer
         stream_read
         stream_write
         stream_transition
@@ -29,7 +30,7 @@ WriteMakefile(
         framer_decimal
     )),
     depend           => {
-        '$(OBJECT)' => 'stream_internal.h stream_transport_abi.h',
+        '$(OBJECT)' => 'stream_internal.h stream_transport_abi.h stream_consumer_abi.h',
     },
     clean            => { FILES => 'Stream.c' },
 );

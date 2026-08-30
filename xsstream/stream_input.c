@@ -90,7 +90,8 @@ les_process_buffered(pTHX_ les_xsstate_t *st)
 void
 les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
 {
-    while (!st->closed && !st->read_paused && !st->read_eof && st->input_len) {
+    while (!st->closed && !LES_INPUT_PAUSED(st) && !st->read_eof
+        && st->input_len) {
         les_descriptor_t *descriptor = st->descriptor;
 
         if (descriptor->read_mode == LES_READ_DELIVER) {

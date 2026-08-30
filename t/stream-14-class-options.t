@@ -51,6 +51,13 @@ use Linux::Event::Loop;
     sub on_data ($stream, $bytes) { }
 }
 
+{
+    package T::OptionsNegativeBudget;
+    use parent 'Linux::Event::Stream';
+    sub stream_options ($class) { return read_budget_bytes => -1 }
+    sub on_data ($stream, $bytes) { }
+}
+
 my $loop = Linux::Event::Loop->new;
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
@@ -67,7 +74,8 @@ is_deeply(
     {
         read_size => 8, high_watermark => 1234,
         low_watermark => 123, max_pending_bytes => 0, max_buffer => 4096,
-        read_batch_bytes => 0, message_batch_size => 0,
+        read_budget_bytes => 0, read_batch_bytes => 0,
+        message_batch_size => 0,
         idle_timeout => 0, read_timeout => 0, write_timeout => 0,
     },
     'hashref class options are validated and cached',
@@ -95,5 +103,8 @@ like(descriptor_error('T::OptionsWatermark'), qr/low_watermark must be <=/,
     'invalid watermark relationship is rejected');
 like(descriptor_error('T::OptionsZeroRead'), qr/read_size must be a positive/,
     'zero read size is rejected');
+like(descriptor_error('T::OptionsNegativeBudget'),
+    qr/read_budget_bytes must be a non-negative/,
+    'negative read budget is rejected');
 
 done_testing;
