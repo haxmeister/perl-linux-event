@@ -2,8 +2,13 @@ use v5.36;
 use strict;
 use warnings;
 
-use Test::More;
 use File::Spec;
+use File::Temp qw(tempdir);
+use FindBin qw($Bin);
+use IPC::Open3 qw(open3);
+use JSON::PP qw(decode_json);
+use Symbol qw(gensym);
+use Test::More;
 
 my $bench = File::Spec->catfile('bench', 'run-stream-tuning-sweep.pl');
 my $html = File::Spec->catfile('tools', 'stream-tuning-explorer', 'index.html');
@@ -53,5 +58,45 @@ like $html_text, qr/src=["']explorer\.js["']/i,
     'UI loads the local JavaScript implementation';
 like $html_text, qr/href=["']explorer\.css["']/i,
     'UI loads the local stylesheet';
+
+my $dir = tempdir(CLEANUP => 1);
+my $json = "$dir/stream-tuning.json";
+my $script = "$Bin/../bench/run-stream-tuning-sweep.pl";
+my @cmd = (
+    $^X, '-Mblib', $script,
+    '--modes=framed', '--transports=unix',
+    '--message-sizes=16,64', '--read-sizes=4096',
+    '--read-budgets=0', '--message-batch-sizes=0,4',
+    '--max-buffers=8388608', '--target-bytes=4096',
+    '--min-messages=32', '--max-messages=32',
+    '--warmup=0', '--repeats=1', "--json=$json",
+);
+
+my $err = gensym;
+my $pid = open3(my $in, my $out, $err, @cmd);
+close $in;
+my $stdout = do { local $/; <$out> // '' };
+my $stderr = do { local $/; <$err> // '' };
+waitpid($pid, 0);
+is($?, 0, 'tuning sweep executes against the built Stream')
+    or diag $stdout . $stderr;
+
+SKIP: {
+    skip 'benchmark sweep failed', 5 if $? != 0 || !-f $json;
+    open my $fh, '<', $json or die "open benchmark JSON: $!";
+    my $report = decode_json(do { local $/; <$fh> });
+    close $fh;
+    is($report->{benchmark}, 'linux-event-stream-tuning-sweep',
+        'smoke report identifies tuning contract');
+    is($report->{benchmark_contract_version}, 1,
+        'smoke report uses contract version 1');
+    is(scalar @{ $report->{series} }, 2,
+        'smoke report contains both batch configurations');
+    is(scalar @{ $report->{raw} }, 4,
+        'smoke report contains every measured point');
+    ok(!grep({ ($_->{median_messages_per_second} // 0) <= 0 }
+        map { @{ $_->{points} } } @{ $report->{series} }),
+        'every smoke point reports positive throughput');
+}
 
 done_testing;
