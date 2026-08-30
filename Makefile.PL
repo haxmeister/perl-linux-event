@@ -31,6 +31,12 @@ my @public_modules = qw(
     Linux::Event::Wakeup
 );
 
+my @xs_dirs = qw(
+    xsfuture xsloop xsstream xstls xsconnection xsresolver
+    xssignal xslistener xswakeup xsdatagram xsprocess
+);
+splice @xs_dirs, 1, 0, 'xsdirect' if -d 'xsdirect';
+
 my $distribution_version = MM->parse_version('lib/Linux/Event.pm');
 my %provides = map {
     my $file = "lib/$_.pm";
@@ -48,7 +54,7 @@ WriteMakefile(
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
-    DIR              => [qw(xsfuture xsdirect xsloop xsstream xstls xsconnection xsresolver xssignal xslistener xswakeup xsdatagram xsprocess)],
+    DIR              => \@xs_dirs,
     CONFIGURE_REQUIRES => {
         'ExtUtils::CBuilder'  => 0,
         'ExtUtils::MakeMaker' => 0,
