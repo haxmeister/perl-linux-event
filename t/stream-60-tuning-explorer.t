@@ -33,6 +33,8 @@ like $bench_text, qr/message_batch_size/,
     'benchmark sweeps framed callback batching';
 like $bench_text, qr/read_batch_bytes/,
     'benchmark sweeps raw callback batching';
+like $bench_text, qr{\.\./blib/arch.*\.\./lib}s,
+    'benchmark roots itself to the current checkout build';
 
 open my $hfh, '<', $html or die "open $html: $!";
 my $html_text = do { local $/; <$hfh> };
@@ -63,7 +65,7 @@ my $dir = tempdir(CLEANUP => 1);
 my $json = "$dir/stream-tuning.json";
 my $script = "$Bin/../bench/run-stream-tuning-sweep.pl";
 my @cmd = (
-    $^X, '-Mblib', $script,
+    $^X, $script,
     '--modes=framed', '--transports=unix',
     '--message-sizes=16,64', '--read-sizes=4096',
     '--read-budgets=0', '--message-batch-sizes=0,4',
@@ -78,7 +80,7 @@ close $in;
 my $stdout = do { local $/; <$out> // '' };
 my $stderr = do { local $/; <$err> // '' };
 waitpid($pid, 0);
-is($?, 0, 'tuning sweep executes against the built Stream')
+is($?, 0, 'tuning sweep executes against the current built Stream without external include flags')
     or diag $stdout . $stderr;
 
 SKIP: {
