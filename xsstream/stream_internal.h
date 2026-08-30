@@ -91,6 +91,7 @@ typedef struct les_xsstate_s {
     int read_paused;
     int consumer_paused;
     int consumer_terminal;
+    int consumer_flush_pending;
     int read_eof;
 
     const les_consumer_ops_v1_t *consumer_ops;
@@ -162,6 +163,7 @@ typedef struct les_xsstate_s {
     unsigned long long consumer_pause_count;
     unsigned long long consumer_resume_count;
     unsigned long long consumer_event_calls;
+    unsigned long long consumer_flush_calls;
 
     /* Write instrumentation. */
     unsigned long long write_submit_calls;
@@ -226,6 +228,7 @@ void les_flush_raw_batch(pTHX_ les_xsstate_t *st);
 int les_consumer_create(pTHX_ les_xsstate_t *st);
 void les_consumer_destroy(pTHX_ les_xsstate_t *st);
 int les_consumer_message(pTHX_ les_xsstate_t *st, SV *message);
+int les_consumer_flush(pTHX_ les_xsstate_t *st);
 void les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
     const char *message);
 int les_consumer_resume(pTHX_ les_xsstate_t *st);

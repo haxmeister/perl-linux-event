@@ -10,6 +10,9 @@ Unreleased
     - Add optional read_budget_bytes fairness control while preserving the
       existing unlimited drain as the default. Native consumer pause remains
       independent from TLS handshake and shutdown progress.
+    - Extend consumer ABI v1 compatibly with an opt-in end-of-drain flush hook.
+      Providers can defer one wakeup while retaining a bounded batch; original
+      v1 operation tables remain accepted by struct_size.
     - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
       a private native drain helper while preserving read_size,
       max_reads_per_tick, callback chunking, EOF ordering, and error behavior.

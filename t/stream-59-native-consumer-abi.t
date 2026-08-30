@@ -32,6 +32,23 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 }
 
 {
+    package T::OriginalV1Base;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::Stream->_test_consumer_definition('original-v1'),
+        );
+    }
+}
+
+{
+    package T::OriginalV1Line;
+    use parent -norequire, 'T::OriginalV1Base';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
     package T::ConsumerShortLine;
     use parent -norequire, 'T::ConsumerBase';
     use Linux::Event::Framer 'Delimiter', "\n", max_frame => 3;
@@ -135,6 +152,19 @@ sub take ($stream) {
 }
 
 {
+    my ($loop, $stream, $peer) = pair('T::OriginalV1Line');
+    arm($stream, sub { $loop->stop });
+    syswrite($peer, "compatible\n");
+    $loop->run;
+    is(take($stream), 'compatible',
+        'a provider with the original ABI v1 struct size remains compatible');
+    is($stream->{xs_state}->stats->{consumer_flush_calls}, 0,
+        'core does not read or call the appended field on an old provider');
+    $stream->close;
+    close $peer;
+}
+
+{
     my ($loop, $stream, $peer) = pair('T::ConsumerLine');
     ok($stream->{xs_state}->consumer_paused,
         'pull consumer begins paused');
@@ -163,6 +193,10 @@ sub take ($stream) {
         'consumer resume instrumentation counts receive arms');
     is($stats->{message_callback_calls}, 0,
         'direct consumer bypasses public on_message callback');
+    cmp_ok($stats->{consumer_flush_calls}, '>=', 1,
+        'core reports end-of-drain consumer flush calls');
+    cmp_ok($stream->{xs_state}->_test_consumer_stats->{flushes}, '>=', 1,
+        'provider receives the optional end-of-drain flush hook');
     $stream->close;
     close $peer;
 }
@@ -382,6 +416,7 @@ for my $case (
 for my $case (
     ['wrong-declaration-version', qr/consumer ABI version mismatch/],
     ['wrong-table-version', qr/incompatible ABI version/],
+    ['missing-flush', qr/requests flush without a flush function/],
     ['unknown-flags', qr/unsupported flags/],
     ['incomplete', qr/operations table is incomplete/],
     ['create-failure', qr/failed to create per-Stream context/],

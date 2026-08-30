@@ -69,6 +69,7 @@ les_call_framing_error(pTHX_ les_xsstate_t *st, const char *message)
     SV *msg;
 
     les_flush_message_batch(aTHX_ st);
+    les_consumer_flush(aTHX_ st);
     les_consumer_event(aTHX_ st, LES_CONSUMER_EVENT_FRAMING_ERROR, 0,
         message);
     if (st->closed || st->read_paused || st->descriptor != descriptor)

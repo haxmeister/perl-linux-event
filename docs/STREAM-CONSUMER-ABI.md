@@ -69,6 +69,7 @@ The operations table contains:
 | `message` | Consume one borrowed framed-message `SV *` and return a consumer status. |
 | `event` | Observe the first terminal input/lifecycle event. |
 | `destroy` | Release the provider context exactly once. |
+| `flush` | Optional end-of-drain notification for bounded provider batching. |
 
 The host table passed to `create` contains:
 
@@ -80,9 +81,19 @@ The host table passed to `create` contains:
 | `is_closed` | Report whether the host Stream is closed. |
 
 Every table begins with `abi_version` and `struct_size`. Linux::Event rejects
-version mismatches, undersized tables, unsupported flags, missing names, and
+version mismatches, tables smaller than the original v1 fields, unsupported
+flags, missing names, and
 missing required functions before constructing a Stream. The operations table
 must remain at a stable address for every descriptor that declares it.
+
+`flush` was appended as an optional v1 field. A provider requests it with
+`LES_CONSUMER_F_WANT_FLUSH`; the host then requires a full-size table and a
+non-null function. Hosts predating this extension reject that flag, while
+providers compiled against the original v1 layout remain valid. The hook runs
+after a framed native-input drain that called `message` at least once and
+returns the same status values as `message`. This allows a provider to retain a
+bounded batch and defer one application wakeup until the current read or
+buffered-input drain is complete.
 
 `create` must report failure with `NULL`, and `destroy` must not throw. A
 `message` or `event` implementation that invokes Perl may propagate an
