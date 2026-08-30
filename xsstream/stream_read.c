@@ -121,8 +121,10 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             les_descriptor_t *descriptor = st->descriptor;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
-            else
+            else {
                 les_flush_message_batch(aTHX_ st);
+                les_consumer_flush(aTHX_ st);
+            }
             if (st->closed || LES_INPUT_PAUSED(st))
                 break;
             if (st->descriptor != descriptor)
@@ -144,8 +146,10 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             st->read_eagain_count++;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
-            else
+            else {
                 les_flush_message_batch(aTHX_ st);
+                les_consumer_flush(aTHX_ st);
+            }
             if (!st->closed && !LES_INPUT_PAUSED(st)
                 && st->descriptor != descriptor)
                 continue;
@@ -158,8 +162,10 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             st->read_error_count++;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
-            else
+            else {
                 les_flush_message_batch(aTHX_ st);
+                les_consumer_flush(aTHX_ st);
+            }
             if (st->closed || LES_INPUT_PAUSED(st))
                 break;
             if (st->descriptor != descriptor)
@@ -169,8 +175,10 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         }
     }
 
-    if (!st->closed && st->descriptor->read_mode != LES_READ_DELIVER)
+    if (!st->closed && st->descriptor->read_mode != LES_READ_DELIVER) {
         les_flush_message_batch(aTHX_ st);
+        les_consumer_flush(aTHX_ st);
+    }
 
     LEAVE;
 
