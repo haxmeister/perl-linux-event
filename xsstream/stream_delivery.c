@@ -1,6 +1,5 @@
 #include "stream_internal.h"
 #include "../xsfuture/future_native.h"
-#include "../xsdirect/direct_awaitable_native.h"
 
 static const lef_native_api_t *
 les_future_api(pTHX)
