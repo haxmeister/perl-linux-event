@@ -1,6 +1,7 @@
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
+#include "direct_awaitable_native.h"
 
 enum {
     LEDA_PENDING = 0,
@@ -67,11 +68,21 @@ leda_notify(pTHX_ leda_t *state)
 }
 
 static void
-leda_done(pTHX_ leda_t *state, SV *result)
+leda_done_ref(pTHX_ leda_t *state, SV *result)
 {
     if (state->state != LEDA_PENDING)
         croak("DirectAwaitable is already ready");
     state->result = newSVsv(result);
+    state->state = LEDA_DONE;
+    leda_notify(aTHX_ state);
+}
+
+static void
+leda_done_take(pTHX_ leda_t *state, SV *result)
+{
+    if (state->state != LEDA_PENDING)
+        croak("DirectAwaitable is already ready");
+    state->result = result;
     state->state = LEDA_DONE;
     leda_notify(aTHX_ state);
 }
@@ -86,8 +97,59 @@ leda_fail(pTHX_ leda_t *state, SV *failure)
     leda_notify(aTHX_ state);
 }
 
+static SV *
+leda_api_new_pending(pTHX)
+{
+    PERL_UNUSED_CONTEXT;
+    return leda_new("Linux::Event::DirectAwaitable");
+}
+
+static int
+leda_api_is_ready(pTHX_ SV *obj)
+{
+    PERL_UNUSED_CONTEXT;
+    return leda_from_sv(obj)->state != LEDA_PENDING;
+}
+
+static void
+leda_api_done_ref(pTHX_ SV *obj, SV *result)
+{
+    leda_done_ref(aTHX_ leda_from_sv(obj), result);
+}
+
+static void
+leda_api_done_take(pTHX_ SV *obj, SV *result)
+{
+    leda_done_take(aTHX_ leda_from_sv(obj), result);
+}
+
+static void
+leda_api_fail(pTHX_ SV *obj, SV *failure)
+{
+    leda_fail(aTHX_ leda_from_sv(obj), failure);
+}
+
+static const leda_native_api_t leda_native_api = {
+    LEDA_NATIVE_API_VERSION,
+    sizeof(leda_native_api_t),
+    leda_api_new_pending,
+    leda_api_is_ready,
+    leda_api_done_ref,
+    leda_api_done_take,
+    leda_api_fail
+};
+
 MODULE = Linux::Event::DirectAwaitable    PACKAGE = Linux::Event::DirectAwaitable
 PROTOTYPES: DISABLE
+
+BOOT:
+    {
+        SV **slot = hv_fetch(PL_modglobal, LEDA_NATIVE_API_KEY,
+            LEDA_NATIVE_API_KEY_LEN, 1);
+        if (!slot)
+            croak("could not register Linux::Event::DirectAwaitable native API");
+        sv_setiv(*slot, PTR2IV(&leda_native_api));
+    }
 
 SV *
 new(CLASS)
@@ -115,7 +177,7 @@ AWAIT_DONE(obj, result = &PL_sv_undef)
     SV *obj
     SV *result
   CODE:
-    leda_done(aTHX_ leda_from_sv(obj), result);
+    leda_done_ref(aTHX_ leda_from_sv(obj), result);
     RETVAL = newSVsv(obj);
   OUTPUT:
     RETVAL
@@ -125,7 +187,7 @@ complete(obj, result = &PL_sv_undef)
     SV *obj
     SV *result
   CODE:
-    leda_done(aTHX_ leda_from_sv(obj), result);
+    leda_done_ref(aTHX_ leda_from_sv(obj), result);
     RETVAL = newSVsv(obj);
   OUTPUT:
     RETVAL
