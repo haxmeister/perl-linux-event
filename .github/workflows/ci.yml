@@ -82,7 +82,7 @@ jobs:
 
       - name: Direct Stream recv payload comparison
         if: matrix.label == 'latest'
-        run: perl -Mblib .github/direct-stream-recv-bench.pl --repeat=5 --warmup=1
+        run: perl -Mblib .github/direct-stream-recv-bench.pl --sizes=2500,35000,200000 --repeat=5 --warmup=1
 
       - name: Direct Stream recv scale comparison
         if: matrix.label == 'latest'
