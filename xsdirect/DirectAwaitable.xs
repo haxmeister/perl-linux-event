@@ -1,7 +1,6 @@
 #include "EXTERN.h"
 #include "perl.h"
 #include "XSUB.h"
-#include "direct_awaitable_native.h"
 #include "../xsstream/stream_internal.h"
 
 enum {
