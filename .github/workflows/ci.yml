@@ -76,6 +76,10 @@ jobs:
       - name: Test
         run: make test
 
+      - name: Direct awaitable experiment
+        if: matrix.label == 'latest'
+        run: perl -Mblib bench/run-direct-awaitable-experiment.pl --iterations=50000 --repeat=7 --warmup=2
+
   distribution:
     name: Distribution integrity
     runs-on: ubuntu-24.04
