@@ -6,10 +6,11 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SHUT_WR);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::HalfCloseStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { $stream->data->{request} .= $bytes }
     sub on_eof ($stream) {
         my $state = $stream->data;

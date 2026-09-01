@@ -10,10 +10,11 @@ use Linux::Event::Error;
 use Linux::Event::Listener;
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::ListenerProbeStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
     sub on_listener_error ($class, $listener, $error) {
         $main::STREAM_LISTENER_ERROR_CALLED++;

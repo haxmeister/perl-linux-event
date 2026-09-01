@@ -255,8 +255,8 @@ membership is recorded and only entries changed by Linux::Event are restored.
 
 ## Stream acquisition layer
 
-The private `Linux::Event::Stream::_Connection` engine owns outbound socket
-acquisition, while the public Stream owns the entire logical lifecycle. The
+The private `Linux::Event::Socket::_Connection` engine owns outbound socket
+acquisition, while the public Socket owns the entire logical lifecycle. The
 engine validates address modes, stores candidate/attempt state, and checks
 `SO_ERROR` after writable readiness. Sockets are created with
 `SOCK_NONBLOCK | SOCK_CLOEXEC`.
@@ -271,12 +271,12 @@ This private connection deadline helper remains separate from the public Timer
 scheduler in this release. Migrating connection and TLS deadlines to Timer is
 a later lifecycle change, not part of the Timer API itself.
 
-`MyStream->connect()` creates one Stream and the private engine reports directly
-to it. During success, Stream binds native state to the connected fd. The
+`MySocket->connect()` creates one Socket and the private engine reports directly
+to it. During success, Socket binds Stream's native state to the connected fd. The
 application-visible object is never replaced.
 
 Hostname resolution lives in the shared private `Linux::Event::_Resolver` XS
-extension used by Stream and Datagram. Two lazy native workers per Loop run
+extension used by Socket and Datagram. Two lazy native workers per Loop run
 `getaddrinfo` without touching Perl state, copy results to a native completion
 queue, and signal one eventfd. An ordinary raw Loop watcher drains that queue
 on the reactor thread. The connection engine interleaves
@@ -297,11 +297,11 @@ return to Perl for the cached private `_accept_client` construction method.
 Address text remains lazy through `Linux::Event::Address`; applications that
 do not inspect a peer avoid formatting it.
 
-Listener constructs its configured Stream subclass, attaches the Stream to the
+Listener constructs its configured Socket subclass, attaches the Socket to the
 same Loop, invokes the optional public `on_accept($listener, $stream)`, and then
 reports a plain Stream ready. TLS Stream readiness waits for its handshake.
-Listener data is passed automatically to every accepted Stream. A TLS
-declaration on the Stream class selects a fresh server-side provider and is
+Listener data is passed automatically to every accepted Socket. A TLS
+declaration on the Socket class selects a fresh server-side provider and is
 validated before Listener creates its socket. Listener does not create a
 temporary accepted-socket registration. An
 `on_accept` exception closes only that Stream and becomes a nonfatal callback
@@ -311,10 +311,10 @@ callback so a readable backlog cannot create an error spin.
 ## Socket policy layer
 
 Common socket validation and `setsockopt` conversion live in a private
-cold-path module shared by Stream and Datagram. Stream copies cached class
+cold-path module shared by Socket and Datagram. Socket copies cached class
 policy into one acquisition instance, applies constructor overrides, and
 configures every outbound candidate before bind/connect. Accepted and adopted
-Streams apply the same policy before native transport attachment. Listener
+Sockets apply the same policy before native transport attachment. Listener
 separately owns listening-socket creation policy.
 
 The optional cached `configure_socket` callback follows built-in policy. It is

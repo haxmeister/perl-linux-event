@@ -6,10 +6,11 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::EndDelimitedStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', '<END>';
     sub on_message ($stream, $message) {
         my $state = $stream->data;

@@ -9,7 +9,7 @@ use Linux::Event::Listener;
 
 {
     package T::BatchStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_ready ($stream) {
         push @{ $stream->data->{accepted} }, $stream;
         $stream->loop->stop

@@ -10,12 +10,13 @@ use Test::More;
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 our @ERRORS;
 
 {
     package T::LocalBindClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($self, $bytes) { }
     sub on_error ($self, $error) {
         push @main::ERRORS, $error;

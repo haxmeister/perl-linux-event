@@ -22,7 +22,7 @@ All values are non-negative seconds and may be fractional. Zero disables the
 policy. A constructor value overrides its subclass default for one Stream:
 
 ```perl
-my $stream = ClientStream->connect(
+my $stream = ClientSocket->connect(
     host => $host,
     port => $port,
     idle_timeout => 120,
@@ -31,8 +31,9 @@ my $stream = ClientStream->connect(
 );
 ```
 
-The same options work with `new(fh => $connected_socket)`. A Listener-created Stream uses the
-accepted Stream subclass's `stream_options` defaults. An explicit zero
+The same options work with generic `new(...)` handles and with
+`new(fh => $connected_socket)` on Socket. A Listener-created Socket uses the
+accepted Socket subclass's `stream_options` defaults. An explicit zero
 constructor value disables a nonzero subclass default. Constructor overrides
 remain in force across `transition_to`; policy that was not overridden changes
 to the target subclass default.
@@ -58,7 +59,7 @@ One explicit fixed deadline may coexist with inactivity policy. It can be
 provided at construction:
 
 ```perl
-my $stream = ClientStream->new(
+my $stream = ClientSocket->new(
     fh => $socket,
     deadline => { after => 30, operation => 'authentication' },
 );

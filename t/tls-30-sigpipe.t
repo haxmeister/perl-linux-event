@@ -8,11 +8,12 @@ use FindBin qw($Bin);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 {
     package T::TLSSigpipeClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_transport_ready ($stream) { $stream->write('ping') }
     sub on_data ($stream, $bytes) {
         $stream->data->{input} .= $bytes;
@@ -26,7 +27,7 @@ use Linux::Event::TLS;
 
 {
     package T::TLSSigpipeServer;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { $stream->write('pong') }
     sub on_error ($stream, $error) {
         $stream->data->{server_error} = $error;

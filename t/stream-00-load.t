@@ -4,6 +4,7 @@ use warnings;
 use Test::More;
 
 use_ok('Linux::Event::Stream');
+use_ok('Linux::Event::Socket');
 use_ok('Linux::Event::Error');
 require_ok('Linux::Event::Framer');
 use_ok('Linux::Event::Framer::Delimiter');

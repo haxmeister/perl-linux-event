@@ -15,23 +15,24 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package Linux::Event::Bench::RawNamed;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { return }
 }
 
 {
     package Linux::Event::Bench::FramedMinimal;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
 }
 
 {
     package Linux::Event::Bench::FramedFullNamed;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
     sub on_drain ($stream) { return }

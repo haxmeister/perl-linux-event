@@ -6,6 +6,7 @@ use FindBin qw($Bin);
 use File::Spec;
 
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 for my $package (qw(
     Linux::Event::Framer::Delimiter
@@ -31,7 +32,7 @@ like($@, qr/must inherit from Linux::Event::Stream/,
 
 eval q{
     package T::LowercaseDeclaration;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'delimiter', "\n";
     sub on_message { }
     1;
@@ -41,7 +42,7 @@ like($@, qr/cannot declare framer 'delimiter'/,
 
 eval q{
     package T::InvalidDeclarationName;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer '../Delimiter', "\n";
     sub on_message { }
     1;
@@ -51,7 +52,7 @@ like($@, qr/invalid framer name/,
 
 eval q{
     package T::DuplicateDeclaration;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Fixed', size => 4;
     use Linux::Event::Framer 'Fixed', size => 4;
     sub on_message { }
@@ -61,7 +62,7 @@ like($@, qr/already declares a framer/, 'a Stream type declares exactly one fram
 
 eval q{
     package T::BadFixedDeclaration;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Fixed', size => 0;
     sub on_message { }
     1;

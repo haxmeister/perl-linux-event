@@ -1,21 +1,21 @@
-# Stream connection design
+# Socket connection design
 
-Outbound connection acquisition is part of `Linux::Event::Stream`. There is no
+Outbound connection acquisition is part of `Linux::Event::Socket`. There is no
 public Connect or Connector object. The application creates the object it wants
 to use after establishment, and that same object owns every later state.
 
 ## Public API
 
 ```perl
-package ClientStream;
-use parent 'Linux::Event::Stream';
+package ClientSocket;
+use parent 'Linux::Event::Socket';
 use Linux::Event::TLS
     verify => 1,              # default
     alpn   => ['http/1.1'];   # optional
 
 package main;
 my $state = { requests => {} };
-my $stream = ClientStream->connect(
+my $socket = ClientSocket->connect(
     loop    => $loop,              # optional: attach immediately
     host    => 'example.com',      # required
     port    => 443,                # required
@@ -27,7 +27,7 @@ my $stream = ClientStream->connect(
 );
 ```
 
-The TLS declaration is part of the Stream type. `connect()` selects the client
+The TLS declaration is part of the Socket type. `connect()` selects the client
 role automatically and defaults SNI and hostname verification to its `host`.
 Specify `server_name` in the declaration only when it must differ from the
 connection host.
@@ -35,13 +35,13 @@ connection host.
 Detached construction is equivalent:
 
 ```perl
-my $stream = ClientStream->connect(
+my $socket = ClientSocket->connect(
     host => '127.0.0.1', port => 9999,
 );
-$loop->add($stream);
+$loop->add($socket);
 ```
 
-The Stream accepts `write()` and `send()` before it is ready. Pending output is
+The Socket accepts `write()` and `send()` before it is ready. Pending output is
 bounded by the Stream class's normal `max_pending_bytes` policy and is flushed
 in order after establishment. Its `write()` result, `pending_bytes`, and
 `is_write_blocked` use the normal high-watermark contract during acquisition;
@@ -69,7 +69,7 @@ applies `SO_BINDTODEVICE` before local bind and connect.
 
 ## Socket configuration order
 
-Class `stream_options` and constructor socket values are applied to every new
+Class `socket_options` and constructor socket values are applied to every new
 candidate before local binding and connect. Constructor values win over class
 policy, while an omitted value leaves the kernel default unchanged. The cached
 `configure_socket($stream, $fh, 'connect', $address)` hook runs after built-in
@@ -94,10 +94,10 @@ a later readiness or error callback.
 
 ## Readiness
 
-`on_ready($stream)` runs once when the Stream is usable by the application. For
+`on_ready($socket)` runs once when the Socket is usable by the application. For
 a plain connection that means the socket connected successfully. For TLS it
 means TCP establishment, TLS handshake, and certificate/hostname verification
-all completed. Accepted plain Streams are ready after Listener attaches them.
+all completed. Accepted plain Sockets are ready after Listener attaches them.
 
 Connection failure is delivered to `on_error($stream, $error)`, followed by
 the ordinary close lifecycle. The error is a `Linux::Event::Error`; its
@@ -106,9 +106,9 @@ socket, connect, and deadline failures.
 
 ## Internal implementation
 
-`Linux::Event::Stream::_Connection` is a private acquisition engine. It owns
-candidate attempts and a Linux timerfd while the public Stream is connecting.
-On success it hands the connected handle directly back to that Stream, which
+`Linux::Event::Socket::_Connection` is a private acquisition engine. It owns
+candidate attempts and a Linux timerfd while the public Socket is connecting.
+On success it hands the connected handle directly back to that Socket, which
 installs its established native read/write state. No second public object or
 callback adapter is created.
 

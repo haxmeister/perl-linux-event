@@ -7,12 +7,13 @@ use Scalar::Util qw(refaddr);
 use Linux::Event::Loop;
 use Linux::Event::Listener;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 our ($LOOP, $CLIENT_ID, $READY, $REPLY, $SERVER_PEER, $ERROR);
 
 {
     package T::AutomaticEcho;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
 
     sub on_message ($stream, $message) {
@@ -28,7 +29,7 @@ our ($LOOP, $CLIENT_ID, $READY, $REPLY, $SERVER_PEER, $ERROR);
 
 {
     package T::AutomaticClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
 
     sub on_ready ($stream) {

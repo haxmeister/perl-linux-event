@@ -1,6 +1,20 @@
 Revision history for Linux-Event
 
 Unreleased
+    - Split the public byte-stream model into generic Linux::Event::Stream and
+      its Linux::Event::Socket specialization. Stream now accepts one shared,
+      separate read/write, read-only, or write-only handle without performing
+      socket address discovery. Socket owns SOCK_STREAM validation, connect,
+      addresses, socket policy, kernel shutdown, and TLS declarations.
+    - Make Stream lifecycle directional: read EOF leaves an independent write
+      side usable, end drains only output, immediate close_read/close_write
+      stop one direction, close stops both, and generic detach transfers both
+      handles. The native engine retains one parser, consumer context, and
+      segmented output queue across one or two descriptors.
+    - Migrate Listener-created, TCP, Unix stream, socketpair, outbound connect,
+      and TLS protocol classes to Socket. Add generic pipe, FIFO, split-handle,
+      STDIN/STDOUT, directional lifecycle, backpressure, framing, and native
+      consumer ABI regression coverage.
     - Add a versioned native framed-message consumer ABI for separate XS
       integrations. Providers own one context per Stream, receive borrowed
       message SVs directly from every built-in native framer, control

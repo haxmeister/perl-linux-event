@@ -6,6 +6,7 @@ use_ok('Linux::Event::Timer');
 use_ok('Linux::Event::Signal');
 use_ok('Linux::Event::Wakeup');
 use_ok('Linux::Event::Stream');
+use_ok('Linux::Event::Socket');
 use_ok('Linux::Event::Listener');
 use_ok('Linux::Event::Datagram');
 use_ok('Linux::Event::Process');

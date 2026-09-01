@@ -8,7 +8,7 @@ use Linux::Event::Loop;
 
 {
     package T::VarintStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Varint';
     sub stream_options ($class) { return read_size => 1 }
     sub on_message ($stream, $message) {
@@ -24,7 +24,7 @@ use Linux::Event::Loop;
 
 {
     package T::VarintPrefixStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Varint', include_prefix => 1;
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;
@@ -34,7 +34,7 @@ use Linux::Event::Loop;
 
 {
     package T::VarintLimitedStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Varint', max_frame => 3;
     sub on_message ($stream, $message) {
         Test::More::fail('oversized Varint frame must not emit');

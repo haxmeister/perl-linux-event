@@ -9,6 +9,7 @@ use Socket qw(AF_INET AF_INET6);
 use Linux::Event::Loop;
 use Linux::Event::Listener;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::_Resolver ();
 use Linux::Event::Timer;
 
@@ -31,13 +32,13 @@ our ($RESOLVED, $READY, $ERROR, $LOOP);
 
 {
     package T::ResolverServer;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::ResolverClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
     sub on_ready ($stream) {
         $main::READY++;
@@ -50,7 +51,7 @@ our ($RESOLVED, $READY, $ERROR, $LOOP);
     }
 }
 
-my $order = Linux::Event::Stream::_Connection::_happy_eyeballs_order([
+my $order = Linux::Event::Socket::_Connection::_happy_eyeballs_order([
     { family => AF_INET6, sockaddr => 'v6-a' },
     { family => AF_INET6, sockaddr => 'v6-b' },
     { family => AF_INET,  sockaddr => 'v4-a' },

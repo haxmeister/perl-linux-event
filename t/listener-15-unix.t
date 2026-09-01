@@ -11,7 +11,7 @@ use Linux::Event::Listener;
 
 {
     package T::UnixStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_ready ($stream) {
         $stream->data->{peer} = $stream->peer;
         $stream->data->{stream} = $stream;

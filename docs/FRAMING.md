@@ -7,7 +7,7 @@ A framed Stream is a subclass with one declarative import and a named
 
 ```perl
 package MessageStream;
-use parent 'Linux::Event::Stream';
+use parent 'Linux::Event::Socket';
 use Linux::Event::Framer 'LengthPrefix',
     bytes => 4, endian => 'big', max_frame => 16 * 1024 * 1024;
 
@@ -81,7 +81,7 @@ the native read engine drains them:
 
 ```perl
 package RawProtocolStream;
-use parent 'Linux::Event::Stream';
+use parent 'Linux::Event::Socket';
 
 sub on_data ($stream, $bytes) {
     my $state = $stream->data;

@@ -8,11 +8,12 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_SNDBUF);
 use Linux::Event::Listener;
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::Framer ();
 
 {
     package T::CloseOnData;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) {
         $stream->data->{data}++;
         $stream->close;
@@ -22,7 +23,7 @@ use Linux::Event::Framer ();
 
 {
     package T::CloseOnReady;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { return }
     sub on_ready ($stream) {
         $stream->data->{ready}++;
@@ -33,13 +34,13 @@ use Linux::Event::Framer ();
 
 {
     package T::ReadySink;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { return }
 }
 
 {
     package T::CloseOnMessage;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) {
         push @{ $stream->data->{messages} }, $message;
@@ -50,7 +51,7 @@ use Linux::Event::Framer ();
 
 {
     package T::CloseOnEof;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { return }
     sub on_eof ($stream) {
         $stream->data->{eof}++;
@@ -61,7 +62,7 @@ use Linux::Event::Framer ();
 
 {
     package T::CloseOnDrain;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) {
         return high_watermark => 4096, low_watermark => 1024;
     }
@@ -78,7 +79,7 @@ use Linux::Event::Framer ();
 
 {
     package T::CloseOnError;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n", max_frame => 4;
     sub on_message ($stream, $message) { return }
     sub on_error ($stream, $error) {
@@ -90,7 +91,7 @@ use Linux::Event::Framer ();
 
 {
     package T::DrainReader;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) {
         $stream->data->{received} += length($bytes);
     }

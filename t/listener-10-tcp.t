@@ -8,6 +8,7 @@ use Socket qw(AF_INET SOCK_STREAM inet_aton pack_sockaddr_in);
 use Linux::Event::Loop;
 use Linux::Event::Listener;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 our ($LOOP, $STATE);
 
@@ -26,7 +27,7 @@ our ($LOOP, $STATE);
 
 {
     package T::AcceptedTCPStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub on_ready ($stream) {
         my $state = $stream->data;

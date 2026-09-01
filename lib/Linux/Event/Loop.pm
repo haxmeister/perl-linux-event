@@ -41,7 +41,7 @@ Linux::Event::Loop - Linux-native epoll event loop
   use Linux::Event::Loop;
 
   my $loop = Linux::Event::Loop->new;
-  my $stream = $loop->add(MyStream->connect(
+  my $stream = $loop->add(MySocket->connect(
       host => '127.0.0.1', # required
       port => 9999,        # required
   ));
@@ -54,13 +54,13 @@ buffer, and readiness dispatch. It is the only public loop class.
 
 High-level objects may be attached in either of two equivalent ways:
 
-  my $stream = MyStream->connect(
+  my $stream = MySocket->connect(
       loop => $loop,        # optional: attach immediately
       host => '127.0.0.1',  # required
       port => 9999,         # required
   );
 
-  my $stream = MyStream->connect(
+  my $stream = MySocket->connect(
       host => '127.0.0.1', # required
       port => 9999,        # required
   );
@@ -79,7 +79,8 @@ subclassing API.
 
 =head2 add($object)
 
-Attaches a detached L<Linux::Event::Stream>, L<Linux::Event::Listener>,
+Attaches a detached L<Linux::Event::Stream>, L<Linux::Event::Socket>,
+L<Linux::Event::Listener>,
 L<Linux::Event::Datagram>, L<Linux::Event::Timer>,
 L<Linux::Event::Signal>, L<Linux::Event::Wakeup>, or
 L<Linux::Event::Process> and returns that exact object. The object becomes
@@ -88,12 +89,12 @@ attaching a terminal object throws an exception.
 
 The following are equivalent:
 
-  my $a = MyStream->connect(
+  my $a = MySocket->connect(
       loop => $loop,       # optional: attach immediately
       host => '127.0.0.1', # required
       port => 9999,        # required
   );
-  my $b = $loop->add(MyStream->connect(
+  my $b = $loop->add(MySocket->connect(
       host => '127.0.0.1', # required
       port => 9999,        # required
   ));

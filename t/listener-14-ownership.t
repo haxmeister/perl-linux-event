@@ -13,7 +13,7 @@ use Linux::Event::Listener;
 
 {
     package T::OwnedStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
 }
 

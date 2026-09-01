@@ -11,11 +11,12 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 {
     package Linux::Event::TLS::Bench::Echo;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) {
         $stream->write($bytes)
             or die "benchmark echo entered backpressure\n";
@@ -25,7 +26,7 @@ use Linux::Event::TLS;
 
 {
     package Linux::Event::TLS::Bench::Client;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_transport_ready ($stream) { main::client_ready($stream) }
     sub on_data ($stream, $bytes) { main::client_data($stream, $bytes) }
     sub on_error ($stream, $error) { die "client Stream error: $error\n" }

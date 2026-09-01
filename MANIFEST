@@ -54,7 +54,7 @@ docs/OBJECT-LIFECYCLE.md
 docs/PROCESS-DESIGN.md
 docs/SIGNAL-DESIGN.md
 docs/SOCKET-CONFIGURATION.md
-docs/STREAM-CONNECTIONS.md
+docs/SOCKET-CONNECTIONS.md
 docs/STREAM-CONSUMER-ABI.md
 docs/STREAM-DEADLINES.md
 docs/STREAM-DESIGN.md
@@ -87,8 +87,10 @@ lib/Linux/Event/Loop.pm
 lib/Linux/Event/Loop/Introspection.pm
 lib/Linux/Event/Process.pm
 lib/Linux/Event/Signal.pm
+lib/Linux/Event/Socket.pm
+lib/Linux/Event/Socket/_Connection.pm
+lib/Linux/Event/Socket/_Descriptor.pm
 lib/Linux/Event/Stream.pm
-lib/Linux/Event/Stream/_Connection.pm
 lib/Linux/Event/Stream/_Descriptor.pm
 lib/Linux/Event/Timer.pm
 lib/Linux/Event/TLS.pm
@@ -225,6 +227,7 @@ t/stream-56-message-batch-framers.t
 t/stream-57-callback-batching-benchmark-smoke.t
 t/stream-58-callback-batching-fairness-smoke.t
 t/stream-59-native-consumer-abi.t
+t/stream-60-generic-handles.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t

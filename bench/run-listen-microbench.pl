@@ -13,6 +13,7 @@ use Socket qw(
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::Listener;
 use Linux::Event::Loop;
 
@@ -46,7 +47,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchAutomaticStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub on_data ($stream, $bytes) { }
 
@@ -70,7 +71,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchListenClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub on_data ($stream, $bytes) { }
 
@@ -233,7 +234,7 @@ Usage: perl -Mblib bench/run-listen-microbench.pl [options]
   --timeout=SECONDS     catastrophic connection deadline (default: 30)
   --help
 
-All rows acquire loopback TCP clients through MyStream->connect. Manual uses
+All rows acquire loopback TCP clients through MySocket->connect. Manual uses
 explicit listener setup, Loop->watch, Perl accept, and close. Add uses detached
 Listener construction followed by Loop->add. Loop supplies loop => directly to
 Listener->new. Both Listener rows construct and close the same minimal Stream

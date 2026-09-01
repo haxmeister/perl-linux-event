@@ -6,29 +6,20 @@ use warnings;
 our $VERSION = '0.105';
 
 use Carp qw(croak);
+use Errno ();
 use Fcntl qw(F_GETFD F_GETFL F_SETFD F_SETFL FD_CLOEXEC O_NONBLOCK);
 use POSIX qw(isfinite);
-use Scalar::Util qw(looks_like_number weaken);
-use Socket qw(SOL_SOCKET SO_ERROR);
+use Scalar::Util qw(looks_like_number refaddr weaken);
 use utf8 ();
 
-use Linux::Event::Stream::_Connection ();
 use Linux::Event::Stream::_Descriptor ();
 use Linux::Event::Error;
-use Linux::Event::Address;
-use Linux::Event::_SocketConfig ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
 
 sub _declare_framer ($base, $target, $definition) {
     return Linux::Event::Stream::_Descriptor::declare_framer(
-        $base, $target, $definition,
-    );
-}
-
-sub _declare_tls ($base, $target, $definition) {
-    return Linux::Event::Stream::_Descriptor::declare_tls(
         $base, $target, $definition,
     );
 }
@@ -111,7 +102,7 @@ sub _xs_write_empty ($self) {
     $self->{deadline_write_started} = undef;
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{write_timeout} > 0;
-    $self->{watcher}->disable_write if $self->{watcher};
+    $self->{write_watcher}->disable_write if $self->{write_watcher};
     $self->_finish_write_side if $self->{write_ending} && !$self->{write_ended};
     return;
 }
@@ -132,15 +123,15 @@ sub _xs_drain ($self) {
 
 sub _xs_consumer_paused ($self) {
     return if $self->{closed};
-    $self->{watcher}->disable_read
-        if $self->{watcher} && $self->{xs_state}->transport_ready;
+    $self->{read_watcher}->disable_read
+        if $self->{read_watcher} && $self->{xs_state}->transport_ready;
     return;
 }
 
 sub _xs_consumer_resumed ($self) {
     return if $self->{closed} || $self->{read_paused} || $self->{read_eof};
-    $self->{watcher}->enable_read
-        if $self->{watcher} && !$self->{xs_state}->consumer_paused;
+    $self->{read_watcher}->enable_read
+        if $self->{read_watcher} && !$self->{xs_state}->consumer_paused;
     return;
 }
 
@@ -155,11 +146,11 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
     if ($status == 2) {
         # Transport handshakes and shutdowns must make progress even when the
         # application-facing consumer is paused.
-        $self->{watcher}->enable_read if $self->{watcher};
+        $self->{read_watcher}->enable_read if $self->{read_watcher};
         return;
     }
     if ($status == 3) {
-        $self->{watcher}->enable_write if $self->{watcher};
+        $self->{write_watcher}->enable_write if $self->{write_watcher};
         return;
     }
     if ($status == 5) {
@@ -181,8 +172,8 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
             $self->{transport}->_stream_transport_ready($self);
         }
         if (($self->{read_paused} || $self->{xs_state}->consumer_paused)
-            && $self->{watcher}) {
-            $self->{watcher}->disable_read;
+            && $self->{read_watcher}) {
+            $self->{read_watcher}->disable_read;
         }
         if (my $callback = $self->{descriptor}{callbacks}{on_transport_ready}) {
             $callback->($self);
@@ -194,16 +185,21 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
         $self->_finish_write_side;
         return if $self->{closed};
     }
-    if ($self->{watcher} && !$self->pending_bytes
+    if ($self->{write_watcher} && !$self->pending_bytes
         && !$self->{write_ending}) {
-        $self->{watcher}->disable_write;
+        $self->{write_watcher}->disable_write;
     }
     return;
 }
 
-sub _watch_error_xs_cb ($state) {
+sub _watch_read_terminal_xs_cb ($state) {
     my $self = $state->stream or return;
-    $self->_on_terminal_ready;
+    $self->_on_read_terminal_ready;
+}
+
+sub _watch_write_terminal_xs_cb ($state) {
+    my $self = $state->stream or return;
+    $self->_on_write_terminal_ready;
 }
 
 sub new ($class, %opt) {
@@ -213,13 +209,11 @@ sub new ($class, %opt) {
         if defined($loop) && (!ref($loop) || !$loop->can('add')
             || !$loop->can('watch_fd'));
     my $fh = delete $opt{fh};
-    my $connect = delete $opt{_connect};
-    my $accepted = delete($opt{_accepted}) // 0;
-    my $tls_role = delete $opt{tls_role};
+    my $read_fh = delete $opt{read_fh};
+    my $write_fh = delete $opt{write_fh};
+    my $pending = delete($opt{_pending}) // 0;
     my $data = delete $opt{data};
-    my $peer = delete $opt{peer};
-    my $transport = delete $opt{transport};
-    my $socket_override = Linux::Event::_SocketConfig::extract('new', \%opt);
+    my $transport = delete $opt{_transport};
     my %timeout_override;
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
         $timeout_override{$name} = _timeout_value('new():', $name,
@@ -228,47 +222,25 @@ sub new ($class, %opt) {
     my $initial_deadline = exists($opt{deadline})
         ? _deadline_spec('new', delete $opt{deadline}) : undef;
     croak 'new(): unknown options: ' . join(', ', sort keys %opt) if %opt;
-    croak 'new(): exactly one of fh or an outbound connection is required'
-        if defined($fh) == defined($connect);
-    croak 'new(): fh must be a filehandle'
-        if defined($fh) && !defined(fileno($fh));
-    croak 'new(): internal connection options must be a hash reference'
-        if defined($connect) && ref($connect) ne 'HASH';
-    croak 'new(): tls_role must be client or server'
-        if defined($tls_role)
-        && (ref($tls_role) || ($tls_role ne 'client' && $tls_role ne 'server'));
-    croak 'new(): tls_role is only valid with fh'
-        if defined($tls_role) && !defined($fh);
-    croak 'new(): internal accepted mode is only valid with fh'
-        if $accepted && !defined($fh);
-    croak 'new(): tls_role cannot be combined with accepted mode'
-        if $accepted && defined($tls_role);
-    croak 'new(): transport must be an object implementing _stream_transport_bind()'
+    croak 'new(): fh cannot be combined with read_fh or write_fh'
+        if defined($fh) && (defined($read_fh) || defined($write_fh));
+    if (defined $fh) {
+        $read_fh = $fh;
+        $write_fh = $fh;
+    }
+    croak 'new(): at least one of fh, read_fh, or write_fh is required'
+        if !$pending && !defined($read_fh) && !defined($write_fh);
+    croak 'new(): internal pending mode cannot have filehandles'
+        if $pending && (defined($read_fh) || defined($write_fh));
+    for my $pair ([read_fh => $read_fh], [write_fh => $write_fh]) {
+        croak "new(): $pair->[0] must be a filehandle"
+            if defined($pair->[1]) && !defined(fileno($pair->[1]));
+    }
+    croak 'new(): internal transport must implement _stream_transport_bind()'
         if defined($transport)
         && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = Linux::Event::Stream::_Descriptor::for_class($class);
-    my %socket_policy = map {
-        $_ => exists($socket_override->{$_})
-            ? $socket_override->{$_} : $descriptor->{options}{$_}
-    } Linux::Event::_SocketConfig::names();
-    if (my $tls = $descriptor->{tls}) {
-        croak 'new(): transport cannot be supplied for a TLS-declared Stream'
-            if defined $transport;
-        require Linux::Event::TLS;
-        my $role = defined($connect) ? 'client'
-            : $accepted ? 'server'
-            : $tls_role;
-        croak 'new(): a TLS-declared adopted fh requires tls_role'
-            if !defined $role;
-        $transport = $role eq 'server'
-            ? Linux::Event::TLS->_server_from_declaration($tls)
-            : Linux::Event::TLS->_client_from_declaration(
-                $tls, defined($connect) ? $connect->{host} : undef,
-            );
-    } elsif (defined $tls_role) {
-        croak 'new(): tls_role requires a Stream subclass declaring TLS';
-    }
     my %timeout = map {
         $_ => exists($timeout_override{$_})
             ? $timeout_override{$_} : $descriptor->{options}{$_}
@@ -276,15 +248,20 @@ sub new ($class, %opt) {
     my $self = bless {
         descriptor  => $descriptor,
         loop        => undef,
-        fh          => $fh,
-        watcher     => undef,
+        read_fh     => $read_fh,
+        write_fh    => $write_fh,
+        read_capable => defined($read_fh) ? 1 : 0,
+        write_capable => defined($write_fh) ? 1 : 0,
+        read_watcher => undef,
+        write_watcher => undef,
         data        => $data,
         transport   => $transport,
         xs_state    => undef,
         read_paused => 0,
         read_eof    => 0,
+        read_closed => defined($read_fh) ? 0 : 1,
         write_ending => 0,
-        write_ended  => 0,
+        write_ended  => defined($write_fh) ? 0 : 1,
         closed       => 0,
         detached     => 0,
         close_fired  => 0,
@@ -303,61 +280,14 @@ sub new ($class, %opt) {
         deadline_tracking => 0,
         deadline_read_started => undef,
         deadline_write_started => undef,
-        socket_policy => \%socket_policy,
-        local         => undef,
     }, $class;
-    $self->{peer} = $peer if defined $peer;
-
-    if (defined $fh) {
-        my $configured = eval {
-            my $local = Linux::Event::Address->new(getsockname($fh));
-            my $family = $local->family_number;
-            Linux::Event::_SocketConfig::apply_policy(
-                $fh, $family, $self->{socket_policy},
-            );
-            my $role = $accepted ? 'accepted' : 'adopted';
-            my $address = $peer;
-            if (!defined($address)) {
-                my $packed = eval { getpeername($fh) };
-                $address = Linux::Event::Address->new($packed)
-                    if defined $packed;
-                $self->{peer} = $address if defined $address;
-            }
-            $self->_configure_socket($fh, $role, $address);
-            $self->{local} = $local;
-            1;
-        };
-        if (!$configured) {
-            my $error = $@ || 'socket configuration failed';
-            close $fh;
-            $self->{fh} = undef;
-            die $error;
-        }
-        $self->_prepare_fh($fh);
-    }
-    if ($connect) {
-        $self->{preconnect_output} = [];
-        $self->{preconnect_bytes} = 0;
-        $self->{connection} = Linux::Event::Stream::_Connection->new(
-            %$connect,
-            stream => $self,
-            socket_policy => $self->{socket_policy},
-        );
-    }
+    $self->_prepare_handles if !$pending;
     $self->_attach_to_loop($loop) if $loop;
     return $self;
 }
 
 sub connect ($class, %opt) {
-    croak 'connect(): must be called as a class method' if ref $class;
-    my %stream;
-    for my $name (qw(loop data transport idle_timeout read_timeout
-        write_timeout deadline tcp_nodelay keepalive keepalive_idle
-        keepalive_interval keepalive_count tcp_user_timeout send_buffer
-        receive_buffer)) {
-        $stream{$name} = delete $opt{$name} if exists $opt{$name};
-    }
-    return $class->new(%stream, _connect => \%opt);
+    croak 'connect(): available only on Linux::Event::Socket subclasses';
 }
 
 sub CLONE ($class) {
@@ -367,21 +297,19 @@ sub CLONE ($class) {
 
 sub CLONE_SKIP ($class) { 1 }
 
-sub _validate_accepted_configuration ($class) {
-    my $descriptor = Linux::Event::Stream::_Descriptor::for_class($class);
-    if (my $tls = $descriptor->{tls}) {
-        require Linux::Event::TLS;
-        Linux::Event::TLS->_server_from_declaration($tls);
+sub _prepare_handles ($self) {
+    my ($read_fh, $write_fh) = @$self{qw(read_fh write_fh)};
+    my %prepared;
+    for my $handle (grep { defined } ($read_fh, $write_fh)) {
+        my $fd = fileno($handle);
+        next if $prepared{$fd}++;
+        _set_nonblocking($handle);
     }
-    return;
-}
-
-sub _prepare_fh ($self, $fh) {
-    _set_nonblocking($fh);
     my $descriptor = $self->{descriptor};
     my $xs_state = Linux::Event::Stream::XSState->new(
         $self,
-        fileno($fh),
+        defined($read_fh) ? fileno($read_fh) : -1,
+        defined($write_fh) ? fileno($write_fh) : -1,
         $descriptor->{xs},
     );
     $self->{xs_state} = $xs_state;
@@ -389,9 +317,12 @@ sub _prepare_fh ($self, $fh) {
     my $initial_interest = 0x01;
     my $transport = $self->{transport};
     if (defined $transport) {
+        croak 'new(): a native transport requires one shared read/write fh'
+            if !defined($read_fh) || !defined($write_fh)
+            || fileno($read_fh) != fileno($write_fh);
         my @binding;
         my $attached = eval {
-            @binding = $transport->_stream_transport_bind(fileno($fh));
+            @binding = $transport->_stream_transport_bind(fileno($read_fh));
             $xs_state->_attach_transport(
                 $transport, @binding[0, 1, 2],
             );
@@ -401,8 +332,7 @@ sub _prepare_fh ($self, $fh) {
             my $error = $@ || 'transport attachment failed';
             $xs_state->_close;
             $self->{xs_state} = undef;
-            CORE::close($fh);
-            $self->{fh} = undef;
+            $self->_close_handles;
             die $error;
         }
         $initial_interest = $binding[3] // 0;
@@ -413,27 +343,58 @@ sub _prepare_fh ($self, $fh) {
     return;
 }
 
-sub _configure_socket ($self, $fh, $role, $address) {
-    my $callback = $self->{descriptor}{callbacks}{configure_socket};
-    return if !$callback;
-    my $ok = eval { $callback->($self, $fh, $role, $address); 1 };
-    return if $ok;
-    my $message = "$@";
-    $message =~ s/\s+\z//;
-    $message = 'configure_socket callback failed' if $message eq '';
-    die Linux::Event::Error->new(
-        type      => 'socket_configuration',
-        operation => 'configure_socket',
-        message   => $message,
-    );
+sub _register_handles ($self) {
+    my ($read_fh, $write_fh) = @$self{qw(read_fh write_fh)};
+    my $read_fd = defined($read_fh) ? fileno($read_fh) : undef;
+    my $write_fd = defined($write_fh) ? fileno($write_fh) : undef;
+    my $initial_interest = delete($self->{initial_interest}) // 0x01;
+    my $state = $self->{xs_state};
+
+    if (defined($read_fd) && defined($write_fd) && $read_fd == $write_fd) {
+        my $watcher = $self->{loop}->watch_fd(
+            $read_fd, _internal => 1, fh => $read_fh, data => $state,
+            read  => \&Linux::Event::Stream::XSState::_read_ready,
+            write => \&Linux::Event::Stream::XSState::_write_ready,
+            error => \&_watch_read_terminal_xs_cb,
+            _callback_data_arg => 1,
+        );
+        $self->{read_watcher} = $watcher;
+        $self->{write_watcher} = $watcher;
+        $watcher->disable_write if !($initial_interest & 0x02);
+        $watcher->disable_read if !($initial_interest & 0x01);
+    } else {
+        if (defined $read_fd) {
+            $self->{read_watcher} = $self->{loop}->watch_fd(
+                $read_fd, _internal => 1, fh => $read_fh, data => $state,
+                read => \&Linux::Event::Stream::XSState::_read_ready,
+                error => \&_watch_read_terminal_xs_cb,
+                _callback_data_arg => 1,
+            );
+            $self->{read_watcher}->disable_read if !($initial_interest & 0x01);
+        }
+        if (defined $write_fd) {
+            $self->{write_watcher} = $self->{loop}->watch_fd(
+                $write_fd, _internal => 1, fh => $write_fh, data => $state,
+                write => \&Linux::Event::Stream::XSState::_write_ready,
+                error => \&_watch_write_terminal_xs_cb,
+                _callback_data_arg => 1,
+            );
+            $self->{write_watcher}->disable_write
+                if !($initial_interest & 0x02);
+        }
+    }
+    $self->{read_watcher}->disable_read
+        if $self->{read_watcher} && ($self->{read_paused}
+            || ($state->consumer_paused && $state->transport_ready));
+    return;
 }
 
 sub _attach_to_loop ($self, $loop) {
     croak 'add(): Stream is not unattached'
         if $self->{closed} || $self->{loop};
     $self->{loop} = $loop;
-    if (my $connection = $self->{connection}) {
-        my $attached = eval { $connection->_attach_to_loop($loop); 1 };
+    if (!defined($self->{read_fh}) && !defined($self->{write_fh})) {
+        my $attached = eval { $self->_attach_pending($loop); 1 };
         if (!$attached) {
             my $failure = $@ || 'connection attachment failed';
             $self->{loop} = undef;
@@ -442,31 +403,16 @@ sub _attach_to_loop ($self, $loop) {
         return $self;
     }
 
-    my $initial_interest = delete($self->{initial_interest}) // 0x01;
-    my $watcher = eval {
-        $loop->watch_fd(
-            fileno($self->{fh}),
-            _internal => 1,
-            fh    => $self->{fh},
-            data  => $self->{xs_state},
-            read  => \&Linux::Event::Stream::XSState::_read_ready,
-            write => \&Linux::Event::Stream::XSState::_write_ready,
-            error => \&_watch_error_xs_cb,
-            _callback_data_arg => 1,
-        );
-    };
-    if (!$watcher) {
+    my $saved_interest = $self->{initial_interest};
+    my $registered = eval { $self->_register_handles; 1 };
+    if (!$registered) {
         my $failure = $@ || 'Stream registration failed';
+        $self->_cancel_io_watchers;
+        $self->{initial_interest} = $saved_interest
+            if defined $saved_interest;
         $self->{loop} = undef;
-        $self->{initial_interest} = $initial_interest;
         die $failure;
     }
-    $self->{watcher} = $watcher;
-    $watcher->disable_write if !($initial_interest & 0x02);
-    $watcher->disable_read if !($initial_interest & 0x01);
-    $watcher->disable_read
-        if $self->{xs_state}->consumer_paused
-            && $self->{xs_state}->transport_ready;
     my $transport = $self->{transport};
     if ($transport && $transport->can('_stream_transport_start')) {
         my $started = eval { $transport->_stream_transport_start($self); 1 };
@@ -481,74 +427,8 @@ sub _attach_to_loop ($self, $loop) {
     return $self;
 }
 
-sub _connect_succeeded ($self, $fh) {
-    return if $self->{closed};
-    delete $self->{connection};
-    $self->{fh} = $fh;
-    $self->{local} = Linux::Event::Address->new(getsockname($fh));
-    my $packed_peer = eval { getpeername($fh) };
-    $self->{peer} = Linux::Event::Address->new($packed_peer)
-        if defined $packed_peer;
-    my $prepared = eval { $self->_prepare_fh($fh); 1 };
-    if (!$prepared) {
-        my $message = $@ || 'connected Stream setup failed';
-        my $error = Linux::Event::Error->new(
-            type => 'connect', operation => 'attach', message => $message,
-        );
-        $self->_fail($error);
-        return;
-    }
-    my $initial_interest = delete($self->{initial_interest}) // 0x01;
-    my $watcher = eval {
-        $self->{loop}->watch_fd(
-            fileno($self->{fh}),
-            _internal => 1,
-            fh    => $self->{fh},
-            data  => $self->{xs_state},
-            read  => \&Linux::Event::Stream::XSState::_read_ready,
-            write => \&Linux::Event::Stream::XSState::_write_ready,
-            error => \&_watch_error_xs_cb,
-            _callback_data_arg => 1,
-        );
-    };
-    if (!$watcher) {
-        my $message = "$@" || 'connected Stream registration failed';
-        $self->_fail(Linux::Event::Error->new(
-            type => 'setup', operation => 'watch', message => $message,
-        ));
-        return;
-    }
-    $self->{watcher} = $watcher;
-    $watcher->disable_write if !($initial_interest & 0x02);
-    $watcher->disable_read if !($initial_interest & 0x01);
-    $watcher->disable_read
-        if $self->{xs_state}->consumer_paused
-            && $self->{xs_state}->transport_ready;
-    my $transport = $self->{transport};
-    if ($transport && $transport->can('_stream_transport_start')) {
-        my $started = eval { $transport->_stream_transport_start($self); 1 };
-        if (!$started) {
-            my $message = $@ || 'transport startup failed';
-            my $error = Linux::Event::Error->new(
-                type => 'transport', operation => 'start', message => $message,
-            );
-            $self->_fail($error);
-            return;
-        }
-    }
-    $self->_flush_preconnect_output;
-    if (!$self->{transport}) {
-        $self->_start_stream_deadlines;
-        $self->_fire_ready;
-    }
-    return;
-}
-
-sub _connect_failed ($self, $connect_error) {
-    return if $self->{closed};
-    delete $self->{connection};
-    $self->_fail($connect_error);
-    return;
+sub _attach_pending ($self, $loop) {
+    croak 'add(): Stream has no filehandle';
 }
 
 sub _fire_ready ($self) {
@@ -566,13 +446,23 @@ sub _fire_ready ($self) {
     return;
 }
 
+sub _request_write_ready ($self) {
+    if (my $watcher = $self->{write_watcher}) {
+        $watcher->enable_write;
+    } else {
+        $self->{initial_interest}
+            = ($self->{initial_interest} // 0x01) | 0x02;
+    }
+    return;
+}
+
 sub _flush_preconnect_output ($self) {
     my $queued = delete $self->{preconnect_output} // [];
     $self->{preconnect_output} = [];
     $self->{preconnect_bytes} = 0;
     for my $bytes (@$queued) {
         my $status = $self->{xs_state}->_write($bytes);
-        $self->{watcher}->enable_write if $status & 0x02;
+        $self->_request_write_ready if $status & 0x02;
         last if $self->{closed};
     }
     if ($self->{write_ending} && !$self->{closed} && !$self->pending_bytes) {
@@ -581,10 +471,22 @@ sub _flush_preconnect_output ($self) {
     return;
 }
 
-sub fh ($self) { $self->{fh} }
+sub fh ($self) {
+    return undef if !defined($self->{read_fh}) || !defined($self->{write_fh});
+    return fileno($self->{read_fh}) == fileno($self->{write_fh})
+        ? $self->{read_fh} : undef;
+}
+sub read_fh ($self) { $self->{read_fh} }
+sub write_fh ($self) { $self->{write_fh} }
+sub read_fd ($self) {
+    return defined($self->{read_fh}) ? fileno($self->{read_fh}) : undef;
+}
+sub write_fd ($self) {
+    return defined($self->{write_fh}) ? fileno($self->{write_fh}) : undef;
+}
+sub has_read ($self) { !!$self->{read_capable} }
+sub has_write ($self) { !!$self->{write_capable} }
 sub loop ($self) { $self->{loop} }
-sub peer ($self) { $self->{peer} }
-sub local ($self) { $self->{local} }
 sub state ($self) {
     return 'detached' if $self->{closed} && $self->{detached};
     return 'closed' if $self->{closed};
@@ -598,6 +500,7 @@ sub is_closed ($self) { !!$self->{closed} }
 sub is_terminal ($self) { !!$self->{closed} }
 sub is_read_paused ($self) { !!$self->{read_paused} }
 sub is_read_eof ($self) { !!$self->{read_eof} }
+sub is_read_closed ($self) { !!$self->{read_closed} }
 sub is_write_ended ($self) { !!$self->{write_ended} }
 sub is_write_blocked ($self) {
     return !!$self->{xs_state}->is_write_blocked if $self->{xs_state};
@@ -625,73 +528,9 @@ sub is_transport_ready ($self) {
     return 0;
 }
 
-sub selected_alpn ($self) {
-    my $transport = $self->{transport};
-    return undef if !$transport || !$transport->can('selected_alpn');
-    return $transport->selected_alpn;
-}
-
-sub tls_protocol ($self) {
-    my $transport = $self->{transport};
-    return undef if !$transport || !$transport->can('protocol');
-    return $transport->protocol;
-}
-
-sub tls_cipher ($self) {
-    my $transport = $self->{transport};
-    return undef if !$transport || !$transport->can('cipher');
-    return $transport->cipher;
-}
-
-sub tls_stats ($self) {
-    my $transport = $self->{transport};
-    return undef if !$transport || !$transport->can('stats');
-    return $transport->stats;
-}
-
 sub idle_timeout  ($self) { $self->{timeout}{idle_timeout} }
 sub read_timeout  ($self) { $self->{timeout}{read_timeout} }
 sub write_timeout ($self) { $self->{timeout}{write_timeout} }
-
-sub _socket_option ($self, $name, @argument) {
-    croak "$name(): Stream has no established socket"
-        if $self->{closed} || !defined($self->{fh});
-    croak "$name(): expected zero or one argument" if @argument > 1;
-    my $family = $self->{local}
-        ? $self->{local}->family_number
-        : Linux::Event::Address->new(getsockname($self->{fh}))->family_number;
-    Linux::Event::_SocketConfig::set_option(
-        $self->{fh}, $family, $name, $argument[0],
-    ) if @argument;
-    return Linux::Event::_SocketConfig::get_option(
-        $self->{fh}, $family, $name,
-    );
-}
-
-sub tcp_nodelay ($self, @argument) {
-    return $self->_socket_option('tcp_nodelay', @argument);
-}
-sub keepalive ($self, @argument) {
-    return $self->_socket_option('keepalive', @argument);
-}
-sub keepalive_idle ($self, @argument) {
-    return $self->_socket_option('keepalive_idle', @argument);
-}
-sub keepalive_interval ($self, @argument) {
-    return $self->_socket_option('keepalive_interval', @argument);
-}
-sub keepalive_count ($self, @argument) {
-    return $self->_socket_option('keepalive_count', @argument);
-}
-sub tcp_user_timeout ($self, @argument) {
-    return $self->_socket_option('tcp_user_timeout', @argument);
-}
-sub send_buffer ($self, @argument) {
-    return $self->_socket_option('send_buffer', @argument);
-}
-sub receive_buffer ($self, @argument) {
-    return $self->_socket_option('receive_buffer', @argument);
-}
 
 sub set_deadline ($self, %option) {
     croak 'set_deadline(): stream is closed' if $self->{closed};
@@ -793,7 +632,8 @@ sub _deadline_candidates ($self) {
         };
     }
     my $read = $self->{timeout}{read_timeout};
-    if ($read > 0 && !$self->{read_paused} && !$self->{read_eof}) {
+    if ($read > 0 && defined($self->{read_fh}) && !$self->{read_paused}
+        && !$self->{read_eof} && !$self->{read_closed}) {
         my $last = $last_read;
         $last = $self->{deadline_read_started}
             if defined($self->{deadline_read_started})
@@ -905,6 +745,8 @@ sub _apply_transition_timeouts ($self, $descriptor) {
 
 sub write ($self, $bytes) {
     croak 'write(): stream is closed' if $self->{closed};
+    croak 'write(): stream has no writable side'
+        if !defined $self->{write_fh} && !$self->{connection};
     croak 'write(): writable side has ended'
         if $self->{write_ending} || $self->{write_ended};
     return 1 if !defined $bytes;
@@ -941,7 +783,7 @@ sub write ($self, $bytes) {
 
     my $was_pending = $self->pending_bytes;
     my $status = $self->{xs_state}->_write($bytes);
-    $self->{watcher}->enable_write if $status & 0x02;
+    $self->_request_write_ready if $status & 0x02;
     if ($self->{deadline_started} && $self->{timeout}{write_timeout} > 0
         && !$was_pending && $self->pending_bytes > 0) {
         $self->{deadline_write_started} = _deadline_now();
@@ -959,7 +801,8 @@ sub send ($self, $payload) {
 
 sub end ($self, $final_bytes = undef) {
     return $self
-        if $self->{closed} || $self->{write_ending} || $self->{write_ended};
+        if $self->{closed} || $self->{write_ending} || $self->{write_ended}
+        || (!defined($self->{write_fh}) && !$self->{connection});
     $self->write($final_bytes) if defined($final_bytes) && $final_bytes ne '';
     $self->{write_ending} = 1;
     $self->_finish_write_side
@@ -968,23 +811,31 @@ sub end ($self, $final_bytes = undef) {
 }
 
 sub pause_read ($self) {
-    return $self if $self->{closed} || $self->{read_eof} || $self->{read_paused};
+    return $self if $self->{closed};
+    croak 'pause_read(): stream has no readable side'
+        if !$self->{read_capable};
+    return $self
+        if $self->{read_eof} || $self->{read_closed} || $self->{read_paused};
     $self->{read_paused} = 1;
     $self->{xs_state}->_pause if $self->{xs_state};
-    $self->{watcher}->disable_read if $self->{watcher};
+    $self->{read_watcher}->disable_read if $self->{read_watcher};
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     return $self;
 }
 
 sub resume_read ($self) {
-    return $self if $self->{closed} || $self->{read_eof} || !$self->{read_paused};
+    return $self if $self->{closed};
+    croak 'resume_read(): stream has no readable side'
+        if !$self->{read_capable};
+    return $self
+        if $self->{read_eof} || $self->{read_closed} || !$self->{read_paused};
     $self->{read_paused} = 0;
     $self->{deadline_read_started} = _deadline_now()
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     $self->{xs_state}->_resume if $self->{xs_state};
-    $self->{watcher}->enable_read
-        if $self->{watcher} && !$self->{xs_state}->consumer_paused;
+    $self->{read_watcher}->enable_read
+        if $self->{read_watcher} && !$self->{xs_state}->consumer_paused;
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
     return $self;
@@ -996,6 +847,10 @@ sub transition_to ($self, $class, %opt) {
         if !defined($class) || ref($class) || $class eq '';
     croak "transition_to(): $class is already active"
         if ref($self) eq $class;
+    my $source_socket = $self->isa('Linux::Event::Socket') ? 1 : 0;
+    my $target_socket = $class->isa('Linux::Event::Socket') ? 1 : 0;
+    croak 'transition_to(): cannot cross the Stream/Socket transport boundary'
+        if $source_socket != $target_socket;
 
     my $input = delete $opt{input};
     croak 'transition_to(): input must be a byte string'
@@ -1028,92 +883,113 @@ sub close ($self) {
     return $self;
 }
 
+sub close_read ($self) {
+    return $self if $self->{closed} || $self->{read_closed} || $self->{read_eof};
+    $self->{read_closed} = 1;
+    $self->{xs_state}->_close_read(6) if $self->{xs_state};
+    my $read_watcher = delete $self->{read_watcher};
+    if ($read_watcher) {
+        if ($self->{write_watcher}
+            && refaddr($read_watcher) == refaddr($self->{write_watcher})) {
+            $read_watcher->disable_read;
+        } else {
+            $read_watcher->cancel;
+        }
+    }
+    my $read_fh = $self->{read_fh};
+    if (defined($read_fh) && (!$self->{write_fh}
+        || fileno($read_fh) != fileno($self->{write_fh}))) {
+        CORE::close($read_fh);
+        $self->{read_fh} = undef;
+    }
+    $self->_close_now(1) if $self->{write_ended};
+    return $self;
+}
+
+sub close_write ($self) {
+    return $self if $self->{closed} || $self->{write_ended};
+    $self->{xs_state}->_close_write if $self->{xs_state};
+    $self->{write_ending} = 0;
+    $self->{write_ended} = 1;
+    my $write_watcher = delete $self->{write_watcher};
+    if ($write_watcher) {
+        if ($self->{read_watcher}
+            && refaddr($write_watcher) == refaddr($self->{read_watcher})) {
+            $write_watcher->disable_write;
+        } else {
+            $write_watcher->cancel;
+        }
+    }
+    my $write_fh = $self->{write_fh};
+    if (defined($write_fh) && (!$self->{read_fh}
+        || fileno($write_fh) != fileno($self->{read_fh}))) {
+        CORE::close($write_fh);
+        $self->{write_fh} = undef;
+    }
+    $self->_close_now(1) if $self->{read_eof} || $self->{read_closed};
+    return $self;
+}
+
 sub detach ($self) {
     croak 'detach(): stream is already closed' if $self->{closed};
-    croak 'detach(): stream is not established' if !defined $self->{fh};
+    croak 'detach(): stream is not established'
+        if !defined($self->{read_fh}) && !defined($self->{write_fh});
+    croak 'detach(): pending output must drain before detach'
+        if $self->pending_bytes;
     croak 'detach(): cannot detach a non-plain transport'
         if ($self->transport_name // 'plain') ne 'plain';
-    my $fh = $self->{fh};
+    my $handles = {
+        read_fh  => $self->{read_fh},
+        write_fh => $self->{write_fh},
+    };
     $self->_cancel_stream_deadline;
     if (my $xs_state = delete $self->{xs_state}) {
         $xs_state->_close(5);
     }
-    if (my $watcher = delete $self->{watcher}) {
-        $watcher->cancel;
-    }
+    $self->_cancel_io_watchers;
     $self->{closed} = 1;
     $self->{detached} = 1;
-    $self->{fh} = undef;
-    return $fh;
+    $self->{read_fh} = undef;
+    $self->{write_fh} = undef;
+    return $handles;
 }
 
-sub _on_terminal_ready ($self) {
+sub _on_read_terminal_ready ($self) {
     return if $self->{closed};
-
-    my $packed = getsockopt($self->{fh}, SOL_SOCKET, SO_ERROR);
-    if (defined $packed) {
-        my $errno = unpack('i', $packed);
-        if ($errno) {
-            local $! = $errno;
-            $self->_fail_io('socket', $errno);
-            return;
-        }
-    }
-
     $self->{xs_state}->_read_ready
         if !$self->{read_paused} && !$self->{read_eof} && $self->{xs_state};
+}
+
+sub _on_write_terminal_ready ($self) {
+    return if $self->{closed} || $self->{write_ended};
+    if ($self->pending_bytes) {
+        $self->{xs_state}->_write_ready;
+        return if $self->{closed} || !$self->pending_bytes;
+    }
+    local $! = Errno::EPIPE();
+    $self->_fail_io('write', 0 + $!);
 }
 
 sub _finish_write_side ($self) {
     return if $self->{closed} || $self->{write_ended};
     return if $self->pending_bytes > 0;
 
-    if (!$self->{transport_shutdown_started}++ && $self->{transport}
-        && $self->{transport}->can('_stream_transport_begin_shutdown')) {
-        my $started = eval {
-            $self->{transport}->_stream_transport_begin_shutdown($self);
-            1;
-        };
-        if (!$started) {
-            my $error = Linux::Event::Error->new(
-                type      => $self->transport_name,
-                operation => 'shutdown',
-                message   => $@ || 'transport shutdown setup failed',
-            );
-            $self->_fail($error);
-            return;
-        }
-    }
-
-    my ($status, $errno, $message) = $self->{xs_state}->_shutdown_write;
-    if ($status == 2) {
-        $self->{watcher}->enable_read if $self->{watcher};
-        return;
-    }
-    if ($status == 3) {
-        $self->{watcher}->enable_write if $self->{watcher};
-        return;
-    }
-    if ($status == 5) {
-        if (($self->transport_name // 'plain') ne 'plain') {
-            my $error = Linux::Event::Error->new(
-                type      => $self->transport_name,
-                operation => 'shutdown',
-                message   => $message || 'transport shutdown failed',
-            );
-            $self->_fail($error);
-            return;
-        }
-        local $! = $errno;
-        $self->_fail_io('shutdown', $errno);
-        return;
-    }
+    return if !$self->_finish_transport_write;
 
     $self->{write_ending} = 0;
     $self->{write_ended} = 1;
+    if (defined($self->{write_fh}) && (!$self->{read_fh}
+        || fileno($self->{write_fh}) != fileno($self->{read_fh}))) {
+        my $watcher = delete $self->{write_watcher};
+        $watcher->cancel if $watcher;
+        CORE::close($self->{write_fh});
+        $self->{write_fh} = undef;
+    }
     $self->_clear_transport_deadline;
-    $self->_close_now(1) if $self->{read_eof};
+    $self->_close_now(1) if $self->{read_eof} || $self->{read_closed};
 }
+
+sub _finish_transport_write ($self) { 1 }
 
 sub _set_transport_deadline_watcher ($self, $watcher) {
     return if $self->{transport_deadline_watcher};
@@ -1158,7 +1034,19 @@ sub _transport_deadline_expired ($self, $operation, $message) {
 sub _mark_eof ($self) {
     return if $self->{read_eof} || $self->{closed};
     $self->{read_eof} = 1;
-    $self->{watcher}->disable_read if $self->{watcher};
+    if (my $watcher = delete $self->{read_watcher}) {
+        if (!$self->{write_watcher}
+            || refaddr($watcher) != refaddr($self->{write_watcher})) {
+            $watcher->cancel;
+        } else {
+            $watcher->disable_read;
+        }
+    }
+    if (defined($self->{read_fh}) && (!$self->{write_fh}
+        || fileno($self->{read_fh}) != fileno($self->{write_fh}))) {
+        CORE::close($self->{read_fh});
+        $self->{read_fh} = undef;
+    }
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
 
@@ -1205,9 +1093,7 @@ sub _fail ($self, $error) {
 sub _close_now ($self, $close_fh) {
     return if $self->{closed};
     $self->{closed} = 1;
-    if (my $connection = delete $self->{connection}) {
-        $connection->cancel;
-    }
+    $self->_cancel_pending;
     $self->{preconnect_output} = [];
     $self->{preconnect_bytes} = 0;
     delete $self->{preconnect_write_blocked};
@@ -1218,17 +1104,35 @@ sub _close_now ($self, $close_fh) {
     if (my $xs_state = delete $self->{xs_state}) {
         $xs_state->_close(4);
     }
-    if (my $watcher = delete $self->{watcher}) {
-        $watcher->cancel;
-    }
-    CORE::close($self->{fh}) if $close_fh && defined $self->{fh};
-    $self->{fh} = undef;
+    $self->_cancel_io_watchers;
+    $self->_close_handles if $close_fh;
 
     if (!$self->{detached} && !$self->{close_fired}++) {
         if (my $callback = $self->{descriptor}{callbacks}{on_close}) {
             $callback->($self);
         }
     }
+}
+
+sub _cancel_pending ($self) { return }
+
+sub _cancel_io_watchers ($self) {
+    my $read = delete $self->{read_watcher};
+    my $write = delete $self->{write_watcher};
+    $read->cancel if $read;
+    $write->cancel if $write && (!$read || refaddr($write) != refaddr($read));
+    return;
+}
+
+sub _close_handles ($self) {
+    my $read = delete $self->{read_fh};
+    my $write = delete $self->{write_fh};
+    my $read_fd = defined($read) ? fileno($read) : undef;
+    my $write_fd = defined($write) ? fileno($write) : undef;
+    CORE::close($read) if defined $read;
+    CORE::close($write) if defined($write)
+        && (!defined($read_fd) || $write_fd != $read_fd);
+    return;
 }
 
 sub _set_nonblocking ($fh) {
@@ -1270,55 +1174,28 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Stream - subclass-defined native buffered streams
+Linux::Event::Stream - generic native buffered byte-stream I/O
 
 =head1 SYNOPSIS
 
-  use v5.36;
-  use Linux::Event::Loop;
+A framed console using separate handles:
 
-  package EchoStream;
+  package Console;
   use parent 'Linux::Event::Stream';
   use Linux::Event::Framer 'Delimiter', "\n";
 
-  sub on_message ($stream, $message) {
-      $stream->send($message);
-  }
-
-  sub on_eof ($stream) {
-      $stream->end;
-  }
-
-  sub on_error ($stream, $error) {
-      warn "$error\n";
+  sub on_message ($stream, $line) {
+      $stream->write("You typed: $line\n");
   }
 
   package main;
-  my $loop = Linux::Event::Loop->new;
-  my $stream = $loop->add(EchoStream->new(
-      fh   => $socket,          # required
-      data => { user_id => 42 }, # optional
-  ));
-  $loop->run;
+  my $console = Console->new(
+      loop     => $loop,
+      read_fh  => \*STDIN,
+      write_fh => \*STDOUT,
+  );
 
-=head1 DESCRIPTION
-
-C<Linux::Event::Stream> is a resource-owning object backed by the native
-buffered byte-stream engine above L<Linux::Event::Loop>. It is a base class
-rather than a configurable Stream type. Applications define behavior once in a
-subclass and construct lightweight per-connection instances containing only
-changing connection state.
-
-The first construction of each subclass resolves its inherited callback CVs,
-framer and TLS declarations, parser configuration, and Stream policy into one
-cached descriptor. XS stores that descriptor once and every connection's
-native state references it. Construction therefore avoids per-object callback
-hashes, framer objects, repeated validation, and repeated native configuration
-copies.
-
-=head1 DEFINING A STREAM TYPE
-
-A raw subclass defines C<on_data> and does not declare a framer:
+A raw duplex handle:
 
   package ByteStream;
   use parent 'Linux::Event::Stream';
@@ -1327,481 +1204,364 @@ A raw subclass defines C<on_data> and does not declare a framer:
       $stream->write($bytes);
   }
 
-A framed subclass imports one native built-in and defines C<on_message>:
-
-  package LineStream;
-  use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  sub on_message ($stream, $message) {
-      $stream->send($message);
-  }
-
-High-throughput framed protocols may explicitly replace one-message delivery
-with bounded array delivery:
-
-  package PipelinedStream;
-  use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  sub stream_options ($class) {
-      return message_batch_size => 32;
-  }
-
-  sub on_messages ($stream, $messages) {
-      for my $message (@$messages) {
-          process_message($stream, $message);
-      }
-  }
-
-C<on_message> and C<on_messages> are mutually exclusive. Merely defining
-C<on_messages> does not enable batching; the positive class option makes the
-different callback boundary explicit.
-
-Framed and raw modes are mutually exclusive. A subclass with no framer must
-define C<on_data>; a framed subclass must define C<on_message>, or explicitly
-enable C<message_batch_size> and define C<on_messages>. The base class cannot
-be instantiated directly.
-
-=head1 CONSTRUCTOR
-
-=head2 new(fh => $fh, loop => $loop, data => $value)
-
-C<fh> is required for an already-established Stream. Stream takes ownership of
-the filehandle, sets it nonblocking, and enables close-on-exec. Supply C<loop>
-to attach before C<new> returns, or omit it and attach with
-C<< $loop->add($stream) >>. Both forms are primary APIs and C<add> returns the
-same Stream. C<data> is optional per-connection state. Use C<detach> to transfer
-a still-open plain handle back to the application; TLS Streams cannot be
-detached.
-
-A TLS-declared Stream normally obtains its role from C<connect> or Listener
-acceptance. Supplying an already-connected C<fh> is ambiguous, so that advanced
-form also requires C<tls_role =E<gt> 'client'> or C<'server'>. See
-L<Linux::Event::TLS>.
-
-C<idle_timeout>, C<read_timeout>, and C<write_timeout> override the subclass's
-cached inactivity defaults for this Stream. Each is non-negative seconds and
-zero explicitly disables that policy. C<deadline> accepts a hash reference
-containing exactly one of C<after> or C<at> plus a non-empty C<operation> label.
-Relative construction deadlines begin when the Stream becomes usable.
-
-Socket policy such as C<tcp_nodelay>, C<keepalive>, and buffer sizes may also
-be supplied here for an established C<fh>. Constructor values override the
-subclass policy. Settings omitted from both places leave the kernel value
-unchanged.
-
-Callbacks, framing, and buffer policy are class behavior and are not accepted
-as constructor options.
-
-=head2 connect(host => 'example.com', port => 443)
-
-  my $stream = MyStream->connect(
-      host         => '127.0.0.1', # required
-      port         => 9999,        # required
-      timeout      => 10,          # default
-      local_host   => '127.0.0.1', # optional source address
-      local_port   => 0,           # optional source port
-      tcp_nodelay  => 1,           # optional
-  );
+  my $stream = ByteStream->new(fh => $handle);
   $loop->add($stream);
 
-Returns one Stream that survives connection setup, optional TLS negotiation,
-established I/O, and close. Supply C<loop> to start connecting immediately.
-Otherwise the state is C<unattached> until C<< $loop->add($stream) >>.
+=head1 DESCRIPTION
 
-Exactly one of C<host>/C<port>, C<unix>, or packed C<sockaddr>/C<family> is
-required. C<timeout> is seconds, defaults to 10, and may be zero to disable the
-deadline. C<data>, established timeout overrides, and C<deadline> are passed to
-the Stream. A class declaring L<Linux::Event::TLS> automatically uses client
-TLS and defaults certificate hostname verification to C<host>. C<write> and
-C<send> may queue output before attachment or readiness. Hostname resolution
-runs in the Loop's private native worker pool; socket establishment and
-staggered IPv6/IPv4 attempts are nonblocking.
+C<Linux::Event::Stream> is the generic sequential-byte I/O abstraction above
+L<Linux::Event::Loop>. It accepts a shared byte-oriented filehandle, separate
+read and write handles, or either direction alone. Pipes, terminals, FIFOs,
+process standard I/O, and connected sockets through L<Linux::Event::Socket>
+all reuse the same native engine.
 
-Most outbound connections should omit C<local_host> and C<local_port>; Linux
-then chooses the source address and ephemeral source port. C<local_host>
-selects a numeric IPv4 or IPv6 source address, while C<local_port> selects the
-source port. They do not replace the remote C<host> and C<port>.
-C<bind_device> optionally constrains the socket to a Linux interface before
-local binding and connection. It may require kernel privilege.
+Stream owns native read draining, immediate and queued writes, input framing,
+raw and framed callback batching, buffering limits, backpressure, established
+deadlines, and directional lifecycle. It does not inspect socket addresses,
+apply socket options, initiate connections, or assume that either handle is a
+socket.
 
-=head1 ATTACHMENT AND OWNERSHIP
+C<Linux::Event::Stream> is a base class. Applications define a subclass so its
+callbacks, framer, native consumer, and immutable tuning policy can be resolved
+once and cached outside per-instance state.
 
-A Stream is attached once, to one Loop. C<loop =E<gt> $loop> and
-C<< $loop->add($stream) >> perform the same attachment. A terminal Stream cannot
-be reused or reattached. The Stream owns its filehandle until C<close>, graceful
-completion, or C<detach> transfers a plain handle back to the caller.
+=head1 DEFINING A STREAM TYPE
 
-=head1 TLS DECLARATION
+A readable raw Stream defines C<on_data> and does not declare a framer:
 
-A subclass opts into TLS declaratively, after establishing Stream inheritance:
-
-  package SecureStream;
+  package RawInput;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::TLS
-      ca_file           => '/etc/ssl/certs/ca-certificates.crt', # optional
-      verify            => 1,                                   # default
-      alpn              => ['http/1.1'],                        # optional
-      handshake_timeout => 10,                                  # default
-      shutdown_timeout  => 5;                                   # default
 
-C<< SecureStream->connect(host =E<gt> 'example.com', port =E<gt> 443) >>
-selects client TLS. A Listener that names
-C<SecureStream> selects server TLS and therefore requires C<cert_file> and
-C<key_file> in the declaration. C<on_ready> has one meaning in both roles: the
-plain connection or TLS handshake is ready for application traffic.
+  sub on_data ($stream, $bytes) {
+      consume($bytes);
+  }
 
-TLS is an acquisition declaration, not protocol inheritance. It creates fresh
-connection state only when a Stream is constructed. C<transition_to> changes
-protocol callbacks and framing but never installs, removes, or replaces the
-active byte transport.
+A framed Stream declares one native framer and ordinarily defines
+C<on_message>:
+
+  package Lines;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub on_message ($stream, $line) {
+      consume_line($line);
+  }
+
+A framed subclass may instead set a positive C<message_batch_size> and define
+C<on_messages>. A raw subclass may set C<read_batch_bytes> to coalesce reads
+before C<on_data>. Neither batching mode waits for a future readiness event to
+fill a batch; partial batches flush when the current native drain ends.
+
+A write-only Stream needs no input callback. A readable raw Stream requires
+C<on_data>. A readable framed Stream requires C<on_message>,
+C<on_messages> with batching enabled, or a native framed-message consumer.
+
+=head1 CONSTRUCTION
+
+=head2 new
+
+The supported handle forms are:
+
+  MyStream->new(fh => $duplex_handle);
+  MyStream->new(read_fh => $input, write_fh => $output);
+  MyStream->new(read_fh => $input);
+  MyStream->new(write_fh => $output);
+
+C<fh> supplies both directions and cannot be combined with C<read_fh> or
+C<write_fh>. At least one direction is required. C<loop> attaches the object
+before C<new> returns; otherwise attach it later with
+C<< $loop->add($stream) >>. C<data> stores arbitrary per-instance application
+state.
+
+Stream takes ownership of every distinct supplied handle and sets it
+nonblocking and close-on-exec. Supplying the same descriptor in both
+directional options still creates one shared native registration.
+
+C<idle_timeout>, C<read_timeout>, and C<write_timeout> override class defaults
+for one instance. C<deadline> accepts a hash reference containing exactly one
+of C<after> or C<at>, plus an C<operation> label.
+
+Constructor callbacks, framers, and tuning values are intentionally not
+accepted. They are class policy. For connected stream sockets, outbound
+connection acquisition, TLS roles, and socket-specific constructor options,
+use L<Linux::Event::Socket>.
 
 =head1 CLASS STREAM OPTIONS
 
-A subclass that needs non-default Stream settings may define
-C<stream_options>. It runs once when the class descriptor is built, not once
-per connection:
+A subclass may define C<stream_options>. It is called once when the cached
+class descriptor is built:
 
   sub stream_options ($class) {
       return (
-          read_size         => 32_768,            # optional
-          read_budget_bytes => 1 * 1024 * 1024, # optional; 0 = unlimited
-          high_watermark    => 2 * 1024 * 1024,   # optional
-          low_watermark     => 512 * 1024,        # optional
-          max_pending_bytes => 8 * 1024 * 1024,   # optional
-          max_buffer        => 16 * 1024 * 1024,  # optional
-          idle_timeout      => 120,               # optional; seconds
-          read_timeout      => 30,                # optional; seconds
-          write_timeout     => 10,                # optional; seconds
+          read_size          => 65_536,
+          read_budget_bytes  => 0,
+          read_batch_bytes   => 0,
+          message_batch_size => 0,
+          high_watermark     => 1_048_576,
+          low_watermark      => 262_144,
+          max_pending_bytes  => 0,
+          max_buffer         => 8_388_608,
+          idle_timeout       => 0,
+          read_timeout       => 0,
+          write_timeout      => 0,
       );
   }
 
-The defaults are 65,536 bytes per read, an unlimited read drain, no raw read
-batching, ordinary one-message framed delivery, a 1 MiB high watermark, a
-256 KiB low watermark,
-no hard pending-output limit, and an 8 MiB maximum framed input buffer. Set
-C<max_pending_bytes> to a positive byte count to impose a hard limit; zero
-keeps the default unlimited policy. Established timeout defaults are zero,
-which disables them. Constructor values take precedence for one Stream and
-survive protocol transitions; non-overridden values change to the target
-subclass's defaults.
+C<read_size> is the native syscall buffer size. C<read_budget_bytes> bounds one
+readiness drain; zero is unlimited. C<read_batch_bytes> is raw-mode callback
+coalescing, and C<message_batch_size> selects framed C<on_messages> delivery.
+C<max_buffer> bounds retained framed input.
 
-The batching settings are alternatives for different subclass modes, so they
-are not combined in the general example above.
+C<high_watermark> and C<low_watermark> implement cooperative write
+backpressure. C<max_pending_bytes> is a hard output-queue limit; zero leaves it
+unlimited. The three timeout values are non-negative seconds, with zero
+disabling that policy.
 
-C<read_batch_bytes> is available only to a raw Stream. A positive value makes
-XS combine successful reads up to that many bytes before calling C<on_data>.
-It flushes a partial batch at C<EAGAIN>, EOF, or an error, without waiting for
-future input. The limit is also the native retained-memory bound for this
-aggregation. Values at or below C<read_size> do not coalesce full reads.
+C<read_batch_bytes> is valid only for raw Streams. C<message_batch_size> is
+valid only for framed Streams and requires C<on_messages> instead of
+C<on_message>. Invalid combinations fail when the class descriptor is first
+built.
 
-C<message_batch_size> is available only to a framed Stream. A positive value
-requires C<on_messages> instead of C<on_message>. XS flushes when the message
-limit is reached or the current native read drain is exhausted. It never waits
-to fill a batch. C<max_buffer> also forces a flush when the accumulated
-message payload reaches that byte budget, keeping one batch below twice that
-bound even when the final frame crosses the remaining budget.
-
-=head1 SOCKET CONFIGURATION
-
-Socket policy may be cached with the other C<stream_options>:
-
-  sub stream_options ($class) {
-      return (
-          tcp_nodelay       => 1,       # optional
-          keepalive         => 1,       # optional
-          keepalive_idle    => 60,      # optional; seconds
-          keepalive_interval => 10,     # optional; seconds
-          keepalive_count   => 5,       # optional
-          tcp_user_timeout  => 15,      # optional; seconds
-          send_buffer       => 262_144, # optional; bytes
-          receive_buffer    => 262_144, # optional; bytes
-      );
-  }
-
-The same names are accepted by C<new> and C<connect> for one Stream. Instance
-construction wins over class policy; an option omitted from both places is not
-set at all. This is deliberately different from inventing library defaults
-that overwrite Linux tuning silently.
-
-C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
-C<keepalive_interval>, C<keepalive_count>, and C<tcp_user_timeout> are valid
-only for IPv4 or IPv6 TCP sockets. Send and receive buffer sizing also applies
-to Unix Streams. Public timeout values are seconds;
-C<tcp_user_timeout> is converted to the Linux millisecond value with a positive
-sub-millisecond duration rounded up.
-
-For outbound sockets, built-in policy and the optional hook below run after
-C<socket> and before local C<bind> or remote C<connect>. Accepted and adopted
-sockets apply policy before transport setup, including a TLS handshake.
-
-An advanced subclass may define one cached socket hook:
-
-  use Socket qw(IPPROTO_TCP TCP_QUICKACK);
-
-  sub configure_socket ($stream, $fh, $role, $address) {
-      setsockopt($fh, IPPROTO_TCP, TCP_QUICKACK, pack('i', 1))
-          or die "setsockopt(TCP_QUICKACK): $!";
-  }
-
-C<$role> is C<connect>, C<accepted>, or C<adopted>. C<$address> is the remote
-candidate or peer when one is available. A hook exception becomes a structured
-C<socket_configuration> Error. It never falls back silently to another
-configuration.
-
-These options are also live getters/setters on an established Stream:
-
-  my $enabled = $stream->tcp_nodelay;    # current kernel value
-  $stream->tcp_nodelay(1);               # enable and return effective value
-  my $bytes = $stream->send_buffer(262_144);
-
-The complete live set is C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
-C<keepalive_interval>, C<keepalive_count>, C<tcp_user_timeout>,
-C<send_buffer>, and C<receive_buffer>. Linux may round or double buffer
-requests, so setters return the value read back from the kernel. Socket policy
-is acquisition policy; C<transition_to> does not reapply it.
+Socket tuning is deliberately separate in
+L<Linux::Event::Socket/socket_options>.
 
 =head1 CALLBACKS
 
-Subclasses may define these ordinary named methods:
+Callbacks are ordinary named methods resolved once from the subclass:
 
-  sub on_data ($stream, $bytes) {             # required for raw Stream
-      $stream->write($bytes);
-  }
+=over 4
 
-  sub on_message ($stream, $message) {        # ordinary framed mode
-      $stream->send($message);
-  }
+=item C<on_data($stream, $bytes)>
 
-  sub on_messages ($stream, $messages) {      # framed batch mode only
-      $stream->send($_) for @$messages;
-  }
+Receives raw byte strings. It is required for a readable unframed Stream.
 
-  sub on_drain ($stream) {                    # optional
-      $stream->data->{blocked} = 0 if $stream->data;
-  }
+=item C<on_message($stream, $message)>
 
-  sub on_eof ($stream) { $stream->end }       # optional
-  sub on_error ($stream, $error) {            # optional
-      warn "$error\n";
-  }
-  sub on_close ($stream) {                    # optional
-      $stream->data->{closed} = 1 if $stream->data;
-  }
-  sub on_ready ($stream) {                    # optional
-      $stream->write("ready\n");
-  }
-  sub on_transport_ready ($stream) {          # optional
-      say "transport " . $stream->transport_name . " is ready";
-  }
+Receives one complete message from a declared framer.
 
-The resolved CVs are cached and invoked directly; readiness dispatch does not
-perform Perl method lookup. Inheritance works normally, so a derived Stream type
-may reuse callbacks and framing from its parent. Per-user or per-connection
-permissions belong in C<data>, which callbacks access through C<< $stream->data >>.
-C<on_ready> is called once when an asynchronously acquired Stream becomes
-usable. For TLS, this means handshake and verification have completed. Accepted
-Streams are ready after Listener attachment. C<on_transport_ready> is the
-lower-level provider-ready notification and runs immediately before C<on_ready>
-for an asynchronous non-plain transport. Most applications need only
+=item C<on_messages($stream, $messages)>
+
+Receives an array reference of complete messages when
+C<message_batch_size> is enabled.
+
+=item C<on_drain($stream)>
+
+Runs once after a high-watermark blocked interval falls to or below the low
+watermark.
+
+=item C<on_eof($stream)>
+
+Runs when the readable side reaches EOF. EOF does not end an independent
+writable side.
+
+=item C<on_error($stream, $error)>
+
+Receives a L<Linux::Event::Error> before failure closes the Stream.
+
+=item C<on_close($stream)>
+
+Runs once after explicit full close, failure, or both available directions
+become terminal. It is not called by C<detach>.
+
+=item C<on_ready($stream)>
+
+Runs once when an attached Stream is ready for application I/O.
+
+=item C<on_transport_ready($stream)>
+
+Runs immediately before C<on_ready> when an asynchronous non-plain transport
+becomes ready. Transport providers are internal; most applications use only
 C<on_ready>.
 
-Application callback exceptions are not swallowed.
+=back
 
-For ordinary framed delivery, pause, close, and protocol transition take effect
-after each C<on_message>. In batch mode they take effect after the complete
-array passed to C<on_messages>; every element in that array has already been
-parsed under the current Stream type. Complete pending messages are delivered
-before EOF or a later framing error. Protocol-negotiation boundaries that must
-transition after one particular message should retain C<on_message>.
+Callback exceptions are not swallowed. In ordinary framed mode, pause, close,
+and protocol transition take effect after each C<on_message>. In batch mode,
+they take effect after the complete array passed to C<on_messages>.
+
+=head1 DIRECTIONAL LIFECYCLE
+
+Read and write capability are independent.
+
+Read EOF marks only the read direction terminal and calls C<on_eof>. For a
+distinct read handle, Stream then closes that handle. A shared generic handle
+has no universal kernel half-close operation, so the descriptor remains owned
+while the write direction is usable.
+
+C<end> optionally writes final bytes, drains queued output, and then ends only
+the write direction. For a distinct write handle, Stream closes it after the
+queue drains. For a shared generic handle, Stream records the logical end
+without assuming socket C<shutdown> semantics.
+
+C<close_read> and C<close_write> stop one direction immediately.
+C<close_write> discards queued output. Neither operation calls C<on_eof>.
+C<close> immediately stops both directions and may discard output.
+C<on_close> runs when both configured directions are terminal.
+
+C<detach> requires an established plain transport and an empty output queue. It
+cancels Stream ownership without closing the handles and returns:
+
+  {
+      read_fh  => $read_handle_or_undef,
+      write_fh => $write_handle_or_undef,
+  }
+
+The two values may refer to the same shared handle.
+
+L<Linux::Event::Socket> maps these generic directional states onto socket
+C<shutdown> where appropriate.
 
 =head1 METHODS
 
 =head2 write($bytes)
 
-Writes immediately when possible and queues any remainder. Returns false after
-queued bytes exceed the high watermark; the bytes were still accepted. Wait for
-C<on_drain> before producing more. Output queued before attachment or connection
-readiness uses the same return contract and produces one drain notification if
-that blocked interval clears during establishment.
+Attempts an immediate native write and queues only the unsent remainder.
+Writable readiness is enabled only after partial output or C<EAGAIN> and is
+disabled again after the queue drains.
 
-C<$bytes> must be a byte string. Encode character text before writing it.
+The return value is true while cooperative backpressure is clear and false
+after pending output exceeds C<high_watermark>. A false return does not reject
+the bytes; wait for C<on_drain> before producing more.
 
-When C<max_pending_bytes> is nonzero, a write whose unsent remainder would put
-the native queue above that limit is not queued. Stream reports an
-C<output_limit> L<Linux::Event::Error> through C<on_error> and closes.
-The error's C<pending_bytes> and C<limit> accessors describe the attempted
-queue size and configured bound. An immediate kernel write may already have
-sent a prefix before its remainder is found to exceed the limit; Stream never
-adds that remainder to its queue. The ordinary false return remains reserved
-for accepted cooperative backpressure.
+If nonzero C<max_pending_bytes> would be exceeded, the unsent remainder is not
+queued, an C<output_limit> error is reported, and the Stream closes. Input must
+be a byte string.
 
 =head2 send($payload)
 
-Available only to framed subclasses. Applies the subclass's declared outbound
-wire framing and then uses C<write>. Serialization remains separate.
-
-=head2 pause_read / resume_read
-
-Disable and re-enable input readiness without destroying the Stream.
-
-=head2 transition_to($class, input => $bytes)
-
-Changes a live connection to another loaded C<Linux::Event::Stream> subclass.
-The same object is reblessed into C<$class>, and the same filehandle, native registration,
-native connection state, output queue, backpressure state, lifecycle state, and
-C<data> are retained. Future callbacks, C<send> framing, parser rules, and class
-Stream policy come from the target subclass's cached descriptor.
-
-Unread bytes already held by a framed parser are preserved and reinterpreted by
-the target parser. A raw C<on_data> callback may pass the unconsumed suffix of
-its current chunk with C<< input => $bytes >>:
-
-  sub on_data ($stream, $bytes) {
-      my ($request, $remaining) = parse_upgrade($bytes);
-      return if !$request;
-      $stream->write(upgrade_response());
-      $stream->transition_to(
-          'My::WebSocketStream',
-          input => $remaining, # optional raw unconsumed suffix
-      );
-      return;
-  }
-
-Existing native input is ordered before the explicit C<input> suffix. Complete
-target frames may be delivered before C<transition_to> returns when the method
-is called outside input dispatch. During C<on_data>, C<on_message>, or
-C<on_messages>, target dispatch begins after the old callback returns. Code
-should normally return immediately after requesting a transition.
-
-Read pause is retained and continues to gate preserved input. Queued output
-keeps its original byte ordering; only later C<send> calls use the new outbound
-framing. If preserved input exceeds the target class's C<max_buffer>, or
-existing queued output exceeds its nonzero C<max_pending_bytes>, the transition
-fails atomically and the old type remains active. Transitioning to the
-already-active class is rejected.
-
-This method changes Stream protocol behavior; it does not replace the active
-byte transport. In particular, a TLS Stream remains TLS across protocol
-transitions.
+Available only to a framed subclass. It applies the declared outbound framing
+rule and passes the resulting bytes to C<write>. Serialization remains a
+separate concern.
 
 =head2 end($final_bytes = undef)
 
-Drains queued output and ends the transport's writable side. Plain Streams use
-C<shutdown(SHUT_WR)>; TLS providers send C<close_notify>. Peer EOF and the local
-writable half-close remain independent.
+Queues optional final bytes, drains all accepted output, and gracefully ends
+the write direction. It does not stop reading.
 
-=head2 close
+=head2 pause_read / resume_read
 
-Immediately cancels native readiness and closes the owned descriptor. Queued
-output may be lost. Returns the Stream.
+Disable and re-enable read readiness without destroying buffered parser state.
+A pause requested before attachment remains in effect after attachment.
+C<read_timeout> is suspended while paused and restarts on resume.
+
+=head2 close_read / close_write / close
+
+C<close_read> immediately stops input. C<close_write> immediately discards
+queued output and stops output. C<close> immediately closes the complete
+Stream. All return the Stream.
 
 =head2 detach
 
-Cancels Stream ownership and returns the still-open filehandle for the plain
-transport. C<on_close> is not called because the underlying resource remains
-open. Non-plain transports reject detach because the descriptor carries
-provider-owned wire state rather than application plaintext.
+Transfers the owned plain handles as described in
+L</DIRECTIONAL LIFECYCLE>. Non-plain transports and Streams with queued output
+cannot be detached.
+
+=head2 transition_to($class, input => $bytes)
+
+Reblesses an active Stream into another loaded Stream subclass while retaining
+the handles, native state, parser storage, output queue, backpressure state,
+deadlines, pause state, and C<data>. Future callbacks and framing come from the
+target class descriptor.
+
+Unread framed bytes are reinterpreted by the target parser. A raw callback may
+supply an unconsumed suffix with C<input>. The operation is atomic if target
+limits reject existing buffered input or output.
+
+A generic Stream cannot transition to a Socket subclass, and a Socket cannot
+transition to a generic Stream subclass. Transport acquisition and TLS state
+are not changed by protocol transition.
+
+=head2 fh / read_fh / write_fh
+
+C<fh> returns the shared handle when both directions use the same descriptor,
+otherwise undef. C<read_fh> and C<write_fh> return the current directional
+handles.
+
+=head2 read_fd / write_fd
+
+Return the current directional descriptor numbers, or undef when that handle
+is absent.
+
+=head2 has_read / has_write
+
+Return the stable capabilities configured at construction. They remain useful
+after a direction reaches EOF or is closed.
 
 =head2 pending_bytes / is_write_blocked
 
-Report total output-queue and flow-control state, including output accepted
-while an outbound connection is still being established.
+Report native queued output and cooperative backpressure state.
 
 =head2 idle_timeout / read_timeout / write_timeout
 
-Return this Stream's effective established inactivity policy in seconds.
-C<idle_timeout> resets on successful read or write transport progress.
-C<read_timeout> resets on inbound bytes, is suspended by C<pause_read>, and
-starts a fresh interval on C<resume_read>. C<write_timeout> exists only while
-output remains queued and resets on successful write progress.
+Return effective established timeout policy in seconds. Idle timeout resets on
+read or write progress. Read timeout tracks active input and is suspended by
+C<pause_read>. Write timeout exists only while output is queued.
 
-=head2 set_deadline(after => 5, operation => 'response')
+=head2 set_deadline / clear_deadline
 
-Set or replace the one explicit overall-operation deadline and return the
-Stream. Supply C<after =E<gt> $seconds> or
-C<at =E<gt> $monotonic_deadline>, together with
-C<operation =E<gt> $name>. An overall deadline never resets because of I/O.
-Calling this before establishment stores the policy; relative time begins when
-the Stream becomes usable, while C<at> remains an absolute C<CLOCK_MONOTONIC>
-value.
+  $stream->set_deadline(after => 5, operation => 'response');
+  $stream->set_deadline(at => $absolute, operation => 'response');
+  $stream->clear_deadline;
 
-=head2 clear_deadline
-
-Remove the explicit operation deadline and return the Stream. Inactivity
-policies remain active.
+Set, replace, or remove one overall operation deadline. C<after> is seconds
+from activation; C<at> is an absolute monotonic deadline. An overall deadline
+does not reset on I/O.
 
 =head2 deadline / deadline_operation
 
-Return the active absolute operation deadline and its label. A detached
-relative deadline has no absolute value yet, so C<deadline> returns undef.
-
-All established deadline categories start after plain or TLS transport
-readiness. Resolver, connection, TLS handshake, and TLS shutdown time use their
-existing separate owners. Expiration reports a C<timeout>
-L<Linux::Event::Error> through C<on_error> and closes normally through
-C<on_close>. The Error includes C<timeout> and C<deadline> context. Every
-deadline-enabled Stream uses at most one private Timer in the Loop's shared
-timerfd/native heap.
+Return the active absolute operation deadline and its label. Before activation,
+a relative deadline has no absolute value and C<deadline> returns undef.
 
 =head2 transport / transport_name / is_transport_ready
 
-Returns the configured provider object, active native byte transport name, and
-whether its asynchronous setup has completed. Ordinary filehandle-backed
-Streams have no provider object, report C<plain>, and are immediately ready.
-
-=head2 selected_alpn / tls_protocol / tls_cipher / tls_stats
-
-Return negotiated ALPN, TLS protocol, cipher, and native TLS counters for a TLS
-Stream. The scalar information methods return undef for a plain Stream;
-C<tls_stats> returns undef when no TLS provider is active.
-
-=head2 tcp_nodelay / keepalive / keepalive_idle / keepalive_interval / keepalive_count / tcp_user_timeout / send_buffer / receive_buffer
-
-With no argument, return the effective Linux socket value. With one argument,
-set the option and return the value read back from the kernel. These methods
-require an established socket; TCP-only methods reject a Unix Stream.
-
-=head2 is_read_paused / is_read_eof / is_write_ended / is_closed
-
-Report Stream lifecycle state.
+Return the internal transport provider, active native transport name, and
+readiness state. Ordinary handles report C<plain> after native activation.
+These methods also support Socket TLS introspection without putting TLS policy
+in generic Stream.
 
 =head2 data([$value])
 
-Gets or replaces per-connection application state.
+Get or replace arbitrary application state.
 
-=head2 loop / state / peer / local
+=head2 loop / state / last_error
 
-Return the owning Loop, C<unattached>, C<connecting>, C<active>, C<detached>, or
-C<closed> lifecycle state, the lazy remote peer when available, and the local
-socket address. Outbound and adopted Streams populate both addresses when the
-kernel supplies them; accepted Streams receive their peer from Listener.
+Return the owning Loop, lifecycle state, and the error that caused closure.
+State is C<unattached>, C<connecting> for Socket acquisition, C<active>,
+C<detached>, or C<closed>.
 
-=head2 last_error
+=head2 is_read_paused / is_read_eof / is_read_closed
 
-Returns the L<Linux::Event::Error> that caused closure, or undef when the Stream
-has not failed.
+Report whether input is paused, ended by peer EOF, or stopped explicitly by
+C<close_read>.
 
-=head1 FRAMING POLICY
+=head2 is_write_ended / is_closed / is_terminal
 
-Framed Stream types use native built-ins declared through
-L<Linux::Event::Framer>. Arbitrary per-connection framer objects and the
-old custom Perl C<next_frame> contract are intentionally unsupported. Unusual
-protocols can buffer and parse raw C<on_data> bytes. Generally useful framing
-families should be implemented as native Linux::Event built-ins.
+Report write-direction and complete-object terminal state.
+
+=head1 FRAMING AND NATIVE CONSUMERS
+
+Framers operate on incoming bytes and therefore belong to generic Stream.
+Built-in declarations are documented in L<Linux::Event::Framer> and
+F<docs/FRAMING.md>.
+
+The versioned native framed-message consumer ABI is also attached to generic
+Stream rather than Socket. Its provider boundary and event rules are documented
+in F<docs/STREAM-CONSUMER-ABI.md>. Linux::Event core does not depend on an
+async or Future implementation.
+
+=head1 ERROR POLICY
+
+Read, write, framing, timeout, transport, and output-limit failures are reported
+as L<Linux::Event::Error> values through C<on_error>, then close the Stream.
+Application callback exceptions propagate to the caller.
 
 =head1 PERFORMANCE
 
-Native code drains reads, detects built-in frame boundaries, performs immediate
-writes, drains segmented queues with C<writev>, and accounts for backpressure.
-The class descriptor moves immutable callbacks and parser configuration out of
-each connection. Perl is entered for semantic C<on_data>, C<on_message>, or
-C<on_messages> delivery and lifecycle policy. The zero batching defaults keep
-the ordinary callback path free of batch allocation or array construction.
-
-Use C<bench/run-callback-batching-microbench.pl> for pipelined throughput and
-callback-count sweeps. Use C<bench/run-callback-batching-fairness.pl> to observe
-a latency-sensitive descriptor beside a continuously readable Stream.
+One XS state owns both directions, one parser, one native consumer context, and
+one segmented output queue. A shared handle uses one watcher; split handles use
+two watchers pointing to that same state. Native code drains reads, finds frame
+boundaries, issues immediate writes, drains queued segments with C<writev>, and
+accounts for backpressure. Perl is entered only at semantic callback
+boundaries.
 
 =cut

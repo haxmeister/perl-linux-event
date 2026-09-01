@@ -84,7 +84,7 @@ Registered objects also include `state` and type-specific fields:
 
 | Type | Additional fields |
 | --- | --- |
-| stream | `fd`, `local`, `peer`, `transport`, `pending_bytes`, `read_paused`, `read_eof`, `write_ended`, `write_blocked` |
+| stream | `fd`, `read_fd`, `write_fd`, `stream_kind`, `local`, `peer`, `transport`, `pending_bytes`, `read_paused`, `read_eof`, `read_closed`, `write_ended`, `write_blocked` |
 | listener | `fd`, `host`, `port`, `path`, `family`, `paused`, `accepted` |
 | datagram | `fd`, `local`, `peer`, `connected`, `pending_bytes`, `pending_datagrams`, `read_paused` |
 | timer | `deadline`, `interval`, `expirations` |
@@ -94,6 +94,10 @@ Registered objects also include `state` and type-specific fields:
 
 The hash is a snapshot. Address values are immutable Address objects; changing
 the returned hash does not change the inspected object.
+For a split generic Stream, `fd` is undefined while `read_fd` and `write_fd`
+identify the two registrations. `stream_kind` is `stream` for the generic
+class family and `socket` for Linux::Event::Socket subclasses; Socket alone
+populates `local` and `peer`.
 
 ## Native resources
 

@@ -24,6 +24,7 @@ my @public_modules = qw(
     Linux::Event::Loop
     Linux::Event::Process
     Linux::Event::Signal
+    Linux::Event::Socket
     Linux::Event::Stream
     Linux::Event::TLS
     Linux::Event::Timer
@@ -73,7 +74,8 @@ WriteMakefile(
                 Linux::Event::Signal::_Descriptor
                 Linux::Event::Signal::_Engine
                 Linux::Event::Signal::_Service
-                Linux::Event::Stream::_Connection
+                Linux::Event::Socket::_Descriptor
+                Linux::Event::Socket::_Connection
                 Linux::Event::Stream::_Deadline
                 Linux::Event::Stream::_Descriptor
                 Linux::Event::Stream::XSDescriptor

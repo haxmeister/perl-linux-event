@@ -6,27 +6,28 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::API::Raw;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::API::Missing;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 }
 
 {
     package T::API::FramedMissing;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
 }
 
 {
     package T::API::FramedMixed;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_data ($stream, $bytes) { }
     sub on_message ($stream, $message) { }
@@ -68,13 +69,17 @@ my ($made, $error) = construction_error('Linux::Event::Stream');
 ok(!$made, 'base Stream class cannot be constructed');
 like($error, qr/base class/, 'base-class error is clear');
 
+($made, $error) = construction_error('Linux::Event::Socket');
+ok(!$made, 'base Socket class cannot be constructed');
+like($error, qr/base class/, 'Socket base-class error is clear');
+
 ($made, $error) = construction_error('T::API::Missing');
-ok(!$made, 'raw subclass must define on_data');
-like($error, qr/must define on_data/, 'missing raw callback error is clear');
+ok(!$made, 'raw subclass requires on_data');
+like($error, qr/requires on_data/, 'missing raw callback error is clear');
 
 ($made, $error) = construction_error('T::API::FramedMissing');
 ok(!$made, 'framed subclass must define on_message');
-like($error, qr/does not define on_message/, 'missing framed callback error is clear');
+like($error, qr/requires on_message/, 'missing framed callback error is clear');
 
 ($made, $error) = construction_error('T::API::FramedMixed');
 ok(!$made, 'framed subclass cannot also define on_data');

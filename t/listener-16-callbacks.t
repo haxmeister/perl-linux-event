@@ -8,10 +8,11 @@ use Socket qw(AF_INET SOCK_STREAM inet_aton pack_sockaddr_in);
 use Linux::Event::Listener;
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::CallbackStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub on_ready ($stream) {
         $stream->data->{ready}++;
@@ -79,7 +80,7 @@ close $client;
 
 {
     package T::BrokenAttachStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
     sub on_close ($stream) { $stream->data->{setup_closed}++ }
     sub _attach_to_loop ($stream, $loop) {
@@ -112,7 +113,7 @@ connect($setup_client,
 $setup_loop->run;
 is($setup_state->{setup_error}->type, 'setup',
     'accepted Stream attachment failure is typed');
-is($setup_state->{setup_error}->operation, 'accepted_stream',
+is($setup_state->{setup_error}->operation, 'accepted_socket',
     'accepted setup error identifies Stream attachment');
 is($setup_state->{setup_closed}, 1,
     'accepted Stream attachment failure closes the Stream exactly once');

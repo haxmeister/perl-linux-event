@@ -7,10 +7,11 @@ use Socket qw(AF_UNIX SOCK_STREAM);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::DeadlineDefaults;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub stream_options ($class) {
         return (
@@ -25,7 +26,7 @@ use Linux::Event::Stream;
 
 {
     package T::DeadlineInvalid;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) { return (idle_timeout => -1) }
     sub on_data ($stream, $bytes) { return }
 }

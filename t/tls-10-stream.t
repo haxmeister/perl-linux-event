@@ -7,11 +7,12 @@ use FindBin qw($Bin);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 {
     package T::TLSClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_transport_ready ($stream) {
         $stream->data->{client_ready}++;
         $stream->write('ping');
@@ -29,7 +30,7 @@ use Linux::Event::TLS;
 
 {
     package T::TLSServer;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_transport_ready ($stream) { $stream->data->{server_ready}++ }
     sub on_data ($stream, $bytes) {
         $stream->data->{server_input} .= $bytes;

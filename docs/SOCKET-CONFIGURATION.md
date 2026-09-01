@@ -6,22 +6,22 @@ Omitted policy leaves the kernel value untouched.
 
 ## Precedence
 
-For Stream and Datagram socket policy, precedence is:
+For Socket and Datagram policy, precedence is:
 
 1. constructor option for one object;
-2. cached `stream_options` or `datagram_options` value;
+2. cached `socket_options` or `datagram_options` value;
 3. the existing kernel default when both are omitted.
 
 Linux::Event does not manufacture a second set of network defaults. This keeps
 system tuning, container policy, and inherited filehandle configuration
 observable instead of silently replacing them.
 
-## Stream policy
+## Socket policy
 
-A Stream type may cache policy once:
+A Socket type may cache policy once:
 
 ```perl
-sub stream_options ($class) {
+sub socket_options ($class) {
     return (
         tcp_nodelay        => 1,       # optional
         keepalive          => 1,       # optional
@@ -36,10 +36,10 @@ sub stream_options ($class) {
 ```
 
 The same names may be supplied to `new` for an established handle or to
-`connect` for one outbound Stream:
+`connect` for one outbound Socket:
 
 ```perl
-my $stream = ClientStream->connect(
+my $socket = ClientSocket->connect(
     host        => '198.51.100.20', # required
     port        => 443,             # required
     tcp_nodelay => 0,               # optional constructor override
@@ -47,21 +47,21 @@ my $stream = ClientStream->connect(
 );
 ```
 
-TCP-only options reject Unix Streams. Send and receive buffers are valid for
-TCP and Unix Stream sockets. `tcp_user_timeout` is public seconds and is
+TCP-only options reject Unix Sockets. Send and receive buffers are valid for
+TCP and Unix stream sockets. `tcp_user_timeout` is public seconds and is
 converted to Linux milliseconds; a positive duration below one millisecond is
 rounded up.
 
 ## Local binding
 
-The remote `host` and `port` identify where a Stream connects. Most clients
+The remote `host` and `port` identify where a Socket connects. Most clients
 should supply only those values and let Linux choose the source address and
 ephemeral source port.
 
 Local binding is an optional source-side constraint:
 
 ```perl
-my $stream = ClientStream->connect(
+my $socket = ClientSocket->connect(
     host       => '203.0.113.10', # required remote address
     port       => 8443,           # required remote port
     local_host => '192.0.2.20',   # optional numeric source address
@@ -85,7 +85,7 @@ Listener owns policy for the listening socket:
 
 ```perl
 my $listener = Linux::Event::Listener->new(
-    stream_class => 'ServerStream', # required
+    stream_class => 'ServerSocket', # required
     host         => '0.0.0.0',      # required for TCP
     port         => 9443,           # required for TCP
     reuseaddr    => 1,              # default
@@ -95,7 +95,7 @@ my $listener = Linux::Event::Listener->new(
 ```
 
 That policy does not replace accepted-connection policy. Every accepted
-`ServerStream` independently applies its cached Stream options and
+`ServerSocket` independently applies its cached Stream and Socket options and
 `configure_socket` hook before plain readiness or TLS startup.
 
 ## Datagram policy
@@ -118,7 +118,7 @@ prevents a typo such as `unlink => 0` on UDP from appearing to be supported.
 
 ## Controlled hook
 
-Stream and Datagram subclasses may define a cached `configure_socket` method:
+Socket and Datagram subclasses may define a cached `configure_socket` method:
 
 ```perl
 use Socket qw(IPPROTO_TCP TCP_QUICKACK);
@@ -129,7 +129,7 @@ sub configure_socket ($stream, $fh, $role, $address) {
 }
 ```
 
-Stream roles are `connect`, `accepted`, and `adopted`. Datagram roles are
+Socket roles are `connect`, `accepted`, and `adopted`. Datagram roles are
 `connect` and `adopted`. Built-in policy runs first. For outbound sockets the
 hook runs before local bind and connect; for accepted or adopted sockets it
 runs before transport startup. An exception becomes a structured
@@ -137,7 +137,7 @@ runs before transport startup. An exception becomes a structured
 
 ## Live values
 
-Established Stream supports live getter/setters for:
+Established Socket supports live getter/setters for:
 
 - `tcp_nodelay`;
 - `keepalive`, `keepalive_idle`, `keepalive_interval`, and `keepalive_count`;
@@ -157,7 +157,7 @@ socket creation -> socket policy -> local bind/connect or accept
                 -> TLS handshake when declared -> plaintext Stream framing
 ```
 
-A framer sees plaintext messages and has no socket options. TLS is a Stream
+A framer sees plaintext messages and has no socket options. TLS is a Socket
 transport, not a framer. Protocol `transition_to` changes callbacks and framing
 for an existing connection; it does not reapply acquisition-time socket policy
 or replace TLS.

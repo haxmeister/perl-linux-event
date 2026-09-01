@@ -16,10 +16,10 @@ Linux::Event - Linux-native reactor, streams, datagrams, and processes
 =head1 SYNOPSIS
 
   use Linux::Event::Loop;
-  use Linux::Event::Stream;
+  use Linux::Event::Socket;
 
   my $loop = Linux::Event::Loop->new;
-  $loop->add(MyStream->connect(
+  $loop->add(MySocket->connect(
       host => '127.0.0.1', # required
       port => 9999,        # required
   ));
@@ -34,9 +34,9 @@ own their logical resources and attach directly to one Loop; they do not
 inherit from a generic Watcher or IO class.
 
 The APIs deliberately remain layered.  Applications that need raw descriptor
-readiness can use the reactor directly.  Applications that want automatic
-socket reads, buffered writes, and native message framing can use a Stream
-subclass on top.
+readiness can use the reactor directly. Applications that want automatic
+buffered byte I/O and native message framing can use a Stream subclass;
+connected socket protocols use a Socket subclass.
 
 Every attachable public object accepts C<loop =E<gt> $loop>. It can instead be
 constructed detached and passed to C<< $loop->add($object) >>. C<add> sets the
@@ -53,13 +53,18 @@ and optional profiling.
 
 =item * L<Linux::Event::Stream>
 
-Subclass-defined buffered byte streams with connection, framing, backpressure,
-explicit callback batching, half-close, established deadlines,
-protocol-transition, and transport lifecycle.
+Generic subclass-defined buffered byte streams with one shared handle, split
+read/write handles, or either direction alone. Stream owns framing,
+backpressure, established deadlines, and directional lifecycle.
+
+=item * L<Linux::Event::Socket>
+
+Connected C<SOCK_STREAM> specialization adding outbound connection, addresses,
+socket options, kernel half-close, and TLS transport lifecycle.
 
 =item * L<Linux::Event::Listener>
 
-TCP and Unix listeners that automatically construct a chosen Stream subclass.
+TCP and Unix listeners that automatically construct a chosen Socket subclass.
 
 =item * L<Linux::Event::Datagram>
 
@@ -86,7 +91,7 @@ signals, and asynchronous standard I/O.
 
 =item * L<Linux::Event::TLS>
 
-Declarative OpenSSL TLS policy for Stream subclasses.
+Declarative OpenSSL TLS policy for Socket subclasses.
 
 =item * L<Linux::Event::Framer>
 
@@ -104,16 +109,17 @@ Lazy IPv4, IPv6, and Unix socket-address values.
 
 =head1 PUBLIC MODEL
 
-Applications subclass C<Linux::Event::Stream> and
-C<Linux::Event::Datagram> to define network behavior,
+Applications subclass C<Linux::Event::Stream> for generic byte handles,
+C<Linux::Event::Socket> for connected stream-socket protocols, and
+C<Linux::Event::Datagram> for packet-socket behavior,
 C<Linux::Event::Timer> to define scheduled behavior,
 C<Linux::Event::Signal> to define signal behavior,
 C<Linux::Event::Wakeup> to define notification handling, and
 C<Linux::Event::Process> to define child lifecycle handling. They do not
-subclass Loop registrations. Outbound Stream acquisition is
-C<< MyStream->connect(host =E<gt> '127.0.0.1', port =E<gt> 9999) >>. Inbound
-Stream acquisition is C<< Linux::Event::Listener->new(stream_class =E<gt>
-'MyStream', host =E<gt> '0.0.0.0', port =E<gt> 9999) >>. A Stream subclass
+subclass Loop registrations. Outbound Socket acquisition is
+C<< MySocket->connect(host =E<gt> '127.0.0.1', port =E<gt> 9999) >>. Inbound
+Socket acquisition is C<< Linux::Event::Listener->new(stream_class =E<gt>
+'MySocket', host =E<gt> '0.0.0.0', port =E<gt> 9999) >>. A Socket subclass
 opts into TLS with C<use Linux::Event::TLS>; C<connect> and Listener acceptance
 select the client or server handshake role.
 

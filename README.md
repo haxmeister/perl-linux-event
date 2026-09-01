@@ -12,8 +12,10 @@ wakeups, inbound and outbound byte streams, packet-preserving datagrams,
 pidfd processes, and an OpenSSL TLS transport in one distribution.
 
 The public model is deliberately small. `Linux::Event::Loop` owns readiness
-and scheduled work; `Linux::Event::Stream` and `Linux::Event::Datagram` own
-byte and packet sockets; `Linux::Event::Listener` owns listening sockets;
+and scheduled work; `Linux::Event::Stream` owns generic buffered byte I/O;
+`Linux::Event::Socket` specializes Stream for connected TCP and Unix stream
+sockets; `Linux::Event::Datagram` owns packet sockets; and
+`Linux::Event::Listener` owns listening sockets;
 `Linux::Event::Timer`, `Linux::Event::Signal`, and
 `Linux::Event::Wakeup` own scheduled, signal, and external-notification
 activities; and `Linux::Event::Process` owns pidfd lifecycle and optional
@@ -25,19 +27,21 @@ objects.
 ## Public modules
 
 - `Linux::Event::Loop` - epoll engine and object attachment
-- `Linux::Event::Stream` - TCP/Unix stream endpoints and outbound connection
+- `Linux::Event::Stream` - generic buffered byte I/O over one or two handles
+- `Linux::Event::Socket` - connected TCP/Unix stream sockets and outbound connect
 - `Linux::Event::Listener` - TCP/Unix listening endpoints
 - `Linux::Event::Datagram` - connected/unconnected UDP and Unix packet sockets
 - `Linux::Event::Timer` - subclass-defined one-shot and recurring timers
 - `Linux::Event::Signal` - subclass-defined synchronous signal subscriptions
 - `Linux::Event::Wakeup` - subclass-defined eventfd notifications
 - `Linux::Event::Process` - pidfd lifecycle and asynchronous standard I/O
-- `Linux::Event::TLS` - declarative OpenSSL policy for Stream subclasses
+- `Linux::Event::TLS` - declarative OpenSSL policy for Socket subclasses
 - `Linux::Event::Framer::*` - native framing declarations for Stream types
 - `Linux::Event::Error` - shared structured failure value
 - `Linux::Event::Address` - lazy IPv4, IPv6, and Unix address value
 
-`Linux::Event::Stream::_Connection`, `Linux::Event::_Resolver`, and the
+`Linux::Event::Socket::_Connection`, `Linux::Event::Socket::_Descriptor`,
+`Linux::Event::_Resolver`, and the
 internal socket configuration and deadline types are private implementation
 details. Applications must not construct, subclass, or depend on them.
 
@@ -112,10 +116,10 @@ details. Applications must not construct, subclass, or depend on them.
 - existing-child observation with optional non-reaping non-child mode
 - no ambiguous process `cancel` operation
 
-### Stream connection
+### Socket connection
 
-- `MyStream->connect()` as the sole public outbound connection API
-- the same Stream object before, during, and after establishment
+- `MySocket->connect()` as the sole public outbound connection API
+- the same Socket object before, during, and after establishment
 - IPv4, IPv6, Unix stream, and caller-packed address modes
 - nonblocking, close-on-exec sockets created atomically
 - default connection deadline implemented with Linux `timerfd`
@@ -134,11 +138,11 @@ details. Applications must not construct, subclass, or depend on them.
 - bounded level-triggered batches for listener fairness
 - optional `on_accept($listener, $stream)` after construction and attachment
 - lazy peer-address conversion and typed runtime errors
-- no temporary accepted-socket registration before Stream construction
+- no temporary accepted-socket registration before Socket construction
 
 ### Socket configuration
 
-- constructor values override cached class policy for one Stream or Datagram
+- constructor values override cached class policy for one Socket or Datagram
 - omitted values leave Linux kernel configuration unchanged
 - TCP_NODELAY, keepalive tuning, TCP_USER_TIMEOUT, and socket buffers
 - listener reuse, IPv6-only, and interface binding policy
@@ -165,16 +169,19 @@ sub on_accept ($listener, $stream) {
 package main;
 my $server = ServerListener->new(
     loop         => $loop,          # optional: attach immediately
-    stream_class => 'ServerStream', # required
+    stream_class => 'ServerSocket', # required
     host         => '0.0.0.0',      # required for TCP
     port         => 9999,           # required for TCP
     reuseaddr    => 1,              # default
 );
 ```
 
-### Stream
+### Stream and Socket
 
 - subclass-defined behavior with one cached descriptor per Stream type
+- generic shared, split, read-only, and write-only handle forms
+- independent read EOF and graceful write-end lifecycle
+- Socket-only connect, address, socket-option, shutdown, and TLS semantics
 - named callback CVs resolved once and called directly
 - native read draining and framed-input storage
 - opt-in bounded raw-read coalescing and framed `on_messages` arrays
@@ -221,7 +228,7 @@ that must transition after one specific message should keep `on_message`.
 
 ### Established Stream deadlines
 
-Stream subclasses may cache connection-wide inactivity defaults with their
+Stream subclasses may cache inactivity defaults with their
 other class policy:
 
 ```perl
@@ -239,7 +246,7 @@ override the subclass for one outbound or directly adopted Stream. Accepted
 Streams use the configured Stream subclass's cached policy:
 
 ```perl
-my $stream = ClientStream->connect(
+my $stream = ClientSocket->connect(
     host => $host, port => $port,
     idle_timeout => 120,
     deadline => { after => 15, operation => 'authentication' },
@@ -267,12 +274,12 @@ Stream, Listener, Datagram, Timer, Signal, Wakeup, and Process accept
 ```perl
 use Linux::Event::Listener;
 
-my $client = ClientStream->connect(
+my $client = ClientSocket->connect(
     loop => $loop, host => '127.0.0.1', port => 9999,
 );
 
 my $server = $loop->add(Linux::Event::Listener->new(
-    stream_class => 'ServerStream',
+    stream_class => 'ServerSocket',
     host => '0.0.0.0', port => 9999,
 ));
 
@@ -484,8 +491,8 @@ measurement controls.
 The same Stream object exists before, during, and after connection setup:
 
 ```perl
-package GatewayStream;
-use parent 'Linux::Event::Stream';
+package GatewaySocket;
+use parent 'Linux::Event::Socket';
 use Linux::Event::TLS;
 
 sub on_ready ($stream) {
@@ -496,7 +503,7 @@ package main;
 use Linux::Event::Loop;
 
 my $loop = Linux::Event::Loop->new;
-my $stream = $loop->add(GatewayStream->connect(
+my $stream = $loop->add(GatewaySocket->connect(
     host    => 'gateway.discord.gg', # required
     port    => 443,                  # required
     timeout => 10,                   # default
@@ -511,13 +518,13 @@ after connection establishment. Hostnames resolve on a private native worker
 pool; completion wakes the owning Loop through eventfd, and IPv6/IPv4
 connection attempts are staggered without blocking the reactor.
 
-TLS belongs to the Stream type rather than to one client constructor. The same
-declaration becomes a server handshake when Listener accepts that Stream
-subclass. An accepted TLS Stream must declare its certificate and key:
+TLS belongs to the Socket type rather than to one client constructor. The same
+declaration becomes a server handshake when Listener accepts that Socket
+subclass. An accepted TLS Socket must declare its certificate and key:
 
 ```perl
-package SecureEchoStream;
-use parent 'Linux::Event::Stream';
+package SecureEchoSocket;
+use parent 'Linux::Event::Socket';
 use Linux::Event::TLS
     cert_file => '/etc/myapp/server-cert.pem', # required for server role
     key_file  => '/etc/myapp/server-key.pem',  # required for server role
@@ -531,26 +538,26 @@ package main;
 my $server_state = { connections => {} };
 my $server = Linux::Event::Listener->new(
     loop         => $loop,               # optional: attach immediately
-    stream_class => 'SecureEchoStream',  # required
+    stream_class => 'SecureEchoSocket',  # required
     host         => '0.0.0.0',           # required for TCP
     port         => 9443,                # required for TCP
     data         => $server_state,       # optional; inherited by each Stream
 );
 ```
 
-Listener calls `on_accept` immediately after attaching the accepted Stream;
-the Stream's `on_ready` waits until the server handshake completes. Outbound
+Listener calls `on_accept` immediately after attaching the accepted Socket;
+the Socket's `on_ready` waits until the server handshake completes. Outbound
 TLS defaults SNI and hostname verification to the
 `connect(host => 'service.example')` value.
 
 ## Line echo server
 
-Listener owns socket setup and automatically constructs the framed Stream.
+Listener owns socket setup and automatically constructs the framed Socket.
 There is no application-level socket or accepted-filehandle plumbing:
 
 ```perl
-package EchoStream;
-use parent 'Linux::Event::Stream';
+package EchoSocket;
+use parent 'Linux::Event::Socket';
 use Linux::Event::Framer 'Delimiter', "\n";
 
 sub on_message ($stream, $line) { $stream->send($line) }
@@ -561,7 +568,7 @@ use Linux::Event::Loop;
 my $loop = Linux::Event::Loop->new;
 my $server = $loop->add(
     Linux::Event::Listener->new(
-        stream_class => 'EchoStream',
+        stream_class => 'EchoSocket',
         host => '0.0.0.0', port => 9999,
     )
 );
@@ -577,7 +584,7 @@ Wakeup, and Process examples are
 [`examples/wakeup-thread.pl`](examples/wakeup-thread.pl), and
 [`examples/process-capture.pl`](examples/process-capture.pl).
 
-## Raw Stream example
+## Raw Socket example
 
 A Stream type is an ordinary package. It may live in the same file as the rest
 of the program.
@@ -586,8 +593,8 @@ of the program.
 use v5.36;
 use Linux::Event::Loop;
 
-package EchoStream;
-use parent 'Linux::Event::Stream';
+package EchoSocket;
+use parent 'Linux::Event::Socket';
 
 sub on_data ($stream, $bytes) {
     $stream->write($bytes);
@@ -599,7 +606,7 @@ sub on_error ($stream, $error) {
 
 package main;
 my $loop = Linux::Event::Loop->new;
-my $stream = $loop->add(EchoStream->new(
+my $stream = $loop->add(EchoSocket->new(
     fh   => $socket,
     data => { user_id => 42 },
 ));
@@ -616,8 +623,8 @@ Framing turns a byte stream into complete messages. A framed type adds one
 declaration after `use parent` and implements `on_message`:
 
 ```perl
-package LineEchoStream;
-use parent 'Linux::Event::Stream';
+package LineEchoSocket;
+use parent 'Linux::Event::Socket';
 use Linux::Event::Framer 'Delimiter', "\n";
 
 sub on_message ($stream, $message) {
@@ -680,7 +687,7 @@ queued output stays byte-for-byte ordered; subsequent `send()` calls use the
 new framer. A paused Stream remains paused across the transition.
 
 This is a protocol transition, not encryption or descriptor replacement. TLS
-is declared independently on a Stream subclass and is implemented at the
+is declared independently on a Socket subclass and is implemented at the
 native transport boundary rather than pretending to be a framing rule.
 
 ## Class Stream options
@@ -748,7 +755,7 @@ memory against the versioned object-configured baseline.
 - [`docs/STREAM-CONSUMER-ABI.md`](docs/STREAM-CONSUMER-ABI.md) - native framed-message extension boundary
 - [`docs/SOCKET-CONFIGURATION.md`](docs/SOCKET-CONFIGURATION.md) - socket policy, local binding, and hooks
 - [`docs/TRANSPORT-BOUNDARY.md`](docs/TRANSPORT-BOUNDARY.md) - declarative TLS and the internal transport contract
-- [`docs/STREAM-CONNECTIONS.md`](docs/STREAM-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
+- [`docs/SOCKET-CONNECTIONS.md`](docs/SOCKET-CONNECTIONS.md) - outbound acquisition, async resolution, and Happy Eyeballs
 - [`docs/STREAM-DEADLINES.md`](docs/STREAM-DEADLINES.md) - established inactivity and operation deadlines
 - [`docs/LISTENER-DESIGN.md`](docs/LISTENER-DESIGN.md) - inbound acquisition and accept policy
 - [`docs/DATAGRAM-DESIGN.md`](docs/DATAGRAM-DESIGN.md) - packet I/O, queues, and ownership

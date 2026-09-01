@@ -36,7 +36,7 @@ static les_transport_result_t
 les_plain_read(void *context, void *buffer, size_t length)
 {
     les_plain_transport_t *plain = (les_plain_transport_t *)context;
-    return les_plain_result(read(plain->fd, buffer, length),
+    return les_plain_result(read(plain->read_fd, buffer, length),
         LES_TRANSPORT_WANT_READ);
 }
 
@@ -44,7 +44,7 @@ static les_transport_result_t
 les_plain_write(void *context, const void *buffer, size_t length)
 {
     les_plain_transport_t *plain = (les_plain_transport_t *)context;
-    return les_plain_result(write(plain->fd, buffer, length),
+    return les_plain_result(write(plain->write_fd, buffer, length),
         LES_TRANSPORT_WANT_WRITE);
 }
 
@@ -52,7 +52,7 @@ static les_transport_result_t
 les_plain_writev(void *context, const struct iovec *vectors, int count)
 {
     les_plain_transport_t *plain = (les_plain_transport_t *)context;
-    return les_plain_result(writev(plain->fd, vectors, count),
+    return les_plain_result(writev(plain->write_fd, vectors, count),
         LES_TRANSPORT_WANT_WRITE);
 }
 
@@ -61,7 +61,7 @@ les_plain_shutdown_write(void *context)
 {
     les_plain_transport_t *plain = (les_plain_transport_t *)context;
     les_transport_result_t result = { 0, LES_TRANSPORT_OK, 0 };
-    if (shutdown(plain->fd, SHUT_WR) != 0) {
+    if (shutdown(plain->write_fd, SHUT_WR) != 0) {
         result.status = LES_TRANSPORT_ERROR;
         result.error = errno;
     }
@@ -126,7 +126,7 @@ les_transport_result_t
 les_transport_read(les_xsstate_t *st, void *buffer, size_t length)
 {
     if (st->transport_ops == &les_plain_transport_ops)
-        return les_plain_result(read(st->fd, buffer, length),
+        return les_plain_result(read(st->read_fd, buffer, length),
             LES_TRANSPORT_WANT_READ);
     return st->transport_ops->read_bytes(
         st->transport_context, buffer, length);
@@ -136,7 +136,7 @@ les_transport_result_t
 les_transport_write(les_xsstate_t *st, const void *buffer, size_t length)
 {
     if (st->transport_ops == &les_plain_transport_ops)
-        return les_plain_result(write(st->fd, buffer, length),
+        return les_plain_result(write(st->write_fd, buffer, length),
             LES_TRANSPORT_WANT_WRITE);
     return st->transport_ops->write_bytes(
         st->transport_context, buffer, length);
@@ -146,7 +146,7 @@ les_transport_result_t
 les_transport_writev(les_xsstate_t *st, const struct iovec *vectors, int count)
 {
     if (st->transport_ops == &les_plain_transport_ops)
-        return les_plain_result(writev(st->fd, vectors, count),
+        return les_plain_result(writev(st->write_fd, vectors, count),
             LES_TRANSPORT_WANT_WRITE);
     return st->transport_ops->write_vectors(
         st->transport_context, vectors, count);
