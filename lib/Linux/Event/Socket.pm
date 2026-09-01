@@ -375,6 +375,80 @@ accessors are C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
 C<keepalive_interval>, C<keepalive_count>, C<tcp_user_timeout>, C<send_buffer>,
 and C<receive_buffer>.
 
+=head1 METHODS
+
+Socket inherits the full L<Linux::Event::Stream> method set. The methods below
+are the socket-specific additions and overrides.
+
+=over 4
+
+=item local
+
+=item peer
+
+Return the local and remote L<Linux::Event::Address> for the connection, or
+C<undef> when the address is not available. C<peer> reflects the resolved
+address, which for an accepted connection is the address supplied by
+C<accept(2)>.
+
+=item fd
+
+The descriptor of the single shared socket handle. Equivalent to C<read_fd>,
+since a socket's read and write sides are the same descriptor.
+
+=item tcp_nodelay
+
+=item keepalive
+
+=item keepalive_idle
+
+=item keepalive_interval
+
+=item keepalive_count
+
+=item tcp_user_timeout
+
+=item send_buffer
+
+=item receive_buffer
+
+Live socket option accessors. Called with no argument each returns the option's
+current value. Called with one value it applies the option to the open socket
+and then returns the value read back from the kernel, which is not always the
+value supplied: C<send_buffer> and C<receive_buffer> in particular report the
+kernel's own adjusted size. More than one argument croaks.
+
+These act on the socket itself, so they may be used after construction to change
+policy that C<socket_options> only established as a default. They croak if the
+socket is closed or not yet established.
+
+=item close_read
+
+=item close_write
+
+Close one direction immediately, mapping to C<shutdown(SHUT_RD)> and
+C<shutdown(SHUT_WR)> respectively for plain sockets. Both are unavailable on a
+TLS socket, where directional close would bypass the transport lifecycle; use
+C<end> instead.
+
+=item detach
+
+Return the one shared socket handle and give up ownership of it. Requires
+drained output and a plain transport.
+
+=item selected_alpn
+
+=item tls_protocol
+
+=item tls_cipher
+
+=item tls_stats
+
+Negotiated TLS information, or C<undef> when the transport is not TLS or has
+not completed its handshake.
+
+=back
+
 =head1 LIFECYCLE
 
 Socket inherits Stream's independent read and write states. C<end> drains
