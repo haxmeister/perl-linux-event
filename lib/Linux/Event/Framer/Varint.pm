@@ -31,11 +31,17 @@ sub _frame ($config, $payload) {
     croak "send(): payload length $length exceeds max_frame=$config->{max_frame}"
         if defined($config->{max_frame}) && $length > $config->{max_frame};
 
+    # A varint prefix is genuinely variable-width, so there is no single pack
+    # template. Every payload under 128 bytes encodes to exactly one octet
+    # though, which is the overwhelmingly common case, so take that directly
+    # and skip building an array for it.
+    return pack('C', $length) . $payload if $length < 128;
+
     my @octets;
     my $value = $length;
     do {
-        my $byte = $value % 128;
-        $value = int($value / 128);
+        my $byte = $value & 0x7f;
+        $value >>= 7;
         $byte |= 0x80 if $value;
         push @octets, $byte;
     } while ($value);
