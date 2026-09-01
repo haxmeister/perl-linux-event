@@ -180,14 +180,19 @@ new(CLASS, read_size, read_budget_bytes, read_batch_bytes, message_batch_size, h
             consumer_ops_address);
         if (consumer_ops->abi_version != LES_CONSUMER_ABI_VERSION)
             croak("consumer operations table has an incompatible ABI version");
-        if (consumer_ops->struct_size < sizeof(les_consumer_ops_v1_t))
+        if (consumer_ops->struct_size < LES_CONSUMER_OPS_V1_REQUIRED_SIZE)
             croak("consumer operations table is smaller than ABI v1");
-        if (consumer_ops->flags & ~LES_CONSUMER_F_START_PAUSED)
+        if (consumer_ops->flags
+            & ~(LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH))
             croak("consumer operations table has unsupported flags");
         if (!consumer_ops->name || !consumer_ops->name[0]
             || !consumer_ops->create || !consumer_ops->message
             || !consumer_ops->event || !consumer_ops->destroy)
             croak("consumer operations table is incomplete");
+        if ((consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH)
+            && (consumer_ops->struct_size < sizeof(les_consumer_ops_v1_t)
+                || !consumer_ops->flush))
+            croak("consumer operations table requests flush without a flush function");
         if (read_mode == LES_READ_DELIVER)
             croak("native consumer requires framed Stream mode");
         if (message_cb && SvOK(message_cb))
@@ -653,6 +658,8 @@ stats(state_obj)
         newSVuv(st->consumer_resume_count));
     hv_stores(hv, "consumer_event_calls",
         newSVuv(st->consumer_event_calls));
+    hv_stores(hv, "consumer_flush_calls",
+        newSVuv(st->consumer_flush_calls));
     hv_stores(hv, "consumer_paused",
         newSViv(st->consumer_paused ? 1 : 0));
 

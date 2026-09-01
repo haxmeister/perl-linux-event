@@ -103,17 +103,18 @@ les_consumer_notify_paused(pTHX_ les_xsstate_t *st)
         les_call_stream_method(aTHX_ st, "_xs_consumer_paused");
 }
 
-int
-les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
+static int
+les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
+    const char *operation, int resume_on_continue)
 {
-    int status;
-
-    if (!st || !st->consumer_ops || !st->consumer_context)
-        croak("native Stream consumer is not attached");
-    st->consumer_message_calls++;
-    status = st->consumer_ops->message(aTHX_ st->consumer_context, message);
-    if (status == LES_CONSUMER_CONTINUE)
+    if (status == LES_CONSUMER_CONTINUE) {
+        if (resume_on_continue && st->consumer_paused) {
+            st->consumer_paused = 0;
+            st->consumer_resume_count++;
+            les_call_stream_method(aTHX_ st, "_xs_consumer_resumed");
+        }
         return status;
+    }
     if (status == LES_CONSUMER_PAUSE) {
         if (!st->consumer_paused) {
             st->consumer_paused = 1;
@@ -126,12 +127,47 @@ les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
         les_call_stream_method(aTHX_ st, "_xs_consumer_close");
         return status;
     }
-    if (status == LES_CONSUMER_ERROR)
+    if (status == LES_CONSUMER_ERROR && !resume_on_continue)
         croak("native Stream consumer '%s' reported an error",
             st->consumer_ops->name);
-    croak("native Stream consumer '%s' returned invalid status %d",
-        st->consumer_ops->name, status);
+    if (status == LES_CONSUMER_ERROR)
+        croak("native Stream consumer '%s' reported an error from %s",
+            st->consumer_ops->name, operation);
+    if (!resume_on_continue)
+        croak("native Stream consumer '%s' returned invalid status %d",
+            st->consumer_ops->name, status);
+    croak("native Stream consumer '%s' returned invalid status %d from %s",
+        st->consumer_ops->name, status, operation);
     return LES_CONSUMER_ERROR;
+}
+
+int
+les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
+{
+    int status;
+
+    if (!st || !st->consumer_ops || !st->consumer_context)
+        croak("native Stream consumer is not attached");
+    st->consumer_message_calls++;
+    st->consumer_flush_pending = 1;
+    status = st->consumer_ops->message(aTHX_ st->consumer_context, message);
+    return les_consumer_apply_status(aTHX_ st, status, "message", 0);
+}
+
+int
+les_consumer_flush(pTHX_ les_xsstate_t *st)
+{
+    int status;
+
+    if (!st || !st->consumer_ops || !st->consumer_context
+        || !st->consumer_flush_pending)
+        return LES_CONSUMER_CONTINUE;
+    st->consumer_flush_pending = 0;
+    if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
+        return LES_CONSUMER_CONTINUE;
+    st->consumer_flush_calls++;
+    status = st->consumer_ops->flush(aTHX_ st->consumer_context);
+    return les_consumer_apply_status(aTHX_ st, status, "flush", 1);
 }
 
 void
@@ -182,6 +218,7 @@ typedef struct les_test_consumer_s {
     SV *ready_cb;
     UV permits;
     UV delivered;
+    UV flushes;
 } les_test_consumer_t;
 
 static UV les_test_destroyed = 0;
@@ -268,6 +305,16 @@ les_test_event(pTHX_ void *opaque, uint32_t event, int error,
     }
 }
 
+static int
+les_test_flush(pTHX_ void *opaque)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    PERL_UNUSED_CONTEXT;
+
+    context->flushes++;
+    return context->permits ? LES_CONSUMER_CONTINUE : LES_CONSUMER_PAUSE;
+}
+
 static void
 les_test_destroy(pTHX_ void *opaque)
 {
@@ -288,6 +335,34 @@ static const les_consumer_ops_v1_t les_test_ops = {
     LES_CONSUMER_ABI_VERSION,
     sizeof(les_consumer_ops_v1_t),
     "Linux::Event core test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush
+};
+
+/* The original ABI v1 ended at destroy. Keep a provider with that exact
+ * layout in the conformance suite so appended optional fields cannot make old
+ * external providers fail validation or be read past struct_size. */
+typedef struct les_test_original_ops_v1_s {
+    uint32_t abi_version;
+    size_t struct_size;
+    const char *name;
+    uint32_t flags;
+    void *(*create)(pTHX_ const les_consumer_host_api_v1_t *host,
+        void *host_context, SV *stream);
+    int (*message)(pTHX_ void *context, SV *message);
+    void (*event)(pTHX_ void *context, uint32_t event, int error,
+        const char *message);
+    void (*destroy)(pTHX_ void *context);
+} les_test_original_ops_v1_t;
+
+static const les_test_original_ops_v1_t les_test_original_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_test_original_ops_v1_t),
+    "original-layout ABI v1 test consumer",
     LES_CONSUMER_F_START_PAUSED,
     les_test_create,
     les_test_message,
@@ -303,7 +378,8 @@ static const les_consumer_ops_v1_t les_test_incomplete_ops = {
     les_test_create,
     NULL,
     les_test_event,
-    les_test_destroy
+    les_test_destroy,
+    NULL
 };
 
 static const les_consumer_ops_v1_t les_test_wrong_version_ops = {
@@ -314,7 +390,20 @@ static const les_consumer_ops_v1_t les_test_wrong_version_ops = {
     les_test_create,
     les_test_message,
     les_test_event,
-    les_test_destroy
+    les_test_destroy,
+    NULL
+};
+
+static const les_consumer_ops_v1_t les_test_missing_flush_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "missing-flush test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message,
+    les_test_event,
+    les_test_destroy,
+    NULL
 };
 
 static const les_consumer_ops_v1_t les_test_unknown_flags_ops = {
@@ -325,7 +414,8 @@ static const les_consumer_ops_v1_t les_test_unknown_flags_ops = {
     les_test_create,
     les_test_message,
     les_test_event,
-    les_test_destroy
+    les_test_destroy,
+    NULL
 };
 
 static const les_consumer_ops_v1_t les_test_create_failure_ops = {
@@ -336,13 +426,16 @@ static const les_consumer_ops_v1_t les_test_create_failure_ops = {
     les_test_create_failure,
     les_test_message,
     les_test_event,
-    les_test_destroy
+    les_test_destroy,
+    NULL
 };
 
 static les_test_consumer_t *
 les_test_context(les_xsstate_t *st)
 {
-    if (!st || st->consumer_ops != &les_test_ops || !st->consumer_context)
+    if (!st || (st->consumer_ops != &les_test_ops
+        && st->consumer_ops != (const les_consumer_ops_v1_t *)
+            &les_test_original_ops) || !st->consumer_context)
         croak("Stream does not use the Linux::Event core test consumer");
     return (les_test_consumer_t *)st->consumer_context;
 }
@@ -356,8 +449,12 @@ les_test_consumer_definition(pTHX_ const char *variant)
 
     if (strEQ(variant, "incomplete"))
         ops = &les_test_incomplete_ops;
+    else if (strEQ(variant, "original-v1"))
+        ops = (const les_consumer_ops_v1_t *)&les_test_original_ops;
     else if (strEQ(variant, "wrong-table-version"))
         ops = &les_test_wrong_version_ops;
+    else if (strEQ(variant, "missing-flush"))
+        ops = &les_test_missing_flush_ops;
     else if (strEQ(variant, "unknown-flags"))
         ops = &les_test_unknown_flags_ops;
     else if (strEQ(variant, "create-failure"))
@@ -434,6 +531,7 @@ les_test_consumer_stats(pTHX_ les_xsstate_t *st)
     hv_stores(stats, "queued_messages",
         newSVuv((UV)(av_top_index(context->messages) + 1)));
     hv_stores(stats, "delivered", newSVuv(context->delivered));
+    hv_stores(stats, "flushes", newSVuv(context->flushes));
     return newRV_noinc((SV *)stats);
 }
 
