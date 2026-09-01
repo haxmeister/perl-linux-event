@@ -147,3 +147,59 @@ les_state_stats(pTHX_ les_xsstate_t *st)
 
     return newRV_noinc((SV *)hv);
 }
+
+/* XSDescriptor::new used to take 29 positional arguments, which meant the
+ * Perl caller and the XS signature had to agree on an order nothing enforced:
+ * inserting a field in the wrong place silently shifted every later value.
+ * It now takes a single hash, and these helpers read it by name. Unknown keys
+ * are rejected so a typo fails loudly instead of defaulting to zero. */
+static const char *const les_spec_keys[] = {
+    "read_size", "read_budget_bytes", "read_batch_bytes", "message_batch_size",
+    "high_watermark", "low_watermark", "max_pending_bytes", "max_buffer",
+    "read_mode", "deliver_cb", "message_cb", "message_batch_cb", "drain_cb",
+    "eof_cb", "read_error_cb", "write_error_cb", "output_limit_cb",
+    "write_empty_cb", "framing_error_cb", "delimiter", "include_delimiter",
+    "max_frame", "fixed_size", "prefix_bytes", "prefix_little",
+    "include_prefix", "consumer_provider", "consumer_abi_version",
+    "consumer_ops_address"
+};
+
+void
+les_spec_check_keys(pTHX_ HV *spec)
+{
+    HE *entry;
+    size_t i;
+
+    hv_iterinit(spec);
+    while ((entry = hv_iternext(spec))) {
+        I32 len = 0;
+        const char *key = hv_iterkey(entry, &len);
+        int known = 0;
+        for (i = 0; i < sizeof(les_spec_keys) / sizeof(les_spec_keys[0]); i++) {
+            if (strEQ(key, les_spec_keys[i])) { known = 1; break; }
+        }
+        if (!known)
+            croak("unknown Stream descriptor field '%s'", key);
+    }
+}
+
+SV *
+les_spec_sv(pTHX_ HV *spec, const char *key)
+{
+    SV **slot = hv_fetch(spec, key, (I32)strlen(key), 0);
+    return slot ? *slot : NULL;
+}
+
+UV
+les_spec_uv(pTHX_ HV *spec, const char *key)
+{
+    SV *sv = les_spec_sv(aTHX_ spec, key);
+    return sv && SvOK(sv) ? SvUV(sv) : 0;
+}
+
+int
+les_spec_int(pTHX_ HV *spec, const char *key)
+{
+    SV *sv = les_spec_sv(aTHX_ spec, key);
+    return sv && SvOK(sv) ? (int)SvIV(sv) : 0;
+}

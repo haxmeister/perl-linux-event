@@ -184,37 +184,44 @@ sub for_class ($class) {
 
     my $native = $framer ? { %{ $framer->{native} } } : { read_mode => 0 };
 
-    my $xs = Linux::Event::Stream::XSDescriptor->new(
-        $option->{read_size},
-        $option->{read_budget_bytes},
-        $option->{read_batch_bytes},
-        $option->{message_batch_size},
-        $option->{high_watermark},
-        $option->{low_watermark},
-        $option->{max_pending_bytes},
-        $option->{max_buffer},
-        $native->{read_mode},
-        $callback{on_data},
-        $callback{on_message},
-        $callback{on_messages},
-        $callback{on_drain} ? \&Linux::Event::Stream::_xs_drain : undef,
-        \&Linux::Event::Stream::_xs_read_eof,
-        \&Linux::Event::Stream::_xs_read_error,
-        \&Linux::Event::Stream::_xs_write_error,
-        \&Linux::Event::Stream::_xs_output_limit,
-        \&Linux::Event::Stream::_xs_write_empty,
-        \&Linux::Event::Stream::_xs_framing_error,
-        $native->{delimiter},
-        $native->{include_delimiter} // 0,
-        $native->{max_frame},
-        $native->{fixed_size} // 0,
-        $native->{prefix_bytes} // 0,
-        $native->{prefix_little} // 0,
-        $native->{include_prefix} // 0,
-        $consumer ? $consumer->{provider} : undef,
-        $consumer ? $consumer->{abi_version} : 0,
-        $consumer ? $consumer->{operations_address} : 0,
-    );
+    # Named fields, not 29 positional arguments: inserting or reordering a
+    # field can no longer silently shift every value after it.
+    my $xs = Linux::Event::Stream::XSDescriptor->new({
+        read_size          => $option->{read_size},
+        read_budget_bytes  => $option->{read_budget_bytes},
+        read_batch_bytes   => $option->{read_batch_bytes},
+        message_batch_size => $option->{message_batch_size},
+        high_watermark     => $option->{high_watermark},
+        low_watermark      => $option->{low_watermark},
+        max_pending_bytes  => $option->{max_pending_bytes},
+        max_buffer         => $option->{max_buffer},
+        read_mode          => $native->{read_mode},
+
+        deliver_cb       => $callback{on_data},
+        message_cb       => $callback{on_message},
+        message_batch_cb => $callback{on_messages},
+        drain_cb         => $callback{on_drain}
+            ? \&Linux::Event::Stream::_xs_drain : undef,
+        eof_cb           => \&Linux::Event::Stream::_xs_read_eof,
+        read_error_cb    => \&Linux::Event::Stream::_xs_read_error,
+        write_error_cb   => \&Linux::Event::Stream::_xs_write_error,
+        output_limit_cb  => \&Linux::Event::Stream::_xs_output_limit,
+        write_empty_cb   => \&Linux::Event::Stream::_xs_write_empty,
+        framing_error_cb => \&Linux::Event::Stream::_xs_framing_error,
+
+        delimiter         => $native->{delimiter},
+        include_delimiter => $native->{include_delimiter} // 0,
+        max_frame         => $native->{max_frame},
+        fixed_size        => $native->{fixed_size} // 0,
+        prefix_bytes      => $native->{prefix_bytes} // 0,
+        prefix_little     => $native->{prefix_little} // 0,
+        include_prefix    => $native->{include_prefix} // 0,
+
+        consumer_provider    => $consumer ? $consumer->{provider} : undef,
+        consumer_abi_version => $consumer ? $consumer->{abi_version} : 0,
+        consumer_ops_address => $consumer
+            ? $consumer->{operations_address} : 0,
+    });
 
     my $descriptor = {
         class     => $class,

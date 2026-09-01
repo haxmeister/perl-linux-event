@@ -99,43 +99,59 @@ MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, read_size, read_budget_bytes, read_batch_bytes, message_batch_size, high_watermark, low_watermark, max_pending_bytes, max_buffer, read_mode, deliver_cb, message_cb, message_batch_cb, drain_cb, eof_cb, read_error_cb, write_error_cb, output_limit_cb, write_empty_cb, framing_error_cb, delimiter_sv, include_delimiter, max_frame_sv, fixed_size, prefix_bytes, prefix_little, include_prefix, consumer_provider, consumer_abi_version, consumer_ops_address)
+new(CLASS, spec_rv)
     const char *CLASS
-    UV read_size
-    UV read_budget_bytes
-    UV read_batch_bytes
-    UV message_batch_size
-    UV high_watermark
-    UV low_watermark
-    UV max_pending_bytes
-    UV max_buffer
-    int read_mode
-    SV *deliver_cb
-    SV *message_cb
-    SV *message_batch_cb
-    SV *drain_cb
-    SV *eof_cb
-    SV *read_error_cb
-    SV *write_error_cb
-    SV *output_limit_cb
-    SV *write_empty_cb
-    SV *framing_error_cb
-    SV *delimiter_sv
-    int include_delimiter
-    SV *max_frame_sv
-    UV fixed_size
-    int prefix_bytes
-    int prefix_little
-    int include_prefix
-    SV *consumer_provider
-    UV consumer_abi_version
-    UV consumer_ops_address
+    SV *spec_rv
   PREINIT:
+    HV *spec;
     les_descriptor_t *descriptor;
     const les_consumer_ops_v1_t *consumer_ops = NULL;
     STRLEN delimiter_len = 0;
     const char *delimiter = NULL;
+    UV read_size, read_budget_bytes, read_batch_bytes, message_batch_size;
+    UV high_watermark, low_watermark, max_pending_bytes, max_buffer;
+    UV fixed_size, consumer_abi_version, consumer_ops_address;
+    int read_mode, include_delimiter, prefix_bytes, prefix_little;
+    int include_prefix;
+    SV *deliver_cb, *message_cb, *message_batch_cb, *drain_cb, *eof_cb;
+    SV *read_error_cb, *write_error_cb, *output_limit_cb, *write_empty_cb;
+    SV *framing_error_cb, *delimiter_sv, *max_frame_sv, *consumer_provider;
   CODE:
+    if (!spec_rv || !SvROK(spec_rv) || SvTYPE(SvRV(spec_rv)) != SVt_PVHV)
+        croak("XSDescriptor::new requires a hash reference");
+    spec = (HV *)SvRV(spec_rv);
+    les_spec_check_keys(aTHX_ spec);
+
+    read_size            = les_spec_uv(aTHX_ spec, "read_size");
+    read_budget_bytes    = les_spec_uv(aTHX_ spec, "read_budget_bytes");
+    read_batch_bytes     = les_spec_uv(aTHX_ spec, "read_batch_bytes");
+    message_batch_size   = les_spec_uv(aTHX_ spec, "message_batch_size");
+    high_watermark       = les_spec_uv(aTHX_ spec, "high_watermark");
+    low_watermark        = les_spec_uv(aTHX_ spec, "low_watermark");
+    max_pending_bytes    = les_spec_uv(aTHX_ spec, "max_pending_bytes");
+    max_buffer           = les_spec_uv(aTHX_ spec, "max_buffer");
+    fixed_size           = les_spec_uv(aTHX_ spec, "fixed_size");
+    consumer_abi_version = les_spec_uv(aTHX_ spec, "consumer_abi_version");
+    consumer_ops_address = les_spec_uv(aTHX_ spec, "consumer_ops_address");
+    read_mode            = les_spec_int(aTHX_ spec, "read_mode");
+    include_delimiter    = les_spec_int(aTHX_ spec, "include_delimiter");
+    prefix_bytes         = les_spec_int(aTHX_ spec, "prefix_bytes");
+    prefix_little        = les_spec_int(aTHX_ spec, "prefix_little");
+    include_prefix       = les_spec_int(aTHX_ spec, "include_prefix");
+    deliver_cb        = les_spec_sv(aTHX_ spec, "deliver_cb");
+    message_cb        = les_spec_sv(aTHX_ spec, "message_cb");
+    message_batch_cb  = les_spec_sv(aTHX_ spec, "message_batch_cb");
+    drain_cb          = les_spec_sv(aTHX_ spec, "drain_cb");
+    eof_cb            = les_spec_sv(aTHX_ spec, "eof_cb");
+    read_error_cb     = les_spec_sv(aTHX_ spec, "read_error_cb");
+    write_error_cb    = les_spec_sv(aTHX_ spec, "write_error_cb");
+    output_limit_cb   = les_spec_sv(aTHX_ spec, "output_limit_cb");
+    write_empty_cb    = les_spec_sv(aTHX_ spec, "write_empty_cb");
+    framing_error_cb  = les_spec_sv(aTHX_ spec, "framing_error_cb");
+    delimiter_sv      = les_spec_sv(aTHX_ spec, "delimiter");
+    max_frame_sv      = les_spec_sv(aTHX_ spec, "max_frame");
+    consumer_provider = les_spec_sv(aTHX_ spec, "consumer_provider");
+
     if (read_size == 0) croak("read_size must be > 0");
     if (read_budget_bytes > (UV)(size_t)-1)
         croak("read_budget_bytes exceeds native size_t");

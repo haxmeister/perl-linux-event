@@ -220,6 +220,10 @@ SV *les_store_optional_cb(SV *cb, const char *name);
 void les_require_read_sink(pTHX_ const les_descriptor_t *descriptor,
     const char *context);
 SV *les_state_stats(pTHX_ les_xsstate_t *st);
+void les_spec_check_keys(pTHX_ HV *spec);
+SV *les_spec_sv(pTHX_ HV *spec, const char *key);
+UV les_spec_uv(pTHX_ HV *spec, const char *key);
+int les_spec_int(pTHX_ HV *spec, const char *key);
 
 unsigned long long les_activity_now_ns(pTHX);
 void les_note_read_activity(pTHX_ les_xsstate_t *st);
