@@ -65,7 +65,7 @@ void
 les_call_deliver(pTHX_ les_xsstate_t *st, SV *bytes)
 {
     les_call_two(aTHX_ st->descriptor->deliver_cb, st->stream_sv, bytes);
-    st->delivery_calls++;
+    LES_STAT(st, delivery_calls)++;
 }
 
 void
@@ -82,7 +82,7 @@ les_call_framing_error(pTHX_ les_xsstate_t *st, const char *message)
         return;
     if (!st->descriptor->framing_error_cb)
         return;
-    st->framing_error_count++;
+    LES_STAT(st, framing_error_count)++;
     msg = sv_2mortal(newSVpv(message, 0));
     les_call_two(aTHX_ st->descriptor->framing_error_cb, st->stream_sv, msg);
 }
@@ -117,7 +117,7 @@ les_call_output_limit(pTHX_ les_xsstate_t *st, UV pending_bytes)
     SV *limit_sv = sv_2mortal(newSVuv(st->descriptor->max_pending_bytes));
     dSP;
 
-    st->output_limit_count++;
+    LES_STAT(st, output_limit_count)++;
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
@@ -136,13 +136,13 @@ les_call_drain(pTHX_ les_xsstate_t *st)
 {
     if (!st->descriptor->drain_cb)
         return;
-    st->drain_calls++;
+    LES_STAT(st, drain_calls)++;
     les_call_one(aTHX_ st->descriptor->drain_cb, st->stream_sv);
 }
 
 void
 les_call_empty(pTHX_ les_xsstate_t *st)
 {
-    st->empty_calls++;
+    LES_STAT(st, empty_calls)++;
     les_call_one(aTHX_ st->descriptor->write_empty_cb, st->stream_sv);
 }

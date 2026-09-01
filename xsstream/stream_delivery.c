@@ -30,9 +30,9 @@ les_flush_message_batch(pTHX_ les_xsstate_t *st)
     st->message_batch_bytes = 0;
 
     batch_rv = sv_2mortal(newRV_noinc((SV *)batch));
-    st->message_batch_calls++;
-    if (count > st->message_batch_peak_messages)
-        st->message_batch_peak_messages = count;
+    LES_STAT(st, message_batch_calls)++;
+    if (count > LES_STAT(st, message_batch_peak_messages))
+        LES_STAT(st, message_batch_peak_messages) = count;
     les_call_two(aTHX_ callback, st->stream_sv, batch_rv);
 }
 
@@ -41,13 +41,13 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
 {
     UV bytes;
 
-    st->frames_emitted++;
+    LES_STAT(st, frames_emitted)++;
     if (st->consumer_ops) {
         les_consumer_message(aTHX_ st, message);
         return;
     }
     if (!st->descriptor->message_batch_size) {
-        st->message_callback_calls++;
+        LES_STAT(st, message_callback_calls)++;
         les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
         return;
     }
@@ -61,8 +61,8 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
         st->message_batch_bytes = (UV)-1;
     else
         st->message_batch_bytes += bytes;
-    if (st->message_batch_bytes > st->message_batch_peak_bytes)
-        st->message_batch_peak_bytes = st->message_batch_bytes;
+    if (st->message_batch_bytes > LES_STAT(st, message_batch_peak_bytes))
+        LES_STAT(st, message_batch_peak_bytes) = st->message_batch_bytes;
 
     /* max_buffer also bounds the aggregate retained by one batch. Because the
      * current message has already been decoded, the peak is less than two
@@ -89,8 +89,8 @@ les_flush_raw_batch(pTHX_ les_xsstate_t *st)
         len = (size_t)st->descriptor->read_batch_bytes;
     bytes = sv_2mortal(newSVpvn(data, (STRLEN)len));
     les_input_consume(st, len);
-    st->read_batch_flushes++;
-    if ((unsigned long long)len > st->read_batch_peak_bytes)
-        st->read_batch_peak_bytes = (unsigned long long)len;
+    LES_STAT(st, read_batch_flushes)++;
+    if ((unsigned long long)len > LES_STAT(st, read_batch_peak_bytes))
+        LES_STAT(st, read_batch_peak_bytes) = (unsigned long long)len;
     les_call_deliver(aTHX_ st, bytes);
 }

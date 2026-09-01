@@ -33,7 +33,7 @@ les_consumer_host_pause(pTHX_ void *host_context)
         return 0;
     if (!st->consumer_paused) {
         st->consumer_paused = 1;
-        st->consumer_pause_count++;
+        LES_STAT(st, consumer_pause_count)++;
         les_consumer_notify_paused(aTHX_ st);
     }
     return 1;
@@ -113,7 +113,7 @@ les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
     if (status == LES_CONSUMER_PAUSE) {
         if (!st->consumer_paused) {
             st->consumer_paused = 1;
-            st->consumer_pause_count++;
+            LES_STAT(st, consumer_pause_count)++;
             les_consumer_notify_paused(aTHX_ st);
         }
         return status;
@@ -144,7 +144,7 @@ les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
 
     if (!st || !st->consumer_ops || !st->consumer_context)
         croak("native Stream consumer is not attached");
-    st->consumer_message_calls++;
+    LES_STAT(st, consumer_message_calls)++;
     status = st->consumer_ops->message(aTHX_ st->consumer_context, message);
     /* Only a completed dispatch owes a flush: a message() that croaks or
      * reports an error must not leave the flag set for an unrelated drain. */
@@ -162,7 +162,7 @@ les_consumer_flush(pTHX_ les_xsstate_t *st)
     st->consumer_flush_pending = 0;
     if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
         return LES_CONSUMER_CONTINUE;
-    st->consumer_flush_calls++;
+    LES_STAT(st, consumer_flush_calls)++;
     status = st->consumer_ops->flush(aTHX_ st->consumer_context);
     /* flush() reports pause/close/error only. CONTINUE means "no state
      * change" -- it must not revoke a pause the consumer asked for from
@@ -183,7 +183,7 @@ les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
      * and no further flush can be issued. */
     les_consumer_flush(aTHX_ st);
     st->consumer_terminal = 1;
-    st->consumer_event_calls++;
+    LES_STAT(st, consumer_event_calls)++;
     st->consumer_ops->event(aTHX_ st->consumer_context, event, error,
         message ? message : "");
 }
@@ -196,7 +196,7 @@ les_consumer_resume(pTHX_ les_xsstate_t *st)
 
     if (st->consumer_paused) {
         st->consumer_paused = 0;
-        st->consumer_resume_count++;
+        LES_STAT(st, consumer_resume_count)++;
     }
 
     if (!st->read_paused && st->input_dispatch_depth == 0 && st->input_len) {

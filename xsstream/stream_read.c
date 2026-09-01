@@ -23,7 +23,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
     ENTER;
     SAVEINT(st->input_dispatch_depth);
     st->input_dispatch_depth++;
-    st->read_ready_calls++;
+    LES_STAT(st, read_ready_calls)++;
 
     size_t drain_bytes = 0;
 
@@ -86,7 +86,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             target = st->input_buffer + st->input_start + st->input_len;
         }
 
-        st->read_calls++;
+        LES_STAT(st, read_calls)++;
         result = les_transport_read(st, target, want);
 
         if (st->transport_ops != &les_plain_transport_ops
@@ -94,7 +94,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             les_call_transport_event(aTHX_ st, result.status, "read");
 
         if (result.status == LES_TRANSPORT_OK && result.count > 0) {
-            st->bytes_read += (unsigned long long)result.count;
+            LES_STAT(st, bytes_read) += (unsigned long long)result.count;
             drain_bytes += (size_t)result.count;
             les_note_read_activity(aTHX_ st);
 
@@ -110,9 +110,9 @@ les_read_ready(pTHX_ les_xsstate_t *st)
                 }
             } else {
                 st->input_len += (size_t)result.count;
-                st->input_appends++;
-                if ((unsigned long long)st->input_len > st->input_peak_bytes)
-                    st->input_peak_bytes = (unsigned long long)st->input_len;
+                LES_STAT(st, input_appends)++;
+                if ((unsigned long long)st->input_len > LES_STAT(st, input_peak_bytes))
+                    LES_STAT(st, input_peak_bytes) = (unsigned long long)st->input_len;
             }
             continue;
         }
@@ -130,20 +130,20 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             if (st->descriptor != descriptor)
                 continue;
             st->read_eof = 1;
-            st->eof_count++;
+            LES_STAT(st, eof_count)++;
             les_call_eof(aTHX_ st);
             break;
         }
 
         if (result.status == LES_TRANSPORT_INTERRUPT) {
-            st->read_eintr_count++;
+            LES_STAT(st, read_eintr_count)++;
             continue;
         }
 
         if (result.status == LES_TRANSPORT_WANT_READ
             || result.status == LES_TRANSPORT_WANT_WRITE) {
             les_descriptor_t *descriptor = st->descriptor;
-            st->read_eagain_count++;
+            LES_STAT(st, read_eagain_count)++;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
             else {
@@ -159,7 +159,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         {
             int err = result.error;
             les_descriptor_t *descriptor = st->descriptor;
-            st->read_error_count++;
+            LES_STAT(st, read_error_count)++;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
             else {
