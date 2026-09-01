@@ -7,10 +7,11 @@ use Socket qw(AF_UNIX);
 use Linux::Event::Error;
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::ConnectProbeStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
 }
 

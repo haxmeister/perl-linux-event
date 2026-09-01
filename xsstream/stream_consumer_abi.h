@@ -22,6 +22,7 @@
 #define LES_CONSUMER_EVENT_FRAMING_ERROR 3U
 #define LES_CONSUMER_EVENT_CLOSED        4U
 #define LES_CONSUMER_EVENT_DETACHED      5U
+#define LES_CONSUMER_EVENT_READ_CLOSED   6U
 
 typedef struct les_consumer_host_api_v1_s {
     uint32_t abi_version;

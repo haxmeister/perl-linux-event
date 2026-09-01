@@ -7,12 +7,13 @@ use Socket qw(AF_UNIX SOCK_STREAM SOMAXCONN pack_sockaddr_un);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 our ($LOOP, $READY, $ERROR);
 
 {
     package T::UnixClientStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_ready ($stream) {
         $main::READY++;
         $main::LOOP->stop;

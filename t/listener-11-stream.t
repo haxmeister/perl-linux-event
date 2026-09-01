@@ -9,7 +9,7 @@ use Linux::Event::Listener;
 
 {
     package T::LineEchoStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub stream_options ($class) { return idle_timeout => 60 }
     sub on_message ($self, $message) {

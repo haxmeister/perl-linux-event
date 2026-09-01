@@ -8,11 +8,12 @@ use Socket qw(AF_UNIX SOCK_STREAM);
 
 use Linux::Event::Listener;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 {
     package T::DeclaredTLSServer;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS
         cert_file => "$FindBin::Bin/tls-certs/server-cert.pem",
         key_file  => "$FindBin::Bin/tls-certs/server-key.pem",
@@ -28,7 +29,7 @@ use Linux::Event::TLS;
 
 {
     package T::DeclaredTLSClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS
         ca_file => "$FindBin::Bin/tls-certs/server-cert.pem",
         alpn    => ['declaration-test/1'];
@@ -38,7 +39,7 @@ use Linux::Event::TLS;
 
 {
     package T::TLSWithoutCertificate;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS;
 
     sub on_data ($stream, $bytes) { return }
@@ -46,7 +47,7 @@ use Linux::Event::TLS;
 
 {
     package T::TLSWithUnreadableCertificate;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS
         cert_file => "$FindBin::Bin/tls-certs/missing-cert.pem",
         key_file  => "$FindBin::Bin/tls-certs/missing-key.pem";
@@ -99,17 +100,17 @@ like($@, qr/(?:No such file or directory|failed to load TLS server identity)/,
 $ok = eval q{
     package T::TLSBeforeParent;
     use Linux::Event::TLS;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { return }
     1;
 };
 ok(!$ok, 'TLS declaration requires Stream inheritance first');
-like($@, qr/must inherit from Linux::Event::Stream/,
+like($@, qr/must inherit from Linux::Event::Socket/,
     'declaration-order error is explicit');
 
 $ok = eval q{
     package T::TLSUnknownOption;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS imaginary => 1;
     sub on_data ($stream, $bytes) { return }
     1;
@@ -120,7 +121,7 @@ like($@, qr/unknown options: imaginary/,
 
 $ok = eval q{
     package T::TLSNulServerName;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS server_name => "example.test\0.invalid";
     sub on_data ($stream, $bytes) { return }
     1;
@@ -131,7 +132,7 @@ like($@, qr/server_name must be a non-empty string without NUL bytes/,
 
 $ok = eval q{
     package T::TLSWideALPN;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS alpn => ["\x{100}"];
     sub on_data ($stream, $bytes) { return }
     1;
@@ -142,7 +143,7 @@ like($@, qr/ALPN protocol must be a byte string/,
 
 $ok = eval q{
     package T::TLSHugeTimeout;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS
         handshake_timeout =>
             '99999999999999999999999999999999999999999999999999';
@@ -175,7 +176,7 @@ like(exception(sub { Linux::Event::TLS->server(
 
 $ok = eval q{
     package T::TLSPairedCredential;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS cert_file => '/tmp/certificate.pem';
     sub on_data ($stream, $bytes) { return }
     1;
@@ -186,7 +187,7 @@ like($@, qr/requires cert_file and key_file together/,
 
 $ok = eval q{
     package T::TLSDuplicateDeclaration;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::TLS;
     use Linux::Event::TLS;
     sub on_data ($stream, $bytes) { return }

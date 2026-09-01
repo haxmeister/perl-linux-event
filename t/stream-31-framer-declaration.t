@@ -24,7 +24,7 @@ BEGIN {
 
 {
     package T::ProbeNativeStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'ProbeNative';
     sub on_message ($stream, $message) {
         $stream->data->{got} = $message;

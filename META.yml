@@ -29,7 +29,8 @@ no_index:
     - Linux::Event::Signal::_Descriptor
     - Linux::Event::Signal::_Engine
     - Linux::Event::Signal::_Service
-    - Linux::Event::Stream::_Connection
+    - Linux::Event::Socket::_Descriptor
+    - Linux::Event::Socket::_Connection
     - Linux::Event::Stream::_Deadline
     - Linux::Event::Stream::_Descriptor
     - Linux::Event::Stream::XSDescriptor
@@ -84,6 +85,9 @@ provides:
     version: '0.105'
   Linux::Event::Signal:
     file: lib/Linux/Event/Signal.pm
+    version: '0.105'
+  Linux::Event::Socket:
+    file: lib/Linux/Event/Socket.pm
     version: '0.105'
   Linux::Event::Stream:
     file: lib/Linux/Event/Stream.pm

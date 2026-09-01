@@ -216,7 +216,7 @@ perl -Mblib bench/run-listen-microbench.pl \
   --timeout=30
 ```
 
-All rows create loopback clients through `MyStream->connect`. The `manual` row
+All rows create loopback clients through `MySocket->connect`. The `manual` row
 uses explicit socket setup, `Loop->watch`, Perl `accept`, and close. The `add`
 row constructs a detached `Linux::Event::Listener` and attaches it with
 `Loop->add`. The `loop` row passes `loop => $loop` directly to the Listener
@@ -248,7 +248,7 @@ It uses loopback TCP and reports median connections per second plus process CPU
 microseconds per completed connection. The `manual` row uses a raw nonblocking
 socket and opaque Loop registration. The `add` row constructs a detached
 Stream and calls `Loop->add`; the `loop` row passes `loop => $loop` directly to
-`MyStream->connect`. Both Stream rows close that same object from `on_ready`.
+`MySocket->connect`. Both Socket rows close that same object from `on_ready`.
 Connection setup and teardown are timed; this
 is intentionally separate from the established-connection Stream and TLS
 message benchmark. Both rows use abortive connected-client teardown to avoid

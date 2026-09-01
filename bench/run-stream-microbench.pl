@@ -10,10 +10,11 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package Linux::Event::Bench::RawEchoStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) {
         $stream->write($bytes)
             or die "microbenchmark unexpectedly hit Stream backpressure\n";

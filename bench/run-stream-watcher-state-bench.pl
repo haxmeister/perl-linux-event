@@ -22,17 +22,18 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 {
     package Linux::Event::Bench::WatcherState::Stream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { return }
 }
 
 {
     package Linux::Event::Bench::WatcherState::TLSStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_transport_ready ($stream) { $stream->data->{ready}++ }
     sub on_data ($stream, $bytes) { return }
     sub on_eof ($stream) { $stream->data->{eof}++ }

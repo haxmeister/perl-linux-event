@@ -8,6 +8,7 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 is(Linux::Event::Stream->_native_consumer_abi_version, 1,
@@ -15,7 +16,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::ConsumerBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     BEGIN {
         Linux::Event::Stream->_declare_consumer(
             __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
@@ -32,8 +33,24 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 }
 
 {
-    package T::OriginalV1Base;
+    package T::GenericConsumerBase;
     use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
+        );
+    }
+}
+
+{
+    package T::GenericConsumerLine;
+    use parent -norequire, 'T::GenericConsumerBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
+    package T::OriginalV1Base;
+    use parent 'Linux::Event::Socket';
     BEGIN {
         Linux::Event::Stream->_declare_consumer(
             __PACKAGE__,
@@ -92,7 +109,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::CallbackLine;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
 }
@@ -106,7 +123,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::BudgetRaw;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) {
         return read_size => 4, read_budget_bytes => 4;
     }
@@ -119,7 +136,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::ConsumerTLSSender;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_transport_ready ($stream) { $stream->write("secure\n") }
     sub on_data ($stream, $bytes) { return }
     sub on_error ($stream, $error) {
@@ -149,6 +166,24 @@ sub cancel_arm ($stream) {
 
 sub take ($stream) {
     return $stream->{xs_state}->_test_consumer_take;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::GenericConsumerLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    my $xs = $stream->{xs_state};
+    arm($stream, sub { $loop->stop });
+    syswrite($write, "generic\n") == 8 or die "syswrite: $!";
+    $loop->run;
+    is(take($stream), 'generic',
+        'native consumer ABI operates on generic read-only Stream');
+    $stream->close_read;
+    is($xs->_test_consumer_events->[0][0], 6,
+        'directional read close reaches native consumer');
+    close $write;
 }
 
 {

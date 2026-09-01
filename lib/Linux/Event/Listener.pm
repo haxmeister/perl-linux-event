@@ -19,6 +19,7 @@ use Socket qw(
 
 use Linux::Event::Error;
 use Linux::Event::Address;
+use Linux::Event::Socket ();
 use Linux::Event::_SocketConfig ();
 
 require XSLoader;
@@ -253,8 +254,8 @@ sub new ($class, %opt) {
             || !$loop->can('watch'));
     my $stream_class = delete $opt{stream_class}
         // croak 'new(): missing stream_class';
-    croak 'new(): stream_class must name a Linux::Event::Stream subclass'
-        if ref($stream_class) || !$stream_class->isa('Linux::Event::Stream');
+    croak 'new(): stream_class must name a Linux::Event::Socket subclass'
+        if ref($stream_class) || !$stream_class->isa('Linux::Event::Socket');
     $stream_class->_validate_accepted_configuration;
 
     my $descriptor = _descriptor_for($class);
@@ -415,8 +416,8 @@ sub _accept_client ($self, $fh, $peer) {
             ? $failure
             : Linux::Event::Error->new(
                 type      => 'setup',
-                operation => 'accepted_stream',
-                message   => "$failure" || 'accepted Stream setup failed',
+                operation => 'accepted_socket',
+                message   => "$failure" || 'accepted Socket setup failed',
                 fatal     => 0,
                 host      => $self->host,
                 port      => $self->port,
@@ -671,7 +672,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Listener - accepting socket that constructs Stream instances
+Linux::Event::Listener - accepting socket that constructs Socket instances
 
 =head1 SYNOPSIS
 
@@ -679,7 +680,7 @@ Linux::Event::Listener - accepting socket that constructs Stream instances
   use Linux::Event::Loop;
 
   package EchoStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::Socket';
 
   sub on_data ($stream, $bytes) {
       $stream->write($bytes);
@@ -708,17 +709,17 @@ Linux::Event::Listener - accepting socket that constructs Stream instances
 =head1 DESCRIPTION
 
 Listener creates or adopts a listening TCP or Unix stream socket, drains
-accepted connections with native C<accept4>, constructs the configured Stream
-subclass for every accepted connection, and attaches each Stream to the same
+accepted connections with native C<accept4>, constructs the configured Socket
+subclass for every accepted connection, and attaches each Socket to the same
 Loop. Application code never handles accepted descriptors directly.
 
-Every accepted Stream receives the Listener's C<data> value. Stream-level
-buffer, deadline, framing, and TLS policy comes from the Stream subclass's
-cached declarations.
+Every accepted Socket receives the Listener's C<data> value. Generic stream
+buffer, deadline, and framing policy plus socket/TLS policy comes from the
+Socket subclass's cached declarations.
 
 =head1 CONSTRUCTION
 
-Construct Listener directly and name the Stream subclass that it should create
+Construct Listener directly and name the Socket subclass that it should create
 for accepted connections.
 
 Every Listener can be attached in either form:
@@ -821,19 +822,19 @@ bound. It is also accepted for an adopted Internet listener. The process must
 have the privilege required by the kernel; failure throws a structured
 C<socket_configuration> Error naming C<bind_device>.
 
-=head1 ACCEPTED STREAMS
+=head1 ACCEPTED SOCKETS
 
 Listener uses native C<accept4> with C<SOCK_NONBLOCK> and C<SOCK_CLOEXEC>.
 For every success it constructs C<stream_class> with C<fh> and a lazy
 L<Linux::Event::Address> C<peer>, passes it this Listener's C<data>, attaches
-the Stream to this Listener's Loop, calls the optional Listener C<on_accept>,
-and then fires C<on_ready> for a plain Stream. C<on_accept> may replace the
-Stream's C<data> when connection-specific state is needed.
+the Socket to this Listener's Loop, calls the optional Listener C<on_accept>,
+and then fires C<on_ready> for a plain Socket. C<on_accept> may replace the
+Socket's C<data> when connection-specific state is needed.
 
-A Stream subclass declares TLS directly:
+A Socket subclass declares TLS directly:
 
-  package SecureStream;
-  use parent 'Linux::Event::Stream';
+  package SecureSocket;
+  use parent 'Linux::Event::Socket';
   use Linux::Event::TLS
       cert_file         => '/etc/linux-event/server-cert.pem', # required
       key_file          => '/etc/linux-event/server-key.pem',  # required
@@ -845,7 +846,7 @@ A Stream subclass declares TLS directly:
       $stream->write($bytes);
   }
 
-Naming C<SecureStream> as C<stream_class> makes every accepted connection use
+Naming C<SecureSocket> as C<stream_class> makes every accepted connection use
 server TLS automatically. Listener loads and validates the declared server
 identity during construction. The TLS handshake begins after attachment and
 C<on_ready> does not fire until it succeeds.
@@ -860,12 +861,12 @@ A Listener subclass may define this optional callback:
       $listener->data->{connections}{ $stream->fd } = $stream;
   }
 
-It receives the fully constructed Stream after attachment to the Listener's
-Loop. It runs before a plain Stream's C<on_ready> and before a TLS Stream has
+It receives the fully constructed Socket after attachment to the Listener's
+Loop. It runs before a plain Socket's C<on_ready> and before a TLS Socket has
 completed its handshake. Use it for connection accounting, association with
 server state, initial policy, or immediate rejection with C<< $stream->close >>.
 
-An exception closes that accepted Stream, suppresses its pending C<on_ready>,
+An exception closes that accepted Socket, suppresses its pending C<on_ready>,
 and delivers a nonfatal C<callback> Error with operation C<on_accept> to the
 Listener's C<on_error>. The listening socket remains active when C<on_error>
 handles the error.
@@ -926,7 +927,7 @@ listeners.
 
 =head2 stream_class
 
-Return the configured Stream subclass name.
+Return the configured Socket subclass name.
 
 =head2 state
 
@@ -945,8 +946,8 @@ Convenience predicates for the current lifecycle state.
 =head1 PERFORMANCE
 
 The Listener class caches its resolved native callbacks. XS drains accept4 in
-batches, while Perl is entered only for Stream construction and application
+batches, while Perl is entered only for Socket construction and application
 policy. Accepted sockets never receive a temporary public registration before
-Stream attachment.
+Socket attachment.
 
 =cut

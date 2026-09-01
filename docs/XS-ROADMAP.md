@@ -54,10 +54,10 @@ Signal uses the same attachment contract. Its abstract public class caches
 the signalfd mask and supports multiple numbers per object plus multiple
 objects per number.
 
-`MyStream->connect()` keeps one Stream identity through outbound acquisition
+`MySocket->connect()` keeps one Socket identity through outbound acquisition
 and optional TLS readiness. `Linux::Event::Listener` with a configured
 `stream_class`
-owns inbound acquisition and constructs accepted Streams. The public hierarchy
+owns inbound acquisition and constructs accepted Sockets. The public hierarchy
 adds no generic Perl call to steady-state native readiness dispatch.
 
 ## Completed - initial TLS provider implementation
@@ -87,8 +87,8 @@ observability and live transport replacement remain follow-up work.
 
 ## Completed - Stream connection layer
 
-`MyStream->connect()` owns the public outbound lifecycle. Its private
-`Linux::Event::Stream::_Connection` engine implements strict
+`MySocket->connect()` owns the public outbound lifecycle. Its private
+`Linux::Event::Socket::_Connection` engine implements strict
 IPv4/IPv6/Unix/packed address modes, typed errors, silent cancellation, and a
 default connection deadline. Socket creation uses
 `SOCK_NONBLOCK | SOCK_CLOEXEC` atomically. Immediate results are deferred so
@@ -101,18 +101,18 @@ replacement uses one `EPOLL_CTL_MOD` where an fd registration is replaced.
 ## Completed - native Listener layer
 
 `Linux::Event::Listener` creates or adopts listening stream sockets and
-constructs a configured Stream subclass for each accepted connection. A small
+constructs a configured Socket subclass for each accepted connection. A small
 private native extension drains `accept4()` with atomic nonblocking and
 close-on-exec flags and retains packed peer addresses for lazy conversion.
 
 The default level-triggered fairness cap is safe because epoll reports a
 remaining backlog again. Edge-triggered listeners require an unlimited drain.
-No temporary accepted-socket registration is created before Stream attachment.
+No temporary accepted-socket registration is created before Socket attachment.
 Resource exhaustion pauses readiness before typed error delivery.
 
 ## Completed - asynchronous Resolver and Happy Eyeballs
 
-Hostname resolution is mechanically separate from Stream and Datagram socket
+Hostname resolution is mechanically separate from Socket and Datagram socket
 policy in the private `Linux::Event::_Resolver` XS extension. Each Loop lazily
 owns two native resolver workers and one eventfd completion queue. Workers
 never enter Perl. The normal raw Loop watch path drains complete candidate
@@ -160,7 +160,7 @@ creating interpreter.
 
 ## Completed - production socket configuration
 
-Stream class policy and constructor overrides cover local address binding,
+Socket class policy and constructor overrides cover local address binding,
 `TCP_NODELAY`, keepalive tuning, `TCP_USER_TIMEOUT`, buffer sizing, and Linux
 interface binding. Built-in policy is applied to every outbound candidate and
 to accepted or adopted sockets before transport attachment. A cached
@@ -327,7 +327,7 @@ high-churn connection workloads justify it, native code may:
 - cancel timeout state
 - notify Perl once with success or failure
 
-The public Stream connection contract must not change merely to eliminate a
+The public Socket connection contract must not change merely to eliminate a
 few cold Perl calls.
 
 The 2026-08-29 experiment moved the readiness-time `SO_ERROR` probe into native

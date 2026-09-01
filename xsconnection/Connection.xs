@@ -39,7 +39,7 @@ lec_timer_value(double seconds, struct itimerspec *timer)
     timer->it_value.tv_nsec = nanoseconds;
 }
 
-MODULE = Linux::Event::Stream::_Connection    PACKAGE = Linux::Event::Stream::_Connection
+MODULE = Linux::Event::Socket::_Connection    PACKAGE = Linux::Event::Socket::_Connection
 PROTOTYPES: DISABLE
 
 int

@@ -6,10 +6,11 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_SNDBUF);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::EndDrainReader;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) {
         $stream->data->{received} += length($bytes);
     }
@@ -28,7 +29,7 @@ use Linux::Event::Stream;
 
 {
     package T::EndDrainWriter;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) {
         return high_watermark => 4096, low_watermark => 1024;
     }

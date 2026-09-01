@@ -1,18 +1,20 @@
 # Stream transport boundary
 
 `Linux::Event::Stream` owns byte-stream semantics: framing, output ordering,
-backpressure, hard queue limits, read pause, EOF, half-close, errors, and
+backpressure, hard queue limits, read pause, EOF, directional lifecycle,
+errors, and
 protocol transitions. It must not own TLS policy. `Linux::Event::Loop`
 continues to own only descriptor readiness.
 
 The native transport boundary introduced in 0.100_014 separates those roles.
 Version 0.100_015 publishes its exact-version provider ABI. Applications now
-declare TLS on a Stream subclass; Stream creates the appropriate provider when
-the connection is acquired.
+declare TLS on a Socket subclass; Socket creates the appropriate provider when
+the connection is acquired while reusing Stream's native I/O engine.
 
 ## Current provider
 
-Every ordinary Stream uses the native `plain` provider. It implements:
+Every ordinary Stream uses the native `plain` provider. For Socket it also
+implements kernel writable half-close. Its data operations are:
 
 - byte reads from the owned fd;
 - immediate byte writes;
@@ -51,18 +53,18 @@ operation out of Perl and keeps `end()` transport-neutral.
 ## TLS behavior
 
 `Linux::Event::TLS` is the distribution's focused OpenSSL transport, not a
-framer and not a reactor-core feature. Application code declares its policy on the
-Stream type:
+framer and not a reactor-core feature. Application code declares its policy on
+the Socket type:
 
 ```perl
-package GatewayStream;
-use parent 'Linux::Event::Stream';
+package GatewaySocket;
+use parent 'Linux::Event::Socket';
 use Linux::Event::TLS
     verify => 1,              # default
     alpn   => ['http/1.1'];   # optional
 
 package main;
-my $stream = GatewayStream->connect(
+my $socket = GatewaySocket->connect(
     loop => $loop,                # optional: attach immediately
     host => 'gateway.discord.gg', # required
     port => 443,                  # required
@@ -106,8 +108,8 @@ activity timestamps as the plain transport. Handshake control traffic does not
 start or reset established policy.
 
 For an accepted TLS connection, Listener's optional `on_accept` callback runs
-after Stream construction and Loop attachment but before TLS transport
-readiness. Stream `on_ready` remains the callback for successful handshake and
+after Socket construction and Loop attachment but before TLS transport
+readiness. Socket `on_ready` remains the callback for successful handshake and
 application-protocol readiness.
 
 Clean peer `close_notify` enters ordinary EOF handling. Socket EOF without

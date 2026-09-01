@@ -9,7 +9,7 @@ use Linux::Event::Loop;
 
 {
     package T::SharedLineStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub stream_options ($class) { return read_size => 2 }
     sub on_message ($stream, $message) {

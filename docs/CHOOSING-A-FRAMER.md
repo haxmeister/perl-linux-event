@@ -31,7 +31,7 @@ Use this when a non-empty byte sequence ends each message:
 
 ```perl
 package CRLFStream;
-use parent 'Linux::Event::Stream';
+use parent 'Linux::Event::Socket';
 use Linux::Event::Framer 'Delimiter', "\r\n",
     max_frame => 1_048_576;
 
@@ -129,7 +129,7 @@ buffer or parse in `on_data`:
 
 ```perl
 package ProprietaryStream;
-use parent 'Linux::Event::Stream';
+use parent 'Linux::Event::Socket';
 
 sub on_data ($stream, $bytes) {
     my $state = $stream->data;

@@ -8,12 +8,9 @@ our $VERSION = '0.105';
 use Carp qw(croak);
 use mro ();
 
-use Linux::Event::_SocketConfig ();
-
 # Private descriptor storage is isolated here so Stream.pm can remain the
-# readable connection-lifecycle implementation.
+# readable generic byte-stream lifecycle implementation.
 my %FRAMER_DEFINITION;
-my %TLS_DEFINITION;
 my %CONSUMER_DEFINITION;
 my %CLASS_DESCRIPTOR;
 
@@ -71,27 +68,6 @@ sub _consumer_for ($class) {
     return undef;
 }
 
-sub declare_tls ($base, $target, $definition) {
-    croak 'TLS may be declared only for a Linux::Event::Stream subclass'
-        if $target eq $base || !$target->isa($base);
-    croak "$target already has a Stream descriptor"
-        if exists $CLASS_DESCRIPTOR{$target};
-    croak "$target already declares TLS"
-        if exists $TLS_DEFINITION{$target};
-    croak 'TLS declaration must be a hash reference'
-        if ref($definition) ne 'HASH';
-    $TLS_DEFINITION{$target} = $definition;
-    return;
-}
-
-sub _tls_for ($class) {
-    for my $package (@{ mro::get_linear_isa($class) }) {
-        return $TLS_DEFINITION{$package}
-            if exists $TLS_DEFINITION{$package};
-    }
-    return undef;
-}
-
 sub _stream_options_for ($class) {
     my %option = (
         high_watermark   => 1_048_576,
@@ -105,7 +81,6 @@ sub _stream_options_for ($class) {
         idle_timeout     =>         0,
         read_timeout     =>         0,
         write_timeout    =>         0,
-        map { $_ => undef } Linux::Event::_SocketConfig::names(),
     );
 
     if (my $configure = $class->can('stream_options')) {
@@ -147,13 +122,6 @@ sub _stream_options_for ($class) {
             $class, $name, $option{$name},
         );
     }
-    for my $name (Linux::Event::_SocketConfig::names()) {
-        $option{$name} = Linux::Event::_SocketConfig::normalize(
-            $class, $name, $option{$name},
-        ) if defined $option{$name};
-        delete $option{$name} if !defined $option{$name};
-    }
-
     return \%option;
 }
 
@@ -166,11 +134,10 @@ sub for_class ($class) {
 
     my $framer = _framer_for($class);
     my $consumer = _consumer_for($class);
-    my $tls = _tls_for($class);
     my $option = _stream_options_for($class);
     my %callback = map { $_ => scalar $class->can($_) }
         qw(on_data on_message on_messages on_drain on_eof on_error on_close
-           on_ready on_transport_ready configure_socket);
+           on_ready on_transport_ready);
 
     if ($framer) {
         croak "$class read_batch_bytes is available only to raw Streams"
@@ -192,14 +159,10 @@ sub for_class ($class) {
         } else {
             croak "$class defines on_messages() without enabling message_batch_size"
                 if $callback{on_messages};
-            croak "$class declares a framer but does not define on_message()"
-                if !$callback{on_message};
         }
     } else {
         croak "$class native consumer requires a framed Stream"
             if $consumer;
-        croak "$class has no framer and must define on_data()"
-            if !$callback{on_data};
         croak "$class defines on_message() but does not declare a framer"
             if $callback{on_message};
         croak "$class defines on_messages() but does not declare a framer"
@@ -249,7 +212,6 @@ sub for_class ($class) {
         native    => $native,
         framer    => $framer,
         consumer  => $consumer,
-        tls       => $tls,
         callbacks => \%callback,
     };
     $CLASS_DESCRIPTOR{$class} = $descriptor;

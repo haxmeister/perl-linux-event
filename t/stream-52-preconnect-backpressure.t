@@ -6,10 +6,11 @@ use Test::More;
 use Linux::Event::Listener;
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::PreconnectSink;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) {
         $stream->data->{received} .= $bytes;
     }
@@ -17,7 +18,7 @@ use Linux::Event::Stream;
 
 {
     package T::PreconnectClient;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) {
         return high_watermark => 8, low_watermark => 4;
     }

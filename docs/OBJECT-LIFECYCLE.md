@@ -11,7 +11,7 @@ not an application subclass API.
 Every attachable public class accepts `loop => $loop`:
 
 ```perl
-my $stream = ClientStream->connect(
+my $stream = ClientSocket->connect(
     loop => $loop, host => '127.0.0.1', port => 9999,
 );
 
@@ -44,7 +44,7 @@ my $process = WorkerProcess->spawn(
 An object may instead be constructed detached and passed to `add()`:
 
 ```perl
-my $stream = $loop->add(ClientStream->connect(
+my $stream = $loop->add(ClientSocket->connect(
     host => '127.0.0.1', port => 9999,
 ));
 
@@ -85,8 +85,8 @@ different parts of an application.
 - An attachable object belongs to at most one Loop.
 - An object can be attached only once.
 - A terminal object cannot be reattached.
-- Stream owns its established socket from construction or successful connect
-  until `close()`, `detach()`, or destruction.
+- Stream owns each unique generic byte handle until `close()`, `detach()`, or
+  destruction. Socket owns its established socket under the same rule.
 - A deadline-enabled Stream owns at most one private Timer in its Loop's shared
   scheduler. Close, detach, failure, and Loop destruction cancel that entry.
 - Listener owns sockets it creates. An adopted listener is closed only when
@@ -112,15 +112,15 @@ descriptor ownership unambiguous.
 ## Logical objects and native registrations
 
 A public object is a logical activity, not a one-to-one wrapper around an epoll
-entry. A connecting Stream can temporarily own a socket registration and a
+entry. A connecting Socket can temporarily own a socket registration and a
 timerfd registration. After connection it owns the established socket
 registration. The application continues to hold one Stream object throughout.
 
 Listener similarly owns its listening registration and creates Stream objects
-for accepted sockets. It attaches each Stream before the optional Listener
+for accepted sockets. It attaches each Socket before the optional Listener
 `on_accept` callback; plain Stream `on_ready` follows that callback, while TLS
 Stream `on_ready` follows its successful handshake. Listener passes its `data`
-value to each accepted Stream. These native registrations are implementation
+value to each accepted Socket. These native registrations are implementation
 details.
 
 Timer is also a logical object rather than a timerfd wrapper. All active Timers

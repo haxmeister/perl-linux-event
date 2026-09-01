@@ -8,11 +8,12 @@ use FindBin qw($Bin);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::TLS;
 
 {
     package T::TLSEstablishedDeadline;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub on_transport_ready ($stream) {
         $stream->data->{ready}++;

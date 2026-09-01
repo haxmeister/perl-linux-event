@@ -77,7 +77,7 @@ Linux::Event::Address - lazy socket-address value
 
 =head1 DESCRIPTION
 
-Represents a packed IPv4, IPv6, or Unix socket address. Stream, Listener, and
+Represents a packed IPv4, IPv6, or Unix socket address. Socket, Listener, and
 Datagram use it for peer and local addresses. The packed sockaddr is retained
 without conversion; textual parsing occurs only when an accessor is used.
 Accessors that do not apply to the address family return undef.

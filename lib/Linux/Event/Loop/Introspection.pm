@@ -111,13 +111,18 @@ sub _inspect_object ($self, $object, $registered) {
 
     $result->{state} = _value($object, 'state');
     if ($type eq 'stream') {
-        @$result{qw(fd local peer transport pending_bytes read_paused
-            read_eof write_ended write_blocked)} = (
-            _fd($object), _value($object, 'local'),
-            _value($object, 'peer'), _value($object, 'transport_name'),
+        @$result{qw(fd read_fd write_fd stream_kind local peer transport
+            pending_bytes read_paused read_eof read_closed write_ended
+            write_blocked)} = (
+            _fd($object), _value($object, 'read_fd'),
+            _value($object, 'write_fd'),
+            $object->isa('Linux::Event::Socket') ? 'socket' : 'stream',
+            _value($object, 'local'), _value($object, 'peer'),
+            _value($object, 'transport_name'),
             _value($object, 'pending_bytes'),
             _value($object, 'is_read_paused') ? 1 : 0,
             _value($object, 'is_read_eof') ? 1 : 0,
+            _value($object, 'is_read_closed') ? 1 : 0,
             _value($object, 'is_write_ended') ? 1 : 0,
             _value($object, 'is_write_blocked') ? 1 : 0,
         );

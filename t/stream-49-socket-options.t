@@ -7,6 +7,7 @@ use Test::More;
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 sub exception ($code) {
     local $@;
@@ -15,8 +16,8 @@ sub exception ($code) {
 
 {
     package T::BufferSocketStream;
-    use parent 'Linux::Event::Stream';
-    sub stream_options ($class) {
+    use parent 'Linux::Event::Socket';
+    sub socket_options ($class) {
         return send_buffer => 32_768, receive_buffer => 32_768;
     }
     sub on_data ($self, $bytes) { }
@@ -39,8 +40,8 @@ close $right;
 
 {
     package T::InvalidUnixTCPStream;
-    use parent 'Linux::Event::Stream';
-    sub stream_options ($class) { return tcp_nodelay => 1 }
+    use parent 'Linux::Event::Socket';
+    sub socket_options ($class) { return tcp_nodelay => 1 }
     sub on_data ($self, $bytes) { }
 }
 
@@ -53,8 +54,8 @@ close $tcp_right;
 
 {
     package T::InvalidSocketOption;
-    use parent 'Linux::Event::Stream';
-    sub stream_options ($class) { return keepalive => 2 }
+    use parent 'Linux::Event::Socket';
+    sub socket_options ($class) { return keepalive => 2 }
     sub on_data ($self, $bytes) { }
 }
 like(exception(sub { T::InvalidSocketOption->_validate_accepted_configuration }),

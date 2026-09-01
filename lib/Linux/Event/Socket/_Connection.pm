@@ -1,4 +1,4 @@
-package Linux::Event::Stream::_Connection;
+package Linux::Event::Socket::_Connection;
 use v5.36;
 use strict;
 use warnings;

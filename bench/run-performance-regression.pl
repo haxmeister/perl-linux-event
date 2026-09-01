@@ -125,6 +125,7 @@ die "threshold-percent must be non-negative\n" if $threshold_percent < 0;
 require Linux::Event;
 require Linux::Event::Listener;
 require Linux::Event::Loop;
+require Linux::Event::Socket;
 require Linux::Event::Stream;
 require Linux::Event::Timer;
 define_benchmark_classes();
@@ -284,7 +285,7 @@ sub define_benchmark_classes () {
         sub on_timer (\$timer) { main::timer_expired(\$timer) }
 
         package Linux::Event::Bench::Regression::ConnectionServer;
-        use parent -norequire, 'Linux::Event::Stream';
+        use parent -norequire, 'Linux::Event::Socket';
         sub on_data (\$stream, \$bytes) { return }
         sub on_ready (\$stream) { main::connection_server_ready(\$stream) }
         sub on_error (\$stream, \$error) { die "server Stream error: \$error\\n" }
@@ -296,7 +297,7 @@ sub define_benchmark_classes () {
         }
 
         package Linux::Event::Bench::Regression::ConnectionClient;
-        use parent -norequire, 'Linux::Event::Stream';
+        use parent -norequire, 'Linux::Event::Socket';
         sub on_data (\$stream, \$bytes) { return }
         sub on_ready (\$stream) { main::connection_client_ready(\$stream) }
         sub on_error (\$stream, \$error) { die "client Stream error: \$error\\n" }

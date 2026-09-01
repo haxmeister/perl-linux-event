@@ -146,17 +146,10 @@ new(CLASS, read_size, read_budget_bytes, read_batch_bytes, message_batch_size, h
     if (read_mode != LES_READ_DELIVER
         && (read_mode < LES_READ_DELIMITER || read_mode > LES_READ_DECIMAL))
         croak("invalid Stream native read mode");
-    if (read_mode == LES_READ_DELIVER
-        && (!deliver_cb || !SvOK(deliver_cb)))
-        croak("on_data callback required for raw Stream descriptor");
     if (read_mode == LES_READ_DELIVER && message_batch_size)
         croak("message_batch_size requires framed mode");
     if (read_mode != LES_READ_DELIVER && read_batch_bytes)
         croak("read_batch_bytes requires raw mode");
-    if (read_mode != LES_READ_DELIVER && !message_batch_size
-        && !consumer_ops_address
-        && (!message_cb || !SvOK(message_cb)))
-        croak("on_message callback required for framed Stream descriptor");
     if (read_mode != LES_READ_DELIVER && message_batch_size
         && (!message_batch_cb || !SvOK(message_batch_cb)))
         croak("on_messages callback required for batched framed Stream descriptor");
@@ -295,30 +288,43 @@ MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSState
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, stream, fd, descriptor_obj)
+new(CLASS, stream, read_fd, write_fd, descriptor_obj)
     const char *CLASS
     SV *stream
-    int fd
+    int read_fd
+    int write_fd
     SV *descriptor_obj
   PREINIT:
     les_xsstate_t *st;
     les_descriptor_t *descriptor;
   CODE:
-    if (fd < 0) croak("fd must be >= 0");
+    if (read_fd < 0 && write_fd < 0)
+        croak("Stream requires a read or write fd");
     descriptor = les_descriptor_from_sv(descriptor_obj);
     if (!descriptor) croak("Stream descriptor is closed");
+    if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER
+        && !descriptor->deliver_cb)
+        croak("readable raw Stream requires on_data callback");
+    if (read_fd >= 0 && descriptor->read_mode != LES_READ_DELIVER
+        && !descriptor->consumer_ops && !descriptor->message_batch_size
+        && !descriptor->message_cb)
+        croak("readable framed Stream requires on_message or a native consumer");
+    if (read_fd < 0 && descriptor->consumer_ops)
+        croak("native Stream consumer requires a readable side");
 
     st = (les_xsstate_t *)calloc(1, sizeof(*st));
     if (!st) croak("calloc XSState failed");
-    st->fd = fd;
-    st->plain_transport.fd = fd;
+    st->read_fd = read_fd;
+    st->write_fd = write_fd;
+    st->plain_transport.read_fd = read_fd;
+    st->plain_transport.write_fd = write_fd;
     st->transport_ops = &les_plain_transport_ops;
     st->transport_context = &st->plain_transport;
     st->descriptor = descriptor;
     st->descriptor_sv = newSVsv(descriptor_obj);
     st->stream_sv = newSVsv(stream);
 
-    if (descriptor->read_mode == LES_READ_DELIVER) {
+    if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER) {
         st->read_buffer = (char *)malloc(descriptor->read_size);
         if (!st->read_buffer) {
             SvREFCNT_dec(st->descriptor_sv);
@@ -551,6 +557,34 @@ _close(state_obj, consumer_event = 0)
         st->input_start = 0;
         st->input_len = 0;
     }
+
+void
+_close_read(state_obj, consumer_event = 0)
+    SV *state_obj
+    UV consumer_event
+  PREINIT:
+    les_xsstate_t *st;
+  CODE:
+    st = les_state_from_sv(state_obj);
+    if (!st->closed && !st->read_eof) {
+        if (consumer_event)
+            les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
+        st->read_eof = 1;
+        st->read_paused = 1;
+        les_discard_message_batch(st);
+        st->input_start = 0;
+        st->input_len = 0;
+    }
+
+void
+_close_write(state_obj)
+    SV *state_obj
+  PREINIT:
+    les_xsstate_t *st;
+  CODE:
+    st = les_state_from_sv(state_obj);
+    if (!st->closed)
+        les_clear_write_queue(st);
 
 int
 consumer_paused(state_obj)

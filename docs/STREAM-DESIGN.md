@@ -1,372 +1,142 @@
-# Stream design
+# Stream and Socket design
 
-`Linux::Event::Stream` is an owned buffered byte-stream object above the
-`Linux::Event::Loop` reactor. It is intentionally Linux-only and uses native
-code for repetitive I/O, queue, buffer, and built-in framing work.
+`Linux::Event::Stream` is the generic buffered sequential-byte abstraction.
+`Linux::Event::Socket` is its connected `SOCK_STREAM` specialization.
 
-## Type model
+```text
+Linux::Event::Stream
+    `-- Linux::Event::Socket
+```
 
-`Linux::Event::Stream` is a base class. An application defines each stream type
-as an ordinary Perl package:
+This boundary is semantic, not an implementation split. Both classes use the
+same native descriptor, parser, consumer context, input storage, segmented
+output queue, activity counters, and read/write engines.
+
+## Generic Stream handles
+
+A Stream owns at least one byte-oriented handle:
 
 ```perl
-package ChatStream;
-use parent 'Linux::Event::Stream';
-use Linux::Event::Framer 'Delimiter', "\n";
-
-sub on_message ($stream, $message) { $stream->send($message) }
-sub on_drain ($stream) {
-    $stream->data->{blocked} = 0 if $stream->data;
-}
-sub on_eof ($stream) { $stream->end }
-sub on_error ($stream, $error) { warn "$error\n" }
-sub on_close ($stream) {
-    $stream->data->{closed} = 1 if $stream->data;
-}
+MyStream->new(fh => $duplex_fh);
+MyStream->new(read_fh => $input, write_fh => $output);
+MyStream->new(read_fh => $input);
+MyStream->new(write_fh => $output);
 ```
 
-A package does not imply one global connection. It defines shared behavior.
-Each object remains a distinct connection and carries its application value in
-`data`:
+`fh` means that one descriptor supplies both directions. It is mutually
+exclusive with `read_fh` and `write_fh`. `fh()` returns that shared handle and
+returns `undef` for split streams; `read_fh`, `write_fh`, `read_fd`, and
+`write_fd` are unambiguous.
 
-```perl
-my $stream = $loop->add(ChatStream->new(
-    fh   => $socket,
-    data => {
-        user_id    => $user_id,
-        permissions => $permissions,
-        rooms       => {},
-    },
-));
-```
+Each unique descriptor is set nonblocking and close-on-exec. A shared handle
+uses one Loop watcher. Distinct handles use one read watcher and one write
+watcher, both pointing at the same XS state. The write watcher is registered
+without permanent writable interest: `write()` first attempts an immediate
+native write, EPOLLOUT is enabled only after partial output or EAGAIN, and is
+disabled again when the native queue empties.
 
-The established constructor also accepts `loop => $loop`. Outbound
-`ChatStream->connect(host => 'chat.example', port => 443)` follows the same
-rule: pass `loop` for immediate
-attachment or omit it and use `Loop->add()`. Inbound acquisition belongs to
-`Linux::Event::Listener`, which is constructed with
-`stream_class => 'ChatStream'`.
+The class descriptor may omit inbound callbacks for a write-only instance. A
+readable raw instance requires `on_data`; a readable framed instance requires
+`on_message`, `on_messages`, or a native consumer.
 
-`connect()` keeps one Stream identity across `unattached`, `connecting`,
-`active`, and `closed` states. See `STREAM-CONNECTIONS.md`,
-`LISTENER-DESIGN.md`, and `OBJECT-LIFECYCLE.md`.
+## Directional lifecycle
 
-## Class descriptor
+Read and write termination are independent normal states.
 
-The first construction of each concrete subclass performs all class-level work
-once:
+- Read EOF disables the read direction and calls `on_eof`. It does not end an
+  independent write direction.
+- `end($final_bytes)` accepts optional final bytes, drains queued output, then
+  ends the write direction. For a distinct write handle, Stream closes that
+  handle so its peer observes EOF.
+- For one generic shared non-socket handle, Stream can stop accepting writes
+  but cannot manufacture a kernel half-close that the descriptor type does
+  not provide. Socket maps the same operation to `shutdown(SHUT_WR)`.
+- `close_read` and `close_write` stop one direction immediately. They do not
+  report `on_eof`, because application closure is not peer EOF.
+- `close` immediately cancels both directions, discards queued output, closes
+  every unique owned handle, and calls `on_close` once.
+- Normal completion calls `on_close` only after both available directions are
+  terminal. Thus read-only EOF and write-only completed `end` close the object,
+  while duplex read EOF alone does not.
+- Generic `detach` requires an empty output queue, cancels the abstraction,
+  and returns `{ read_fh => ..., write_fh => ... }` without closing either
+  handle. Socket always has one shared handle and returns that handle directly.
+- `pause_read` and `resume_read` affect only the read direction. Output
+  backpressure remains producer-driven through `write`, `on_drain`, and
+  `pending_bytes`; Stream never permanently watches writable readiness.
 
-1. resolve `on_data`, `on_message`, `on_messages`, and optional lifecycle
-   methods through the class MRO;
-2. resolve the nearest inherited native framer declaration;
-3. resolve an optional inherited native message-consumer declaration;
-4. call and validate `stream_options`;
-5. validate that the class is either raw or framed, never both;
-6. create one immutable XS descriptor holding parser config, Stream policy,
-   and callback references.
+I/O, framing, output-limit, deadline, and transport errors retain the existing
+terminal-object policy. Normal EOF and normal local write completion are the
+directional cases; errors do not silently leave a potentially inconsistent
+protocol half alive.
 
-Subsequent construction retrieves that descriptor from the class cache. The
-Perl object and native connection state each retain a reference to it.
+## Native organization
 
-The private `Linux::Event::Stream::_Descriptor` module owns declarations,
-validation, callback resolution, and this cache. `Stream.pm` retains the public
-connection lifecycle and delegates only class-level descriptor construction.
+`les_xsstate_t` contains `read_fd` and `write_fd`, which may be equal or may be
+`-1` when a direction is absent. It still owns exactly one of each expensive or
+stateful mechanism:
 
-Immutable descriptor state includes:
+- immutable shared class descriptor;
+- reusable raw read buffer or framed input storage;
+- native framer scan state;
+- optional native consumer context;
+- segmented output queue and watermarks;
+- optional activity timestamps and counters.
 
-- named callback CVs
-- native read mode and framing constants
-- delimiter or prefix policy where applicable
-- `read_size`
-- optional per-readiness `read_budget_bytes`
-- raw `read_batch_bytes`
-- framed `message_batch_size`
-- high and low output watermarks
-- optional hard `max_pending_bytes`
-- framed `max_buffer`
-- idle, read, and write inactivity defaults
-- optional acquisition-time socket policy
+The plain fast path calls `read(read_fd)`, `write(write_fd)`, and
+`writev(write_fd)` directly. No reader/writer object pair, duplicate queue,
+extra Perl callback, or closure was introduced. Socket's common same-fd path
+therefore differs only in field naming and retains one watcher.
 
-Per-connection native state includes:
+## Stream responsibilities
 
-- fd and Stream reference
-- active native transport operations and provider context
-- pause, EOF, close, and backpressure flags
-- native input bytes and parser scan state
-- segmented output queue and pending byte count
-- optional native read/write activity timestamps
-- instrumentation counters
+Stream owns native reads and queued writes, input and output buffering, native
+framing, raw and framed callback delivery, native consumer delivery, batching,
+pause/resume, high/low watermarks, hard limits, established idle/read/write
+deadlines, protocol transitions, and directional handle ownership.
 
-Per-connection Perl state includes the loop, handle, native registration,
-optional `data`, constructor timeout overrides, one optional operation
-deadline, effective acquisition socket policy, local/peer Addresses, and
-semantic lifecycle flags. It does not contain callback option hashes or a
-framer object.
+Framing is a property of incoming bytes, not of sockets. `send()` likewise
+uses the declared framer's outbound encoding before entering the generic write
+engine.
 
-The native implementation remains one `Linux::Event::Stream` XS extension,
-but its mechanisms are separate translation units. `Stream.xs` is the binding
-surface; read, write, transport, input, delivery, transition, and callback
-mechanics have corresponding `stream_*.c` files; and every built-in framing
-family has a directly named `framer_*.c` parser. Shared mutable state and
-private function contracts live in `stream_internal.h`.
+## Socket responsibilities
 
-## Socket configuration
+Socket requires one connected `SOCK_STREAM` handle and adds:
 
-Stream applies constructor overrides over cached class socket policy before
-connect, accepted readiness, or adopted transport setup. TCP_NODELAY,
-keepalive tuning, TCP_USER_TIMEOUT, buffers, optional local source binding, and
-`SO_BINDTODEVICE` are supported. A cached `configure_socket` hook covers
-advanced Linux options without adding an open-ended constructor hash.
+- adopted and accepted socket validation;
+- outbound `connect` and its resolver/Happy Eyeballs engine;
+- local and peer `Linux::Event::Address` values;
+- `socket_options` class policy and constructor overrides;
+- `configure_socket` acquisition hook;
+- TCP and socket buffer accessors;
+- kernel read/write shutdown and half-close behavior;
+- connection, handshake, and TLS shutdown deadlines;
+- declarative TLS transport setup and TLS information accessors.
 
-Established getter/setters read back effective kernel values. Acquisition
-policy remains attached to the connection and is not reapplied during protocol
-`transition_to`. See `SOCKET-CONFIGURATION.md` for the complete matrix and
-ordering relative to TLS and framing.
+Listener requires its `stream_class` to inherit from Socket. TCP, Unix stream
+socket, socketpair, and TLS protocol subclasses therefore inherit from Socket.
+Datagram remains separate.
 
-## Established deadlines
+## Deadlines
 
-Idle, read, and write inactivity policy is cached with each subclass and may
-be overridden per connection. One explicit overall-operation deadline may be
-set at construction or runtime. Established timing starts only after plain or
-TLS transport readiness; acquisition and TLS setup retain separate deadline
-owners.
-
-At most one private Timer per Stream represents the earliest current
-condition. All such Timers share the Loop timerfd and native heap. Native I/O
-records successful progress only when inactivity policy is enabled, and does
-not enter Perl merely to move a deadline. The Timer callback validates the
-latest activity snapshot before expiring or rescheduling itself. See
-`STREAM-DEADLINES.md` for the public contract and reset semantics.
-
-## Input paths
-
-All mechanical byte movement enters through the native transport boundary.
-The current `plain` provider specializes directly to fd syscalls; the parser
-and queue do not depend on that provider identity.
-
-### Raw subclass
-
-```text
-EPOLLIN -> XS read drain -> on_data($stream, $bytes)
-```
-
-The reusable native read buffer is copied into a Perl byte scalar only after a
-successful read. XS continues until EAGAIN unless the callback pauses or closes
-the Stream.
-
-A positive raw-only `read_batch_bytes` class option selects an alternate
-explicit path:
-
-```text
-EPOLLIN -> XS read drain -> bounded native aggregate
-        -> on_data($stream, $bytes)
-```
-
-The aggregate flushes at the byte limit, EAGAIN, EOF, or error; it never waits
-for a later readiness event. Pause, close, and transition therefore take effect
-at an explicit aggregate boundary rather than after every successful read.
-Zero is the default and retains ordinary delivery.
-
-### Framed subclass
-
-```text
-EPOLLIN -> XS read drain -> native input storage -> native parser
-        -> on_message($stream, $message)
-```
-
-Complete built-in frames are detected without delivering intermediate read
-chunks to Perl. Multiple messages can be emitted from one readiness event.
-Partial prefixes, delimiters, and payloads remain in connection-local native
-state. The loop rechecks pause and close state after every callback.
-
-A positive framed-only `message_batch_size` replaces `on_message` with the
-mutually exclusive callback `on_messages($stream, $messages)`. XS accumulates
-complete messages in an array and flushes at the configured message count,
-when the current read drain reaches EAGAIN, before EOF or framing error, or when
-accumulated payload reaches `max_buffer`. It does not delay input to fill a
-batch. Pause, close, and protocol transition take effect after the complete
-delivered array; every element in that array was parsed under the old
-descriptor. Zero is the default and allocates no batch array.
-
-### Native consumer extension
-
-A framed subclass may replace `on_message` with one versioned native consumer
-provider. Stream sends each completed frame directly to the provider's
-per-connection context and honors its continue, pause, or close result before
-the parser advances. The message scalar is borrowed; a provider may retain the
-same scalar with a reference-count increment without copying its payload.
-
-This boundary is for separate XS integrations such as async/await runtimes. It
-contains no Future or continuation policy and does not expose Stream's private
-state. See `STREAM-CONSUMER-ABI.md` for ownership, reentrancy, terminal events,
-TLS behavior, transitions, and the v1 C tables.
-
-## Output path
-
-`write($bytes)` first attempts an immediate native write. Partial output or
-EAGAIN creates independent native queue segments. EPOLLOUT drains those segments
-with `writev()` without first concatenating them in Perl.
-
-Before attachment or connection readiness, accepted output remains in the
-Stream's Perl acquisition queue. `pending_bytes` includes those bytes and
-`write()` applies the same high-watermark rule as established native output.
-When acquisition transfers the queue into the transport, a blocked interval
-ends with exactly one `on_drain` after the Stream is ready and pending output
-has reached the low watermark. Producers can therefore use one backpressure
-contract before and after connection establishment.
-
-Crossing `high_watermark` makes `write()` return false even though the bytes are
-accepted. When pending bytes reach `low_watermark` or less, XS clears the
-blocked state before calling `on_drain`, allowing reentrant writes to begin a
-new backpressure interval safely.
-
-`max_pending_bytes` is a separate optional safety policy. Zero means unlimited.
-For a positive limit, XS checks the unsent remainder before allocating its
-queue segment. If the resulting pending count would exceed the limit, Stream
-does not queue the remainder, creates an `output_limit` error, calls `on_error`,
-and closes. A direct kernel write may have sent a prefix before a partial result
-reveals that the remainder is too large; the native queue itself never exceeds
-the configured limit. The error records both the attempted `pending_bytes` and
-the `limit`.
-
-This does not change cooperative flow control. A false `write()` return still
-means all bytes were accepted and `on_drain` will end that blocked interval.
-Limit overflow is terminal and is distinguishable by its typed error.
-
-`send($payload)` is framed-only. It applies the class's outbound built-in
-encoding and then uses `write()`. Writable half-close also belongs to the
-transport contract. Consequently `end()` expresses one lifecycle operation
-whether a provider maps it to socket `shutdown(SHUT_WR)` or a multi-step TLS
-close-notify exchange.
+Established idle, read, write, and explicit operation deadlines remain generic
+Stream policy. Candidates are generated only for directions that exist and are
+active. Socket connection timeout and TLS handshake/shutdown deadlines remain
+socket acquisition or transport policy.
 
 ## Protocol transitions
 
-`transition_to($class, input => $bytes)` changes the protocol type of a live
-connection without reconstructing it. The Perl object is reblessed and its
-native state swaps one retained class descriptor reference for another. These
-connection-local resources remain unchanged:
+`transition_to` swaps only the generic class descriptor and retains the native
+state, handles, queue, transport, parser storage, and consumer context. A
+transition may not cross the Stream/Socket inheritance boundary: doing so
+would change handle and shutdown semantics while retaining the same live
+object.
 
-- fd, filehandle, native registration, and XSState identity
-- application `data`
-- output segments, byte ordering, and pending byte count
-- read pause, peer EOF, local half-close, and closed state
-- native input storage and instrumentation counters
+## Native consumer ABI
 
-The target descriptor supplies subsequent callbacks, parser configuration,
-read size, watermarks, hard output limit, input limit, and outbound `send()`
-framing. Existing queued output is already encoded and remains unchanged.
-
-Native input storage is deliberately retained. A framed-to-framed transition
-reinterprets the unread suffix with the new native parser. A framed-to-raw
-transition delivers that suffix as one raw chunk. Raw callbacks receive their
-current kernel-read chunk directly, so they pass their unconsumed suffix with
-`input => $bytes`; it is appended after any native suffix.
-
-Every native parser snapshots its descriptor before invoking `on_message` or
-`on_messages`. If the callback transitions, that parser returns immediately.
-The input driver then resumes under the new descriptor without issuing another
-`read()`. This prevents old parser constants from being used after a reentrant
-descriptor swap and supports clients that pipeline new-protocol bytes with an
-upgrade request.
-
-Transition validation and replacement are atomic. The new raw scratch buffer
-and optional preserved-input storage are allocated before live state changes.
-The target `max_buffer` is checked against existing plus explicit input. A
-nonzero target `max_pending_bytes` is also checked against existing queued
-output. On failure, the old Perl type, descriptor, and buffers remain active.
-
-When called during `on_data`, `on_message`, or `on_messages`, target input
-callbacks are delayed until the old callback returns; callers should return
-immediately after the transition. Outside input dispatch, already-complete
-target input may be delivered before `transition_to()` returns. Pause state
-always gates delivery.
-
-## Lifecycle
-
-- `pause_read` and `resume_read` change input interest while preserving state.
-- Peer EOF marks the readable half closed and invokes `on_eof` once.
-- `end` drains queued output before `shutdown(SHUT_WR)`.
-- The Stream closes automatically after both halves have ended.
-- `close` cancels immediately and may discard queued output.
-- `detach` cancels Stream ownership and returns the still-open filehandle;
-  `on_close` does not run because the resource was not closed.
-- An adopted filehandle is made nonblocking and close-on-exec before Stream
-  attaches it to the Loop.
-- `transition_to` changes protocol behavior while preserving ownership and
-  connection-local lifecycle state.
-- `transport_name` and `is_transport_ready` expose transport identity and
-  asynchronous setup state (`plain` is immediately ready). TLS metadata is
-  available directly through `selected_alpn`, `tls_protocol`, `tls_cipher`,
-  and `tls_stats`.
-- I/O, framing, and hard output-limit failures create
-  `Linux::Event::Error`, invoke
-  `on_error` if present, and close.
-
-Application callback exceptions propagate. They are not treated as transport
-or framing errors.
-
-## Class Stream policy
-
-`stream_options` may return a key/value list or hash reference:
-
-```perl
-sub stream_options ($class) {
-    return {
-        read_size         => 65_536,
-        read_budget_bytes => 0,
-        read_batch_bytes  => 0,
-        message_batch_size => 0,
-        high_watermark    => 1_048_576,
-        low_watermark     => 262_144,
-        max_pending_bytes => 0,
-        max_buffer        => 8_388_608,
-    };
-}
-```
-
-It runs once per concrete subclass. Unknown options, invalid integers, and a low
-watermark above the high watermark fail before connection registration. The
-hard output limit is a non-negative byte count; zero disables it.
-
-`read_budget_bytes` limits transport bytes consumed by one readiness callback.
-Zero preserves the default drain-until-EAGAIN behavior.
-
-`read_batch_bytes` is valid only for raw subclasses. `message_batch_size` is
-valid only for framed subclasses and requires `on_messages` in place of
-`on_message`. Both defaults are zero, preserving the ordinary callback
-contract without allocating batch containers.
-
-## Framing policy
-
-Native framing is declared by exact package name. No keyword registry, factory
-object, arbitrary `next_frame` object, or Buffer facade exists. This keeps the
-hot model singular: built-ins are native; application-specific rules use raw
-`on_data`.
-
-A generally useful new family should add a named module and corresponding XS
-parser mode. The naming convention lets the loader find that package without a
-second list.
-
-## Performance consequences
-
-The redesign improves construction and retained memory by moving immutable work
-from every object to one class descriptor. It removes per-connection callback
-hash entries, framer allocation, option parsing, repeated validation, and
-copies of native transport/framing configuration. Named callbacks also avoid
-fresh closure allocation and are invoked through cached CVs rather than method
-lookup.
-
-It does not remove the intentional Perl crossing for semantic `on_data` or
-`on_message` work. Explicit batching can amortize that crossing across raw
-bytes or complete framed messages. It also does not make application state
-global: `data`, input storage, parser progress, output, and lifecycle remain
-connection-local.
-
-Use `bench/run-stream-lifecycle-bench.pl` for constructor and retained-memory
-effects, `bench/run-stream-microbench.pl` for raw transport overhead and the
-cost of enabling a hard output limit, the framing benchmarks for parser work,
-and the callback-batching throughput and fairness benchmarks for the explicit
-batch policies.
-
-The provider contract and the bundled TLS implementation are specified in
-`TRANSPORT-BOUNDARY.md`.
+The framed-message consumer ABI remains owned by generic Stream and remains
+independent of Linux::Event::Async. Its v1 tables, message ownership,
+pause/resume behavior, and existing event values are unchanged. Two additive
+input-terminal semantics distinguish explicit directional read closure with
+the additive `READ_CLOSED` event. Socket subclasses use the same ABI without a
+Socket-specific consumer path.

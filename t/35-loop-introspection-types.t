@@ -17,7 +17,7 @@ use Linux::Event::Wakeup;
 
 {
     package T::InspectStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
 }
 
@@ -95,6 +95,12 @@ for my $type (sort keys %object) {
 
 ok(exists $loop->inspect($object{stream})->{pending_bytes},
     'Stream inspection includes queue state');
+is($loop->inspect($object{stream})->{stream_kind}, 'socket',
+    'Stream inspection distinguishes the Socket specialization');
+is($loop->inspect($object{stream})->{read_fd}, $object{stream}->read_fd,
+    'Stream inspection exposes the readable descriptor');
+is($loop->inspect($object{stream})->{write_fd}, $object{stream}->write_fd,
+    'Stream inspection exposes the writable descriptor');
 ok(exists $loop->inspect($object{listener})->{accepted},
     'Listener inspection includes accept count');
 ok(exists $loop->inspect($object{datagram})->{pending_datagrams},

@@ -6,10 +6,11 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_SNDBUF);
 
 use Linux::Event::Loop;
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 
 {
     package T::OutputLimit;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) {
         return high_watermark => 4096, low_watermark => 1024,
             max_pending_bytes => 16_384;
@@ -25,20 +26,20 @@ use Linux::Event::Stream;
 
 {
     package T::UnlimitedOutput;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::SmallTarget;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) { return max_pending_bytes => 4096 }
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::NegativeOutputLimit;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
     sub stream_options ($class) { return max_pending_bytes => -1 }
     sub on_data ($stream, $bytes) { }
 }

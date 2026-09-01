@@ -18,6 +18,7 @@ use Socket qw(
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
 use Linux::Event::Stream;
+use Linux::Event::Socket;
 use Linux::Event::Loop;
 
 my @modes = qw(manual add loop);
@@ -52,7 +53,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchConnectStream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::Socket';
 
     sub on_data ($stream, $bytes) { }
 
@@ -288,8 +289,8 @@ if (defined $json_path) {
         notes => [
             'Every row performs nonblocking TCP connection setup and teardown.',
             'Manual is a raw nonblocking socket and Loop registration baseline.',
-            'Add uses detached MyStream->connect followed by Loop->add.',
-            'Loop supplies loop => directly to MyStream->connect.',
+            'Add uses detached MySocket->connect followed by Loop->add.',
+            'Loop supplies loop => directly to MySocket->connect.',
             'The timeout is a per-request catastrophic deadline, not the measured row duration.',
             'Compare only results with the same benchmark contract and configuration.',
         ],
@@ -326,8 +327,8 @@ Usage: perl -Mblib bench/run-connect-microbench.pl [options]
   --help
 
 Manual uses a raw nonblocking socket plus an opaque Loop registration. Add uses
-detached MyStream->connect followed by Loop->add. Loop passes loop => directly
-to MyStream->connect. Both public Stream rows preserve one object across
+detached MySocket->connect followed by Loop->add. Loop passes loop => directly
+to MySocket->connect. Both public Socket rows preserve one object across
 connection acquisition, readiness, and close. Every successfully connected
 client uses equal abortive teardown so repeated rows do not exhaust
 the host with client-side TIME_WAIT sockets. Repeat execution order rotates to

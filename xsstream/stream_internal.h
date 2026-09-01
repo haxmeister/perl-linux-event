@@ -30,7 +30,8 @@
 #define LES_READ_DECIMAL   7
 
 typedef struct les_plain_transport_s {
-    int fd;
+    int read_fd;
+    int write_fd;
 } les_plain_transport_t;
 
 typedef struct les_write_seg_s {
@@ -78,7 +79,8 @@ typedef struct les_descriptor_s {
 } les_descriptor_t;
 
 typedef struct les_xsstate_s {
-    int fd;
+    int read_fd;
+    int write_fd;
     les_plain_transport_t plain_transport;
     const les_transport_ops_t *transport_ops;
     void *transport_context;
