@@ -410,7 +410,13 @@ sub _accept_client ($self, $fh, $peer) {
     };
     if (!$prepared) {
         my $failure = $@;
-        eval { $stream->close; 1 } if $stream;
+        if ($stream) {
+            eval { $stream->close; 1 };
+        } else {
+            # $class->new() died before it could take ownership of $fh, so the
+            # accepted descriptor is ours to release.
+            eval { CORE::close($fh); 1 };
+        }
         my $error = blessed($failure)
             && $failure->isa('Linux::Event::Error')
             ? $failure

@@ -185,6 +185,22 @@ typedef struct les_xsstate_s {
 
 #define LES_INPUT_PAUSED(st) ((st)->read_paused || (st)->consumer_paused)
 
+/* Single liveness predicate for every native-consumer entry point. Each entry
+ * point previously inlined its own subset of these tests, which is how the
+ * flush path came to be missing the `closed` and `consumer_terminal` checks.
+ * Operation-specific extras (read_eof for resume/pause, consumer_flush_pending
+ * for flush) stay at the call site. */
+#define les_consumer_live(st) \
+    ((st) && (st)->consumer_ops && (st)->consumer_context \
+     && !(st)->consumer_terminal && !(st)->closed)
+
+/* Any XSUB that can re-enter Perl must keep the state object alive for the
+ * duration of the call: a callback is free to close the stream, which drops the
+ * last reference to the XSState and runs DESTROY (free(st)) underneath us.
+ * Pairs with LEAVE. */
+#define LES_GUARD_STATE(sv) \
+    STMT_START { ENTER; SAVEFREESV(SvREFCNT_inc(sv)); } STMT_END
+
 
 extern const les_transport_ops_t les_plain_transport_ops;
 
@@ -192,6 +208,8 @@ les_xsstate_t *les_state_from_sv(SV *sv);
 les_descriptor_t *les_descriptor_from_sv(SV *sv);
 SV *les_store_cb(SV *cb, const char *name);
 SV *les_store_optional_cb(SV *cb, const char *name);
+void les_require_read_sink(pTHX_ const les_descriptor_t *descriptor,
+    const char *context);
 
 unsigned long long les_activity_now_ns(pTHX);
 void les_note_read_activity(pTHX_ les_xsstate_t *st);

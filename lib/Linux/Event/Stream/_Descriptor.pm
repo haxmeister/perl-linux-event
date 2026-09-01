@@ -171,6 +171,17 @@ sub for_class ($class) {
             if $option->{message_batch_size};
     }
 
+    # socket_options()/configure_socket() are only consulted by
+    # Linux::Event::Socket::_Descriptor. Declaring them on a generic Stream used
+    # to be silently ignored, which reads as "my setsockopt calls ran".
+    if (!$class->isa('Linux::Event::Socket')) {
+        for my $name (qw(socket_options configure_socket)) {
+            croak "$class $name() is available only to Linux::Event::Socket"
+                . ' subclasses'
+                if $class->can($name);
+        }
+    }
+
     my $native = $framer ? { %{ $framer->{native} } } : { read_mode => 0 };
 
     my $xs = Linux::Event::Stream::XSDescriptor->new(

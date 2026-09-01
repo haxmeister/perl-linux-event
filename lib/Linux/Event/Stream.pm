@@ -329,11 +329,7 @@ sub _prepare_handles ($self) {
             1;
         };
         if (!$attached) {
-            my $error = $@ || 'transport attachment failed';
-            $xs_state->_close;
-            $self->{xs_state} = undef;
-            $self->_close_handles;
-            die $error;
+            $self->_abort_construction($@ || 'transport attachment failed');
         }
         $initial_interest = $binding[3] // 0;
     }
@@ -670,11 +666,15 @@ sub _rearm_stream_deadline ($self) {
     }
 
     my $at = $candidate[0]{at};
-    if (my $timer = $self->{deadline_timer}) {
+    if (my $timer = delete $self->{deadline_timer}) {
         if ($timer->is_active) {
+            $self->{deadline_timer} = $timer;
             $timer->reschedule(at => $at);
             return;
         }
+        # A fired-but-not-rearmed timer is still registered with the loop.
+        # Dropping the reference without cancelling leaks the registration.
+        $timer->cancel;
     }
 
     my $state = { stream => $self };
@@ -688,7 +688,9 @@ sub _rearm_stream_deadline ($self) {
 }
 
 sub _stream_deadline_fired ($self, $timer) {
-    return if $self->{closed} || $self->{deadline_timer} != $timer;
+    return if $self->{closed};
+    my $armed = $self->{deadline_timer};
+    return if !$armed || refaddr($armed) != refaddr($timer);
     my $now = _deadline_now();
     my @candidate = sort {
         $a->{at} <=> $b->{at} || $a->{priority} <=> $b->{priority}
@@ -1122,6 +1124,20 @@ sub _cancel_io_watchers ($self) {
     $read->cancel if $read;
     $write->cancel if $write && (!$read || refaddr($write) != refaddr($read));
     return;
+}
+
+# Release a Stream that failed partway through construction. The XS state holds
+# a strong reference back to the Perl object, so the two keep each other alive:
+# unless the state is explicitly closed here the object -- and the descriptor it
+# owns -- leak for the lifetime of the process. Never returns.
+sub _abort_construction ($self, $error) {
+    if (my $xs_state = delete $self->{xs_state}) {
+        eval { $xs_state->_close; 1 };
+    }
+    eval { $self->_cancel_io_watchers; 1 };
+    eval { $self->_close_handles; 1 };
+    $self->{closed} = 1;
+    die $error;
 }
 
 sub _close_handles ($self) {

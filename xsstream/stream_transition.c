@@ -32,6 +32,8 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
         croak("transition_to(): target Stream type is already active");
     if (next_descriptor->consumer_ops != st->descriptor->consumer_ops)
         croak("transition_to(): cannot change native consumer provider");
+    if (st->read_fd >= 0 && !st->read_eof)
+        les_require_read_sink(aTHX_ next_descriptor, "transition_to()");
 
     if (input_sv && SvOK(input_sv))
         injected = SvPVbyte(input_sv, injected_len);

@@ -88,17 +88,28 @@ sub new ($class, %opt) {
     $self->{socket_policy} = $policy;
     $self->{local} = $local;
     $self->{peer} = $resolved_peer;
-    $self->_configure_socket(
-        $fh, $accepted ? 'accepted' : 'adopted', $resolved_peer,
-    );
-    $self->_attach_to_loop($loop) if $loop;
+    # Past this point the XS state exists and holds a strong reference back to
+    # $self, so a bare die would strand both the object and the descriptor it
+    # owns. Every remaining failure has to go through _abort_construction.
+    my $configured = eval {
+        $self->_configure_socket(
+            $fh, $accepted ? 'accepted' : 'adopted', $resolved_peer,
+        );
+        1;
+    };
+    $self->_abort_construction($@ || 'configure_socket failed') if !$configured;
+    return $self if !$loop;
+    my $attached = eval { $self->_attach_to_loop($loop); 1 };
+    $self->_abort_construction($@ || 'Stream registration failed') if !$attached;
     return $self;
 }
 
 sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
     my %stream;
-    for my $name (qw(loop data idle_timeout read_timeout write_timeout deadline)) {
+    for my $name (qw(loop data transport idle_timeout read_timeout
+        write_timeout deadline))
+    {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     my $loop = delete $stream{loop};
@@ -111,8 +122,10 @@ sub connect ($class, %opt) {
         $_ => exists($override->{$_}) ? $override->{$_}
             : $socket_descriptor->{options}{$_}
     } Linux::Event::_SocketConfig::names();
-    my $transport;
+    my $transport = delete $stream{transport};
     if (my $tls = $socket_descriptor->{tls}) {
+        croak 'connect(): transport cannot be supplied for a TLS-declared Socket'
+            if defined $transport;
         require Linux::Event::TLS;
         $transport = Linux::Event::TLS->_client_from_declaration(
             $tls, $opt{host},

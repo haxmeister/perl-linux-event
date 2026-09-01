@@ -29,8 +29,7 @@ les_consumer_host_pause(pTHX_ void *host_context)
 {
     les_xsstate_t *st = (les_xsstate_t *)host_context;
 
-    if (!st || !st->consumer_ops || !st->consumer_context
-        || st->consumer_terminal || st->closed || st->read_eof)
+    if (!les_consumer_live(st) || st->read_eof)
         return 0;
     if (!st->consumer_paused) {
         st->consumer_paused = 1;
@@ -103,18 +102,14 @@ les_consumer_notify_paused(pTHX_ les_xsstate_t *st)
         les_call_stream_method(aTHX_ st, "_xs_consumer_paused");
 }
 
+/* operation is NULL for the entry points whose diagnostics historically carried
+ * no "from <op>" suffix; the two message variants are otherwise identical. */
 static int
 les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
-    const char *operation, int resume_on_continue)
+    const char *operation)
 {
-    if (status == LES_CONSUMER_CONTINUE) {
-        if (resume_on_continue && st->consumer_paused) {
-            st->consumer_paused = 0;
-            st->consumer_resume_count++;
-            les_call_stream_method(aTHX_ st, "_xs_consumer_resumed");
-        }
+    if (status == LES_CONSUMER_CONTINUE)
         return status;
-    }
     if (status == LES_CONSUMER_PAUSE) {
         if (!st->consumer_paused) {
             st->consumer_paused = 1;
@@ -127,17 +122,18 @@ les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
         les_call_stream_method(aTHX_ st, "_xs_consumer_close");
         return status;
     }
-    if (status == LES_CONSUMER_ERROR && !resume_on_continue)
+    if (status == LES_CONSUMER_ERROR) {
+        if (operation)
+            croak("native Stream consumer '%s' reported an error from %s",
+                st->consumer_ops->name, operation);
         croak("native Stream consumer '%s' reported an error",
             st->consumer_ops->name);
-    if (status == LES_CONSUMER_ERROR)
-        croak("native Stream consumer '%s' reported an error from %s",
-            st->consumer_ops->name, operation);
-    if (!resume_on_continue)
-        croak("native Stream consumer '%s' returned invalid status %d",
-            st->consumer_ops->name, status);
-    croak("native Stream consumer '%s' returned invalid status %d from %s",
-        st->consumer_ops->name, status, operation);
+    }
+    if (operation)
+        croak("native Stream consumer '%s' returned invalid status %d from %s",
+            st->consumer_ops->name, status, operation);
+    croak("native Stream consumer '%s' returned invalid status %d",
+        st->consumer_ops->name, status);
     return LES_CONSUMER_ERROR;
 }
 
@@ -149,9 +145,11 @@ les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
     if (!st || !st->consumer_ops || !st->consumer_context)
         croak("native Stream consumer is not attached");
     st->consumer_message_calls++;
-    st->consumer_flush_pending = 1;
     status = st->consumer_ops->message(aTHX_ st->consumer_context, message);
-    return les_consumer_apply_status(aTHX_ st, status, "message", 0);
+    /* Only a completed dispatch owes a flush: a message() that croaks or
+     * reports an error must not leave the flag set for an unrelated drain. */
+    st->consumer_flush_pending = 1;
+    return les_consumer_apply_status(aTHX_ st, status, NULL);
 }
 
 int
@@ -159,15 +157,18 @@ les_consumer_flush(pTHX_ les_xsstate_t *st)
 {
     int status;
 
-    if (!st || !st->consumer_ops || !st->consumer_context
-        || !st->consumer_flush_pending)
+    if (!les_consumer_live(st) || !st->consumer_flush_pending)
         return LES_CONSUMER_CONTINUE;
     st->consumer_flush_pending = 0;
     if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
         return LES_CONSUMER_CONTINUE;
     st->consumer_flush_calls++;
     status = st->consumer_ops->flush(aTHX_ st->consumer_context);
-    return les_consumer_apply_status(aTHX_ st, status, "flush", 1);
+    /* flush() reports pause/close/error only. CONTINUE means "no state
+     * change" -- it must not revoke a pause the consumer asked for from
+     * message(), which would invert backpressure and resume delivery of
+     * messages the consumer just refused. */
+    return les_consumer_apply_status(aTHX_ st, status, "flush");
 }
 
 void
@@ -177,6 +178,10 @@ les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
     if (!st || !st->consumer_ops || !st->consumer_context
         || st->consumer_terminal)
         return;
+    /* Deliver anything the consumer has already accepted before it is told
+     * the stream is finished; after this point les_consumer_live() is false
+     * and no further flush can be issued. */
+    les_consumer_flush(aTHX_ st);
     st->consumer_terminal = 1;
     st->consumer_event_calls++;
     st->consumer_ops->event(aTHX_ st->consumer_context, event, error,
@@ -186,8 +191,7 @@ les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
 int
 les_consumer_resume(pTHX_ les_xsstate_t *st)
 {
-    if (!st || !st->consumer_ops || !st->consumer_context
-        || st->consumer_terminal || st->closed || st->read_eof)
+    if (!les_consumer_live(st) || st->read_eof)
         return 0;
 
     if (st->consumer_paused) {

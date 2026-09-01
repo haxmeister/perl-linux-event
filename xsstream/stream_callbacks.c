@@ -4,6 +4,10 @@ void
 les_call_one(pTHX_ SV *cb, SV *arg)
 {
     dSP;
+    /* call_sv(NULL) is undefined behaviour. Every caller is supposed to have
+     * checked, so a missing CV here means an invariant broke upstream. */
+    if (!cb)
+        croak("internal: Stream callback missing (les_call_one)");
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
@@ -19,6 +23,8 @@ void
 les_call_two(pTHX_ SV *cb, SV *a, SV *b)
 {
     dSP;
+    if (!cb)
+        croak("internal: Stream callback missing (les_call_two)");
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);

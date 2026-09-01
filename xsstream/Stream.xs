@@ -302,13 +302,8 @@ new(CLASS, stream, read_fd, write_fd, descriptor_obj)
         croak("Stream requires a read or write fd");
     descriptor = les_descriptor_from_sv(descriptor_obj);
     if (!descriptor) croak("Stream descriptor is closed");
-    if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER
-        && !descriptor->deliver_cb)
-        croak("readable raw Stream requires on_data callback");
-    if (read_fd >= 0 && descriptor->read_mode != LES_READ_DELIVER
-        && !descriptor->consumer_ops && !descriptor->message_batch_size
-        && !descriptor->message_cb)
-        croak("readable framed Stream requires on_message or a native consumer");
+    if (read_fd >= 0)
+        les_require_read_sink(aTHX_ descriptor, NULL);
     if (read_fd < 0 && descriptor->consumer_ops)
         croak("native Stream consumer requires a readable side");
 
@@ -380,14 +375,18 @@ void
 _read_ready(state_obj)
     SV *state_obj
   CODE:
+    LES_GUARD_STATE(state_obj);
     les_read_ready(aTHX_ les_state_from_sv(state_obj));
+    LEAVE;
 
 int
 _write(state_obj, bytes)
     SV *state_obj
     SV *bytes
   CODE:
+    LES_GUARD_STATE(state_obj);
     RETVAL = les_write_submit(aTHX_ les_state_from_sv(state_obj), bytes);
+    LEAVE;
   OUTPUT:
     RETVAL
 
@@ -395,7 +394,9 @@ void
 _write_ready(state_obj)
     SV *state_obj
   CODE:
+    LES_GUARD_STATE(state_obj);
     les_write_ready(aTHX_ les_state_from_sv(state_obj));
+    LEAVE;
 
 void
 _attach_transport(state_obj, provider, abi_version, ops_address, context_address)
@@ -462,8 +463,7 @@ _resume(state_obj)
   PREINIT:
     les_xsstate_t *st;
   CODE:
-    ENTER;
-    SAVEFREESV(SvREFCNT_inc(state_obj));
+    LES_GUARD_STATE(state_obj);
     st = les_state_from_sv(state_obj);
     if (!st->closed && !st->read_eof) {
         st->read_paused = 0;
@@ -527,8 +527,7 @@ _transition_ready(state_obj)
   PREINIT:
     les_xsstate_t *st;
   CODE:
-    ENTER;
-    SAVEFREESV(SvREFCNT_inc(state_obj));
+    LES_GUARD_STATE(state_obj);
     st = les_state_from_sv(state_obj);
     if (!st->closed && !LES_INPUT_PAUSED(st) && !st->read_eof
         && st->input_dispatch_depth == 0 && st->input_len) {
@@ -547,16 +546,23 @@ _close(state_obj, consumer_event = 0)
   PREINIT:
     les_xsstate_t *st;
   CODE:
+    /* The consumer's terminal event may run Perl that closes the stream and
+     * drops the last XSState reference; hold one for the duration and re-test
+     * the guard before touching st again. */
+    LES_GUARD_STATE(state_obj);
     st = les_state_from_sv(state_obj);
-    if (!st->closed) {
+    if (st && !st->closed) {
         if (consumer_event)
             les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
-        st->closed = 1;
-        les_clear_write_queue(st);
-        les_discard_message_batch(st);
-        st->input_start = 0;
-        st->input_len = 0;
+        if (!st->closed) {
+            st->closed = 1;
+            les_clear_write_queue(st);
+            les_discard_message_batch(st);
+            st->input_start = 0;
+            st->input_len = 0;
+        }
     }
+    LEAVE;
 
 void
 _close_read(state_obj, consumer_event = 0)
@@ -565,16 +571,23 @@ _close_read(state_obj, consumer_event = 0)
   PREINIT:
     les_xsstate_t *st;
   CODE:
+    LES_GUARD_STATE(state_obj);
     st = les_state_from_sv(state_obj);
-    if (!st->closed && !st->read_eof) {
+    if (st && !st->closed && !st->read_eof) {
+        /* Hand over anything already decoded before announcing the half-close;
+         * les_consumer_event() issues the owed end-of-drain flush first. */
+        les_flush_message_batch(aTHX_ st);
         if (consumer_event)
             les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
-        st->read_eof = 1;
-        st->read_paused = 1;
-        les_discard_message_batch(st);
-        st->input_start = 0;
-        st->input_len = 0;
+        if (!st->closed && !st->read_eof) {
+            st->read_eof = 1;
+            st->read_paused = 1;
+            les_discard_message_batch(st);
+            st->input_start = 0;
+            st->input_len = 0;
+        }
     }
+    LEAVE;
 
 void
 _close_write(state_obj)
@@ -583,8 +596,13 @@ _close_write(state_obj)
     les_xsstate_t *st;
   CODE:
     st = les_state_from_sv(state_obj);
-    if (!st->closed)
+    if (!st->closed) {
         les_clear_write_queue(st);
+        /* Perl closes the handle straight after this call. Drop the cached
+         * descriptor numbers so a later write cannot reach a recycled fd. */
+        st->write_fd = -1;
+        st->plain_transport.write_fd = -1;
+    }
 
 int
 consumer_paused(state_obj)
