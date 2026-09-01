@@ -7,6 +7,7 @@ our $VERSION = '0.105';
 
 use parent 'Linux::Event::Stream';
 use Carp qw(croak);
+use Scalar::Util qw(blessed);
 use Socket qw(SOL_SOCKET SO_ERROR SO_TYPE SOCK_STREAM SHUT_RD SHUT_WR);
 
 use Linux::Event::Address;
@@ -27,7 +28,7 @@ sub _socket_type ($fh) {
     return;
 }
 
-sub _socket_setup ($class, $fh, $descriptor, $override, $peer) {
+sub _socket_setup ($fh, $descriptor, $override, $peer) {
     _socket_type($fh);
     my $packed_local = getsockname($fh);
     croak 'new(): could not obtain local socket address'
@@ -63,10 +64,15 @@ sub new ($class, %opt) {
     my $peer = delete $opt{peer};
     my $tls_role = delete $opt{tls_role};
     my $transport = delete $opt{transport};
+    croak 'new(): transport must be an object implementing _stream_transport_bind()'
+        if defined($transport)
+        && (!blessed($transport) || !$transport->can('_stream_transport_bind'));
+    croak 'new(): tls_role cannot be combined with accepted mode'
+        if $accepted && defined $tls_role;
     my $override = Linux::Event::_SocketConfig::extract('new', \%opt);
     my $socket_descriptor = Linux::Event::Socket::_Descriptor::for_class($class);
     my ($local, $resolved_peer, $policy) = _socket_setup(
-        $class, $fh, $socket_descriptor, $override, $peer,
+        $fh, $socket_descriptor, $override, $peer,
     );
     if (my $tls = $socket_descriptor->{tls}) {
         croak 'new(): transport cannot be supplied for a TLS-declared Socket'
@@ -88,9 +94,17 @@ sub new ($class, %opt) {
     $self->{socket_policy} = $policy;
     $self->{local} = $local;
     $self->{peer} = $resolved_peer;
-    $self->_configure_socket(
-        $fh, $accepted ? 'accepted' : 'adopted', $resolved_peer,
-    );
+    my $configured = eval {
+        $self->_configure_socket(
+            $fh, $accepted ? 'accepted' : 'adopted', $resolved_peer,
+        );
+        1;
+    };
+    if (!$configured) {
+        my $failure = $@;
+        eval { $self->close; 1 };
+        die $failure;
+    }
     $self->_attach_to_loop($loop) if $loop;
     return $self;
 }
@@ -98,7 +112,7 @@ sub new ($class, %opt) {
 sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
     my %stream;
-    for my $name (qw(loop data idle_timeout read_timeout write_timeout deadline)) {
+    for my $name (qw(loop data transport idle_timeout read_timeout write_timeout deadline)) {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     my $loop = delete $stream{loop};
@@ -111,8 +125,13 @@ sub connect ($class, %opt) {
         $_ => exists($override->{$_}) ? $override->{$_}
             : $socket_descriptor->{options}{$_}
     } Linux::Event::_SocketConfig::names();
-    my $transport;
+    my $transport = delete $stream{transport};
+    croak 'connect(): transport must be an object implementing _stream_transport_bind()'
+        if defined($transport)
+        && (!blessed($transport) || !$transport->can('_stream_transport_bind'));
     if (my $tls = $socket_descriptor->{tls}) {
+        croak 'connect(): transport cannot be supplied for a TLS-declared Socket'
+            if defined $transport;
         require Linux::Event::TLS;
         $transport = Linux::Event::TLS->_client_from_declaration(
             $tls, $opt{host},
@@ -393,6 +412,10 @@ C<loop> attaches immediately, and C<data> stores application state. Generic
 Stream timeout and deadline overrides are accepted. Socket options supplied to
 C<new> override C<socket_options> for this instance.
 
+An advanced caller may supply C<transport =E<gt> $provider> for an established
+socket. The provider must implement the published native Stream transport
+binding contract. It cannot be combined with a class-declared TLS transport.
+
 A TLS-declared adopted socket also requires
 C<tls_role =E<gt> 'client'> or C<tls_role =E<gt> 'server'>. Listener supplies
 the server role internally for accepted sockets.
@@ -443,6 +466,10 @@ may require privilege.
 C<data>, C<idle_timeout>, C<read_timeout>, C<write_timeout>, and C<deadline>
 are generic Stream instance policy. Socket option overrides are applied to
 every outbound candidate before local bind and remote connect.
+
+C<transport =E<gt> $provider> retains an explicit native transport provider
+and binds it after a candidate connects. It cannot be combined with a
+class-declared TLS transport.
 
 A Socket subclass declaring L<Linux::Event::TLS> automatically selects the
 client role and defaults certificate hostname verification and SNI from

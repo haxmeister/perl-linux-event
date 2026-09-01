@@ -16,7 +16,7 @@ my $stream = ClientSocket->connect(
 );
 
 my $listener = Linux::Event::Listener->new(
-    loop => $loop, stream_class => 'ServerStream',
+    loop => $loop, stream_class => 'ServerSocket',
     host => '0.0.0.0', port => 9999,
 );
 
@@ -49,7 +49,7 @@ my $stream = $loop->add(ClientSocket->connect(
 ));
 
 my $listener = $loop->add(Linux::Event::Listener->new(
-    stream_class => 'ServerStream',
+    stream_class => 'ServerSocket',
     host => '0.0.0.0', port => 9999,
 ));
 
@@ -116,7 +116,7 @@ entry. A connecting Socket can temporarily own a socket registration and a
 timerfd registration. After connection it owns the established socket
 registration. The application continues to hold one Stream object throughout.
 
-Listener similarly owns its listening registration and creates Stream objects
+Listener similarly owns its listening registration and creates Socket objects
 for accepted sockets. It attaches each Socket before the optional Listener
 `on_accept` callback; plain Stream `on_ready` follows that callback, while TLS
 Stream `on_ready` follows its successful handshake. Listener passes its `data`

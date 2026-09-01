@@ -33,6 +33,20 @@ use Linux::Event::Socket;
     sub on_message ($stream, $message) { }
 }
 
+{
+    package T::API::GenericSocketOptions;
+    use parent 'Linux::Event::Stream';
+    sub socket_options ($class) { return keepalive => 1 }
+    sub on_data ($stream, $bytes) { }
+}
+
+{
+    package T::API::GenericSocketHook;
+    use parent 'Linux::Event::Stream';
+    sub configure_socket ($stream, $fh, $role, $peer) { }
+    sub on_data ($stream, $bytes) { }
+}
+
 my $loop = Linux::Event::Loop->new;
 socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
     or die "socketpair: $!";
@@ -91,5 +105,17 @@ like($error, qr/cannot define on_data/, 'mixed-mode error is clear');
 ok(!$made, 'old per-object callback and transport options are rejected');
 like($error, qr/unknown options: on_data, read_size/,
     'constructor identifies removed object-configured options');
+
+for my $case (
+    ['T::API::GenericSocketOptions', qr/defines socket_options.*Linux::Event::Socket/],
+    ['T::API::GenericSocketHook', qr/defines configure_socket.*Linux::Event::Socket/],
+) {
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $made = eval { $case->[0]->new(read_fh => $read); 1 };
+    ok(!$made, "$case->[0] rejects misplaced socket policy");
+    like($@, $case->[1], 'generic Stream migration mistake fails loudly');
+    close $read;
+    close $write;
+}
 
 done_testing;

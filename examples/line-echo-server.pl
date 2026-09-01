@@ -4,7 +4,7 @@ use strict;
 use warnings;
 
 {
-    package EchoStream;
+    package EchoSocket;
     use parent 'Linux::Event::Socket';
     use Linux::Event::Framer 'Delimiter', "\n";
 
@@ -16,7 +16,7 @@ use Linux::Event::Loop;
 
 my $loop = Linux::Event::Loop->new;
 my $server = $loop->add(Linux::Event::Listener->new(
-    stream_class => 'EchoStream',
+    stream_class => 'EchoSocket',
     host => '0.0.0.0',
     port => $ARGV[0] // 9999,
 ));

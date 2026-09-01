@@ -105,11 +105,16 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
                 les_call_deliver(aTHX_ st, bytes);
             }
         } else {
+            int was_consumer_paused = st->consumer_paused;
             les_process_buffered(aTHX_ st);
-            if (flush_batch && st->descriptor == descriptor) {
-                les_flush_message_batch(aTHX_ st);
+            if (flush_batch) {
+                if (st->descriptor == descriptor)
+                    les_flush_message_batch(aTHX_ st);
                 les_consumer_flush(aTHX_ st);
             }
+            if (was_consumer_paused && !LES_INPUT_PAUSED(st)
+                && !st->closed && !st->read_eof && st->input_len)
+                continue;
         }
 
         if (st->descriptor != descriptor)

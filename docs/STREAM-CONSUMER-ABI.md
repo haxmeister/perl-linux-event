@@ -95,6 +95,14 @@ returns the same status values as `message`. This allows a provider to retain a
 bounded batch and defer one application wakeup until the current read or
 buffered-input drain is complete.
 
+If a message-side callback closes the Stream, the final `flush` may run
+reentrantly before `message` returns. The Stream first marks the relevant
+direction terminal so host `resume` and `pause` calls cannot restart input,
+then delivers the pending flush, and only then delivers the terminal event.
+At this terminal boundary `CONTINUE`, `PAUSE`, and `CLOSE` do not reopen or
+otherwise change the lifecycle; invalid status values and `ERROR` remain
+provider failures.
+
 `create` must report failure with `NULL`, and `destroy` must not throw. A
 `message` or `event` implementation that invokes Perl may propagate an
 exception just like an ordinary Stream callback. It must update ownership and
@@ -156,6 +164,7 @@ The provider receives at most one terminal event:
 | `LES_CONSUMER_EVENT_FRAMING_ERROR` | The active native framer rejected input. |
 | `LES_CONSUMER_EVENT_CLOSED` | Explicit or error-driven Stream close. |
 | `LES_CONSUMER_EVENT_DETACHED` | Plain transport ownership was detached. |
+| `LES_CONSUMER_EVENT_READ_CLOSED` | The application explicitly closed only the read direction. |
 
 The event runs before the corresponding ordinary Stream EOF, error, or close
 handling. Existing typed Stream errors and lifecycle callbacks remain active.
@@ -163,6 +172,12 @@ An integration may use those semantic callbacks for richer error objects while
 using the native event to settle or release pending provider state.
 The host rejects `resume` after a terminal event, including during a reentrant
 terminal callback.
+
+Additional terminal event codes may be appended while retaining the ABI v1
+table layout. A provider must treat an unknown event code as terminal and use
+the same conservative settlement and cleanup it uses for
+`LES_CONSUMER_EVENT_CLOSED`. It must not reject an unknown terminal code or
+attempt to resume the Stream.
 
 ## Descriptor transitions
 

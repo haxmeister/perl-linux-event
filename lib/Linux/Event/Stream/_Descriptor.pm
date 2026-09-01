@@ -131,6 +131,12 @@ sub for_class ($class) {
         if $class eq 'Linux::Event::Stream';
     croak "$class is not a Linux::Event::Stream subclass"
         if !$class->isa('Linux::Event::Stream');
+    if (!$class->isa('Linux::Event::Socket')) {
+        croak "$class defines socket_options() but does not inherit from Linux::Event::Socket"
+            if $class->can('socket_options');
+        croak "$class defines configure_socket() but does not inherit from Linux::Event::Socket"
+            if $class->can('configure_socket');
+    }
 
     my $framer = _framer_for($class);
     my $consumer = _consumer_for($class);

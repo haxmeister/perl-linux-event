@@ -145,12 +145,24 @@ int
 les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
 {
     int status;
+    int jump_status;
+    dJMPENV;
 
     if (!st || !st->consumer_ops || !st->consumer_context)
         croak("native Stream consumer is not attached");
     st->consumer_message_calls++;
     st->consumer_flush_pending = 1;
-    status = st->consumer_ops->message(aTHX_ st->consumer_context, message);
+    JMPENV_PUSH(jump_status);
+    if (jump_status == 0) {
+        status = st->consumer_ops->message(aTHX_ st->consumer_context, message);
+        JMPENV_POP;
+    } else {
+        st->consumer_flush_pending = 0;
+        JMPENV_POP;
+        JMPENV_JUMP(jump_status);
+    }
+    if (st->closed || st->read_eof || st->consumer_terminal)
+        return status;
     return les_consumer_apply_status(aTHX_ st, status, "message", 0);
 }
 
@@ -160,7 +172,8 @@ les_consumer_flush(pTHX_ les_xsstate_t *st)
     int status;
 
     if (!st || !st->consumer_ops || !st->consumer_context
-        || !st->consumer_flush_pending)
+        || !st->consumer_flush_pending || st->consumer_terminal
+        || st->closed || st->read_eof)
         return LES_CONSUMER_CONTINUE;
     st->consumer_flush_pending = 0;
     if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
@@ -168,6 +181,28 @@ les_consumer_flush(pTHX_ les_xsstate_t *st)
     st->consumer_flush_calls++;
     status = st->consumer_ops->flush(aTHX_ st->consumer_context);
     return les_consumer_apply_status(aTHX_ st, status, "flush", 1);
+}
+
+int
+les_consumer_flush_terminal(pTHX_ les_xsstate_t *st)
+{
+    int status;
+
+    if (!st || !st->consumer_ops || !st->consumer_context
+        || !st->consumer_flush_pending || st->consumer_terminal)
+        return LES_CONSUMER_CONTINUE;
+    st->consumer_flush_pending = 0;
+    if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
+        return LES_CONSUMER_CONTINUE;
+    st->consumer_flush_calls++;
+    status = st->consumer_ops->flush(aTHX_ st->consumer_context);
+    if (status < LES_CONSUMER_CONTINUE || status > LES_CONSUMER_ERROR)
+        croak("native Stream consumer '%s' returned invalid status %d from terminal flush",
+            st->consumer_ops->name, status);
+    if (status == LES_CONSUMER_ERROR)
+        croak("native Stream consumer '%s' reported an error from terminal flush",
+            st->consumer_ops->name);
+    return status;
 }
 
 void
@@ -219,6 +254,9 @@ typedef struct les_test_consumer_s {
     UV permits;
     UV delivered;
     UV flushes;
+    UV sequence;
+    UV last_flush_sequence;
+    UV last_event_sequence;
 } les_test_consumer_t;
 
 static UV les_test_destroyed = 0;
@@ -277,6 +315,25 @@ les_test_message(pTHX_ void *opaque, SV *message)
     return context->permits ? LES_CONSUMER_CONTINUE : LES_CONSUMER_PAUSE;
 }
 
+static int
+les_test_message_pause(pTHX_ void *opaque, SV *message)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    PERL_UNUSED_CONTEXT;
+    context->delivered++;
+    av_push(context->messages, newSVsv(message));
+    return LES_CONSUMER_PAUSE;
+}
+
+static int
+les_test_message_croak(pTHX_ void *opaque, SV *message)
+{
+    PERL_UNUSED_ARG(opaque);
+    PERL_UNUSED_ARG(message);
+    croak("synthetic consumer message exception");
+    return LES_CONSUMER_ERROR;
+}
+
 static void
 les_test_event(pTHX_ void *opaque, uint32_t event, int error,
     const char *message)
@@ -286,6 +343,7 @@ les_test_event(pTHX_ void *opaque, uint32_t event, int error,
     SV *callback;
     dSP;
 
+    context->last_event_sequence = ++context->sequence;
     av_push(row, newSVuv((UV)event));
     av_push(row, newSViv((IV)error));
     av_push(row, newSVpv(message ? message : "", 0));
@@ -312,7 +370,18 @@ les_test_flush(pTHX_ void *opaque)
     PERL_UNUSED_CONTEXT;
 
     context->flushes++;
+    context->last_flush_sequence = ++context->sequence;
     return context->permits ? LES_CONSUMER_CONTINUE : LES_CONSUMER_PAUSE;
+}
+
+static int
+les_test_flush_continue(pTHX_ void *opaque)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    PERL_UNUSED_CONTEXT;
+    context->flushes++;
+    context->last_flush_sequence = ++context->sequence;
+    return LES_CONSUMER_CONTINUE;
 }
 
 static void
@@ -338,6 +407,30 @@ static const les_consumer_ops_v1_t les_test_ops = {
     LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
     les_test_create,
     les_test_message,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush
+};
+
+static const les_consumer_ops_v1_t les_test_flush_continue_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "flush-continue test consumer",
+    LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message_pause,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush_continue
+};
+
+static const les_consumer_ops_v1_t les_test_croak_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "croaking test consumer",
+    LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message_croak,
     les_test_event,
     les_test_destroy,
     les_test_flush
@@ -434,6 +527,8 @@ static les_test_consumer_t *
 les_test_context(les_xsstate_t *st)
 {
     if (!st || (st->consumer_ops != &les_test_ops
+        && st->consumer_ops != &les_test_flush_continue_ops
+        && st->consumer_ops != &les_test_croak_ops
         && st->consumer_ops != (const les_consumer_ops_v1_t *)
             &les_test_original_ops) || !st->consumer_context)
         croak("Stream does not use the Linux::Event core test consumer");
@@ -459,6 +554,10 @@ les_test_consumer_definition(pTHX_ const char *variant)
         ops = &les_test_unknown_flags_ops;
     else if (strEQ(variant, "create-failure"))
         ops = &les_test_create_failure_ops;
+    else if (strEQ(variant, "flush-continue"))
+        ops = &les_test_flush_continue_ops;
+    else if (strEQ(variant, "message-croak"))
+        ops = &les_test_croak_ops;
     else if (strEQ(variant, "wrong-declaration-version"))
         declared_version++;
     else if (!strEQ(variant, "valid"))
@@ -532,6 +631,10 @@ les_test_consumer_stats(pTHX_ les_xsstate_t *st)
         newSVuv((UV)(av_top_index(context->messages) + 1)));
     hv_stores(stats, "delivered", newSVuv(context->delivered));
     hv_stores(stats, "flushes", newSVuv(context->flushes));
+    hv_stores(stats, "last_flush_sequence",
+        newSVuv(context->last_flush_sequence));
+    hv_stores(stats, "last_event_sequence",
+        newSVuv(context->last_event_sequence));
     return newRV_noinc((SV *)stats);
 }
 

@@ -63,6 +63,22 @@ like(exception(sub { T::InvalidSocketOption->_validate_accepted_configuration })
     'invalid class socket option fails descriptor construction');
 
 {
+    package T::FailingSocketConfiguration;
+    use parent 'Linux::Event::Socket';
+    sub on_data ($self, $bytes) { }
+    sub configure_socket ($self, $fh, $role, $peer) { die "synthetic failure\n" }
+}
+
+socketpair(my $failed_left, my $failed_right, AF_UNIX, SOCK_STREAM, 0)
+    or die "socketpair: $!";
+like(exception(sub { T::FailingSocketConfiguration->new(fh => $failed_left) }),
+    qr/configure_socket: synthetic failure/,
+    'configure_socket failure propagates as a typed setup error');
+ok(!defined(fileno($failed_left)),
+    'configure_socket failure closes the adopted descriptor');
+close $failed_right;
+
+{
     package T::BrokenStreamLoop;
     sub new ($class) { bless {}, $class }
     sub add ($self, $object) { $object->_attach_to_loop($self) }

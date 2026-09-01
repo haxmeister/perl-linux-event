@@ -24,6 +24,10 @@
 #define LES_CONSUMER_EVENT_DETACHED      5U
 #define LES_CONSUMER_EVENT_READ_CLOSED   6U
 
+/* New terminal event codes may be appended without changing the table
+ * layout. Providers must treat an unknown event code as terminal and apply
+ * the same conservative cleanup used for LES_CONSUMER_EVENT_CLOSED. */
+
 typedef struct les_consumer_host_api_v1_s {
     uint32_t abi_version;
     size_t struct_size;

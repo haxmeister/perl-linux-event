@@ -231,6 +231,7 @@ int les_consumer_create(pTHX_ les_xsstate_t *st);
 void les_consumer_destroy(pTHX_ les_xsstate_t *st);
 int les_consumer_message(pTHX_ les_xsstate_t *st, SV *message);
 int les_consumer_flush(pTHX_ les_xsstate_t *st);
+int les_consumer_flush_terminal(pTHX_ les_xsstate_t *st);
 void les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
     const char *message);
 int les_consumer_resume(pTHX_ les_xsstate_t *st);

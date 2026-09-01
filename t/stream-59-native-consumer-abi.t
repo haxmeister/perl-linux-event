@@ -66,6 +66,40 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 }
 
 {
+    package T::FlushContinueBase;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::Stream->_test_consumer_definition('flush-continue'),
+        );
+    }
+}
+
+{
+    package T::FlushContinueLine;
+    use parent -norequire, 'T::FlushContinueBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
+    package T::CroakingConsumerBase;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::Stream->_test_consumer_definition('message-croak'),
+        );
+    }
+}
+
+{
+    package T::CroakingConsumerLine;
+    use parent -norequire, 'T::CroakingConsumerBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
     package T::ConsumerShortLine;
     use parent -norequire, 'T::ConsumerBase';
     use Linux::Event::Framer 'Delimiter', "\n", max_frame => 3;
@@ -187,6 +221,64 @@ sub take ($stream) {
 }
 
 {
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::CroakingConsumerLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    syswrite($write, "boom\n") == 5 or die "syswrite: $!";
+    my $ok = eval { $loop->run_for(0.01); 1 };
+    ok(!$ok, 'native consumer message exception propagates');
+    like($@, qr/synthetic consumer message exception/,
+        'consumer exception preserves its diagnostic');
+    is($stream->{xs_state}->stats->{consumer_flush_pending}, 0,
+        'exception unwinding clears the incomplete drain flush marker');
+    $stream->close;
+    close $write;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::GenericConsumerLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    my $xs = $stream->{xs_state};
+    arm($stream, sub { $loop->stop });
+    syswrite($write, "one\ntwo\n") == 8 or die "syswrite: $!";
+    $loop->run;
+    is(take($stream), 'one', 'terminal-order fixture receives first frame');
+    my $flushes = $xs->_test_consumer_stats->{flushes};
+    arm($stream, sub { $stream->close_read });
+    is($xs->_test_consumer_take, 'two',
+        'terminal-order fixture dispatches buffered second frame');
+    my $stats = $xs->_test_consumer_stats;
+    is($stats->{flushes}, $flushes + 1,
+        'pending consumer work is flushed during directional close');
+    cmp_ok($stats->{last_flush_sequence}, '<', $stats->{last_event_sequence},
+        'consumer flush precedes the terminal READ_CLOSED event');
+    close $write;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::GenericConsumerLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    my $before = Linux::Event::Stream->_test_consumer_destroy_count;
+    $stream->{xs_state}->_test_consumer_arm(sub {
+        $stream->close;
+        is(Linux::Event::Stream->_test_consumer_destroy_count, $before,
+            'reentrant close cannot destroy XSState inside close_read XSUB');
+    });
+    $stream->close_read;
+    cmp_ok(Linux::Event::Stream->_test_consumer_destroy_count, '>', $before,
+        'guarded XSState is destroyed after close_read returns');
+    close $write;
+}
+
+{
     my ($loop, $stream, $peer) = pair('T::OriginalV1Line');
     arm($stream, sub { $loop->stop });
     syswrite($peer, "compatible\n");
@@ -197,6 +289,23 @@ sub take ($stream) {
         'core does not read or call the appended field on an old provider');
     $stream->close;
     close $peer;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::FlushContinueLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    syswrite($write, "one\ntwo\n") == 8 or die "syswrite: $!";
+    $loop->run_for(0.01);
+    my $stats = $stream->{xs_state}->_test_consumer_stats;
+    is($stats->{delivered}, 2,
+        'flush CONTINUE re-drives complete input buffered after PAUSE');
+    cmp_ok($stats->{flushes}, '>=', 2,
+        'each resumed buffered-input drain reaches its flush boundary');
+    $stream->close;
+    close $write;
 }
 
 {

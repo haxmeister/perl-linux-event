@@ -132,7 +132,7 @@ sub _build_declaration ($class, $target, @arg) {
 
 sub _validate_server_declaration ($class, $definition) {
     my $target = $definition->{target};
-    croak "$target is used for accepted TLS Streams but does not declare "
+    croak "$target is used for accepted TLS Sockets but does not declare "
         . 'cert_file and key_file'
         if !defined($definition->{cert_file});
     return;
