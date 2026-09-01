@@ -1174,142 +1174,28 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Stream - generic native buffered byte streams
+Linux::Event::Stream - generic native buffered byte-stream I/O
 
 =head1 SYNOPSIS
+
+A framed console using separate handles:
 
   package Console;
   use parent 'Linux::Event::Stream';
   use Linux::Event::Framer 'Delimiter', "\n";
 
-  sub on_message ($self, $line) {
-      $self->write("You typed: $line\n");
+  sub on_message ($stream, $line) {
+      $stream->write("You typed: $line\n");
   }
 
+  package main;
   my $console = Console->new(
       loop     => $loop,
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
   );
 
-=head1 DESCRIPTION
-
-C<Linux::Event::Stream> is the generic sequential-byte I/O abstraction above
-L<Linux::Event::Loop>. It supports one shared C<fh>, separate C<read_fh> and
-C<write_fh>, or either direction alone. It owns native reads, immediate and
-queued native writes, buffering, framing, batching, backpressure, established
-deadlines, and directional lifecycle.
-
-Connected stream sockets use L<Linux::Event::Socket>, which inherits this
-engine and adds connection acquisition, addresses, socket options, half-close,
-and TLS policy.
-
-=head1 CONSTRUCTION
-
-  MyStream->new(fh => $duplex_handle, loop => $loop);
-  MyStream->new(read_fh => $input, write_fh => $output, loop => $loop);
-  MyStream->new(read_fh => $input, loop => $loop);
-  MyStream->new(write_fh => $output, loop => $loop);
-
-C<fh> is mutually exclusive with the directional options. Stream takes
-ownership, sets every unique descriptor nonblocking and close-on-exec, and
-attaches immediately when C<loop> is supplied. Otherwise use
-C<< $loop->add($stream) >>.
-
-A readable raw subclass defines C<on_data>. A readable framed subclass declares
-a L<Linux::Event::Framer> and defines C<on_message> or C<on_messages>, or uses a
-native consumer. A write-only subclass needs no inbound callback.
-
-=head1 DIRECTIONAL LIFECYCLE
-
-Read EOF calls C<on_eof> and ends only the read direction. C<end> drains output
-and ends only the write direction. C<close_read> and C<close_write> stop one
-direction immediately; application closure does not call C<on_eof>. C<close>
-stops both directions immediately and discards queued output. C<on_close> runs
-once after both available directions are terminal or after explicit close.
-
-For distinct handles, ending a write closes the write handle and read EOF
-closes the read handle. A generic shared non-socket handle has no universal
-kernel half-close operation, so Stream marks that direction ended and retains
-the descriptor for the other direction. Socket maps write end to
-C<shutdown(SHUT_WR)>.
-
-C<detach> requires an empty output queue and returns a hash reference containing
-C<read_fh> and C<write_fh>. It transfers the handles without closing them.
-
-=head1 METHODS
-
-C<fh> returns the shared handle or undef for split handles. C<read_fh>,
-C<write_fh>, C<read_fd>, C<write_fd>, C<has_read>, and C<has_write> expose
-configured directional capabilities. C<is_read_closed> distinguishes explicit
-local read closure from C<is_read_eof>. C<write>, C<send>, C<pending_bytes>, C<end>,
-C<pause_read>, C<resume_read>, C<close_read>, C<close_write>, C<close>,
-C<detach>, C<transition_to>, C<data>, and the state predicates retain their
-ordinary meanings.
-
-=head1 PERFORMANCE
-
-One XS state owns both directions, one parser, one native consumer context, and
-one segmented output queue. A shared handle uses one watcher; split handles use
-two watchers pointing to that same state. Writable readiness is enabled only
-after partial output or EAGAIN and disabled after drain. The plain fast path
-continues to issue direct C<read>, C<write>, and C<writev> syscalls.
-
-=cut
-
-=begin comment
-
-=head1 NAME
-
-Linux::Event::Stream - subclass-defined native buffered streams
-
-=head1 SYNOPSIS
-
-  use v5.36;
-  use Linux::Event::Loop;
-
-  package EchoStream;
-  use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  sub on_message ($stream, $message) {
-      $stream->send($message);
-  }
-
-  sub on_eof ($stream) {
-      $stream->end;
-  }
-
-  sub on_error ($stream, $error) {
-      warn "$error\n";
-  }
-
-  package main;
-  my $loop = Linux::Event::Loop->new;
-  my $stream = $loop->add(EchoStream->new(
-      fh   => $socket,          # required
-      data => { user_id => 42 }, # optional
-  ));
-  $loop->run;
-
-=head1 DESCRIPTION
-
-C<Linux::Event::Stream> is a resource-owning object backed by the native
-buffered byte-stream engine above L<Linux::Event::Loop>. It is a base class
-rather than a configurable Stream type. Applications define behavior once in a
-subclass and construct lightweight per-connection instances containing only
-changing connection state.
-
-The first construction of each subclass resolves its inherited callback CVs,
-framer and TLS declarations, parser configuration, and Stream policy into one
-cached descriptor. XS stores that descriptor once and every connection's
-native state references it. Construction therefore avoids per-object callback
-hashes, framer objects, repeated validation, and repeated native configuration
-copies.
-
-=head1 DEFINING A STREAM TYPE
-
-A raw subclass defines C<on_data> and does not declare a framer:
+A raw duplex handle:
 
   package ByteStream;
   use parent 'Linux::Event::Stream';
@@ -1318,483 +1204,364 @@ A raw subclass defines C<on_data> and does not declare a framer:
       $stream->write($bytes);
   }
 
-A framed subclass imports one native built-in and defines C<on_message>:
-
-  package LineStream;
-  use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  sub on_message ($stream, $message) {
-      $stream->send($message);
-  }
-
-High-throughput framed protocols may explicitly replace one-message delivery
-with bounded array delivery:
-
-  package PipelinedStream;
-  use parent 'Linux::Event::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  sub stream_options ($class) {
-      return message_batch_size => 32;
-  }
-
-  sub on_messages ($stream, $messages) {
-      for my $message (@$messages) {
-          process_message($stream, $message);
-      }
-  }
-
-C<on_message> and C<on_messages> are mutually exclusive. Merely defining
-C<on_messages> does not enable batching; the positive class option makes the
-different callback boundary explicit.
-
-Framed and raw modes are mutually exclusive. A subclass with no framer must
-define C<on_data>; a framed subclass must define C<on_message>, or explicitly
-enable C<message_batch_size> and define C<on_messages>. The base class cannot
-be instantiated directly.
-
-=head1 CONSTRUCTOR
-
-=head2 new(fh => $fh, loop => $loop, data => $value)
-
-C<fh> is required for an already-established Stream. Stream takes ownership of
-the filehandle, sets it nonblocking, and enables close-on-exec. Supply C<loop>
-to attach before C<new> returns, or omit it and attach with
-C<< $loop->add($stream) >>. Both forms are primary APIs and C<add> returns the
-same Stream. C<data> is optional per-connection state. Use C<detach> to transfer
-a still-open plain handle back to the application; TLS Streams cannot be
-detached.
-
-A TLS-declared Stream normally obtains its role from C<connect> or Listener
-acceptance. Supplying an already-connected C<fh> is ambiguous, so that advanced
-form also requires C<tls_role =E<gt> 'client'> or C<'server'>. See
-L<Linux::Event::TLS>.
-
-C<idle_timeout>, C<read_timeout>, and C<write_timeout> override the subclass's
-cached inactivity defaults for this Stream. Each is non-negative seconds and
-zero explicitly disables that policy. C<deadline> accepts a hash reference
-containing exactly one of C<after> or C<at> plus a non-empty C<operation> label.
-Relative construction deadlines begin when the Stream becomes usable.
-
-Socket policy such as C<tcp_nodelay>, C<keepalive>, and buffer sizes may also
-be supplied here for an established C<fh>. Constructor values override the
-subclass policy. Settings omitted from both places leave the kernel value
-unchanged.
-
-Callbacks, framing, and buffer policy are class behavior and are not accepted
-as constructor options.
-
-=head2 connect(host => 'example.com', port => 443)
-
-  my $stream = MyStream->connect(
-      host         => '127.0.0.1', # required
-      port         => 9999,        # required
-      timeout      => 10,          # default
-      local_host   => '127.0.0.1', # optional source address
-      local_port   => 0,           # optional source port
-      tcp_nodelay  => 1,           # optional
-  );
+  my $stream = ByteStream->new(fh => $handle);
   $loop->add($stream);
 
-Returns one Stream that survives connection setup, optional TLS negotiation,
-established I/O, and close. Supply C<loop> to start connecting immediately.
-Otherwise the state is C<unattached> until C<< $loop->add($stream) >>.
+=head1 DESCRIPTION
 
-Exactly one of C<host>/C<port>, C<unix>, or packed C<sockaddr>/C<family> is
-required. C<timeout> is seconds, defaults to 10, and may be zero to disable the
-deadline. C<data>, established timeout overrides, and C<deadline> are passed to
-the Stream. A class declaring L<Linux::Event::TLS> automatically uses client
-TLS and defaults certificate hostname verification to C<host>. C<write> and
-C<send> may queue output before attachment or readiness. Hostname resolution
-runs in the Loop's private native worker pool; socket establishment and
-staggered IPv6/IPv4 attempts are nonblocking.
+C<Linux::Event::Stream> is the generic sequential-byte I/O abstraction above
+L<Linux::Event::Loop>. It accepts a shared byte-oriented filehandle, separate
+read and write handles, or either direction alone. Pipes, terminals, FIFOs,
+process standard I/O, and connected sockets through L<Linux::Event::Socket>
+all reuse the same native engine.
 
-Most outbound connections should omit C<local_host> and C<local_port>; Linux
-then chooses the source address and ephemeral source port. C<local_host>
-selects a numeric IPv4 or IPv6 source address, while C<local_port> selects the
-source port. They do not replace the remote C<host> and C<port>.
-C<bind_device> optionally constrains the socket to a Linux interface before
-local binding and connection. It may require kernel privilege.
+Stream owns native read draining, immediate and queued writes, input framing,
+raw and framed callback batching, buffering limits, backpressure, established
+deadlines, and directional lifecycle. It does not inspect socket addresses,
+apply socket options, initiate connections, or assume that either handle is a
+socket.
 
-=head1 ATTACHMENT AND OWNERSHIP
+C<Linux::Event::Stream> is a base class. Applications define a subclass so its
+callbacks, framer, native consumer, and immutable tuning policy can be resolved
+once and cached outside per-instance state.
 
-A Stream is attached once, to one Loop. C<loop =E<gt> $loop> and
-C<< $loop->add($stream) >> perform the same attachment. A terminal Stream cannot
-be reused or reattached. The Stream owns its filehandle until C<close>, graceful
-completion, or C<detach> transfers a plain handle back to the caller.
+=head1 DEFINING A STREAM TYPE
 
-=head1 TLS DECLARATION
+A readable raw Stream defines C<on_data> and does not declare a framer:
 
-A subclass opts into TLS declaratively, after establishing Stream inheritance:
-
-  package SecureStream;
+  package RawInput;
   use parent 'Linux::Event::Stream';
-  use Linux::Event::TLS
-      ca_file           => '/etc/ssl/certs/ca-certificates.crt', # optional
-      verify            => 1,                                   # default
-      alpn              => ['http/1.1'],                        # optional
-      handshake_timeout => 10,                                  # default
-      shutdown_timeout  => 5;                                   # default
 
-C<< SecureStream->connect(host =E<gt> 'example.com', port =E<gt> 443) >>
-selects client TLS. A Listener that names
-C<SecureStream> selects server TLS and therefore requires C<cert_file> and
-C<key_file> in the declaration. C<on_ready> has one meaning in both roles: the
-plain connection or TLS handshake is ready for application traffic.
+  sub on_data ($stream, $bytes) {
+      consume($bytes);
+  }
 
-TLS is an acquisition declaration, not protocol inheritance. It creates fresh
-connection state only when a Stream is constructed. C<transition_to> changes
-protocol callbacks and framing but never installs, removes, or replaces the
-active byte transport.
+A framed Stream declares one native framer and ordinarily defines
+C<on_message>:
+
+  package Lines;
+  use parent 'Linux::Event::Stream';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub on_message ($stream, $line) {
+      consume_line($line);
+  }
+
+A framed subclass may instead set a positive C<message_batch_size> and define
+C<on_messages>. A raw subclass may set C<read_batch_bytes> to coalesce reads
+before C<on_data>. Neither batching mode waits for a future readiness event to
+fill a batch; partial batches flush when the current native drain ends.
+
+A write-only Stream needs no input callback. A readable raw Stream requires
+C<on_data>. A readable framed Stream requires C<on_message>,
+C<on_messages> with batching enabled, or a native framed-message consumer.
+
+=head1 CONSTRUCTION
+
+=head2 new
+
+The supported handle forms are:
+
+  MyStream->new(fh => $duplex_handle);
+  MyStream->new(read_fh => $input, write_fh => $output);
+  MyStream->new(read_fh => $input);
+  MyStream->new(write_fh => $output);
+
+C<fh> supplies both directions and cannot be combined with C<read_fh> or
+C<write_fh>. At least one direction is required. C<loop> attaches the object
+before C<new> returns; otherwise attach it later with
+C<< $loop->add($stream) >>. C<data> stores arbitrary per-instance application
+state.
+
+Stream takes ownership of every distinct supplied handle and sets it
+nonblocking and close-on-exec. Supplying the same descriptor in both
+directional options still creates one shared native registration.
+
+C<idle_timeout>, C<read_timeout>, and C<write_timeout> override class defaults
+for one instance. C<deadline> accepts a hash reference containing exactly one
+of C<after> or C<at>, plus an C<operation> label.
+
+Constructor callbacks, framers, and tuning values are intentionally not
+accepted. They are class policy. For connected stream sockets, outbound
+connection acquisition, TLS roles, and socket-specific constructor options,
+use L<Linux::Event::Socket>.
 
 =head1 CLASS STREAM OPTIONS
 
-A subclass that needs non-default Stream settings may define
-C<stream_options>. It runs once when the class descriptor is built, not once
-per connection:
+A subclass may define C<stream_options>. It is called once when the cached
+class descriptor is built:
 
   sub stream_options ($class) {
       return (
-          read_size         => 32_768,            # optional
-          read_budget_bytes => 1 * 1024 * 1024, # optional; 0 = unlimited
-          high_watermark    => 2 * 1024 * 1024,   # optional
-          low_watermark     => 512 * 1024,        # optional
-          max_pending_bytes => 8 * 1024 * 1024,   # optional
-          max_buffer        => 16 * 1024 * 1024,  # optional
-          idle_timeout      => 120,               # optional; seconds
-          read_timeout      => 30,                # optional; seconds
-          write_timeout     => 10,                # optional; seconds
+          read_size          => 65_536,
+          read_budget_bytes  => 0,
+          read_batch_bytes   => 0,
+          message_batch_size => 0,
+          high_watermark     => 1_048_576,
+          low_watermark      => 262_144,
+          max_pending_bytes  => 0,
+          max_buffer         => 8_388_608,
+          idle_timeout       => 0,
+          read_timeout       => 0,
+          write_timeout      => 0,
       );
   }
 
-The defaults are 65,536 bytes per read, an unlimited read drain, no raw read
-batching, ordinary one-message framed delivery, a 1 MiB high watermark, a
-256 KiB low watermark,
-no hard pending-output limit, and an 8 MiB maximum framed input buffer. Set
-C<max_pending_bytes> to a positive byte count to impose a hard limit; zero
-keeps the default unlimited policy. Established timeout defaults are zero,
-which disables them. Constructor values take precedence for one Stream and
-survive protocol transitions; non-overridden values change to the target
-subclass's defaults.
+C<read_size> is the native syscall buffer size. C<read_budget_bytes> bounds one
+readiness drain; zero is unlimited. C<read_batch_bytes> is raw-mode callback
+coalescing, and C<message_batch_size> selects framed C<on_messages> delivery.
+C<max_buffer> bounds retained framed input.
 
-The batching settings are alternatives for different subclass modes, so they
-are not combined in the general example above.
+C<high_watermark> and C<low_watermark> implement cooperative write
+backpressure. C<max_pending_bytes> is a hard output-queue limit; zero leaves it
+unlimited. The three timeout values are non-negative seconds, with zero
+disabling that policy.
 
-C<read_batch_bytes> is available only to a raw Stream. A positive value makes
-XS combine successful reads up to that many bytes before calling C<on_data>.
-It flushes a partial batch at C<EAGAIN>, EOF, or an error, without waiting for
-future input. The limit is also the native retained-memory bound for this
-aggregation. Values at or below C<read_size> do not coalesce full reads.
+C<read_batch_bytes> is valid only for raw Streams. C<message_batch_size> is
+valid only for framed Streams and requires C<on_messages> instead of
+C<on_message>. Invalid combinations fail when the class descriptor is first
+built.
 
-C<message_batch_size> is available only to a framed Stream. A positive value
-requires C<on_messages> instead of C<on_message>. XS flushes when the message
-limit is reached or the current native read drain is exhausted. It never waits
-to fill a batch. C<max_buffer> also forces a flush when the accumulated
-message payload reaches that byte budget, keeping one batch below twice that
-bound even when the final frame crosses the remaining budget.
-
-=head1 SOCKET CONFIGURATION
-
-Socket policy may be cached with the other C<stream_options>:
-
-  sub stream_options ($class) {
-      return (
-          tcp_nodelay       => 1,       # optional
-          keepalive         => 1,       # optional
-          keepalive_idle    => 60,      # optional; seconds
-          keepalive_interval => 10,     # optional; seconds
-          keepalive_count   => 5,       # optional
-          tcp_user_timeout  => 15,      # optional; seconds
-          send_buffer       => 262_144, # optional; bytes
-          receive_buffer    => 262_144, # optional; bytes
-      );
-  }
-
-The same names are accepted by C<new> and C<connect> for one Stream. Instance
-construction wins over class policy; an option omitted from both places is not
-set at all. This is deliberately different from inventing library defaults
-that overwrite Linux tuning silently.
-
-C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
-C<keepalive_interval>, C<keepalive_count>, and C<tcp_user_timeout> are valid
-only for IPv4 or IPv6 TCP sockets. Send and receive buffer sizing also applies
-to Unix Streams. Public timeout values are seconds;
-C<tcp_user_timeout> is converted to the Linux millisecond value with a positive
-sub-millisecond duration rounded up.
-
-For outbound sockets, built-in policy and the optional hook below run after
-C<socket> and before local C<bind> or remote C<connect>. Accepted and adopted
-sockets apply policy before transport setup, including a TLS handshake.
-
-An advanced subclass may define one cached socket hook:
-
-  use Socket qw(IPPROTO_TCP TCP_QUICKACK);
-
-  sub configure_socket ($stream, $fh, $role, $address) {
-      setsockopt($fh, IPPROTO_TCP, TCP_QUICKACK, pack('i', 1))
-          or die "setsockopt(TCP_QUICKACK): $!";
-  }
-
-C<$role> is C<connect>, C<accepted>, or C<adopted>. C<$address> is the remote
-candidate or peer when one is available. A hook exception becomes a structured
-C<socket_configuration> Error. It never falls back silently to another
-configuration.
-
-These options are also live getters/setters on an established Stream:
-
-  my $enabled = $stream->tcp_nodelay;    # current kernel value
-  $stream->tcp_nodelay(1);               # enable and return effective value
-  my $bytes = $stream->send_buffer(262_144);
-
-The complete live set is C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
-C<keepalive_interval>, C<keepalive_count>, C<tcp_user_timeout>,
-C<send_buffer>, and C<receive_buffer>. Linux may round or double buffer
-requests, so setters return the value read back from the kernel. Socket policy
-is acquisition policy; C<transition_to> does not reapply it.
+Socket tuning is deliberately separate in
+L<Linux::Event::Socket/socket_options>.
 
 =head1 CALLBACKS
 
-Subclasses may define these ordinary named methods:
+Callbacks are ordinary named methods resolved once from the subclass:
 
-  sub on_data ($stream, $bytes) {             # required for raw Stream
-      $stream->write($bytes);
-  }
+=over 4
 
-  sub on_message ($stream, $message) {        # ordinary framed mode
-      $stream->send($message);
-  }
+=item C<on_data($stream, $bytes)>
 
-  sub on_messages ($stream, $messages) {      # framed batch mode only
-      $stream->send($_) for @$messages;
-  }
+Receives raw byte strings. It is required for a readable unframed Stream.
 
-  sub on_drain ($stream) {                    # optional
-      $stream->data->{blocked} = 0 if $stream->data;
-  }
+=item C<on_message($stream, $message)>
 
-  sub on_eof ($stream) { $stream->end }       # optional
-  sub on_error ($stream, $error) {            # optional
-      warn "$error\n";
-  }
-  sub on_close ($stream) {                    # optional
-      $stream->data->{closed} = 1 if $stream->data;
-  }
-  sub on_ready ($stream) {                    # optional
-      $stream->write("ready\n");
-  }
-  sub on_transport_ready ($stream) {          # optional
-      say "transport " . $stream->transport_name . " is ready";
-  }
+Receives one complete message from a declared framer.
 
-The resolved CVs are cached and invoked directly; readiness dispatch does not
-perform Perl method lookup. Inheritance works normally, so a derived Stream type
-may reuse callbacks and framing from its parent. Per-user or per-connection
-permissions belong in C<data>, which callbacks access through C<< $stream->data >>.
-C<on_ready> is called once when an asynchronously acquired Stream becomes
-usable. For TLS, this means handshake and verification have completed. Accepted
-Streams are ready after Listener attachment. C<on_transport_ready> is the
-lower-level provider-ready notification and runs immediately before C<on_ready>
-for an asynchronous non-plain transport. Most applications need only
+=item C<on_messages($stream, $messages)>
+
+Receives an array reference of complete messages when
+C<message_batch_size> is enabled.
+
+=item C<on_drain($stream)>
+
+Runs once after a high-watermark blocked interval falls to or below the low
+watermark.
+
+=item C<on_eof($stream)>
+
+Runs when the readable side reaches EOF. EOF does not end an independent
+writable side.
+
+=item C<on_error($stream, $error)>
+
+Receives a L<Linux::Event::Error> before failure closes the Stream.
+
+=item C<on_close($stream)>
+
+Runs once after explicit full close, failure, or both available directions
+become terminal. It is not called by C<detach>.
+
+=item C<on_ready($stream)>
+
+Runs once when an attached Stream is ready for application I/O.
+
+=item C<on_transport_ready($stream)>
+
+Runs immediately before C<on_ready> when an asynchronous non-plain transport
+becomes ready. Transport providers are internal; most applications use only
 C<on_ready>.
 
-Application callback exceptions are not swallowed.
+=back
 
-For ordinary framed delivery, pause, close, and protocol transition take effect
-after each C<on_message>. In batch mode they take effect after the complete
-array passed to C<on_messages>; every element in that array has already been
-parsed under the current Stream type. Complete pending messages are delivered
-before EOF or a later framing error. Protocol-negotiation boundaries that must
-transition after one particular message should retain C<on_message>.
+Callback exceptions are not swallowed. In ordinary framed mode, pause, close,
+and protocol transition take effect after each C<on_message>. In batch mode,
+they take effect after the complete array passed to C<on_messages>.
+
+=head1 DIRECTIONAL LIFECYCLE
+
+Read and write capability are independent.
+
+Read EOF marks only the read direction terminal and calls C<on_eof>. For a
+distinct read handle, Stream then closes that handle. A shared generic handle
+has no universal kernel half-close operation, so the descriptor remains owned
+while the write direction is usable.
+
+C<end> optionally writes final bytes, drains queued output, and then ends only
+the write direction. For a distinct write handle, Stream closes it after the
+queue drains. For a shared generic handle, Stream records the logical end
+without assuming socket C<shutdown> semantics.
+
+C<close_read> and C<close_write> stop one direction immediately.
+C<close_write> discards queued output. Neither operation calls C<on_eof>.
+C<close> immediately stops both directions and may discard output.
+C<on_close> runs when both configured directions are terminal.
+
+C<detach> requires an established plain transport and an empty output queue. It
+cancels Stream ownership without closing the handles and returns:
+
+  {
+      read_fh  => $read_handle_or_undef,
+      write_fh => $write_handle_or_undef,
+  }
+
+The two values may refer to the same shared handle.
+
+L<Linux::Event::Socket> maps these generic directional states onto socket
+C<shutdown> where appropriate.
 
 =head1 METHODS
 
 =head2 write($bytes)
 
-Writes immediately when possible and queues any remainder. Returns false after
-queued bytes exceed the high watermark; the bytes were still accepted. Wait for
-C<on_drain> before producing more. Output queued before attachment or connection
-readiness uses the same return contract and produces one drain notification if
-that blocked interval clears during establishment.
+Attempts an immediate native write and queues only the unsent remainder.
+Writable readiness is enabled only after partial output or C<EAGAIN> and is
+disabled again after the queue drains.
 
-C<$bytes> must be a byte string. Encode character text before writing it.
+The return value is true while cooperative backpressure is clear and false
+after pending output exceeds C<high_watermark>. A false return does not reject
+the bytes; wait for C<on_drain> before producing more.
 
-When C<max_pending_bytes> is nonzero, a write whose unsent remainder would put
-the native queue above that limit is not queued. Stream reports an
-C<output_limit> L<Linux::Event::Error> through C<on_error> and closes.
-The error's C<pending_bytes> and C<limit> accessors describe the attempted
-queue size and configured bound. An immediate kernel write may already have
-sent a prefix before its remainder is found to exceed the limit; Stream never
-adds that remainder to its queue. The ordinary false return remains reserved
-for accepted cooperative backpressure.
+If nonzero C<max_pending_bytes> would be exceeded, the unsent remainder is not
+queued, an C<output_limit> error is reported, and the Stream closes. Input must
+be a byte string.
 
 =head2 send($payload)
 
-Available only to framed subclasses. Applies the subclass's declared outbound
-wire framing and then uses C<write>. Serialization remains separate.
-
-=head2 pause_read / resume_read
-
-Disable and re-enable input readiness without destroying the Stream.
-
-=head2 transition_to($class, input => $bytes)
-
-Changes a live connection to another loaded C<Linux::Event::Stream> subclass.
-The same object is reblessed into C<$class>, and the same filehandle, native registration,
-native connection state, output queue, backpressure state, lifecycle state, and
-C<data> are retained. Future callbacks, C<send> framing, parser rules, and class
-Stream policy come from the target subclass's cached descriptor.
-
-Unread bytes already held by a framed parser are preserved and reinterpreted by
-the target parser. A raw C<on_data> callback may pass the unconsumed suffix of
-its current chunk with C<< input => $bytes >>:
-
-  sub on_data ($stream, $bytes) {
-      my ($request, $remaining) = parse_upgrade($bytes);
-      return if !$request;
-      $stream->write(upgrade_response());
-      $stream->transition_to(
-          'My::WebSocketStream',
-          input => $remaining, # optional raw unconsumed suffix
-      );
-      return;
-  }
-
-Existing native input is ordered before the explicit C<input> suffix. Complete
-target frames may be delivered before C<transition_to> returns when the method
-is called outside input dispatch. During C<on_data>, C<on_message>, or
-C<on_messages>, target dispatch begins after the old callback returns. Code
-should normally return immediately after requesting a transition.
-
-Read pause is retained and continues to gate preserved input. Queued output
-keeps its original byte ordering; only later C<send> calls use the new outbound
-framing. If preserved input exceeds the target class's C<max_buffer>, or
-existing queued output exceeds its nonzero C<max_pending_bytes>, the transition
-fails atomically and the old type remains active. Transitioning to the
-already-active class is rejected.
-
-This method changes Stream protocol behavior; it does not replace the active
-byte transport. In particular, a TLS Stream remains TLS across protocol
-transitions.
+Available only to a framed subclass. It applies the declared outbound framing
+rule and passes the resulting bytes to C<write>. Serialization remains a
+separate concern.
 
 =head2 end($final_bytes = undef)
 
-Drains queued output and ends the transport's writable side. Plain Streams use
-C<shutdown(SHUT_WR)>; TLS providers send C<close_notify>. Peer EOF and the local
-writable half-close remain independent.
+Queues optional final bytes, drains all accepted output, and gracefully ends
+the write direction. It does not stop reading.
 
-=head2 close
+=head2 pause_read / resume_read
 
-Immediately cancels native readiness and closes the owned descriptor. Queued
-output may be lost. Returns the Stream.
+Disable and re-enable read readiness without destroying buffered parser state.
+A pause requested before attachment remains in effect after attachment.
+C<read_timeout> is suspended while paused and restarts on resume.
+
+=head2 close_read / close_write / close
+
+C<close_read> immediately stops input. C<close_write> immediately discards
+queued output and stops output. C<close> immediately closes the complete
+Stream. All return the Stream.
 
 =head2 detach
 
-Cancels Stream ownership and returns the still-open filehandle for the plain
-transport. C<on_close> is not called because the underlying resource remains
-open. Non-plain transports reject detach because the descriptor carries
-provider-owned wire state rather than application plaintext.
+Transfers the owned plain handles as described in
+L</DIRECTIONAL LIFECYCLE>. Non-plain transports and Streams with queued output
+cannot be detached.
+
+=head2 transition_to($class, input => $bytes)
+
+Reblesses an active Stream into another loaded Stream subclass while retaining
+the handles, native state, parser storage, output queue, backpressure state,
+deadlines, pause state, and C<data>. Future callbacks and framing come from the
+target class descriptor.
+
+Unread framed bytes are reinterpreted by the target parser. A raw callback may
+supply an unconsumed suffix with C<input>. The operation is atomic if target
+limits reject existing buffered input or output.
+
+A generic Stream cannot transition to a Socket subclass, and a Socket cannot
+transition to a generic Stream subclass. Transport acquisition and TLS state
+are not changed by protocol transition.
+
+=head2 fh / read_fh / write_fh
+
+C<fh> returns the shared handle when both directions use the same descriptor,
+otherwise undef. C<read_fh> and C<write_fh> return the current directional
+handles.
+
+=head2 read_fd / write_fd
+
+Return the current directional descriptor numbers, or undef when that handle
+is absent.
+
+=head2 has_read / has_write
+
+Return the stable capabilities configured at construction. They remain useful
+after a direction reaches EOF or is closed.
 
 =head2 pending_bytes / is_write_blocked
 
-Report total output-queue and flow-control state, including output accepted
-while an outbound connection is still being established.
+Report native queued output and cooperative backpressure state.
 
 =head2 idle_timeout / read_timeout / write_timeout
 
-Return this Stream's effective established inactivity policy in seconds.
-C<idle_timeout> resets on successful read or write transport progress.
-C<read_timeout> resets on inbound bytes, is suspended by C<pause_read>, and
-starts a fresh interval on C<resume_read>. C<write_timeout> exists only while
-output remains queued and resets on successful write progress.
+Return effective established timeout policy in seconds. Idle timeout resets on
+read or write progress. Read timeout tracks active input and is suspended by
+C<pause_read>. Write timeout exists only while output is queued.
 
-=head2 set_deadline(after => 5, operation => 'response')
+=head2 set_deadline / clear_deadline
 
-Set or replace the one explicit overall-operation deadline and return the
-Stream. Supply C<after =E<gt> $seconds> or
-C<at =E<gt> $monotonic_deadline>, together with
-C<operation =E<gt> $name>. An overall deadline never resets because of I/O.
-Calling this before establishment stores the policy; relative time begins when
-the Stream becomes usable, while C<at> remains an absolute C<CLOCK_MONOTONIC>
-value.
+  $stream->set_deadline(after => 5, operation => 'response');
+  $stream->set_deadline(at => $absolute, operation => 'response');
+  $stream->clear_deadline;
 
-=head2 clear_deadline
-
-Remove the explicit operation deadline and return the Stream. Inactivity
-policies remain active.
+Set, replace, or remove one overall operation deadline. C<after> is seconds
+from activation; C<at> is an absolute monotonic deadline. An overall deadline
+does not reset on I/O.
 
 =head2 deadline / deadline_operation
 
-Return the active absolute operation deadline and its label. A detached
-relative deadline has no absolute value yet, so C<deadline> returns undef.
-
-All established deadline categories start after plain or TLS transport
-readiness. Resolver, connection, TLS handshake, and TLS shutdown time use their
-existing separate owners. Expiration reports a C<timeout>
-L<Linux::Event::Error> through C<on_error> and closes normally through
-C<on_close>. The Error includes C<timeout> and C<deadline> context. Every
-deadline-enabled Stream uses at most one private Timer in the Loop's shared
-timerfd/native heap.
+Return the active absolute operation deadline and its label. Before activation,
+a relative deadline has no absolute value and C<deadline> returns undef.
 
 =head2 transport / transport_name / is_transport_ready
 
-Returns the configured provider object, active native byte transport name, and
-whether its asynchronous setup has completed. Ordinary filehandle-backed
-Streams have no provider object, report C<plain>, and are immediately ready.
-
-=head2 selected_alpn / tls_protocol / tls_cipher / tls_stats
-
-Return negotiated ALPN, TLS protocol, cipher, and native TLS counters for a TLS
-Stream. The scalar information methods return undef for a plain Stream;
-C<tls_stats> returns undef when no TLS provider is active.
-
-=head2 tcp_nodelay / keepalive / keepalive_idle / keepalive_interval / keepalive_count / tcp_user_timeout / send_buffer / receive_buffer
-
-With no argument, return the effective Linux socket value. With one argument,
-set the option and return the value read back from the kernel. These methods
-require an established socket; TCP-only methods reject a Unix Stream.
-
-=head2 is_read_paused / is_read_eof / is_write_ended / is_closed
-
-Report Stream lifecycle state.
+Return the internal transport provider, active native transport name, and
+readiness state. Ordinary handles report C<plain> after native activation.
+These methods also support Socket TLS introspection without putting TLS policy
+in generic Stream.
 
 =head2 data([$value])
 
-Gets or replaces per-connection application state.
+Get or replace arbitrary application state.
 
-=head2 loop / state / peer / local
+=head2 loop / state / last_error
 
-Return the owning Loop, C<unattached>, C<connecting>, C<active>, C<detached>, or
-C<closed> lifecycle state, the lazy remote peer when available, and the local
-socket address. Outbound and adopted Streams populate both addresses when the
-kernel supplies them; accepted Streams receive their peer from Listener.
+Return the owning Loop, lifecycle state, and the error that caused closure.
+State is C<unattached>, C<connecting> for Socket acquisition, C<active>,
+C<detached>, or C<closed>.
 
-=head2 last_error
+=head2 is_read_paused / is_read_eof / is_read_closed
 
-Returns the L<Linux::Event::Error> that caused closure, or undef when the Stream
-has not failed.
+Report whether input is paused, ended by peer EOF, or stopped explicitly by
+C<close_read>.
 
-=head1 FRAMING POLICY
+=head2 is_write_ended / is_closed / is_terminal
 
-Framed Stream types use native built-ins declared through
-L<Linux::Event::Framer>. Arbitrary per-connection framer objects and the
-old custom Perl C<next_frame> contract are intentionally unsupported. Unusual
-protocols can buffer and parse raw C<on_data> bytes. Generally useful framing
-families should be implemented as native Linux::Event built-ins.
+Report write-direction and complete-object terminal state.
+
+=head1 FRAMING AND NATIVE CONSUMERS
+
+Framers operate on incoming bytes and therefore belong to generic Stream.
+Built-in declarations are documented in L<Linux::Event::Framer> and
+F<docs/FRAMING.md>.
+
+The versioned native framed-message consumer ABI is also attached to generic
+Stream rather than Socket. Its provider boundary and event rules are documented
+in F<docs/STREAM-CONSUMER-ABI.md>. Linux::Event core does not depend on an
+async or Future implementation.
+
+=head1 ERROR POLICY
+
+Read, write, framing, timeout, transport, and output-limit failures are reported
+as L<Linux::Event::Error> values through C<on_error>, then close the Stream.
+Application callback exceptions propagate to the caller.
 
 =head1 PERFORMANCE
 
-Native code drains reads, detects built-in frame boundaries, performs immediate
-writes, drains segmented queues with C<writev>, and accounts for backpressure.
-The class descriptor moves immutable callbacks and parser configuration out of
-each connection. Perl is entered for semantic C<on_data>, C<on_message>, or
-C<on_messages> delivery and lifecycle policy. The zero batching defaults keep
-the ordinary callback path free of batch allocation or array construction.
-
-Use C<bench/run-callback-batching-microbench.pl> for pipelined throughput and
-callback-count sweeps. Use C<bench/run-callback-batching-fairness.pl> to observe
-a latency-sensitive descriptor beside a continuously readable Stream.
+One XS state owns both directions, one parser, one native consumer context, and
+one segmented output queue. A shared handle uses one watcher; split handles use
+two watchers pointing to that same state. Native code drains reads, finds frame
+boundaries, issues immediate writes, drains queued segments with C<writev>, and
+accounts for backpressure. Perl is entered only at semantic callback
+boundaries.
 
 =cut
-
-=end comment

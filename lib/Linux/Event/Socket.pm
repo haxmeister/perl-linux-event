@@ -312,72 +312,299 @@ sub CLONE_SKIP ($class) { 1 }
 1;
 
 __END__
-
 =head1 NAME
 
-Linux::Event::Socket - connected stream-socket byte I/O
+Linux::Event::Socket - connected stream-socket specialization of Stream
+
+=head1 SYNOPSIS
+
+An outbound framed protocol:
+
+  package Client;
+  use parent 'Linux::Event::Socket';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub on_ready ($socket) {
+      $socket->send('hello');
+  }
+
+  sub on_message ($socket, $message) {
+      process_message($message);
+  }
+
+  package main;
+  my $client = Client->connect(
+      loop => $loop,
+      host => '127.0.0.1',
+      port => 9999,
+  );
+
+Adopt an already-connected stream socket:
+
+  my $socket = Client->new(
+      loop => $loop,
+      fh   => $connected_socket,
+      data => $state,
+  );
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Socket> specializes L<Linux::Event::Stream> for connected
-C<SOCK_STREAM> sockets. It adds connection acquisition, local and peer
-addresses, socket policy, writable shutdown, and TLS transport behavior while
-reusing Stream's native buffering, framing, queue, backpressure, and consumer
-engine.
+C<Linux::Event::Socket> inherits L<Linux::Event::Stream> and adds only
+connected C<SOCK_STREAM> behavior: validation, outbound connection acquisition,
+local and peer addresses, local binding, socket policy, kernel half-close, and
+TLS transport semantics.
 
-Socket requires one shared C<fh> whose C<SO_TYPE> is C<SOCK_STREAM>. Generic
-handles, including pipes, terminals, and separate read/write pairs, belong to
-L<Linux::Event::Stream>. Socket is a base class; applications construct a
-protocol subclass defining raw or framed input callbacks.
+The native read, write, framing, batching, backpressure, deadline, and consumer
+engine remains in Stream and is not duplicated. Socket accepts one shared
+socket handle. Generic handles, split read/write pairs, pipes, terminals, and
+process standard I/O belong directly to L<Linux::Event::Stream>.
+
+C<Linux::Event::Socket> is a base class. Applications construct subclasses
+whose callbacks and framing describe one protocol type.
+
+=head1 DEFINING A SOCKET TYPE
+
+Socket subclasses use the same raw and framed callback model as Stream:
+
+  package EchoSocket;
+  use parent 'Linux::Event::Socket';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub on_message ($socket, $message) {
+      $socket->send($message);
+  }
+
+Generic buffering policy remains in C<stream_options>. Socket acquisition policy
+belongs in the separate C<socket_options> method. Both descriptors are cached
+once per class.
 
 =head1 CONSTRUCTION
 
-Adopt an established stream socket with:
+=head2 new(fh => $socket)
 
-  MyProtocol->new(loop => $loop, fh => $socket, data => $state);
+Adopts an already-connected C<SOCK_STREAM> socket. The handle must have both a
+local address and a peer address. Datagram sockets, listening sockets,
+unconnected sockets, and non-socket handles are rejected.
 
-Create an outbound connection with:
+C<read_fh> and C<write_fh> are not accepted by Socket. Use generic
+L<Linux::Event::Stream> when the directions use different handles.
 
-  MyProtocol->connect(
-      loop => $loop,
-      host => 'example.com',
-      port => 443,
-      timeout => 10,
+C<loop> attaches immediately, and C<data> stores application state. Generic
+Stream timeout and deadline overrides are accepted. Socket options supplied to
+C<new> override C<socket_options> for this instance.
+
+A TLS-declared adopted socket also requires
+C<tls_role =E<gt> 'client'> or C<tls_role =E<gt> 'server'>. Listener supplies
+the server role internally for accepted sockets.
+
+=head2 connect
+
+  my $socket = Client->connect(
+      loop         => $loop,
+      host         => 'example.com',
+      port         => 443,
+      timeout      => 10,
+      local_host   => '192.0.2.10',
+      local_port   => 0,
+      tcp_nodelay  => 1,
+      data         => $state,
   );
 
-Construction may be detached and followed by C<< $loop->add($socket) >>.
-Listener-created connections use the same adopted path with the server role.
+Returns one Socket object that survives resolution, nonblocking connection
+attempts, optional TLS negotiation, established I/O, and close. Supply C<loop>
+to start immediately, or attach later with
+C<< $loop->add($socket) >>. Writes may be queued before attachment or
+connection readiness.
+
+Exactly one remote form is required:
+
+=over 4
+
+=item * C<host> and C<port>
+
+Resolve and connect to a TCP endpoint. Resolution uses the Loop's private
+native worker pool, and staggered IPv6/IPv4 attempts are nonblocking.
+
+=item * C<unix =E<gt> $path>
+
+Connect to a Unix stream socket.
+
+=item * C<sockaddr =E<gt> $packed, family =E<gt> $family>
+
+Connect to a caller-packed address.
+
+=back
+
+C<timeout> is the connection deadline in seconds, defaults to 10, and may be
+zero to disable it. C<local_host> and C<local_port> select a TCP source address
+and port. C<bind_device> constrains an outbound socket to a Linux interface and
+may require privilege.
+
+C<data>, C<idle_timeout>, C<read_timeout>, C<write_timeout>, and C<deadline>
+are generic Stream instance policy. Socket option overrides are applied to
+every outbound candidate before local bind and remote connect.
+
+A Socket subclass declaring L<Linux::Event::TLS> automatically selects the
+client role and defaults certificate hostname verification and SNI from
+C<host>.
+
+=head1 LISTENER ACCEPTANCE
+
+L<Linux::Event::Listener> requires C<stream_class> to name a Socket subclass.
+It constructs each accepted connection through the same Socket setup path,
+applies socket policy before transport setup, supplies the peer address, and
+selects the TLS server role when applicable.
+
+  my $listener = Linux::Event::Listener->new(
+      loop         => $loop,
+      stream_class => 'EchoSocket',
+      host         => '0.0.0.0',
+      port         => 9999,
+  );
 
 =head1 SOCKET POLICY
 
-A subclass may define C<socket_options> for cached defaults such as
-C<tcp_nodelay>, keepalive settings, C<tcp_user_timeout>, C<send_buffer>, and
-C<receive_buffer>. Constructor values override those defaults. The optional
-C<configure_socket($self, $fh, $role, $address)> hook runs after built-in
-policy on adopted, accepted, and outbound candidate sockets.
+A subclass may define C<socket_options>:
 
-C<fh> returns the shared handle and C<fd> its descriptor. C<local> and C<peer>
-return L<Linux::Event::Address> values. Live option
-accessors are C<tcp_nodelay>, C<keepalive>, C<keepalive_idle>,
-C<keepalive_interval>, C<keepalive_count>, C<tcp_user_timeout>, C<send_buffer>,
-and C<receive_buffer>.
+  sub socket_options ($class) {
+      return (
+          tcp_nodelay        => 1,
+          keepalive          => 1,
+          keepalive_idle     => 60,
+          keepalive_interval => 10,
+          keepalive_count    => 5,
+          tcp_user_timeout   => 15,
+          send_buffer        => 262_144,
+          receive_buffer     => 262_144,
+      );
+  }
+
+The method runs once when the cached Socket descriptor is built. Constructor or
+C<connect> values override class policy. An option omitted from both places is
+left unchanged rather than replaced by a library default.
+
+C<tcp_nodelay>, C<keepalive_idle>, C<keepalive_interval>,
+C<keepalive_count>, and C<tcp_user_timeout> require a TCP socket.
+C<keepalive>, C<send_buffer>, and C<receive_buffer> also apply where supported
+to Unix stream sockets. Public timeout values are seconds;
+C<tcp_user_timeout> is converted to the Linux millisecond kernel value.
+
+=head1 CONFIGURATION HOOK
+
+An advanced subclass may define:
+
+  sub configure_socket ($socket, $fh, $role, $address) {
+      ...
+  }
+
+The cached callback runs after built-in policy for each socket and before
+transport setup. C<$role> is C<connect>, C<accepted>, or C<adopted>.
+C<$address> is the remote candidate or peer when known. An exception becomes a
+C<socket_configuration> L<Linux::Event::Error>; configuration never falls back
+silently.
+
+=head1 CALLBACKS AND FRAMING
+
+Socket inherits all Stream callbacks, framing declarations, batching modes,
+limits, backpressure, and established deadlines. See
+L<Linux::Event::Stream/CALLBACKS> and L<Linux::Event::Framer>.
+
+C<on_ready> runs after a plain outbound connection or TLS handshake is ready
+for application traffic. Accepted plain sockets are ready after Listener
+attachment. C<on_transport_ready> is the lower-level provider notification and
+normally need not be implemented by applications.
 
 =head1 LIFECYCLE
 
-Socket inherits Stream's independent read and write states. C<end> drains
-queued output and performs C<shutdown(SHUT_WR)>; read EOF does not prevent
-remaining writes. C<close_read> and C<close_write> map immediate directional
-closure to C<shutdown(SHUT_RD)> and C<shutdown(SHUT_WR)> for plain sockets.
-C<close> closes the socket immediately. C<detach> requires drained plain output
-and returns the one shared socket handle.
+Read and write remain independent as documented by
+L<Linux::Event::Stream/DIRECTIONAL LIFECYCLE>.
+
+For a plain Socket, C<end> drains queued output and then performs
+C<shutdown(SHUT_WR)>. Peer EOF ends only input, so remaining output may still
+be written. C<close_read> and C<close_write> immediately use
+C<shutdown(SHUT_RD)> and C<shutdown(SHUT_WR)> respectively. C<close> closes the
+socket immediately.
+
+C<detach> requires an established plain transport and an empty output queue.
+It cancels Socket ownership and returns the one shared socket handle rather
+than Stream's directional hash reference.
+
+TLS uses provider shutdown and C<close_notify> for graceful C<end>. Immediate
+directional close is rejected for TLS because it would bypass the provider's
+wire lifecycle.
+
+=head1 SOCKET METHODS
+
+All generic methods are inherited from L<Linux::Event::Stream>. The following
+methods are Socket-specific or specialize the generic result.
+
+=head2 connect
+
+Class method described in L</CONSTRUCTION>. Generic Stream does not provide
+outbound connection acquisition.
+
+=head2 fh / fd
+
+Return the shared socket handle and descriptor number.
+
+=head2 local / peer
+
+Return lazy L<Linux::Event::Address> values for the local and peer socket
+addresses.
+
+=head2 tcp_nodelay / keepalive / keepalive_idle / keepalive_interval / keepalive_count / tcp_user_timeout
+
+With no argument, return the current effective Linux socket value. With one
+argument, update the option and return the value read back from the kernel.
+TCP-only accessors reject Unix sockets.
+
+=head2 send_buffer / receive_buffer
+
+With no argument, return the effective socket-buffer size. With one argument,
+request a new size and return the kernel value read back. Linux may round or
+double buffer requests.
+
+=head2 selected_alpn / tls_protocol / tls_cipher / tls_stats
+
+Return negotiated TLS details when a TLS transport is active. The scalar
+methods return undef for a plain Socket; C<tls_stats> likewise returns undef
+without an active TLS provider.
+
+=head2 close_read / close_write / detach
+
+Specialize the inherited generic lifecycle with socket C<shutdown> and the
+single-handle detach return described above.
 
 =head1 TLS
 
-L<Linux::Event::TLS> may be declared only on a Socket subclass. Outbound
-C<connect> selects the client role and Listener acceptance selects the server
-role. C<selected_alpn>, C<tls_protocol>, C<tls_cipher>, and C<tls_stats> expose
-negotiated transport information. TLS shutdown uses C<end>; immediate
-directional close is intentionally unavailable because it would bypass the
-TLS transport lifecycle.
+TLS is declared only after Socket inheritance:
+
+  package SecureClient;
+  use parent 'Linux::Event::Socket';
+  use Linux::Event::TLS
+      ca_file => '/etc/ssl/certs/ca-certificates.crt',
+      verify  => 1,
+      alpn    => ['http/1.1'];
+
+The same declaration becomes a server policy when a Listener accepts the
+subclass; server use requires certificate and key configuration. See
+L<Linux::Event::TLS> for declaration options, role selection, verification,
+handshake deadlines, and shutdown behavior.
+
+TLS belongs to Socket transport acquisition. Framing still belongs to generic
+Stream and operates on plaintext bytes above the active transport.
+
+=head1 ERRORS
+
+Connection, resolver, bind, socket configuration, TLS, and established I/O
+failures are reported through the inherited C<on_error> callback as
+L<Linux::Event::Error> values, then close the Socket.
+
+=head1 PERFORMANCE
+
+Socket adds policy only at acquisition and lifecycle boundaries. Established
+plain and TLS traffic uses the inherited native Stream state, parser, direct
+write path, segmented queue, and transient writable readiness. There is no
+second socket-specific read, write, or framing engine.
 
 =cut
