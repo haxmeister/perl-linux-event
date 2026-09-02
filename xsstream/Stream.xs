@@ -635,6 +635,14 @@ consumer_paused(state_obj)
   OUTPUT:
     RETVAL
 
+UV
+_input_buffered_bytes(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = (UV)les_state_from_sv(state_obj)->input_len;
+  OUTPUT:
+    RETVAL
+
 int
 _consumer_resume(state_obj)
     SV *state_obj

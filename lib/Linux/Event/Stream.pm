@@ -934,7 +934,7 @@ sub transition_to ($self, $class, %opt) {
 
     my $input_bytes = defined($input) ? length($input) : 0;
     if ($descriptor->{framer} && $descriptor->{options}{max_buffer}) {
-        my $preserved = $xs_state->stats->{input_buffered_bytes} + $input_bytes;
+        my $preserved = $xs_state->_input_buffered_bytes + $input_bytes;
         croak 'transition_to(): preserved input exceeds target max_buffer'
             if $preserved > $descriptor->{options}{max_buffer};
     }
