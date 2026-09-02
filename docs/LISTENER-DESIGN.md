@@ -1,8 +1,8 @@
 # Listener design
 
 `Linux::Event::Listener` owns an inbound TCP or Unix listening socket and
-constructs one configured `Linux::Event::Stream` subclass for every accepted
-connection. Listener is constructed directly; Stream does not own or proxy the
+constructs one configured `Linux::Event::Socket` subclass for every accepted
+connection. Listener is constructed directly; Socket does not own or proxy the
 listening API. There is no separate generic Listen class.
 
 ## Public API
@@ -11,13 +11,13 @@ listening API. There is no separate generic Listen class.
 my $server_state = { connections => {} };
 my $listener = Linux::Event::Listener->new(
     loop                => $loop,          # optional: attach immediately
-    stream_class        => 'ServerStream', # required
+    stream_class        => 'ServerSocket', # required
     host                => '0.0.0.0',      # required for TCP
     port                => 9999,           # required for TCP
     backlog             => 4096,           # default
     max_accept_per_tick => 256,            # default
     edge_triggered      => 0,              # default
-    data                => $server_state,  # optional; inherited by each Stream
+    data                => $server_state,  # optional; inherited by each Socket
 );
 ```
 

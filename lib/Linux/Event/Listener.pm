@@ -411,6 +411,7 @@ sub _accept_client ($self, $fh, $peer) {
     if (!$prepared) {
         my $failure = $@;
         eval { $stream->close; 1 } if $stream;
+        CORE::close($fh) if !$stream && defined fileno($fh);
         my $error = blessed($failure)
             && $failure->isa('Linux::Event::Error')
             ? $failure
@@ -679,7 +680,7 @@ Linux::Event::Listener - accepting socket that constructs Socket instances
   use Linux::Event::Listener;
   use Linux::Event::Loop;
 
-  package EchoStream;
+  package EchoSocket;
   use parent 'Linux::Event::Socket';
 
   sub on_data ($stream, $bytes) {
@@ -697,7 +698,7 @@ Linux::Event::Listener - accepting socket that constructs Socket instances
   my $loop = Linux::Event::Loop->new;
   my $listener = EchoListener->new(
       loop                => $loop,         # optional: attach immediately
-      stream_class        => 'EchoStream',  # required
+      stream_class        => 'EchoSocket',  # required
       host                => '0.0.0.0',     # required for TCP
       port                => 7000,          # required for TCP
       backlog             => 4096,          # default
@@ -726,14 +727,14 @@ Every Listener can be attached in either form:
 
   my $listener = Linux::Event::Listener->new(
       loop         => $loop,          # optional: attach immediately
-      stream_class => 'ServerStream', # required
+      stream_class => 'ServerSocket', # required
       host         => '127.0.0.1',    # required for TCP
       port         => 9000,           # required for TCP
       reuseaddr    => 1,              # default
   );
 
   my $listener = Linux::Event::Listener->new(
-      stream_class => 'ServerStream',  # required
+      stream_class => 'ServerSocket',  # required
       unix         => '/run/app.sock', # required for Unix
       unlink       => 1,               # optional; default 0
       permissions  => 0660,            # optional
@@ -772,7 +773,7 @@ C<owns_socket =E<gt> 1> to transfer ownership.
 Common options, shown with their actual defaults, are:
 
   my $listener = Linux::Event::Listener->new(
-      stream_class        => 'ServerStream', # required
+      stream_class        => 'ServerSocket', # required
       host                => '0.0.0.0',      # required for TCP
       port                => 9000,           # required for TCP
       loop                => $loop,          # optional
@@ -789,7 +790,7 @@ setting.
 TCP socket options are:
 
   my $listener = Linux::Event::Listener->new(
-      stream_class => 'ServerStream', # required
+      stream_class => 'ServerSocket', # required
       host         => '::',           # required for TCP
       port         => 9000,           # required for TCP
       reuseaddr    => 1,              # default
@@ -801,7 +802,7 @@ TCP socket options are:
 Unix socket options are:
 
   my $listener = Linux::Event::Listener->new(
-      stream_class    => 'ServerStream',  # required
+      stream_class    => 'ServerSocket',  # required
       unix            => '/run/app.sock', # required for Unix
       unlink          => 0,               # default
       unlink_on_close => 1,               # default
@@ -811,7 +812,7 @@ Unix socket options are:
 Adopted-socket options are:
 
   my $listener = Linux::Event::Listener->new(
-      stream_class => 'ServerStream', # required
+      stream_class => 'ServerSocket', # required
       fh           => $socket,        # required for adoption
       owns_socket  => 0,              # default
   );

@@ -4,6 +4,8 @@ void
 les_call_one(pTHX_ SV *cb, SV *arg)
 {
     dSP;
+    if (!cb)
+        croak("internal Stream callback invariant violated");
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);
@@ -19,6 +21,8 @@ void
 les_call_two(pTHX_ SV *cb, SV *a, SV *b)
 {
     dSP;
+    if (!cb)
+        croak("internal Stream callback invariant violated");
     ENTER;
     SAVETMPS;
     PUSHMARK(SP);

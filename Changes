@@ -27,6 +27,21 @@ Unreleased
     - Extend consumer ABI v1 compatibly with an opt-in end-of-drain flush hook.
       Providers can defer one wakeup while retaining a bounded batch; original
       v1 operation tables remain accepted by struct_size.
+    - Harden native consumer reentrancy so callback-driven close cannot free an
+      active XSState. Flush pending work before terminal events, preserve
+      pause/continue semantics across buffered input, validate readable
+      transition targets, clear exception-aborted flush state, and invalidate
+      native directional descriptors when one side closes.
+    - Clean up partially constructed Sockets when configure_socket fails,
+      retain explicit transport providers for outbound connect, and reject
+      socket policy methods placed on a generic Stream instead of silently
+      ignoring them.
+    - Incompatible migration details: socket policy moves from stream_options
+      to socket_options; connect and TLS declarations require a Socket
+      subclass; Listener stream_class must name a Socket subclass; generic
+      Stream detach returns { read_fh, write_fh } while Socket detach returns
+      one handle; Listener setup errors now use operation accepted_socket
+      instead of accepted_stream.
     - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
       a private native drain helper while preserving read_size,
       max_reads_per_tick, callback chunking, EOF ordering, and error behavior.

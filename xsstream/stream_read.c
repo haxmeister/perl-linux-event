@@ -1,5 +1,17 @@
 #include "stream_internal.h"
 
+static void
+les_flush_framed_read_boundary(pTHX_ les_xsstate_t *st)
+{
+    int was_consumer_paused = st->consumer_paused;
+
+    les_flush_message_batch(aTHX_ st);
+    les_consumer_flush(aTHX_ st);
+    if (was_consumer_paused && !LES_INPUT_PAUSED(st)
+        && !st->closed && !st->read_eof && st->input_len)
+        les_process_existing_input(aTHX_ st, 1);
+}
+
 void
 les_read_ready(pTHX_ les_xsstate_t *st)
 {
@@ -121,10 +133,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             les_descriptor_t *descriptor = st->descriptor;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
-            else {
-                les_flush_message_batch(aTHX_ st);
-                les_consumer_flush(aTHX_ st);
-            }
+            else
+                les_flush_framed_read_boundary(aTHX_ st);
             if (st->closed || LES_INPUT_PAUSED(st))
                 break;
             if (st->descriptor != descriptor)
@@ -146,10 +156,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             st->read_eagain_count++;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
-            else {
-                les_flush_message_batch(aTHX_ st);
-                les_consumer_flush(aTHX_ st);
-            }
+            else
+                les_flush_framed_read_boundary(aTHX_ st);
             if (!st->closed && !LES_INPUT_PAUSED(st)
                 && st->descriptor != descriptor)
                 continue;
@@ -162,10 +170,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             st->read_error_count++;
             if (descriptor->read_mode == LES_READ_DELIVER)
                 les_flush_raw_batch(aTHX_ st);
-            else {
-                les_flush_message_batch(aTHX_ st);
-                les_consumer_flush(aTHX_ st);
-            }
+            else
+                les_flush_framed_read_boundary(aTHX_ st);
             if (st->closed || LES_INPUT_PAUSED(st))
                 break;
             if (st->descriptor != descriptor)
@@ -175,10 +181,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         }
     }
 
-    if (!st->closed && st->descriptor->read_mode != LES_READ_DELIVER) {
-        les_flush_message_batch(aTHX_ st);
-        les_consumer_flush(aTHX_ st);
-    }
+    if (!st->closed && st->descriptor->read_mode != LES_READ_DELIVER)
+        les_flush_framed_read_boundary(aTHX_ st);
 
     LEAVE;
 

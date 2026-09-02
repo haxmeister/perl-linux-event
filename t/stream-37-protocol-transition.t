@@ -232,6 +232,30 @@ for my $case (
     close $peer;
 }
 
+{
+    package T::Transition::NoMessageSink;
+    use parent 'Linux::Event::Socket';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
+    my $state = { input => '' };
+    my ($loop, $stream, $peer) = stream_pair(
+        'T::Transition::Handshake', $state,
+    );
+    my $ok = eval {
+        $stream->transition_to('T::Transition::NoMessageSink');
+        1;
+    };
+    ok(!$ok, 'transition without a message sink is rejected');
+    like($@, qr/target readable framed Stream has no message sink/,
+        'transition rejects a readable framed target without delivery');
+    isa_ok($stream, 'T::Transition::Handshake',
+        'failed callback validation leaves source class active');
+    $stream->close;
+    close $peer;
+}
+
 # Output queue identity and accounting are connection state, not descriptor state.
 {
     my $state = {};

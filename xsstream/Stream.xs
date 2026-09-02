@@ -380,14 +380,20 @@ void
 _read_ready(state_obj)
     SV *state_obj
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     les_read_ready(aTHX_ les_state_from_sv(state_obj));
+    LEAVE;
 
 int
 _write(state_obj, bytes)
     SV *state_obj
     SV *bytes
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     RETVAL = les_write_submit(aTHX_ les_state_from_sv(state_obj), bytes);
+    LEAVE;
   OUTPUT:
     RETVAL
 
@@ -395,7 +401,10 @@ void
 _write_ready(state_obj)
     SV *state_obj
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     les_write_ready(aTHX_ les_state_from_sv(state_obj));
+    LEAVE;
 
 void
 _attach_transport(state_obj, provider, abi_version, ops_address, context_address)
@@ -518,8 +527,11 @@ _transition(state_obj, descriptor_obj, input = &PL_sv_undef)
     SV *descriptor_obj
     SV *input
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     les_transition_descriptor(aTHX_ les_state_from_sv(state_obj),
         descriptor_obj, input);
+    LEAVE;
 
 void
 _transition_ready(state_obj)
@@ -547,16 +559,20 @@ _close(state_obj, consumer_event = 0)
   PREINIT:
     les_xsstate_t *st;
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     st = les_state_from_sv(state_obj);
     if (!st->closed) {
-        if (consumer_event)
-            les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
         st->closed = 1;
         les_clear_write_queue(st);
         les_discard_message_batch(st);
         st->input_start = 0;
         st->input_len = 0;
+        les_consumer_flush_terminal(aTHX_ st);
+        if (consumer_event)
+            les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
     }
+    LEAVE;
 
 void
 _close_read(state_obj, consumer_event = 0)
@@ -565,16 +581,22 @@ _close_read(state_obj, consumer_event = 0)
   PREINIT:
     les_xsstate_t *st;
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     st = les_state_from_sv(state_obj);
     if (!st->closed && !st->read_eof) {
-        if (consumer_event)
-            les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
         st->read_eof = 1;
         st->read_paused = 1;
+        st->read_fd = -1;
+        st->plain_transport.read_fd = -1;
         les_discard_message_batch(st);
         st->input_start = 0;
         st->input_len = 0;
+        les_consumer_flush_terminal(aTHX_ st);
+        if (consumer_event)
+            les_consumer_event(aTHX_ st, (uint32_t)consumer_event, 0, "");
     }
+    LEAVE;
 
 void
 _close_write(state_obj)
@@ -583,8 +605,11 @@ _close_write(state_obj)
     les_xsstate_t *st;
   CODE:
     st = les_state_from_sv(state_obj);
-    if (!st->closed)
+    if (!st->closed) {
         les_clear_write_queue(st);
+        st->write_fd = -1;
+        st->plain_transport.write_fd = -1;
+    }
 
 int
 consumer_paused(state_obj)
@@ -598,7 +623,10 @@ int
 _consumer_resume(state_obj)
     SV *state_obj
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     RETVAL = les_consumer_resume(aTHX_ les_state_from_sv(state_obj));
+    LEAVE;
   OUTPUT:
     RETVAL
 
@@ -694,6 +722,8 @@ stats(state_obj)
         newSVuv(st->consumer_event_calls));
     hv_stores(hv, "consumer_flush_calls",
         newSVuv(st->consumer_flush_calls));
+    hv_stores(hv, "consumer_flush_pending",
+        newSViv(st->consumer_flush_pending ? 1 : 0));
     hv_stores(hv, "consumer_paused",
         newSViv(st->consumer_paused ? 1 : 0));
 
@@ -726,7 +756,10 @@ _test_consumer_arm(state_obj, callback = &PL_sv_undef)
     SV *state_obj
     SV *callback
   CODE:
+    ENTER;
+    SAVEFREESV(SvREFCNT_inc(state_obj));
     les_test_consumer_arm(aTHX_ les_state_from_sv(state_obj), callback);
+    LEAVE;
 
 void
 _test_consumer_cancel(state_obj)
