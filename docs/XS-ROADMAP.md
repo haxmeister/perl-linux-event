@@ -1,393 +1,292 @@
 # XS Roadmap
 
-The generic reactor and the first native Stream engine are now implemented in
-the same Linux::Event distribution. The guiding rule remains:
+Linux::Event is an XS-first Linux reactor with a Perl API. The guiding rule is:
 
 > Perl should receive semantic events; XS should absorb repetitive mechanical
 > events whenever doing so preserves a clean, general API.
 
-## Completed foundation
-
-- XS-first epoll loop and native watcher registry
-- direct native watcher dispatch
-- native Stream readable draining
-- reusable native framed-input storage
-- native immediate writes and segmented `writev()` queue draining
-- native backpressure byte accounting
-- optional hard native pending-output limits with typed terminal errors
-- native transport operation contract with a specialized plain-fd fast path
-- native Delimiter framing
-- native Fixed framing
-- native configurable LengthPrefix framing
-- native U32BE framing
-- native Netstring framing
-- native Varint framing
-- native DecimalLength framing
-- one immutable callback/framer/transport descriptor per Stream subclass
-- lightweight per-connection references to shared descriptors
-- exact-name declarative loading without a duplicate framer keyword registry
-- raw `on_data` fallback for application-specific protocols
-- in-place raw/framed protocol transitions that retain unread native input,
-  queued output, registration identity, lifecycle, and application state
-- one shared timerfd plus an indexed native deadline heap per Loop
-- cached subclass callbacks, fixed-rate recurrence, coalescing, and bounded
-  dispatch for public Timer objects
-- one shared signalfd, native fan-out registry, aggregate delivery, and exact
-  mask restoration for public Signal objects
-
-These are permanent regression targets. New work must not trade them away
-without benchmark evidence.
-
-## Completed - unified object lifecycle
-
-`Linux::Event::Loop` owns high-level Stream, Listener, Datagram, Timer, Signal,
-Wakeup, and Process objects through `add()`, while `watch()` creates an
-immediately attached opaque native registration. There is no public Watcher or
-IO base class. One logical object may own several internal epoll registrations.
-
-Timer uses that same attachment contract without adding Loop-specific factory
-methods. The abstract public Timer class caches `on_timer` once per subclass;
-active instances live entirely in the Loop's native scheduler.
-
-Signal uses the same attachment contract. Its abstract public class caches
-`on_signal` once per subclass, while each Loop's private native service owns
-the signalfd mask and supports multiple numbers per object plus multiple
-objects per number.
-
-`MySocket->connect()` keeps one Socket identity through outbound acquisition
-and optional TLS readiness. `Linux::Event::Listener` with a configured
-`stream_class`
-owns inbound acquisition and constructs accepted Sockets. The public hierarchy
-adds no generic Perl call to steady-state native readiness dispatch.
-
-## Completed - initial TLS provider implementation
-
-HTTPS, secure WebSocket, and Discord require TLS. TLS is a byte transport
-transform, not a message framer. The internal native operation boundary and
-plain provider now exist. The bundled `Linux::Event::TLS` provider attaches
-without adding OpenSSL policy or calls to the reactor core or the plain Stream
-path.
-
-The design must cover handshake readiness, encrypted and plaintext buffering,
-certificate/hostname errors, shutdown, deadlines, ALPN, and transitions such as
-STARTTLS without putting TLS policy into the reactor core. Initial client/server TLS,
-verification, ALPN, cross-direction readiness, and close notification landed
-with the 0.100_015 transport ABI. Version 0.100_016 added provider-owned
-deadline-watcher lifecycle and the original external Linux::Event::TLS 0.002
-added default handshake and shutdown deadlines, clean/unclean EOF
-classification, native counters, and a same-Stream plain-versus-TLS benchmark.
-Version 0.100_017 merged that provider into the main distribution without
-merging its OpenSSL implementation into the native Stream engine.
-
-The released attachment exact-versions the common ABI, retains provider
-lifetime, and implements cross-direction readiness (`SSL_read` wanting write
-and `SSL_write` wanting read). Established Stream deadlines now cover TLS after
-provider readiness. Richer shutdown diagnostics, provider bounded-buffer
-observability and live transport replacement remain follow-up work.
-
-## Completed - Stream connection layer
-
-`MySocket->connect()` owns the public outbound lifecycle. Its private
-`Linux::Event::Socket::_Connection` engine implements strict
-IPv4/IPv6/Unix/packed address modes, typed errors, silent cancellation, and a
-default connection deadline. Socket creation uses
-`SOCK_NONBLOCK | SOCK_CLOEXEC` atomically. Immediate results are deferred so
-network callbacks never run inside the constructor.
-
-The policy/state machine remains in cold Perl code. A small native timerfd
-helper supplies monotonic deadlines and deferred dispatch. Same-fd native
-replacement uses one `EPOLL_CTL_MOD` where an fd registration is replaced.
-
-## Completed - native Listener layer
-
-`Linux::Event::Listener` creates or adopts listening stream sockets and
-constructs a configured Socket subclass for each accepted connection. A small
-private native extension drains `accept4()` with atomic nonblocking and
-close-on-exec flags and retains packed peer addresses for lazy conversion.
-
-The default level-triggered fairness cap is safe because epoll reports a
-remaining backlog again. Edge-triggered listeners require an unlimited drain.
-No temporary accepted-socket registration is created before Socket attachment.
-Resource exhaustion pauses readiness before typed error delivery.
-
-## Completed - asynchronous Resolver and Happy Eyeballs
-
-Hostname resolution is mechanically separate from Socket and Datagram socket
-policy in the private `Linux::Event::_Resolver` XS extension. Each Loop lazily
-owns two native resolver workers and one eventfd completion queue. Workers
-never enter Perl. The normal raw Loop watch path drains complete candidate
-collections, cancelled requests discard late results, IPv6/IPv4 attempts are
-staggered by 250 ms, and first-success
-ownership closes all losers. Literal, Unix, and packed addresses bypass the
-resolver. Dedicated integration, cancellation, ordering, and microbenchmark
-coverage protects the boundary.
-
-## Completed - signalfd signal handling
-
-`Linux::Event::Signal` provides synchronous Loop-thread delivery without Perl
-signal handlers. One lazy signalfd and native subscription registry per Loop
-drain and aggregate records before fan-out. Cancellation is safe during
-callbacks, last-subscriber removal restores only mask entries Linux::Event
-changed, and one signal number has one owning Loop per process. Resolver
-workers block signals independently so native DNS cannot intercept them.
-
-## Completed - established Stream deadlines
-
-Stream subclasses cache idle, read, and write inactivity defaults, while each
-instance may override them and own one explicit overall-operation deadline.
-Established policy begins only after plain or TLS readiness and reports typed
-timeout errors through the ordinary Stream close lifecycle.
-
-At most one private Timer per Stream represents the earliest condition in the
-Loop's existing timerfd/native heap. XS records successful transport activity
-only when inactivity policy is enabled. Ordinary Streams perform no timestamp
-syscalls, and enabled I/O progress does not enter Perl merely to move a heap
-entry. Plain, TLS, transition, pause/resume, EOF, queued-write, and regression
-benchmark coverage protect the contract.
-
-## Completed - eventfd Wakeup boundary
-
-`Linux::Event::Wakeup` exposes one subclass-defined eventfd notification
-object. Foreign native threads, fork children, and cloned ithread handles may
-increment its counter without entering the Loop interpreter. The Loop drains
-one counter value per turn and delivers one semantic `on_wakeup` callback.
-
-Wakeup deliberately carries no Perl payload and is not a coderef posting
-queue. Applications publish data through their own thread-safe queue or IPC
-channel before signalling. Thread clones own duplicate descriptors, while
-callback state, Loop ownership, and application data remain confined to the
-creating interpreter.
-
-## Completed - production socket configuration
-
-Socket class policy and constructor overrides cover local address binding,
-`TCP_NODELAY`, keepalive tuning, `TCP_USER_TIMEOUT`, buffer sizing, and Linux
-interface binding. Built-in policy is applied to every outbound candidate and
-to accepted or adopted sockets before transport attachment. A cached
-`configure_socket` hook follows built-in policy for advanced cold-path setup.
-
-Public timeout values use seconds. Options with meaningful Linux live behavior
-also have getters/setters that return the effective kernel value. Failures are
-structured `socket_configuration` Errors; incompatible address families never
-fall through to an unconfigured candidate.
-
-## Completed - packet-preserving Datagram layer
-
-`Linux::Event::Datagram` provides connected and unconnected UDP plus filesystem
-Unix datagrams. Native `recvmsg(MSG_TRUNC)` batching retains packet boundaries,
-original packet sizes, and packed peers. Native `send`/`sendto` preserves whole
-packets through bounded output queues, soft backpressure, and hard byte or
-packet limits. Connected hostname mode uses the private asynchronous resolver
-with datagram hints.
-
-Ownership, detach, Unix-path cleanup, source-specific option validation,
-truncation reporting, and Loop-thread callback ordering are part of the public
-contract.
-
-## Completed - pidfd Process layer
-
-`Linux::Event::Process` uses `posix_spawnp`, pidfd readiness,
-`waitid(P_PIDFD)`, and `pidfd_send_signal`. One object owns lifecycle, decoded
-exit status, and optional asynchronous stdin/stdout/stderr pipes. Output is
-drained before `on_exit`; stdin writes suppress SIGPIPE without changing
-process-wide signal policy.
-
-Detached spawn specifications are side-effect free until Loop attachment. No
-Perl code runs in a post-fork child, caller filehandles stay caller-owned, and
-partial setup failure kills and reaps a newly spawned child before releasing
-resources.
-
-The essential completion surface is complete in version 0.101. The remaining
-items below are optional expansion and evidence-driven optimization, not
-release blockers.
-
-## Permanent boundary - asynchronous abstractions
-
-Future, Promise, and async/await runtimes are not part of the Linux::Event core
-roadmap. They belong in independent distributions built on the public reactor
-and object APIs. Core must not acquire Future-specific return values,
-continuation scheduling, callback setters, hidden microtask policy, or an
-arbitrary coderef posting queue.
-
-Linux::Event must nevertheless remain sufficient for a third-party adapter to
-provide those abstractions. The supported primitive surface includes:
-
-- persistent and single-iteration Loop driving;
-- non-inline next-turn delivery through a zero-delay Timer;
-- explicit object cancellation, deadlines, and structured errors;
-- semantic Stream, Listener, Datagram, Process, Timer, and Signal callbacks;
-- output-drain and terminal lifecycle notifications; and
-- Wakeup notification for work published through an application-owned safe
-  cross-thread or cross-process channel.
-
-The cached subclass-callback model is intentional. An adapter may provide its
-own concrete subclasses and keep pending operations in application state; core
-will not add per-instance callback mutation merely to imitate another runtime.
-
-A new general-purpose primitive should be considered only when an external
-proof of concept demonstrates that an asynchronous abstraction cannot be
-implemented safely with the existing API. Any such addition must solve a
-reactor-level ownership, cancellation, ordering, or wakeup problem independent
-of Futures and async/await.
-
-## Priority 1 - General native framing families
-
-Expand the built-in framing catalog while keeping one rule: built-in boundary
-detection is native, while application-specific protocols parse raw `on_data`
-bytes. Do not reintroduce a second arbitrary framer-object contract.
-
-Near-term framing families include:
-
-- a configurable `HeaderLength` family with header size, field offset/width,
-  byte order, length adjustment, header inclusion, and frame limit
-- additional standardized variable-integer length prefixes
-- escaped/stuffed serial framing such as SLIP and COBS
-- other general wire-framing families that can be expressed without embedding
-  application protocol semantics
-
-Keep protocol-specific state machines separate when the work is more than
-message-boundary detection. A new general family needs a declarative module,
-corresponding XS parser mode, wire-contract tests, and a native-framer benchmark
-row. Its exact package name becomes the declaration name automatically.
-
-## Priority 2 - Stream watcher-state transitions (measured)
-
-The watcher-state boundary has now been profiled before any ownership change.
-`bench/run-stream-watcher-state-bench.pl` separates kernel `epoll_ctl` cost from
-Stream coordination and covers lifecycle, forced-EAGAIN, close, half-close,
-handshake, and TLS shutdown transitions.
-
-The first profile found that ordinary Streams rebuilt an empty deadline
-candidate set on pause, resume, write-queue drain, and EOF. Guarding that work
-by the relevant read or write timeout reduced median pause/resume CPU from
-3.559 to 1.533 microseconds per cycle and forced-EAGAIN queue/drain CPU from
-18.854 to 18.122 microseconds per cycle on the measurement host. The public API
-and deadline behavior did not change.
-
-Do not add the proposed cross-extension watcher ABI now. The two required
-`EPOLL_CTL_MOD` calls consume about 0.48 microseconds of an 18.12-microsecond
-forced-EAGAIN cycle and cannot be removed while retaining level-triggered
-correctness. Initial registration's one `MOD` is below one percent of Stream
-attachment CPU, while plain close and half-close expose no repeated interest
-transition. Loop remains the sole epoll owner and Stream retains an opaque
-registration. Reopen this item only if a representative application profile
-shows the remaining boundary is material.
-
-## Priority 3 - Callback coalescing/batching
-
-This item has now been implemented and measured without changing the ordinary
-callback contract. Both class options default to zero and the zero modes do not
-allocate batch containers:
-
-- raw `read_batch_bytes` combines successful reads up to a native byte bound
-  and still flushes at EAGAIN, EOF, or error;
-- framed `message_batch_size` explicitly replaces `on_message` with
-  `on_messages($stream, $messages)` and flushes without waiting for later input;
-- pause, close, and transition act at the selected batch boundary.
-
-The August 28, 2026 pipelined 64-byte sweep used 1,000,000 messages, 4 KiB
-native reads, one warmup, and five measured repeats. The focused 16/32/64
-comparison produced these medians on the measurement host:
-
-| Transport | Ordinary | Batch 16 | Batch 32 | Batch 64 |
-|---|---:|---:|---:|---:|
-| AF_UNIX | 129.7 MiB/s | 263.4 MiB/s | 276.2 MiB/s | 305.6 MiB/s |
-| TCP loopback | 126.8 MiB/s | 227.0 MiB/s | 282.1 MiB/s | 311.3 MiB/s |
-
-Batch 32 removed 96.9 percent of message-callback entries and provided the most
-balanced cross-transport throughput/latency point. Batch 64 is available for
-throughput-oriented protocols; protocols with message-by-message transition
-semantics retain ordinary delivery. Batch size one is intentionally valid as a
-contract/control case but was slower than `on_message` because it constructs an
-array without amortizing a callback.
-
-With Stream's normal 64 KiB read size, a 64 KiB raw batch provided no material
-benefit. A 256 KiB raw aggregate reduced median TCP callback count by 74.1
-percent and improved median payload throughput by 18.4 percent; a 1 MiB bound
-improved it by 24.1 percent but increases retained memory and pause granularity.
-Raw coalescing therefore remains explicit and has no nonzero recommended
-default.
-
-The saturated-producer fairness diagnostic found no new batching regression:
-batching generally reached EAGAIN sooner and reduced probe latency. It also
-made an older policy visible: an indefinitely readable Stream can retain one
-readiness turn until EAGAIN and delay unrelated descriptors. Any future read
-budget must be evaluated as a separate fairness change rather than hidden in
-the batching API.
-
-## Priority 4 - Native connect attempt completion
-
-Profile before moving the remaining attempt state machine below Perl. If
-high-churn connection workloads justify it, native code may:
-
-- handle EINPROGRESS
-- wait for writable readiness
-- check `SO_ERROR`
-- coordinate concurrent attempt readiness
-- cancel timeout state
-- notify Perl once with success or failure
-
-The public Socket connection contract must not change merely to eliminate a
-few cold Perl calls.
-
-The 2026-08-29 experiment moved the readiness-time `SO_ERROR` probe into native
-Loop dispatch while leaving candidate policy and Stream handoff unchanged. A
-balanced 600,000-connection loopback TCP comparison at concurrency 10 measured
-aggregate medians of 10,614.7 connections/second for the Perl probe and
-10,741.6 for the native probe. That apparent 1.2% advantage did not survive
-paired analysis: the repeat-pair median was -0.5%, with run variance much
-larger than the difference. The special watcher path was therefore removed.
-
-Do not revisit native completion merely to relocate `getsockopt(SO_ERROR)`.
-A future experiment needs a workload dominated by multiple simultaneous
-Happy Eyeballs attempts, failed candidates, or deadline cancellation, and must
-move that coordination as one unit. Ordinary successful single-candidate
-connection completion remains in Perl.
-
-## Priority 5 - Additional Linux fd drain helpers
-
-The descriptor-family audit found Timer, Signal, Wakeup, Resolver, Listener,
-Datagram, Stream, and pidfd mechanics already native. Connection and TLS
-timerfds produce single cold deadline events, while raw watchers have
-application-defined semantics. Only Process stdout and stderr pipes retained a
-repetitive mechanical Perl read loop.
-
-The 2026-08-29 experiment compared that loop with a private Process XS helper.
-Pre-spawned children waited behind a start gate so timed intervals excluded
-spawn and watcher setup. Balanced seven-repeat matrices covered stdout,
-stderr, and both pipes with 1, 8, and 32 workers. Independent 4 KiB matrices
-improved by paired medians of 27.8 and 25.1 percent; 8, 16, and 32 KiB rows
-improved by 19.4, 5.3, and 3.3 percent. Two default 64 KiB matrices were neutral
-overall, with a combined 126-pair median of 0.2 percent. Parent CPU fell in
-every 4 KiB case. A saturated recurring-Timer probe found no fairness
-regression at either one or 64 reads per descriptor turn.
-
-The helper is retained as a private Process implementation detail. It invokes
-the existing callback once per native read and preserves `read_size`,
-`max_reads_per_tick`, EOF ordering, and Perl error policy. It does not add a
-generic Loop drain API or aggregate application-visible output chunks.
-
-## Priority 6 - Buffer representation experiments
+The roadmap now has a second, equally important rule:
+
+> Native code must earn its complexity. Keep repeated data-plane work native;
+> prefer Perl for cold policy, lifecycle, validation, ownership orchestration,
+> and presentation when paired benchmarks show no meaningful cost.
+
+`docs/STREAM-REVIEW-FOLLOWUPS.md` defines the current Stream correctness work.
+`docs/xs-reduction-roadmap.md` defines the deliberate program for shrinking the
+native Stream surface after that correctness work is complete.
+
+## Permanent benchmark rule - payload sizes through 200 KB
+
+Tiny-message benchmarks are diagnostic tools, not sufficient evidence for an
+architectural or performance decision. They expose fixed callback, dispatch,
+and Perl/XS boundary overhead, but Linux::Event has also found important
+performance differences only after testing payload sizes representative of web,
+API, and other application traffic.
+
+Any development work that can affect Stream payload processing, framing,
+buffering, write queues, callback boundaries, native-consumer delivery,
+transport I/O, copying, batching, or fairness must include payload sizes through
+approximately 200 KB.
+
+Standard sweeps:
+
+### Quick development sweep
+
+- 64 B
+- 4 KB
+- 32 KB
+- 200 KB
+
+### Full architectural / merge sweep
+
+- 64 B
+- 256 B
+- 1 KB
+- 4 KB
+- 16 KB
+- 32 KB
+- 64 KB
+- 128 KB
+- 200 KB
+
+A protocol-specific benchmark may substitute a nearby natural size, but it must
+still cover tiny, medium, read-size-adjacent, and large payloads.
+
+For medium and large payloads report MiB/s and CPU per byte or per MiB in
+addition to messages/s. Also report reads/message, writes/message,
+callbacks/message, p50/p99 latency, and buffering/high-water behavior whenever
+the change can affect them.
+
+Baseline and candidate must be measured on the same host, Perl build,
+compiler/build flags, power/load conditions, and benchmark configuration.
+Historical absolute numbers remain context, not acceptance thresholds.
+
+## Completed native foundation - preserve unless evidence says otherwise
+
+The performance-critical foundation includes:
+
+- XS-first epoll loop and native watcher registry;
+- direct native watcher dispatch and batched epoll processing;
+- native Stream readable draining;
+- reusable native framed-input storage;
+- native immediate writes and segmented `writev()` queue draining;
+- native backpressure accounting and output limits;
+- specialized plain transport I/O plus the native TLS/OpenSSL provider path;
+- native Delimiter, Fixed, LengthPrefix, U32BE, Netstring, Varint, and
+  DecimalLength framing;
+- native callback/message batching where explicitly enabled;
+- immutable per-class callback/framer/transport descriptors with lightweight
+  per-connection references;
+- protocol transitions that preserve unread native input and queued output;
+- native Timer/timerfd scheduling, Signal/signalfd fan-out, Wakeup/eventfd,
+  Resolver workers/completion queue, Listener accept drain, Datagram packet
+  mechanics, pidfd Process completion, and the Process pipe-drain helper where
+  measurement justified it.
+
+These are permanent regression targets, but "completed" does not mean every
+piece of surrounding control-plane code must remain in XS.
+
+## Permanent architectural boundaries
+
+### Reactor hot path
+
+Keep native by default:
+
+- epoll readiness lookup and dispatch;
+- watcher active/mask checks;
+- repeated read/write syscalls and EAGAIN/EINTR loops;
+- native buffers and frame scanning;
+- same-drain frame processing and batching;
+- partial-write/write-queue mechanics;
+- TLS/OpenSSL operations driven repeatedly by readiness;
+- native-consumer per-message delivery used by `Linux::Event::Async`.
+
+### Perl control plane
+
+Prefer Perl by default for:
+
+- class/configuration policy;
+- validation and normalization;
+- construction/failure orchestration;
+- connection candidate policy;
+- lifecycle/error policy;
+- teardown ownership decisions;
+- timeout policy and user-facing errors;
+- stats/introspection presentation;
+- protocol/application semantics above message framing.
+
+### Async boundary
+
+Future, Promise, and async/await policy remain outside Linux::Event core and
+belong in separate distributions such as `Linux::Event::Async`.
+
+Core does own the correctness, lifetime, reentrancy, and versioning contract of
+its generic native-consumer ABI. That is a reactor extension boundary, not
+Future-specific policy.
+
+## Priority 0 - stabilize Stream/native-consumer correctness
+
+Complete `docs/STREAM-REVIEW-FOLLOWUPS.md` before further XS expansion or
+reduction.
+
+Current blockers include:
+
+- exception-safe callback-capable teardown;
+- a coherent exported consumer host/provider lifetime contract;
+- generic Stream construction-failure ownership cleanup;
+- old-protocol consumer flush ordering across descriptor transitions;
+- coherent consumer message/flush/terminal status semantics.
+
+Do not simplify or move the consumer ABI boundary until its ownership contract
+is sound and cross-tested with `Linux::Event::Async`.
+
+## Priority 1 - cold/control-plane XS reduction
+
+After Priority 0, execute `docs/xs-reduction-roadmap.md` one independent,
+benchmarked extraction at a time.
+
+Initial targets:
+
+1. descriptor declaration/spec validation and normalization;
+2. stats result formatting;
+3. construction/failure policy;
+4. transition eligibility/policy;
+5. close/error/lifecycle orchestration;
+6. transport setup/shutdown policy.
+
+The goal is a smaller native core organized around operations that actually
+need to be native, not merely fewer files.
+
+## Priority 2 - consolidate the remaining native Stream data plane
+
+After cold policy extraction, organize the native Stream implementation around:
+
+```text
+epoll readiness
+  -> transport read/write
+  -> native buffer
+  -> framer
+  -> native message/batch delivery
+  -> write queue
+```
+
+Reduce duplicated ownership and callback-capable state-machine logic. Do not
+move hot work into Perl merely to reduce source lines.
+
+## Priority 3 - preserve and extend realistic benchmarking
+
+Existing harnesses remain useful, but any harness used to justify a Stream
+architecture decision must obey the permanent payload rule through 200 KB.
+
+The performance-regression suite should remain the release-level same-contract
+gate. Specialized diagnostics may isolate callbacks, framing, lifecycle,
+watcher state, or transport mechanics, but final decisions require an
+end-to-end Stream workload as well.
+
+Historical 64-byte results must be labelled for what they are: stress tests of
+fixed per-message overhead. They must not be generalized to realistic medium
+or large messages without a payload sweep.
+
+## Priority 4 - watcher-state transitions: measured, leave closed
+
+The watcher-state boundary was profiled before adding a cross-extension watcher
+ABI. The measured `EPOLL_CTL_MOD` portion of forced-EAGAIN cycles was small
+relative to overall Stream coordination cost, and ordinary attachment/close did
+not show a compelling repeated transition problem.
+
+Do not add a cross-extension watcher ABI unless a representative application
+profile shows the remaining boundary is material.
+
+## Priority 5 - callback coalescing/batching: implemented, keep native
+
+Historical pipelined 64-byte tests showed large gains from explicit framed
+batching and callback-count reduction. Those tests prove that callback
+amortization can matter; they do not establish the best batch behavior for
+larger application messages.
+
+Keep batching mechanics native, but evaluate any future tuning or default
+change across the standard payload sweep through 200 KB and include fairness
+and latency measurements.
+
+## Priority 6 - native connect completion: closed absent new evidence
+
+The 2026-08-29 experiment moving the readiness-time `SO_ERROR` probe native did
+not produce a reproducible win: the small aggregate advantage disappeared in
+paired analysis and the special path was removed.
+
+Ordinary successful single-candidate connection completion should remain in
+Perl. Reopen only for a workload dominated by multiple simultaneous Happy
+Eyeballs attempts, failed candidates, or deadline cancellation, and move that
+coordination as one measured unit rather than relocating one syscall.
+
+## Priority 7 - Linux fd drain helpers: evidence-driven only
+
+The Process stdout/stderr experiment is a model for this boundary. Native drain
+loops produced meaningful gains at small reads, while the normal 64 KiB case
+was essentially neutral overall. The retained helper therefore moves only the
+repetitive mechanical drain and leaves Process policy in Perl.
+
+Do not add generic drain APIs or move semantic callback policy native merely
+because a syscall loop can be written in C.
+
+## Priority 8 - buffer representation experiments
 
 Only if profiling justifies them:
 
-- sliding-buffer refinements
-- ring-buffer alternatives
-- allocation reuse or slabs
+- sliding-buffer refinements;
+- ring-buffer alternatives;
+- allocation reuse or slabs.
 
-Do not optimize allocation speculatively.
+Native buffering itself is protected hot-path territory. Do not optimize
+allocation speculatively, and benchmark across the full payload matrix.
 
-## Priority 7 - Protocol acceleration above Stream
+## Priority 9 - additional native framing families, demand-driven
 
-After the generic framing catalog is broad, consider reusable protocol engines
-such as HTTP or WebSocket parsing. Application semantics remain Perl even when
-mechanical parsing moves native.
+Existing native framing remains a protected performance feature. Expanding the
+catalog is no longer the first active priority because every new native parser
+increases maintenance surface.
 
-## Benchmark policy
+Potential future general families include:
 
-Keep the reactor comparison as the low-level regression standard. Keep Stream
-transport/output-limit, framing, protocol-transition, and
-lifecycle/retained-memory benchmarks separate.
-Cross-runtime Stream
-benchmarks compare high-level facilities and must continue to report exact
-fairness contracts, server CPU per message, throughput, latency, and memory.
+- configurable `HeaderLength`;
+- additional standardized variable-integer prefixes;
+- SLIP/COBS or other broadly useful escaped/stuffed framing.
+
+Add a family only for a demonstrated general-purpose use case. Require wire
+contract tests and the full payload benchmark matrix, not a tiny-message result
+alone.
+
+## Priority 10 - protocol acceleration above Stream, demand-driven
+
+Reusable mechanical HTTP/WebSocket or similar parsing may eventually justify a
+native engine. Application semantics remain Perl even when mechanical parsing
+is native.
+
+Do this only after the Stream native boundary has been reduced and stabilized;
+do not grow protocol-specific C while simultaneously trying to understand and
+shrink the Stream core.
+
+## Benchmark interpretation rules
+
+1. No architectural conclusion from one payload size.
+2. No architectural conclusion from messages/s alone when payload size is
+   medium or large.
+3. Tiny-message tests measure fixed event/callback/boundary overhead.
+4. Medium/large tests measure copying, buffering, syscall amortization,
+   multi-read/multi-write behavior, and byte throughput.
+5. Use paired baseline/candidate runs under identical conditions.
+6. Preserve correctness and fairness metrics alongside throughput.
+7. A small cold-path regression can be acceptable for a substantial
+   correctness/maintenance win only when established data-plane performance is
+   unchanged and the cost is explicitly documented.
+
+## Current execution order
+
+1. Finish Stream/native-consumer correctness and lifetime stabilization.
+2. Capture a baseline including the full 64 B -> 200 KB payload sweep.
+3. Execute cold/control-plane XS reduction experiments independently.
+4. Consolidate the remaining native Stream data plane.
+5. Reconsider medium-risk native code only after the boundary is measured and
+   stable.
+6. Reopen buffer, framing-family, or protocol-acceleration work only when
+   profiling or a real application requirement justifies it.
