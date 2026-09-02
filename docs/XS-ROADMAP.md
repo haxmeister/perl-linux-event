@@ -279,6 +279,10 @@ shrink the Stream core.
 7. A small cold-path regression can be acceptable for a substantial
    correctness/maintenance win only when established data-plane performance is
    unchanged and the cost is explicitly documented.
+8. Every benchmark-driven decision must be appended to
+   `bench/BENCHMARK-DECISIONS.md`, and the actual machine-readable evidence used
+   to make the decision must be committed under `bench/decisions/<decision-id>/`.
+   Rejected and neutral experiments are retained, not discarded.
 
 ## Current execution order
 
