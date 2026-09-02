@@ -197,8 +197,6 @@ extern const les_transport_ops_t les_plain_transport_ops;
 
 les_xsstate_t *les_state_from_sv(SV *sv);
 les_descriptor_t *les_descriptor_from_sv(SV *sv);
-void les_require_read_sink(pTHX_ const les_descriptor_t *descriptor,
-    int read_fd, const char *raw_error, const char *framed_error);
 SV *les_state_stats_snapshot(pTHX_ les_xsstate_t *st);
 void les_state_destroy(pTHX_ les_xsstate_t *st);
 SV *les_store_cb(SV *cb, const char *name);

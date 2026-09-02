@@ -538,7 +538,7 @@ _activity_snapshot(state_obj)
     PUSHs(sv_2mortal(newSVnv((NV)st->last_write_ns / 1000000000.0)));
 
 void
-_transition(state_obj, descriptor_obj, input = &PL_sv_undef)
+_transition_validated(state_obj, descriptor_obj, input = &PL_sv_undef)
     SV *state_obj
     SV *descriptor_obj
     SV *input

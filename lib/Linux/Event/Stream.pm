@@ -202,6 +202,19 @@ sub _watch_write_terminal_xs_cb ($state) {
     $self->_on_write_terminal_ready;
 }
 
+sub _require_read_sink ($descriptor, $readable, $raw_error, $framed_error) {
+    return if !$readable;
+    if (!$descriptor->{framer}) {
+        croak $raw_error if !$descriptor->{callbacks}{on_data};
+        return;
+    }
+    croak $framed_error
+        if !$descriptor->{consumer}
+        && !$descriptor->{options}{message_batch_size}
+        && !$descriptor->{callbacks}{on_message};
+    return;
+}
+
 sub new ($class, %opt) {
     croak 'new(): must be called as a class method' if ref $class;
     my $loop = delete $opt{loop};
@@ -318,16 +331,13 @@ sub _prepare_handles ($self) {
     my $descriptor = $self->{descriptor};
     my $read_fd = defined($read_fh) ? fileno($read_fh) : -1;
     my $write_fd = defined($write_fh) ? fileno($write_fh) : -1;
-    if ($read_fd >= 0) {
-        if (!$descriptor->{framer}) {
-            croak 'readable raw Stream requires on_data callback'
-                if !$descriptor->{callbacks}{on_data};
-        } elsif (!$descriptor->{consumer}
-            && !$descriptor->{options}{message_batch_size}
-            && !$descriptor->{callbacks}{on_message}) {
-            croak 'readable framed Stream requires on_message or a native consumer';
-        }
-    } elsif ($descriptor->{consumer}) {
+    _require_read_sink(
+        $descriptor,
+        $read_fd >= 0,
+        'readable raw Stream requires on_data callback',
+        'readable framed Stream requires on_message or a native consumer',
+    );
+    if ($read_fd < 0 && $descriptor->{consumer}) {
         croak 'native Stream consumer requires a readable side';
     }
     my $xs_state = Linux::Event::Stream::XSState->_new_validated(
@@ -907,11 +917,35 @@ sub transition_to ($self, $class, %opt) {
     my $descriptor = Linux::Event::Stream::_Descriptor::for_class($class);
     my $xs_state = $self->{xs_state}
         // croak 'transition_to(): stream has no native state';
+    my $source_consumer = $self->{descriptor}{consumer};
+    my $target_consumer = $descriptor->{consumer};
+    my $source_ops = $source_consumer
+        ? $source_consumer->{operations_address} : 0;
+    my $target_ops = $target_consumer
+        ? $target_consumer->{operations_address} : 0;
+    croak 'transition_to(): cannot change native consumer provider'
+        if $source_ops != $target_ops;
+    _require_read_sink(
+        $descriptor,
+        $self->{read_capable} && !$self->{read_closed} && !$self->{read_eof},
+        'transition_to(): target readable raw Stream has no on_data callback',
+        'transition_to(): target readable framed Stream has no message sink',
+    );
+
+    my $input_bytes = defined($input) ? length($input) : 0;
+    if ($descriptor->{framer} && $descriptor->{options}{max_buffer}) {
+        my $preserved = $xs_state->stats->{input_buffered_bytes} + $input_bytes;
+        croak 'transition_to(): preserved input exceeds target max_buffer'
+            if $preserved > $descriptor->{options}{max_buffer};
+    }
+    my $pending_limit = $descriptor->{options}{max_pending_bytes};
+    croak 'transition_to(): queued output exceeds target max_pending_bytes'
+        if $pending_limit && $xs_state->pending_bytes > $pending_limit;
 
     # XS validates and swaps the immutable descriptor without invoking a
     # callback. Update the Perl object's type before buffered input is allowed
     # to enter the new callback set.
-    $xs_state->_transition($descriptor->{xs}, $input);
+    $xs_state->_transition_validated($descriptor->{xs}, $input);
     $self->{descriptor} = $descriptor;
     bless $self, $class;
     $self->_apply_transition_timeouts($descriptor);

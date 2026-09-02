@@ -62,6 +62,8 @@ Unreleased
       public stats hash in Perl.
     - Centralize Stream construction failure cleanup and readable-side policy
       in Perl while retaining a small defensive native state allocator.
+    - Move protocol-transition eligibility and target buffer/output-limit
+      policy to Perl while retaining atomic native descriptor/buffer swaps.
     - Clean up partially constructed Sockets when configure_socket fails,
       retain explicit transport providers for outbound connect, and reject
       socket policy methods placed on a generic Stream instead of silently

@@ -28,27 +28,11 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     next_descriptor = les_descriptor_from_sv(descriptor_obj);
     if (!next_descriptor)
         croak("transition_to(): target descriptor is closed");
-    if (next_descriptor == st->descriptor)
-        croak("transition_to(): target Stream type is already active");
-    if (next_descriptor->consumer_ops != st->descriptor->consumer_ops)
-        croak("transition_to(): cannot change native consumer provider");
-    les_require_read_sink(aTHX_ next_descriptor, st->read_fd,
-        "transition_to(): target readable raw Stream has no on_data callback",
-        "transition_to(): target readable framed Stream has no message sink");
-
     if (input_sv && SvOK(input_sv))
         injected = SvPVbyte(input_sv, injected_len);
     if ((size_t)injected_len > (size_t)-1 - st->input_len)
         croak("transition_to(): input size overflow");
     total_input = st->input_len + (size_t)injected_len;
-
-    if (next_descriptor->read_mode != LES_READ_DELIVER
-        && next_descriptor->max_buffer
-        && (UV)total_input > next_descriptor->max_buffer)
-        croak("transition_to(): preserved input exceeds target max_buffer");
-    if (next_descriptor->max_pending_bytes
-        && st->pending_bytes > next_descriptor->max_pending_bytes)
-        croak("transition_to(): queued output exceeds target max_pending_bytes");
 
     /* Allocate every replacement before mutating live state. A failed
      * transition therefore leaves the old descriptor and buffers intact. */
