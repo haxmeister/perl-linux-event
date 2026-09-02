@@ -1,0 +1,29 @@
+{
+  "decision_id": "BD-2026-08-29-002",
+  "experiment": "native Process stdout/stderr pipe draining",
+  "date": "2026-08-29",
+  "decision": "KEEP",
+  "evidence_level": "recovered_summary",
+  "raw_per_repeat_output_available": false,
+  "historical_source": "XS roadmap retained measurements",
+  "workload": {
+    "child_setup": "pre-spawned behind start gate",
+    "streams": ["stdout", "stderr", "both"],
+    "workers": [1, 8, 32],
+    "measured_repeats": 7,
+    "comparison": ["Perl_drain_loop", "native_private_drain_helper"]
+  },
+  "paired_improvement_percent": {
+    "read_4KiB_matrix_1": 27.8,
+    "read_4KiB_matrix_2": 25.1,
+    "read_8KiB": 19.4,
+    "read_16KiB": 5.3,
+    "read_32KiB": 3.3,
+    "read_64KiB_combined_126_pair_median": 0.2
+  },
+  "other_results": {
+    "parent_cpu": "fell in every reported 4 KiB case",
+    "fairness": "no recurring-Timer fairness regression at either one or 64 reads per descriptor turn"
+  },
+  "decision_reason": "The helper materially improved small repetitive reads while remaining effectively neutral at the normal 64 KiB read size, and it moved only the mechanical drain loop into XS while leaving Process policy in Perl."
+}
