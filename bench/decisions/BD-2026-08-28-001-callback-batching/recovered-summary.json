@@ -5,7 +5,28 @@
   "decision": "KEEP",
   "evidence_level": "recovered_summary",
   "raw_per_repeat_output_available": false,
-  "historical_source": "XS roadmap retained measurements",
+  "historical_source": "XS roadmap retained measurements and callback-batching benchmark design",
+  "effective_config": {
+    "delivery_mode": "framed",
+    "framer": {
+      "family": "Delimiter",
+      "delimiter_hex": "0a",
+      "note": "newline-delimited framed mode"
+    },
+    "transport": ["AF_UNIX", "TCP_loopback"],
+    "payload_bytes": 64,
+    "wire_bytes_per_message": 65,
+    "read_size": 4096,
+    "message_batch_sizes": [0, 16, 32, 64],
+    "read_batch_bytes": 0,
+    "read_budget_bytes": "unknown",
+    "max_buffer_bytes": "unknown",
+    "write_queue_limits": "unknown",
+    "trigger_mode": "unknown",
+    "socket_buffer_sizes": "unknown",
+    "tcp_nodelay": "unknown",
+    "exact_historical_benchmark_commit": "unknown"
+  },
   "workload": {
     "messages": 1000000,
     "payload_bytes": 64,
@@ -29,5 +50,5 @@
     }
   },
   "batch_32_message_callback_reduction_percent": 96.9,
-  "caveat": "This historical experiment used only 64-byte messages. It predates the required payload sweep through approximately 200 KB and cannot establish a universal batch-size default."
+  "caveat": "This historical experiment used only 64-byte messages and predates both the required payload sweep through approximately 200 KB and the effective-configuration retention policy. Unknown settings are not reconstructed from current defaults."
 }
