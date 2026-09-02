@@ -106,6 +106,7 @@ not part of the CPAN distribution.
 | BD-2026-08-29-001 | 2026-08-29 | Native connect `SO_ERROR` completion | REJECT |
 | BD-2026-08-29-002 | 2026-08-29 | Native Process pipe draining | KEEP |
 | BD-2026-09-01-001 | 2026-09-01 | Native-consumer host lifetime leases | KEEP |
+| BD-2026-09-01-002 | 2026-09-01 | Native-consumer status reconciliation | KEEP |
 
 ---
 
@@ -292,3 +293,57 @@ payload sweep.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-01-001-consumer-host-lifetime/`
+
+---
+
+## BD-2026-09-01-002 - Native-consumer status reconciliation
+
+**Decision:** KEEP
+
+**Hypothesis:** Separating provider status validation from lifecycle
+application, sharing ordinary/terminal pending-flush mechanics, and factoring
+buffered-input re-drive eligibility would preserve hot-path performance while
+fixing post-terminal validation.
+
+**Workload:** The same real `Linux::Event::Async::Stream` delimiter-consumer
+harness and resolved configuration used by BD-2026-09-01-001: AF_UNIX
+socketpair, gated producer, one receiver, one callback per message, 256 KiB
+read size/budget, Async 64-message/256-KiB prefetch limits, OS-default socket
+options, one warmup, five measured repeats, and the full nine-size sweep from
+64 B through 200,000 B. Both core builds used the exact same lifetime-safe
+Async provider binary.
+
+**Measured medians:**
+
+| Payload | Baseline msg/s | Candidate msg/s | Change | Baseline CPU ns/B | Candidate CPU ns/B | Baseline reads/msg | Candidate reads/msg |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 64 B | 1,911,350 | 1,907,018 | -0.2% | 8.047 | 8.125 | 0.0005 | 0.0005 |
+| 256 B | 1,767,403 | 1,843,969 | +4.3% | 2.207 | 2.109 | 0.0020 | 0.0020 |
+| 1 KiB | 1,448,282 | 1,365,235 | -5.7% | 0.664 | 0.713 | 0.0088 | 0.0086 |
+| 4 KiB | 986,481 | 707,962 | -28.2% | 0.244 | 0.288 | 0.0317 | 0.0858 |
+| 16 KiB | 190,728 | 140,347 | -26.4% | 0.199 | 0.238 | 0.4154 | 0.7079 |
+| 32 KiB | 79,174 | 61,854 | -21.9% | 0.205 | 0.212 | 0.9874 | 1.4192 |
+| 64 KiB | 36,121 | 41,516 | +14.9% | 0.211 | 0.238 | 2.4751 | 2.3611 |
+| 128 KiB | 14,621 | 14,866 | +1.7% | 0.250 | 0.250 | 5.3930 | 5.1259 |
+| 200,000 B | 22,095 | 24,631 | +11.5% | 0.145 | 0.132 | 3.5042 | 3.1233 |
+
+**Reason:** The 64-byte row, which is most sensitive to fixed per-message
+validation cost, is neutral in both wall and receiver CPU. The 256-byte row
+improves and the 1-KiB row remains within single-digit run variance. Apparent
+4-32-KiB losses coincide with 1.4-2.7 times as many reads/message in the
+candidate, while the 64-KiB through 200-KB rows reverse direction or remain
+neutral. Those medium/large differences reflect producer scheduling and
+socket read splitting, not a consistent status-validation cost.
+
+The candidate fixes a demonstrated correctness bug: invalid or `ERROR` status
+cannot escape validation merely because provider code made the Stream
+terminal reentrantly. It retains immediate flush debt, terminal advisory
+statuses, and operation-sensitive `CONTINUE` behavior.
+
+**Retest if:** Status handling gains new per-message work, validation becomes
+data-dependent, or a CPU-isolated/interleaved runner becomes available. Keep
+reads/message in the interpretation because socket splitting materially
+affects the medium and large rows.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-01-002-consumer-status/`

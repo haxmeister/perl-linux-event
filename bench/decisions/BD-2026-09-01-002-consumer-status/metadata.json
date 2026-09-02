@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "decision_id": "BD-2026-09-01-002-consumer-status",
+  "date": "2026-09-01",
+  "benchmark_script": {
+    "path": "bench/run-async-consumer-lifetime-bench.pl",
+    "sha256": "25e5754fb84a95eb0450d4164760b531c4d07c536be70266d2e41cef20d1c3a0",
+    "commit": "008dfb9b884d8f9bca19dba505a17f5b7b7c5fbb"
+  },
+  "core_baseline": {
+    "repository": "haxmeister/perl-linux-event",
+    "commit": "008dfb9b884d8f9bca19dba505a17f5b7b7c5fbb"
+  },
+  "core_candidate": {
+    "repository": "haxmeister/perl-linux-event",
+    "branch": "fix/review-bugfix-simplify",
+    "commit": "7ed57b6868f717fa8ee09b123cbbbb15d5bd9c0b"
+  },
+  "async_provider": {
+    "repository": "haxmeister/perl-Linux-Event-Async",
+    "base_commit": "aba5aafac2c2e530b394f3e357953eb8b2a5f223",
+    "tracked_diff_sha256": "004257489e14b11ddd433ab83fcc6c07e29647d1149a6a27599b2648ddc58e29",
+    "description": "Same lifetime-safe Async provider build used for both core variants"
+  },
+  "host": {
+    "kernel": "Linux 6.18.35 x86_64 GNU/Linux",
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "logical_cpus_visible": 9,
+    "cpu_affinity": "not set"
+  },
+  "execution": {
+    "order": ["baseline", "candidate"],
+    "warmups_per_size": 1,
+    "measured_repetitions_per_size": 5,
+    "payload_bytes": [64, 256, 1024, 4096, 16384, 32768, 65536, 131072, 200000],
+    "pairing": "Independent sequential sweeps because Perl cannot load two builds of the same XS package in one process",
+    "latency": "not sampled; validation ordering does not alter batching or re-drive policy"
+  },
+  "decision": "KEEP"
+}

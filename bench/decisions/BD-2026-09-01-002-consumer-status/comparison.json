@@ -1,0 +1,132 @@
+{
+   "baseline_file" : "baseline.json",
+   "benchmark" : "async_consumer_status_reconciliation",
+   "candidate_file" : "candidate.json",
+   "comparison_method" : "independent sequential full sweeps; median of five measured repeats after one warmup",
+   "decision" : "KEEP",
+   "limitations" : [
+      "Separate core XS builds prevent within-process pairing.",
+      "Mid/large-frame wall results covary with producer scheduling and socket read splitting; use reads/message when interpreting them.",
+      "Latency was not sampled because status validation does not alter batching or re-drive policy."
+   ],
+   "results" : [
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 8.046875,
+         "baseline_median_mebibytes_per_second" : 116.66,
+         "baseline_median_messages_per_second" : 1911350.022,
+         "baseline_median_reads_per_message" : 0.000497,
+         "candidate_median_cpu_nanoseconds_per_byte" : 8.125,
+         "candidate_median_mebibytes_per_second" : 116.395,
+         "candidate_median_messages_per_second" : 1907018.402,
+         "candidate_median_reads_per_message" : 0.000495,
+         "cpu_nanoseconds_per_byte_change_percent" : 0.971,
+         "messages_per_second_change_percent" : -0.227,
+         "payload_bytes" : 64
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 2.207031,
+         "baseline_median_mebibytes_per_second" : 431.495,
+         "baseline_median_messages_per_second" : 1767402.531,
+         "baseline_median_reads_per_message" : 0.001966,
+         "candidate_median_cpu_nanoseconds_per_byte" : 2.109375,
+         "candidate_median_mebibytes_per_second" : 450.188,
+         "candidate_median_messages_per_second" : 1843969.029,
+         "candidate_median_reads_per_message" : 0.0019645,
+         "cpu_nanoseconds_per_byte_change_percent" : -4.425,
+         "messages_per_second_change_percent" : 4.332,
+         "payload_bytes" : 256
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.664062,
+         "baseline_median_mebibytes_per_second" : 1414.338,
+         "baseline_median_messages_per_second" : 1448281.652,
+         "baseline_median_reads_per_message" : 0.008782,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.712891,
+         "candidate_median_mebibytes_per_second" : 1333.237,
+         "candidate_median_messages_per_second" : 1365234.938,
+         "candidate_median_reads_per_message" : 0.008563,
+         "cpu_nanoseconds_per_byte_change_percent" : 7.353,
+         "messages_per_second_change_percent" : -5.734,
+         "payload_bytes" : 1024
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.244141,
+         "baseline_median_mebibytes_per_second" : 3853.441,
+         "baseline_median_messages_per_second" : 986480.957,
+         "baseline_median_reads_per_message" : 0.031732,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.288086,
+         "candidate_median_mebibytes_per_second" : 2765.475,
+         "candidate_median_messages_per_second" : 707961.708,
+         "candidate_median_reads_per_message" : 0.085774,
+         "cpu_nanoseconds_per_byte_change_percent" : 18,
+         "messages_per_second_change_percent" : -28.234,
+         "payload_bytes" : 4096
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.199382,
+         "baseline_median_mebibytes_per_second" : 2980.127,
+         "baseline_median_messages_per_second" : 190728.109,
+         "baseline_median_reads_per_message" : 0.415363333,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.238037,
+         "candidate_median_mebibytes_per_second" : 2192.915,
+         "candidate_median_messages_per_second" : 140346.529,
+         "candidate_median_reads_per_message" : 0.707853333,
+         "cpu_nanoseconds_per_byte_change_percent" : 19.387,
+         "messages_per_second_change_percent" : -26.415,
+         "payload_bytes" : 16384
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.205485,
+         "baseline_median_mebibytes_per_second" : 2474.181,
+         "baseline_median_messages_per_second" : 79173.802,
+         "baseline_median_reads_per_message" : 0.987373333,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.211589,
+         "candidate_median_mebibytes_per_second" : 1932.923,
+         "candidate_median_messages_per_second" : 61853.545,
+         "candidate_median_reads_per_message" : 1.419246667,
+         "cpu_nanoseconds_per_byte_change_percent" : 2.971,
+         "messages_per_second_change_percent" : -21.876,
+         "payload_bytes" : 32768
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.210571,
+         "baseline_median_mebibytes_per_second" : 2257.557,
+         "baseline_median_messages_per_second" : 36120.905,
+         "baseline_median_reads_per_message" : 2.47512,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.238037,
+         "candidate_median_mebibytes_per_second" : 2594.757,
+         "candidate_median_messages_per_second" : 41516.115,
+         "candidate_median_reads_per_message" : 2.36112,
+         "cpu_nanoseconds_per_byte_change_percent" : 13.044,
+         "messages_per_second_change_percent" : 14.937,
+         "payload_bytes" : 65536
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.250244,
+         "baseline_median_mebibytes_per_second" : 1827.572,
+         "baseline_median_messages_per_second" : 14620.578,
+         "baseline_median_reads_per_message" : 5.39296,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.250244,
+         "candidate_median_mebibytes_per_second" : 1858.259,
+         "candidate_median_messages_per_second" : 14866.072,
+         "candidate_median_reads_per_message" : 5.12588,
+         "cpu_nanoseconds_per_byte_change_percent" : 0,
+         "messages_per_second_change_percent" : 1.679,
+         "payload_bytes" : 131072
+      },
+      {
+         "baseline_median_cpu_nanoseconds_per_byte" : 0.145,
+         "baseline_median_mebibytes_per_second" : 4214.36,
+         "baseline_median_messages_per_second" : 22095.383,
+         "baseline_median_reads_per_message" : 3.5042,
+         "candidate_median_cpu_nanoseconds_per_byte" : 0.131667,
+         "candidate_median_mebibytes_per_second" : 4698.077,
+         "candidate_median_messages_per_second" : 24631.455,
+         "candidate_median_reads_per_message" : 3.123266667,
+         "cpu_nanoseconds_per_byte_change_percent" : -9.195,
+         "messages_per_second_change_percent" : 11.478,
+         "payload_bytes" : 200000
+      }
+   ],
+   "schema_version" : 1
+}
