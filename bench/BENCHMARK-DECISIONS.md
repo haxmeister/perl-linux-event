@@ -105,6 +105,7 @@ not part of the CPAN distribution.
 | BD-2026-08-28-001 | 2026-08-28 | Framed callback batching | KEEP |
 | BD-2026-08-29-001 | 2026-08-29 | Native connect `SO_ERROR` completion | REJECT |
 | BD-2026-08-29-002 | 2026-08-29 | Native Process pipe draining | KEEP |
+| BD-2026-09-01-001 | 2026-09-01 | Native-consumer host lifetime leases | KEEP |
 
 ---
 
@@ -226,3 +227,68 @@ semantic Process policy in Perl.
 
 **Evidence:**
 `bench/decisions/BD-2026-08-29-002-process-pipe-drain/recovered-summary.json`
+
+---
+
+## BD-2026-09-01-001 - Native-consumer host lifetime leases
+
+**Decision:** KEEP
+
+**Hypothesis:** The exported native-consumer host can provide an append-only
+`retain`/`release` lifetime extension that makes callback-capable provider
+frames safe without an unacceptable end-to-end cost.
+
+**Workload:**
+
+- real `Linux::Event::Async::Stream` native Delimiter consumer;
+- AF_UNIX `SOCK_STREAM` socketpair with a gated forked producer;
+- 64 B, 256 B, 1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and
+  200,000 B payloads;
+- one warmup and five measured repeats at every size;
+- 256 KiB Stream `read_size` and `read_budget_bytes`;
+- Async prefetch limits of 64 messages and 256 KiB;
+- one Perl ready callback per message, no TLS, level-triggered readiness, one
+  receiver, OS-default socket options and 212,992-byte observed socket
+  buffers.
+
+The JSON evidence resolves the remaining Stream limits, batching settings,
+message counts, reads and writes per message, input peaks, compiler/runtime,
+exact commands, and candidate source fingerprints.
+
+**Measured medians:**
+
+| Payload | Baseline msg/s | Candidate msg/s | Change | Baseline CPU ns/B | Candidate CPU ns/B |
+|---:|---:|---:|---:|---:|---:|
+| 64 B | 2,275,953 | 1,878,342 | -17.5% | 6.875 | 8.281 |
+| 256 B | 2,152,842 | 1,801,444 | -16.3% | 1.816 | 2.148 |
+| 1 KiB | 1,558,680 | 1,395,109 | -10.5% | 0.615 | 0.693 |
+| 4 KiB | 523,562 | 589,932 | +12.7% | 0.308 | 0.308 |
+| 16 KiB | 187,175 | 136,203 | -27.2% | 0.214 | 0.234 |
+| 32 KiB | 64,692 | 204,642 | +216.3% | 0.230 | 0.146 |
+| 64 KiB | 36,748 | 34,047 | -7.4% | 0.269 | 0.256 |
+| 128 KiB | 18,185 | 16,019 | -11.9% | 0.247 | 0.244 |
+| 200,000 B | 16,576 | 39,818 | +140.2% | 0.165 | 0.122 |
+
+The tiny-message rows consistently expose the fixed cost of unwind-safe host
+leases: about 16-17 percent wall throughput and 18-20 percent receiver CPU at
+64-256 B in this intentionally severe one-callback-per-message workload. The
+large-frame wall results are not directional evidence. Producer scheduling and
+socket read splitting changed reads/message substantially and produced both
+large apparent wins and losses across repeats.
+
+**Reason:** The old provider can lose both its host state and its own context
+under an active C frame when synchronous `resume()` delivery lets user code
+close the Stream. That is a memory-safety contract failure, so retaining the
+append-only lifetime mechanism is mandatory. The Async candidate limits
+leases to callback-capable/provider-sensitive frames and preserves the current
+reentrant message/terminal-flush semantics. Existing ABI-v1 providers that do
+not opt into the appended fields pay no per-message lease cost.
+
+**Retest if:** Async changes callback coalescing, prefetch wakeup behavior, or
+can safely amortize one host lease across multiple ready callbacks. Use a
+paired or CPU-isolated topology if the execution environment can load/launch
+the two XS variants in an interleaved order; continue to retain the full
+payload sweep.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-01-001-consumer-host-lifetime/`

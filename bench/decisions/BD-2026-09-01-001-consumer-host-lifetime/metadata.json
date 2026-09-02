@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "decision_id": "BD-2026-09-01-001-consumer-host-lifetime",
+  "date": "2026-09-01",
+  "benchmark_script": {
+    "path": "bench/run-async-consumer-lifetime-bench.pl",
+    "sha256": "25e5754fb84a95eb0450d4164760b531c4d07c536be70266d2e41cef20d1c3a0",
+    "committed_with_decision": true
+  },
+  "core": {
+    "repository": "haxmeister/perl-linux-event",
+    "branch": "fix/review-bugfix-simplify",
+    "commit": "fc634e423c7f00a03e403a23a88683f33e15e940"
+  },
+  "async_baseline": {
+    "repository": "haxmeister/perl-Linux-Event-Async",
+    "commit": "aba5aafac2c2e530b394f3e357953eb8b2a5f223"
+  },
+  "async_candidate": {
+    "base_commit": "aba5aafac2c2e530b394f3e357953eb8b2a5f223",
+    "tracked_diff_sha256": "004257489e14b11ddd433ab83fcc6c07e29647d1149a6a27599b2648ddc58e29",
+    "source_sha256": {
+      "Async.xs": "5a013b378b9c60c96a8431cfb7db6fde1249b30eb8e909e136f1fad9a5320b54",
+      "consumer_abi.h": "c5908ec601c513cd2ad56e5ed2b892fd764df877391c4e3ea954a4d705c0a708",
+      "t/23-host-lifetime.t": "54d9348003c33e8edd726a1c0cbd85f8fabce189d02a2c1c5eac3296950cbb14"
+    },
+    "description": "Host retain/release ABI support with unwind-safe leases around callback-capable provider frames and a real close-during-resume regression"
+  },
+  "host": {
+    "kernel": "Linux 6.18.35 x86_64 GNU/Linux",
+    "cpu_model": "AMD EPYC 9V74 80-Core Processor",
+    "logical_cpus_visible": 9,
+    "cpu_affinity": "not set"
+  },
+  "execution": {
+    "order": ["baseline", "candidate"],
+    "warmups_per_size": 1,
+    "measured_repetitions_per_size": 5,
+    "payload_bytes": [64, 256, 1024, 4096, 16384, 32768, 65536, 131072, 200000],
+    "pairing": "Independent sequential sweeps because Perl cannot load two builds of the same XS package in one process",
+    "latency": "not sampled; throughput-focused local transport benchmark"
+  },
+  "decision": "KEEP"
+}

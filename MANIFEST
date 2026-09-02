@@ -18,6 +18,7 @@ bench/archive/run-phase18.pl
 bench/archive/run-watcher-reuse-bench.pl
 bench/README.md
 bench/results/.gitkeep
+bench/run-async-consumer-lifetime-bench.pl
 bench/run-callback-batching-fairness.pl
 bench/run-callback-batching-microbench.pl
 bench/run-callback-ceiling.pl

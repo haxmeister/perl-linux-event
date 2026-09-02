@@ -30,6 +30,7 @@ for my $required (
     'docs/FRAMING.md',
     'docs/INTROSPECTION.md',
     'bench/README.md',
+    'bench/run-async-consumer-lifetime-bench.pl',
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
@@ -127,6 +128,7 @@ for my $live (
     'docs/FRAMING.md',
     'docs/INTROSPECTION.md',
     'bench/README.md',
+    'bench/run-async-consumer-lifetime-bench.pl',
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
@@ -161,6 +163,7 @@ my %allowed = map { $_ => 1 } qw(
     BENCHMARK-DECISIONS.md
     README.md
     STREAM-COMPETITOR-PLAN.md
+    run-async-consumer-lifetime-bench.pl
     run-connect-microbench.pl
     run-listen-microbench.pl
     run-reactor-comparison.pl

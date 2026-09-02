@@ -25,6 +25,15 @@ Documentation and packaging work are intentionally excluded from this roadmap.
 
 ## Priority 1 - remaining correctness and lifetime blockers
 
+**Status (2026-09-01): complete on `fix/review-bugfix-simplify`.** The tested
+`2681a0c` baseline was carried forward first. The four items below now have
+targeted regressions in `t/stream-61-teardown-exceptions.t` through
+`t/stream-64-transition-consumer-flush.t`. The exported lifetime contract was
+also exercised through a real `Linux::Event::Async` provider build and full
+cross-repository suite. The current reentrant message/terminal-flush behavior
+was intentionally preserved; its separate semantic decision remains Priority
+2 work.
+
 ### 1. Make callback-capable teardown exception-safe
 
 The current Perl lifecycle can mark an object terminal, invoke native terminal consumer work, and then fail before watcher/handle teardown if provider code throws.
@@ -272,21 +281,24 @@ The following should not remain as open correctness items without new evidence:
 
 ## Required validation gate before merge
 
-### Correctness regressions still missing
+### Correctness regression status
 
-At minimum add tests for:
+Completed in the Priority 1 implementation:
 
-1. exception-safe full close teardown;
-2. exception-safe `close_read` teardown;
-3. exception-safe `detach` teardown with explicit final-state/handle-ownership assertions;
-4. `close_write()` reaching full teardown after the read side is already terminal;
-5. terminal flush returning `ERROR` while teardown still completes;
-6. exported consumer host/provider reentrancy and lifetime using `Linux::Event::Async`, including safe provider-frame execution after synchronous `resume()`;
-7. host-table audit coverage for any callback-capable entry point with post-callback state access;
-8. generic Stream watcher-registration construction failure;
-9. old-protocol consumer flush before first new-protocol message;
-10. terminal `flush -> CLOSE` ordering/single-terminal-event behavior;
-11. framer byte-equivalence boundaries for any salvaged parser optimization.
+1. exception-safe full close, `close_read`, failed `detach`, and transitive
+   `close_write` teardown;
+2. terminal provider `event` exceptions and terminal flush `ERROR` while
+   teardown still completes;
+3. exported host/provider reentrancy and lifetime through synchronous
+   `resume()`, including a real `Linux::Event::Async` cross-test;
+4. generic Stream watcher-registration construction failure;
+5. old-protocol consumer flush before the first new-protocol message.
+
+Still required with their later roadmap work:
+
+1. terminal `flush -> CLOSE` ordering/single-terminal-event behavior for the
+   Priority 2 status-semantics reconciliation;
+2. framer byte-equivalence boundaries for any Priority 4 parser optimization.
 
 ### Performance gate
 

@@ -82,6 +82,31 @@ This is a deliberate saturation diagnostic, not ordinary application latency.
 It makes the existing drain-until-EAGAIN fairness boundary visible while
 checking that explicit callback batching does not introduce a new one.
 
+## Native-consumer host lifetime benchmark
+
+`run-async-consumer-lifetime-bench.pl` exercises the real
+`Linux::Event::Async::Stream` native consumer over an AF_UNIX socketpair. It is
+intended for paired builds of the external Async provider before and after a
+host-lifetime change. The default payload list is the permanent full Stream
+sweep through 200 KB; every JSON result includes raw repeats and the resolved
+Stream, framer, transport, batching, buffer, socket, and Async prefetch
+configuration.
+
+Run it with the desired Async and Linux::Event builds first in `PERL5LIB`:
+
+```bash
+PERL5LIB=/path/to/async/blib/lib:/path/to/async/blib/arch:\
+/path/to/core/blib/lib:/path/to/core/blib/arch:$PERL5LIB \
+perl bench/run-async-consumer-lifetime-bench.pl \
+  --repeat=5 --warmup=1 --variant=candidate \
+  --core-commit=CORE_SHA --async-commit=ASYNC_SHA \
+  --output=bench/results/async-consumer-lifetime.json
+```
+
+The benchmark deliberately reports no latency percentile: it is a saturated
+local throughput diagnostic. Use a separate request/response or fairness
+workload when a change can alter latency or batching behavior.
+
 ## Timer microbenchmark
 
 `run-timer-microbench.pl` isolates the native scheduler at increasing heap
