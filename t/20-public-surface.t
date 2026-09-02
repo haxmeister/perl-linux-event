@@ -182,6 +182,7 @@ my %allowed = map { $_ => 1 } qw(
     run-stream-transition-bench.pl
     run-stream-watcher-state-bench.pl
     run-framing-microbench.pl
+    run-framer-send-bench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
     run-timer-microbench.pl
