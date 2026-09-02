@@ -23,6 +23,48 @@ like(exception(sub {
 like(exception(sub { Linux::Event::Stream::XSDescriptor->new({}) }),
     qr/missing Stream descriptor field 'read_size'/,
     'native descriptor rejects missing specification fields');
+like(exception(sub {
+    Linux::Event::Stream::XSDescriptor->_new_validated({});
+}), qr/requires a complete validated specification/,
+    'native constructor retains a defensive completeness backstop');
+
+my %unnormalized_spec = (
+    (map { $_ => undef } qw(
+        deliver_cb message_cb message_batch_cb drain_cb eof_cb read_error_cb
+        write_error_cb output_limit_cb write_empty_cb framing_error_cb
+        delimiter max_frame consumer_provider
+    )),
+    read_size => '4096',
+    read_budget_bytes => undef,
+    read_batch_bytes => '0',
+    message_batch_size => '0',
+    high_watermark => '8192',
+    low_watermark => '2048',
+    max_pending_bytes => '0',
+    max_buffer => '16384',
+    read_mode => '0',
+    include_delimiter => 7,
+    fixed_size => undef,
+    prefix_bytes => undef,
+    prefix_little => '',
+    include_prefix => 'yes',
+    consumer_abi_version => undef,
+    consumer_ops_address => undef,
+);
+my $normalized_spec
+    = Linux::Event::Stream::_Descriptor::_validate_xs_spec(
+        \%unnormalized_spec,
+    );
+is($normalized_spec->{read_size}, 4096,
+    'Perl descriptor boundary normalizes numeric fields');
+is($normalized_spec->{read_budget_bytes}, 0,
+    'Perl descriptor boundary normalizes absent numeric values');
+is($normalized_spec->{include_delimiter}, 1,
+    'Perl descriptor boundary normalizes true flags');
+is($normalized_spec->{prefix_little}, 0,
+    'Perl descriptor boundary normalizes false flags');
+is($unnormalized_spec{include_delimiter}, 7,
+    'descriptor normalization does not mutate its caller');
 
 {
     package T::SharedLineStream;

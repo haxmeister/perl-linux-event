@@ -1209,6 +1209,11 @@ sub _set_nonblocking ($fh) {
 1;
 
 package Linux::Event::Stream::XSDescriptor;
+sub new ($class, $spec) {
+    return $class->_new_validated(
+        Linux::Event::Stream::_Descriptor::_validate_xs_spec($spec),
+    );
+}
 sub CLONE_SKIP ($class) { 1 }
 
 package Linux::Event::Stream::XSState;

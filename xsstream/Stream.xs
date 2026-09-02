@@ -95,48 +95,6 @@
 
 #include "stream_internal.h"
 
-static const char *const les_descriptor_spec_keys[] = {
-    "read_size", "read_budget_bytes", "read_batch_bytes",
-    "message_batch_size", "high_watermark", "low_watermark",
-    "max_pending_bytes", "max_buffer", "read_mode", "deliver_cb",
-    "message_cb", "message_batch_cb", "drain_cb", "eof_cb",
-    "read_error_cb", "write_error_cb", "output_limit_cb",
-    "write_empty_cb", "framing_error_cb", "delimiter",
-    "include_delimiter", "max_frame", "fixed_size", "prefix_bytes",
-    "prefix_little", "include_prefix", "consumer_provider",
-    "consumer_abi_version", "consumer_ops_address"
-};
-
-static int
-les_descriptor_spec_key_known(const char *key, I32 key_len)
-{
-    size_t i;
-
-    for (i = 0; i < sizeof(les_descriptor_spec_keys)
-        / sizeof(les_descriptor_spec_keys[0]); i++) {
-        size_t known_len = strlen(les_descriptor_spec_keys[i]);
-        if ((size_t)key_len == known_len
-            && memcmp(key, les_descriptor_spec_keys[i], known_len) == 0)
-            return 1;
-    }
-    return 0;
-}
-
-static void
-les_descriptor_spec_check_keys(pTHX_ HV *spec)
-{
-    HE *entry;
-
-    hv_iterinit(spec);
-    while ((entry = hv_iternext(spec))) {
-        I32 key_len = 0;
-        const char *key = hv_iterkey(entry, &key_len);
-        if (!les_descriptor_spec_key_known(key, key_len))
-            croak("unknown Stream descriptor field '%.*s'",
-                (int)key_len, key);
-    }
-}
-
 static SV *
 les_descriptor_spec_sv(pTHX_ HV *spec, const char *key)
 {
@@ -166,7 +124,7 @@ MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, spec_rv)
+_new_validated(CLASS, spec_rv)
     const char *CLASS
     SV *spec_rv
   PREINIT:
@@ -185,9 +143,10 @@ new(CLASS, spec_rv)
     SV *framing_error_cb, *delimiter_sv, *max_frame_sv, *consumer_provider;
   CODE:
     if (!spec_rv || !SvROK(spec_rv) || SvTYPE(SvRV(spec_rv)) != SVt_PVHV)
-        croak("XSDescriptor::new requires a hash reference");
+        croak("XSDescriptor::_new_validated requires a hash reference");
     spec = (HV *)SvRV(spec_rv);
-    les_descriptor_spec_check_keys(aTHX_ spec);
+    if (HvUSEDKEYS(spec) != 29)
+        croak("XSDescriptor::_new_validated requires a complete validated specification");
 
     read_size = les_descriptor_spec_uv(aTHX_ spec, "read_size");
     read_budget_bytes = les_descriptor_spec_uv(aTHX_ spec,
@@ -234,21 +193,9 @@ new(CLASS, spec_rv)
         croak("read_budget_bytes exceeds native size_t");
     if (read_batch_bytes > (UV)(size_t)-1)
         croak("read_batch_bytes exceeds native size_t");
-    if (low_watermark > high_watermark)
-        croak("low_watermark must be <= high_watermark");
     if (read_mode != LES_READ_DELIVER
         && (read_mode < LES_READ_DELIMITER || read_mode > LES_READ_DECIMAL))
         croak("invalid Stream native read mode");
-    if (read_mode == LES_READ_DELIVER && message_batch_size)
-        croak("message_batch_size requires framed mode");
-    if (read_mode != LES_READ_DELIVER && read_batch_bytes)
-        croak("read_batch_bytes requires raw mode");
-    if (read_mode != LES_READ_DELIVER && message_batch_size
-        && (!message_batch_cb || !SvOK(message_batch_cb)))
-        croak("on_messages callback required for batched framed Stream descriptor");
-    if (read_mode != LES_READ_DELIVER
-        && (!framing_error_cb || !SvOK(framing_error_cb)))
-        croak("framing error callback required for framed Stream descriptor");
     if (read_mode == LES_READ_FIXED && fixed_size == 0)
         croak("fixed_size must be > 0 for native fixed framing");
     if (read_mode == LES_READ_LENGTH
@@ -279,14 +226,6 @@ new(CLASS, spec_rv)
             && (consumer_ops->struct_size < sizeof(les_consumer_ops_v1_t)
                 || !consumer_ops->flush))
             croak("consumer operations table requests flush without a flush function");
-        if (read_mode == LES_READ_DELIVER)
-            croak("native consumer requires framed Stream mode");
-        if (message_cb && SvOK(message_cb))
-            croak("native consumer cannot be combined with on_message callback");
-        if (message_batch_cb && SvOK(message_batch_cb))
-            croak("native consumer cannot be combined with on_messages callback");
-        if (message_batch_size)
-            croak("native consumer cannot be combined with message batching");
     } else if ((consumer_provider && SvOK(consumer_provider))
         || consumer_abi_version) {
         croak("native consumer declaration is incomplete");

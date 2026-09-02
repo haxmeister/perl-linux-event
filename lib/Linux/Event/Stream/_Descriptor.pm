@@ -14,6 +14,49 @@ my %FRAMER_DEFINITION;
 my %CONSUMER_DEFINITION;
 my %CLASS_DESCRIPTOR;
 
+my @XS_SPEC_FIELD = qw(
+    read_size read_budget_bytes read_batch_bytes message_batch_size
+    high_watermark low_watermark max_pending_bytes max_buffer read_mode
+    deliver_cb message_cb message_batch_cb drain_cb eof_cb read_error_cb
+    write_error_cb output_limit_cb write_empty_cb framing_error_cb delimiter
+    include_delimiter max_frame fixed_size prefix_bytes prefix_little
+    include_prefix consumer_provider consumer_abi_version
+    consumer_ops_address
+);
+my %XS_SPEC_FIELD = map { $_ => 1 } @XS_SPEC_FIELD;
+
+# The public class declaration path already validates Stream/framer/consumer
+# policy. This last cold step owns only the private XS specification contract:
+# reject misspelled or incomplete fields and normalize scalar representation.
+# The native constructor retains parser-memory and consumer-table checks as
+# defensive backstops before storing pointers or parser configuration.
+sub _validate_xs_spec ($spec) {
+    croak 'XSDescriptor::new requires a hash reference'
+        if ref($spec) ne 'HASH';
+    my @unknown = grep { !$XS_SPEC_FIELD{$_} } keys %$spec;
+    croak "unknown Stream descriptor field '$unknown[0]'"
+        if @unknown == 1;
+    croak 'unknown Stream descriptor fields: ' . join(', ', sort @unknown)
+        if @unknown;
+    for my $field (@XS_SPEC_FIELD) {
+        croak "missing Stream descriptor field '$field'"
+            if !exists $spec->{$field};
+    }
+
+    my %normalized = %$spec;
+    $normalized{$_} = $normalized{$_} ? 1 : 0
+        for qw(include_delimiter prefix_little include_prefix);
+    $normalized{$_} = defined($normalized{$_}) ? 0 + $normalized{$_} : 0
+        for qw(
+            read_size read_budget_bytes read_batch_bytes message_batch_size
+            high_watermark low_watermark max_pending_bytes max_buffer
+            read_mode fixed_size prefix_bytes consumer_abi_version
+            consumer_ops_address
+        );
+
+    return \%normalized;
+}
+
 sub declare_framer ($base, $target, $definition) {
     croak 'a framer may be declared only for a Linux::Event::Stream subclass'
         if $target eq $base || !$target->isa($base);
