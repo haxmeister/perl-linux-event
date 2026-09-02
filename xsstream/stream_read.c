@@ -11,6 +11,22 @@ les_flush_framed_read_boundary(pTHX_ les_xsstate_t *st)
         les_process_existing_input(aTHX_ st, 1);
 }
 
+/* Settle delivery work owed by the descriptor that produced the current
+ * read result. A callback may transition the Stream while the batch/consumer
+ * flush is running; only a live, unpaused Stream may re-drive under that new
+ * descriptor. */
+static int
+les_settle_read_boundary(pTHX_ les_xsstate_t *st,
+    les_descriptor_t *descriptor)
+{
+    if (descriptor->read_mode == LES_READ_DELIVER)
+        les_flush_raw_batch(aTHX_ st);
+    else
+        les_flush_framed_read_boundary(aTHX_ st);
+    return !st->closed && !LES_INPUT_PAUSED(st)
+        && st->descriptor != descriptor;
+}
+
 void
 les_read_ready(pTHX_ les_xsstate_t *st)
 {
@@ -130,14 +146,10 @@ les_read_ready(pTHX_ les_xsstate_t *st)
 
         if (result.status == LES_TRANSPORT_EOF) {
             les_descriptor_t *descriptor = st->descriptor;
-            if (descriptor->read_mode == LES_READ_DELIVER)
-                les_flush_raw_batch(aTHX_ st);
-            else
-                les_flush_framed_read_boundary(aTHX_ st);
+            if (les_settle_read_boundary(aTHX_ st, descriptor))
+                continue;
             if (st->closed || LES_INPUT_PAUSED(st))
                 break;
-            if (st->descriptor != descriptor)
-                continue;
             st->read_eof = 1;
             LES_STAT(st, eof_count)++;
             les_call_eof(aTHX_ st);
@@ -153,12 +165,7 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             || result.status == LES_TRANSPORT_WANT_WRITE) {
             les_descriptor_t *descriptor = st->descriptor;
             LES_STAT(st, read_eagain_count)++;
-            if (descriptor->read_mode == LES_READ_DELIVER)
-                les_flush_raw_batch(aTHX_ st);
-            else
-                les_flush_framed_read_boundary(aTHX_ st);
-            if (!st->closed && !LES_INPUT_PAUSED(st)
-                && st->descriptor != descriptor)
+            if (les_settle_read_boundary(aTHX_ st, descriptor))
                 continue;
             break;
         }
@@ -167,14 +174,10 @@ les_read_ready(pTHX_ les_xsstate_t *st)
             int err = result.error;
             les_descriptor_t *descriptor = st->descriptor;
             LES_STAT(st, read_error_count)++;
-            if (descriptor->read_mode == LES_READ_DELIVER)
-                les_flush_raw_batch(aTHX_ st);
-            else
-                les_flush_framed_read_boundary(aTHX_ st);
+            if (les_settle_read_boundary(aTHX_ st, descriptor))
+                continue;
             if (st->closed || LES_INPUT_PAUSED(st))
                 break;
-            if (st->descriptor != descriptor)
-                continue;
             les_call_read_error(aTHX_ st, err);
             break;
         }
