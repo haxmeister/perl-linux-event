@@ -28,6 +28,46 @@ For new Stream/data-plane decisions, the committed evidence must obey the
 project payload rule: architectural conclusions require a representative sweep
 through approximately 200 KB rather than a tiny-message result alone.
 
+## Required Stream/framer configuration
+
+For any benchmark involving `Linux::Event::Stream`, `Linux::Event::Socket`,
+framing, TLS, or the native-consumer path, preserve the effective runtime
+configuration that materially describes the workload. Do not record only the
+options explicitly supplied on the command line; defaults must be resolved to
+concrete values in the evidence whenever they can affect the result.
+
+At minimum record, when applicable:
+
+- raw versus framed delivery;
+- exact framer class/family and all framer parameters;
+- transport: AF_UNIX, TCP, TLS, pipe, or other;
+- payload/message sizes and message counts;
+- `read_size`;
+- read fairness/budget settings;
+- `read_batch_bytes`;
+- `message_batch_size`;
+- input/max-buffer limits;
+- write-queue limits and high/low-water settings;
+- write segmentation or framing mode when relevant;
+- level-triggered versus edge-triggered behavior when configurable/relevant;
+- socket buffer sizes, `TCP_NODELAY`, or other socket options when they can
+  influence the tested path;
+- TLS/provider configuration when the transport is TLS;
+- Async/native-consumer queue or prefetch limits when testing that boundary;
+- client count/concurrency and producer/consumer topology;
+- CPU affinity or isolation when used;
+- exact benchmark command line;
+- benchmark script version/commit.
+
+The preferred design is for each benchmark JSON file to emit a normalized
+`effective_config` object containing these values. A separate `metadata.json`
+may supplement the benchmark output when the harness cannot yet emit all of
+them.
+
+If an old result does not preserve a setting, record it as `unknown` rather
+than inferring a default from today's implementation. Historical defaults may
+have changed.
+
 ## Evidence retention
 
 For new decisions, preserve the benchmark program's output unchanged whenever
@@ -42,7 +82,7 @@ bench/decisions/
     baseline.json
     candidate.json
     comparison.json       # when the harness emits one
-    metadata.json         # only for context absent from benchmark output
+    metadata.json         # effective config/context absent from benchmark output
 ```
 
 Do not replace the raw files with a hand-written table. The table in this log
@@ -52,7 +92,8 @@ Some historical decisions predate this policy and their original per-repeat
 output is no longer present in the repository. For those entries, an exact
 recovered summary is committed as `recovered-summary.json` and explicitly
 marked `evidence_level: recovered_summary`. Such an entry preserves the known
-measurements but must not be represented as raw evidence.
+measurements but must not be represented as raw evidence. Configuration fields
+that cannot be established from the surviving record must be marked `unknown`.
 
 These decision records and evidence files are Git engineering history and are
 not part of the CPAN distribution.
@@ -82,6 +123,10 @@ ordinary callback contract when batching is disabled.
 - AF_UNIX socketpair and TCP loopback;
 - one warmup and five measured repeats;
 - batch sizes 16, 32, and 64 compared with ordinary per-message callbacks.
+
+The surviving summary does not identify every effective Stream/framer setting.
+Those missing historical settings are intentionally marked `unknown` in the
+recovered evidence rather than reconstructed from current defaults.
 
 **Measured medians:**
 
