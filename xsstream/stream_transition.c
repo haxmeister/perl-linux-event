@@ -80,9 +80,9 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
         st->input_cap = next_input_cap;
         st->input_start = 0;
         st->input_len = total_input;
-        st->input_appends++;
-        if ((unsigned long long)st->input_len > st->input_peak_bytes)
-            st->input_peak_bytes = (unsigned long long)st->input_len;
+        LES_STAT(st, input_appends)++;
+        if ((unsigned long long)st->input_len > LES_STAT(st, input_peak_bytes))
+            LES_STAT(st, input_peak_bytes) = (unsigned long long)st->input_len;
     }
 
     free(st->read_buffer);
@@ -91,7 +91,7 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     st->descriptor_sv = next_descriptor_sv;
     st->delimiter_scan = 0;
     st->write_blocked = st->pending_bytes > next_descriptor->high_watermark;
-    st->transition_count++;
+    LES_STAT(st, transition_count)++;
 
     if (old_descriptor_sv)
         SvREFCNT_dec(old_descriptor_sv);

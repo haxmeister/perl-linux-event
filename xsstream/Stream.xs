@@ -584,7 +584,7 @@ _set_activity_tracking(state_obj, enabled)
             now = les_activity_now_ns(aTHX);
             st->last_read_ns = now;
             st->last_write_ns = now;
-            st->activity_clock_calls++;
+            LES_STAT(st, activity_clock_calls)++;
         }
         st->activity_tracking = 1;
     } else {
@@ -756,81 +756,8 @@ transport_ready(state_obj)
 SV *
 stats(state_obj)
     SV *state_obj
-  PREINIT:
-    les_xsstate_t *st;
-    HV *hv;
   CODE:
-    st = les_state_from_sv(state_obj);
-    hv = newHV();
-
-    hv_stores(hv, "read_ready_calls", newSVuv(st->read_ready_calls));
-    hv_stores(hv, "read_budget_bytes",
-        newSVuv(st->descriptor->read_budget_bytes));
-    hv_stores(hv, "read_calls", newSVuv(st->read_calls));
-    hv_stores(hv, "bytes_read", newSVuv(st->bytes_read));
-    hv_stores(hv, "read_eagain_count", newSVuv(st->read_eagain_count));
-    hv_stores(hv, "read_eintr_count", newSVuv(st->read_eintr_count));
-    hv_stores(hv, "eof_count", newSVuv(st->eof_count));
-    hv_stores(hv, "read_error_count", newSVuv(st->read_error_count));
-    hv_stores(hv, "delivery_calls", newSVuv(st->delivery_calls));
-    hv_stores(hv, "read_batch_bytes",
-        newSVuv(st->descriptor->read_batch_bytes));
-    hv_stores(hv, "read_batch_flushes", newSVuv(st->read_batch_flushes));
-    hv_stores(hv, "read_batch_peak_bytes",
-        newSVuv(st->read_batch_peak_bytes));
-    hv_stores(hv, "input_appends", newSVuv(st->input_appends));
-    hv_stores(hv, "input_compactions", newSVuv(st->input_compactions));
-    hv_stores(hv, "input_peak_bytes", newSVuv(st->input_peak_bytes));
-    hv_stores(hv, "input_buffered_bytes", newSVuv(st->input_len));
-    hv_stores(hv, "delimiter_searches", newSVuv(st->delimiter_searches));
-    hv_stores(hv, "frames_emitted", newSVuv(st->frames_emitted));
-    hv_stores(hv, "message_batch_size",
-        newSVuv(st->descriptor->message_batch_size));
-    hv_stores(hv, "message_callback_calls",
-        newSVuv(st->message_callback_calls));
-    hv_stores(hv, "message_batch_calls", newSVuv(st->message_batch_calls));
-    hv_stores(hv, "message_batch_peak_messages",
-        newSVuv(st->message_batch_peak_messages));
-    hv_stores(hv, "message_batch_peak_bytes",
-        newSVuv(st->message_batch_peak_bytes));
-    hv_stores(hv, "framing_error_count", newSVuv(st->framing_error_count));
-    hv_stores(hv, "transition_count", newSVuv(st->transition_count));
-    hv_stores(hv, "consumer_message_calls",
-        newSVuv(st->consumer_message_calls));
-    hv_stores(hv, "consumer_pause_count",
-        newSVuv(st->consumer_pause_count));
-    hv_stores(hv, "consumer_resume_count",
-        newSVuv(st->consumer_resume_count));
-    hv_stores(hv, "consumer_event_calls",
-        newSVuv(st->consumer_event_calls));
-    hv_stores(hv, "consumer_flush_calls",
-        newSVuv(st->consumer_flush_calls));
-    hv_stores(hv, "consumer_flush_pending",
-        newSViv(st->consumer_flush_pending ? 1 : 0));
-    hv_stores(hv, "consumer_paused",
-        newSViv(st->consumer_paused ? 1 : 0));
-
-    hv_stores(hv, "write_submit_calls", newSVuv(st->write_submit_calls));
-    hv_stores(hv, "write_ready_calls", newSVuv(st->write_ready_calls));
-    hv_stores(hv, "write_calls", newSVuv(st->write_calls));
-    hv_stores(hv, "writev_calls", newSVuv(st->writev_calls));
-    hv_stores(hv, "bytes_written", newSVuv(st->bytes_written));
-    hv_stores(hv, "write_eagain_count", newSVuv(st->write_eagain_count));
-    hv_stores(hv, "write_eintr_count", newSVuv(st->write_eintr_count));
-    hv_stores(hv, "write_error_count", newSVuv(st->write_error_count));
-    hv_stores(hv, "output_limit_count", newSVuv(st->output_limit_count));
-    hv_stores(hv, "queued_segments", newSVuv(st->queued_segments));
-    hv_stores(hv, "queue_peak_bytes", newSVuv(st->queue_peak_bytes));
-    hv_stores(hv, "drain_calls", newSVuv(st->drain_calls));
-    hv_stores(hv, "empty_calls", newSVuv(st->empty_calls));
-    hv_stores(hv, "pending_bytes", newSVuv(st->pending_bytes));
-    hv_stores(hv, "write_blocked", newSViv(st->write_blocked ? 1 : 0));
-    hv_stores(hv, "activity_tracking",
-        newSViv(st->activity_tracking ? 1 : 0));
-    hv_stores(hv, "activity_clock_calls",
-        newSVuv(st->activity_clock_calls));
-
-    RETVAL = newRV_noinc((SV *)hv);
+    RETVAL = les_state_stats(aTHX_ les_state_from_sv(state_obj));
   OUTPUT:
     RETVAL
 

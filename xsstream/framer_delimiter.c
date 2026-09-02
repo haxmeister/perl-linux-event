@@ -33,7 +33,7 @@ les_process_delimiter(pTHX_ les_xsstate_t *st)
         const char *data = les_input_data(st);
         size_t pos;
 
-        st->delimiter_searches++;
+        LES_STAT(st, delimiter_searches)++;
         pos = les_find_bytes(data, st->input_len, st->descriptor->delimiter,
             st->descriptor->delimiter_len, st->delimiter_scan);
 

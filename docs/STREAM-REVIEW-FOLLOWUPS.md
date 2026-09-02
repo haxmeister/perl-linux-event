@@ -271,6 +271,11 @@ embedded at the tail of `les_xsstate_t`.
 
 Any separate allocation/pointer version requires a demonstrated end-to-end win.
 
+**Status (2026-09-02): complete.** All 40 counters now have one
+`les_xsstats_t` definition embedded at the tail of `les_xsstate_t`, one
+name/offset table drives export, and direct updates use `LES_STAT()`. The
+single XSState allocation and all 49 public `stats()` keys are preserved.
+
 ## Priority 5 - future write-path experiments
 
 ### 14. Preserve write value semantics in any zero-copy/COW experiment

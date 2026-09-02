@@ -40,9 +40,9 @@ les_queue_bytes(les_xsstate_t *st, const char *data, STRLEN len)
     st->wtail = seg;
 
     st->pending_bytes += (UV)len;
-    st->queued_segments++;
-    if ((unsigned long long)st->pending_bytes > st->queue_peak_bytes)
-        st->queue_peak_bytes = (unsigned long long)st->pending_bytes;
+    LES_STAT(st, queued_segments)++;
+    if ((unsigned long long)st->pending_bytes > LES_STAT(st, queue_peak_bytes))
+        LES_STAT(st, queue_peak_bytes) = (unsigned long long)st->pending_bytes;
 }
 
 void
@@ -107,7 +107,7 @@ les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv)
     if (len == 0)
         return LES_WRITE_FLOW_OK;
 
-    st->write_submit_calls++;
+    LES_STAT(st, write_submit_calls)++;
 
     if (st->pending_bytes == 0) {
         /*
@@ -118,7 +118,7 @@ les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv)
         while (1) {
             les_transport_result_t result;
 
-            st->write_calls++;
+            LES_STAT(st, write_calls)++;
             result = les_transport_write(st, data, (size_t)len);
 
             if (st->transport_ops != &les_plain_transport_ops
@@ -130,7 +130,7 @@ les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv)
 
             if (result.status == LES_TRANSPORT_OK && result.count > 0) {
                 off = (STRLEN)result.count;
-                st->bytes_written += (unsigned long long)result.count;
+                LES_STAT(st, bytes_written) += (unsigned long long)result.count;
                 les_note_write_activity(aTHX_ st);
                 break;
             }
@@ -139,19 +139,19 @@ les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv)
                 break;
 
             if (result.status == LES_TRANSPORT_INTERRUPT) {
-                st->write_eintr_count++;
+                LES_STAT(st, write_eintr_count)++;
                 continue;
             }
 
             if (result.status == LES_TRANSPORT_WANT_READ
                 || result.status == LES_TRANSPORT_WANT_WRITE) {
-                st->write_eagain_count++;
+                LES_STAT(st, write_eagain_count)++;
                 break;
             }
 
             {
                 int err = result.error;
-                st->write_error_count++;
+                LES_STAT(st, write_error_count)++;
                 les_call_write_error(aTHX_ st, err);
                 return 0;
             }
@@ -204,7 +204,7 @@ les_write_ready(pTHX_ les_xsstate_t *st)
         return;
     }
 
-    st->write_ready_calls++;
+    LES_STAT(st, write_ready_calls)++;
 
     while (!st->closed && st->pending_bytes > 0) {
         struct iovec iov[LES_IOV_MAX];
@@ -229,7 +229,7 @@ les_write_ready(pTHX_ les_xsstate_t *st)
         if (iovcnt == 0)
             break;
 
-        st->writev_calls++;
+        LES_STAT(st, writev_calls)++;
         result = les_transport_writev(st, iov, iovcnt);
 
         if (st->transport_ops != &les_plain_transport_ops
@@ -240,7 +240,7 @@ les_write_ready(pTHX_ les_xsstate_t *st)
         }
 
         if (result.status == LES_TRANSPORT_OK && result.count > 0) {
-            st->bytes_written += (unsigned long long)result.count;
+            LES_STAT(st, bytes_written) += (unsigned long long)result.count;
             les_note_write_activity(aTHX_ st);
             les_consume_written(st, (size_t)result.count);
             les_maybe_drain_transition(aTHX_ st);
@@ -251,19 +251,19 @@ les_write_ready(pTHX_ les_xsstate_t *st)
             return;
 
         if (result.status == LES_TRANSPORT_INTERRUPT) {
-            st->write_eintr_count++;
+            LES_STAT(st, write_eintr_count)++;
             continue;
         }
 
         if (result.status == LES_TRANSPORT_WANT_READ
             || result.status == LES_TRANSPORT_WANT_WRITE) {
-            st->write_eagain_count++;
+            LES_STAT(st, write_eagain_count)++;
             return;
         }
 
         {
             int err = result.error;
-            st->write_error_count++;
+            LES_STAT(st, write_error_count)++;
             les_call_write_error(aTHX_ st, err);
             return;
         }

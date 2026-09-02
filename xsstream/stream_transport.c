@@ -125,7 +125,7 @@ les_note_read_activity(pTHX_ les_xsstate_t *st)
     if (!st->activity_tracking)
         return;
     st->last_read_ns = les_activity_now_ns(aTHX);
-    st->activity_clock_calls++;
+    LES_STAT(st, activity_clock_calls)++;
 }
 
 void
@@ -134,7 +134,7 @@ les_note_write_activity(pTHX_ les_xsstate_t *st)
     if (!st->activity_tracking)
         return;
     st->last_write_ns = les_activity_now_ns(aTHX);
-    st->activity_clock_calls++;
+    LES_STAT(st, activity_clock_calls)++;
 }
 
 /* Keep the ordinary fd path direct and predictable. Provider indirection is

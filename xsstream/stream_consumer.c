@@ -34,7 +34,7 @@ les_consumer_host_pause(pTHX_ void *host_context)
         return 0;
     if (!st->consumer_paused) {
         st->consumer_paused = 1;
-        st->consumer_pause_count++;
+        LES_STAT(st, consumer_pause_count)++;
         les_consumer_notify_paused(aTHX_ st);
     }
     return 1;
@@ -159,7 +159,7 @@ les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
     if (status == LES_CONSUMER_CONTINUE) {
         if (resume_on_continue && st->consumer_paused) {
             st->consumer_paused = 0;
-            st->consumer_resume_count++;
+            LES_STAT(st, consumer_resume_count)++;
             les_call_stream_method(aTHX_ st, "_xs_consumer_resumed");
         }
         return status;
@@ -167,7 +167,7 @@ les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
     if (status == LES_CONSUMER_PAUSE) {
         if (!st->consumer_paused) {
             st->consumer_paused = 1;
-            st->consumer_pause_count++;
+            LES_STAT(st, consumer_pause_count)++;
             les_consumer_notify_paused(aTHX_ st);
         }
         return status;
@@ -189,7 +189,7 @@ les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
 
     if (!st || !st->consumer_ops || !st->consumer_context)
         croak("native Stream consumer is not attached");
-    st->consumer_message_calls++;
+    LES_STAT(st, consumer_message_calls)++;
     st->consumer_flush_pending = 1;
     JMPENV_PUSH(jump_status);
     if (jump_status == 0) {
@@ -219,7 +219,7 @@ les_consumer_call_pending_flush(pTHX_ les_xsstate_t *st, int terminal)
     st->consumer_flush_pending = 0;
     if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
         return LES_CONSUMER_CONTINUE;
-    st->consumer_flush_calls++;
+    LES_STAT(st, consumer_flush_calls)++;
     status = st->consumer_ops->flush(aTHX_ st->consumer_context);
     les_consumer_validate_status(aTHX_ st, status,
         terminal ? "terminal flush" : "flush");
@@ -256,7 +256,7 @@ les_consumer_event(pTHX_ les_xsstate_t *st, uint32_t event, int error,
         || st->consumer_terminal)
         return;
     st->consumer_terminal = 1;
-    st->consumer_event_calls++;
+    LES_STAT(st, consumer_event_calls)++;
     st->consumer_ops->event(aTHX_ st->consumer_context, event, error,
         message ? message : "");
 }
@@ -270,7 +270,7 @@ les_consumer_resume(pTHX_ les_xsstate_t *st)
 
     if (st->consumer_paused) {
         st->consumer_paused = 0;
-        st->consumer_resume_count++;
+        LES_STAT(st, consumer_resume_count)++;
     }
 
     if (!st->read_paused && st->input_dispatch_depth == 0 && st->input_len) {

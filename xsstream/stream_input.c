@@ -26,7 +26,7 @@ les_input_reserve(les_xsstate_t *st, size_t extra)
         if (st->input_len)
             memmove(st->input_buffer, st->input_buffer + st->input_start, st->input_len);
         st->input_start = 0;
-        st->input_compactions++;
+        LES_STAT(st, input_compactions)++;
         return 1;
     }
 

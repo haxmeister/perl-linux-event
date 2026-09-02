@@ -51,6 +51,95 @@ les_store_optional_cb(SV *cb, const char *name)
     return les_store_cb(cb, name);
 }
 
+typedef struct les_stat_field_s {
+    const char *name;
+    I32 name_length;
+    size_t offset;
+} les_stat_field_t;
+
+#define LES_STAT_FIELD(name) \
+    { #name, (I32)(sizeof(#name) - 1), offsetof(les_xsstats_t, name) }
+
+static const les_stat_field_t les_stat_fields[] = {
+    LES_STAT_FIELD(activity_clock_calls),
+    LES_STAT_FIELD(read_ready_calls),
+    LES_STAT_FIELD(read_calls),
+    LES_STAT_FIELD(bytes_read),
+    LES_STAT_FIELD(read_eagain_count),
+    LES_STAT_FIELD(read_eintr_count),
+    LES_STAT_FIELD(eof_count),
+    LES_STAT_FIELD(read_error_count),
+    LES_STAT_FIELD(delivery_calls),
+    LES_STAT_FIELD(read_batch_flushes),
+    LES_STAT_FIELD(read_batch_peak_bytes),
+    LES_STAT_FIELD(input_appends),
+    LES_STAT_FIELD(input_compactions),
+    LES_STAT_FIELD(input_peak_bytes),
+    LES_STAT_FIELD(delimiter_searches),
+    LES_STAT_FIELD(frames_emitted),
+    LES_STAT_FIELD(message_callback_calls),
+    LES_STAT_FIELD(message_batch_calls),
+    LES_STAT_FIELD(message_batch_peak_messages),
+    LES_STAT_FIELD(message_batch_peak_bytes),
+    LES_STAT_FIELD(framing_error_count),
+    LES_STAT_FIELD(transition_count),
+    LES_STAT_FIELD(consumer_message_calls),
+    LES_STAT_FIELD(consumer_pause_count),
+    LES_STAT_FIELD(consumer_resume_count),
+    LES_STAT_FIELD(consumer_event_calls),
+    LES_STAT_FIELD(consumer_flush_calls),
+    LES_STAT_FIELD(write_submit_calls),
+    LES_STAT_FIELD(write_ready_calls),
+    LES_STAT_FIELD(write_calls),
+    LES_STAT_FIELD(writev_calls),
+    LES_STAT_FIELD(bytes_written),
+    LES_STAT_FIELD(write_eagain_count),
+    LES_STAT_FIELD(write_eintr_count),
+    LES_STAT_FIELD(write_error_count),
+    LES_STAT_FIELD(output_limit_count),
+    LES_STAT_FIELD(queued_segments),
+    LES_STAT_FIELD(queue_peak_bytes),
+    LES_STAT_FIELD(drain_calls),
+    LES_STAT_FIELD(empty_calls),
+};
+
+#undef LES_STAT_FIELD
+
+SV *
+les_state_stats(pTHX_ les_xsstate_t *st)
+{
+    HV *hv = newHV();
+    const char *base = (const char *)&st->stats;
+    size_t i;
+
+    for (i = 0; i < sizeof(les_stat_fields) / sizeof(les_stat_fields[0]); i++) {
+        const les_stat_field_t *field = &les_stat_fields[i];
+        unsigned long long value;
+
+        memcpy(&value, base + field->offset, sizeof(value));
+        hv_store(hv, field->name, field->name_length,
+            newSVuv((UV)value), 0);
+    }
+
+    hv_stores(hv, "read_budget_bytes",
+        newSVuv(st->descriptor->read_budget_bytes));
+    hv_stores(hv, "read_batch_bytes",
+        newSVuv(st->descriptor->read_batch_bytes));
+    hv_stores(hv, "message_batch_size",
+        newSVuv(st->descriptor->message_batch_size));
+    hv_stores(hv, "input_buffered_bytes", newSVuv(st->input_len));
+    hv_stores(hv, "consumer_flush_pending",
+        newSViv(st->consumer_flush_pending ? 1 : 0));
+    hv_stores(hv, "consumer_paused",
+        newSViv(st->consumer_paused ? 1 : 0));
+    hv_stores(hv, "pending_bytes", newSVuv(st->pending_bytes));
+    hv_stores(hv, "write_blocked", newSViv(st->write_blocked ? 1 : 0));
+    hv_stores(hv, "activity_tracking",
+        newSViv(st->activity_tracking ? 1 : 0));
+
+    return newRV_noinc((SV *)hv);
+}
+
 void
 les_state_destroy(pTHX_ les_xsstate_t *st)
 {

@@ -6,6 +6,7 @@
 #include "XSUB.h"
 
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -78,6 +79,49 @@ typedef struct les_descriptor_s {
     SV *consumer_provider_sv;
 } les_descriptor_t;
 
+typedef struct les_xsstats_s {
+    unsigned long long activity_clock_calls;
+    unsigned long long read_ready_calls;
+    unsigned long long read_calls;
+    unsigned long long bytes_read;
+    unsigned long long read_eagain_count;
+    unsigned long long read_eintr_count;
+    unsigned long long eof_count;
+    unsigned long long read_error_count;
+    unsigned long long delivery_calls;
+    unsigned long long read_batch_flushes;
+    unsigned long long read_batch_peak_bytes;
+    unsigned long long input_appends;
+    unsigned long long input_compactions;
+    unsigned long long input_peak_bytes;
+    unsigned long long delimiter_searches;
+    unsigned long long frames_emitted;
+    unsigned long long message_callback_calls;
+    unsigned long long message_batch_calls;
+    unsigned long long message_batch_peak_messages;
+    unsigned long long message_batch_peak_bytes;
+    unsigned long long framing_error_count;
+    unsigned long long transition_count;
+    unsigned long long consumer_message_calls;
+    unsigned long long consumer_pause_count;
+    unsigned long long consumer_resume_count;
+    unsigned long long consumer_event_calls;
+    unsigned long long consumer_flush_calls;
+    unsigned long long write_submit_calls;
+    unsigned long long write_ready_calls;
+    unsigned long long write_calls;
+    unsigned long long writev_calls;
+    unsigned long long bytes_written;
+    unsigned long long write_eagain_count;
+    unsigned long long write_eintr_count;
+    unsigned long long write_error_count;
+    unsigned long long output_limit_count;
+    unsigned long long queued_segments;
+    unsigned long long queue_peak_bytes;
+    unsigned long long drain_calls;
+    unsigned long long empty_calls;
+} les_xsstats_t;
+
 typedef struct les_xsstate_s {
     int read_fd;
     int write_fd;
@@ -139,51 +183,12 @@ typedef struct les_xsstate_s {
     int activity_tracking;
     unsigned long long last_read_ns;
     unsigned long long last_write_ns;
-    unsigned long long activity_clock_calls;
 
-    /* Read instrumentation. */
-    unsigned long long read_ready_calls;
-    unsigned long long read_calls;
-    unsigned long long bytes_read;
-    unsigned long long read_eagain_count;
-    unsigned long long read_eintr_count;
-    unsigned long long eof_count;
-    unsigned long long read_error_count;
-    unsigned long long delivery_calls;
-    unsigned long long read_batch_flushes;
-    unsigned long long read_batch_peak_bytes;
-    unsigned long long input_appends;
-    unsigned long long input_compactions;
-    unsigned long long input_peak_bytes;
-    unsigned long long delimiter_searches;
-    unsigned long long frames_emitted;
-    unsigned long long message_callback_calls;
-    unsigned long long message_batch_calls;
-    unsigned long long message_batch_peak_messages;
-    unsigned long long message_batch_peak_bytes;
-    unsigned long long framing_error_count;
-    unsigned long long transition_count;
-    unsigned long long consumer_message_calls;
-    unsigned long long consumer_pause_count;
-    unsigned long long consumer_resume_count;
-    unsigned long long consumer_event_calls;
-    unsigned long long consumer_flush_calls;
-
-    /* Write instrumentation. */
-    unsigned long long write_submit_calls;
-    unsigned long long write_ready_calls;
-    unsigned long long write_calls;
-    unsigned long long writev_calls;
-    unsigned long long bytes_written;
-    unsigned long long write_eagain_count;
-    unsigned long long write_eintr_count;
-    unsigned long long write_error_count;
-    unsigned long long output_limit_count;
-    unsigned long long queued_segments;
-    unsigned long long queue_peak_bytes;
-    unsigned long long drain_calls;
-    unsigned long long empty_calls;
+    /* Instrumentation remains part of the single XSState allocation. */
+    les_xsstats_t stats;
 } les_xsstate_t;
+
+#define LES_STAT(st, name) ((st)->stats.name)
 
 #define LES_INPUT_PAUSED(st) ((st)->read_paused || (st)->consumer_paused)
 
@@ -194,6 +199,7 @@ les_xsstate_t *les_state_from_sv(SV *sv);
 les_descriptor_t *les_descriptor_from_sv(SV *sv);
 void les_require_read_sink(pTHX_ const les_descriptor_t *descriptor,
     int read_fd, const char *raw_error, const char *framed_error);
+SV *les_state_stats(pTHX_ les_xsstate_t *st);
 void les_state_destroy(pTHX_ les_xsstate_t *st);
 SV *les_store_cb(SV *cb, const char *name);
 SV *les_store_optional_cb(SV *cb, const char *name);
