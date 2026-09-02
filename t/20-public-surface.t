@@ -13,7 +13,6 @@ for my $required (
     'LICENSE',
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
-    'docs/XS-ROADMAP.md',
     'docs/DEVELOPMENT-HISTORY.md',
     'docs/STREAM-DESIGN.md',
     'docs/TRANSPORT-BOUNDARY.md',
@@ -113,7 +112,6 @@ for my $live (
     'README.md',
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
-    'docs/XS-ROADMAP.md',
     'docs/STREAM-DESIGN.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
@@ -209,6 +207,39 @@ for my $removed (
 ) {
     ok(!-e File::Spec->catfile($root, split m{/}, $removed),
         "$removed is not part of the public surface");
+}
+
+my @engineering_history = qw(
+    docs/STREAM-REVIEW-FOLLOWUPS.md
+    docs/XS-ROADMAP.md
+    docs/xs-reduction-roadmap.md
+    bench/BENCHMARK-DECISIONS.md
+);
+
+my $manifest_path = File::Spec->catfile($root, 'MANIFEST');
+open my $manifest_fh, '<', $manifest_path
+    or die "open $manifest_path: $!";
+my %manifest_entry;
+while (my $line = <$manifest_fh>) {
+    next if $line =~ /^\s*(?:#|$)/;
+    my ($path) = split /\s+/, $line, 2;
+    $manifest_entry{$path} = 1;
+}
+close $manifest_fh;
+
+my $manifest_skip_path = File::Spec->catfile($root, 'MANIFEST.SKIP');
+open my $manifest_skip_fh, '<', $manifest_skip_path
+    or die "open $manifest_skip_path: $!";
+my @manifest_skip = map { qr/$_/ }
+    grep { length && !/^#/ }
+    map { chomp; s/^\s+|\s+$//gr }
+    <$manifest_skip_fh>;
+close $manifest_skip_fh;
+
+for my $path (@engineering_history) {
+    ok(!$manifest_entry{$path}, "$path is excluded from MANIFEST");
+    ok(scalar(grep { $path =~ $_ } @manifest_skip),
+        "$path is excluded by MANIFEST.SKIP");
 }
 
 done_testing;
