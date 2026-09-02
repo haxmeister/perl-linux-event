@@ -107,6 +107,62 @@ not part of the CPAN distribution.
 | BD-2026-08-29-002 | 2026-08-29 | Native Process pipe draining | KEEP |
 | BD-2026-09-01-001 | 2026-09-01 | Native-consumer host lifetime leases | KEEP |
 | BD-2026-09-01-002 | 2026-09-01 | Native-consumer status reconciliation | KEEP |
+| BD-2026-09-02-001 | 2026-09-02 | Outbound LengthPrefix and Varint fast paths | KEEP |
+
+---
+
+## BD-2026-09-02-001 - Outbound LengthPrefix and Varint fast paths
+
+**Decision:** KEEP
+
+**Hypothesis:** Resolving LengthPrefix's pack template and capacity once at
+declaration time, plus directly encoding one-octet Varint lengths, reduces
+per-send framing work without changing wire bytes or harming larger messages.
+
+**Workload:**
+
+- complete `Stream->send()` path, including Perl framing, native write/queue
+  submission, Loop-driven `writev` draining, and peer receipt;
+- write-only framed Stream over one AF_UNIX `SOCK_STREAM` socketpair;
+- LengthPrefix with four-byte big-endian prefixes and Varint with canonical
+  unsigned LEB128 prefixes;
+- 64 B, 256 B, 1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B;
+- one warmup and five measured repeats per framer and size;
+- message counts scaled to roughly 16 MiB of payload, bounded to 128–200,000;
+- default 64 KiB `read_size`, unlimited read budget, no callback batching,
+  default buffer/watermark settings, one producer, level-triggered readiness,
+  OS-default 212,992-byte socket buffers, no TLS.
+
+The raw JSON records every repeat, exact commands, resolved descriptor and
+Stream configuration, runtime/compiler details, and write/queue statistics.
+
+**Measured medians:**
+
+| Payload | LengthPrefix throughput | CPU ns/B | Varint throughput | CPU ns/B |
+|---:|---:|---:|---:|---:|
+| 64 B | +31.0% | -23.6% | +16.6% | -14.2% |
+| 256 B | +28.4% | -22.1% | +5.3% | -5.0% |
+| 1 KiB | +26.2% | -20.8% | +2.4% | -2.4% |
+| 4 KiB | +24.9% | -20.1% | +31.1% | -23.7% |
+| 16 KiB | +3.8% | -3.6% | +0.4% | -0.4% |
+| 32 KiB | +3.7% | -3.5% | +19.9% | -16.5% |
+| 64 KiB | +2.5% | -2.5% | -2.7% | +2.8% |
+| 128 KiB | +3.3% | -3.1% | +1.6% | -1.5% |
+| 200,000 B | +5.0% | -4.8% | -0.9% | +0.9% |
+
+**Reason:** LengthPrefix shows a large, consistent end-to-end gain through
+4 KiB with lower CPU cost. Varint's intended one-octet 64 B path also improves
+materially, while the largest rows remain neutral. Boundary regressions prove
+byte equivalence for every supported LengthPrefix width/endian combination and
+across canonical Varint width transitions.
+
+**Caveat:** The eager send queue and peer drain exhibit substantial scheduling
+variance for large frames. Scattered Varint gains at 4 KiB and 32 KiB are not
+treated as causal evidence; only the small-prefix signal and absence of a
+repeatable large-message regression drive the decision.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-001-framer-fast-paths/`
 
 ---
 

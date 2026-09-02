@@ -1,0 +1,25 @@
+{
+  "benchmark": "framer-send",
+  "benchmark_contract_version": 1,
+  "decision_id": "BD-2026-09-02-001",
+  "rows": [
+    {"framer":"length","payload_bytes":64,"throughput_change_percent":31.0,"cpu_ns_per_byte_change_percent":-23.6},
+    {"framer":"length","payload_bytes":256,"throughput_change_percent":28.4,"cpu_ns_per_byte_change_percent":-22.1},
+    {"framer":"length","payload_bytes":1024,"throughput_change_percent":26.2,"cpu_ns_per_byte_change_percent":-20.8},
+    {"framer":"length","payload_bytes":4096,"throughput_change_percent":24.9,"cpu_ns_per_byte_change_percent":-20.1},
+    {"framer":"length","payload_bytes":16384,"throughput_change_percent":3.8,"cpu_ns_per_byte_change_percent":-3.6},
+    {"framer":"length","payload_bytes":32768,"throughput_change_percent":3.7,"cpu_ns_per_byte_change_percent":-3.5},
+    {"framer":"length","payload_bytes":65536,"throughput_change_percent":2.5,"cpu_ns_per_byte_change_percent":-2.5},
+    {"framer":"length","payload_bytes":131072,"throughput_change_percent":3.3,"cpu_ns_per_byte_change_percent":-3.1},
+    {"framer":"length","payload_bytes":200000,"throughput_change_percent":5.0,"cpu_ns_per_byte_change_percent":-4.8},
+    {"framer":"varint","payload_bytes":64,"throughput_change_percent":16.6,"cpu_ns_per_byte_change_percent":-14.2},
+    {"framer":"varint","payload_bytes":256,"throughput_change_percent":5.3,"cpu_ns_per_byte_change_percent":-5.0},
+    {"framer":"varint","payload_bytes":1024,"throughput_change_percent":2.4,"cpu_ns_per_byte_change_percent":-2.4},
+    {"framer":"varint","payload_bytes":4096,"throughput_change_percent":31.1,"cpu_ns_per_byte_change_percent":-23.7},
+    {"framer":"varint","payload_bytes":16384,"throughput_change_percent":0.4,"cpu_ns_per_byte_change_percent":-0.4},
+    {"framer":"varint","payload_bytes":32768,"throughput_change_percent":19.9,"cpu_ns_per_byte_change_percent":-16.5},
+    {"framer":"varint","payload_bytes":65536,"throughput_change_percent":-2.7,"cpu_ns_per_byte_change_percent":2.8},
+    {"framer":"varint","payload_bytes":131072,"throughput_change_percent":1.6,"cpu_ns_per_byte_change_percent":-1.5},
+    {"framer":"varint","payload_bytes":200000,"throughput_change_percent":-0.9,"cpu_ns_per_byte_change_percent":0.9}
+  ]
+}

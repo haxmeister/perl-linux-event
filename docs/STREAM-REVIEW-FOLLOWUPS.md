@@ -233,6 +233,12 @@ Keep the worthwhile native framer simplifications:
 
 Require byte-equivalence boundary tests and an end-to-end benchmark before merging. Historical review measurement for the LengthPrefix template pre-resolution was about 1.85x for the whole `_frame` call (roughly 1.19M/s -> 2.19M/s on that reviewer's machine). Do not use the earlier ~6.3x bare-`pack` micro-operation number as the expected end-to-end gain.
 
+**Status (2026-09-02): complete, KEEP.** Boundary tests cover all supported
+LengthPrefix widths/endianness and Varint width transitions. The full
+64 B–200 KB `Stream->send()` sweep is recorded as `BD-2026-09-02-001`;
+LengthPrefix improved 25–31% through 4 KB, Varint improved 16.6% at 64 B, and
+the largest rows remained neutral within queue/drain scheduling variance.
+
 ### 12. Split test-only native consumer code from production consumer code
 
 Move the private conformance/test provider into its own translation unit.

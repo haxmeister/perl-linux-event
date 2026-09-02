@@ -1,0 +1,23 @@
+{
+  "decision_id": "BD-2026-09-02-001",
+  "decision": "KEEP",
+  "date": "2026-09-02",
+  "baseline": {
+    "remote_commit": "6c00f36fcf87f59aa059b332937895cdc8497312",
+    "local_commit": "02477a1",
+    "tree": "631dce87f23e914f2edeb610945019f5611f0150"
+  },
+  "candidate": {
+    "remote_commit": "594087a25f1781df735ec29817644431a60a7619",
+    "local_commit": "8f7848ebdad08b268853b2fd732f2938e4812e71",
+    "tree": "879a3e79d3c246562ad66727717b2f1c8c208f81"
+  },
+  "benchmark_script": "bench/run-framer-send-bench.pl",
+  "benchmark_script_blob": "829ef9eb84d67229b2e5198efd147a5620228df6",
+  "execution": "baseline and candidate were run sequentially in isolated worktrees on the same host",
+  "interpretation": {
+    "causal_signal": "LengthPrefix gains from 64 B through 4 KB and the Varint 64 B gain match the changed encoder work.",
+    "noise": "Large-frame queue/drain scheduling varies substantially. Scattered Varint gains at 4 KB and 32 KB are not attributed to the encoder change.",
+    "regression_gate": "No repeatable material regression appears at 64 KB through 200 KB; the -2.7% and -0.9% Varint median throughput changes are neutral within observed variance."
+  }
+}
