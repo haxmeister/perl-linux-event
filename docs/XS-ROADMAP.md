@@ -168,6 +168,12 @@ full nine-size raw/framed payload sweep, resolved benchmark configuration, and
 per-file/function native ownership inventory are recorded under
 `BD-2026-09-02-002`. Each extraction remains an independent paired decision.
 
+**Extraction 1 status (2026-09-02): KEEP.** Descriptor specification shape and
+normalization now live on the Perl cold path. Native code retains the immutable
+runtime descriptor and memory/ABI safety checks. `BD-2026-09-02-003` records
+the paired release, full payload, focused cold-construction, correctness, and
+complexity evidence. Proceed independently with stats result formatting.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:

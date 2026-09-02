@@ -1,0 +1,37 @@
+{
+   "schema_version" : 1,
+   "decision_id" : "BD-2026-09-02-003",
+   "title" : "descriptor declaration/spec validation in Perl",
+   "decision" : "KEEP",
+   "generated_at_epoch" : 1788358804,
+   "baseline" : {
+      "commit" : "926443f9afc33732210ed962dbb7c9fee1c6b6bb",
+      "tree" : "bc701b3c311ce1d6027072c6ef77639ebdf3676a"
+   },
+   "candidate" : {
+      "commit" : "03e22b7e2ac8d0931f6046d55fdff24e90b59ee7",
+      "tree" : "9ec6959a3998aca9d5d082a79b9f8ef0c53e2d31"
+   },
+   "runtime" : {
+      "kernel" : "Linux 6.18.35 x86_64",
+      "perl" : "5.38.2",
+      "archname" : "x86_64-linux-gnu-thread-multi",
+      "compiler" : "x86_64-linux-gnu-gcc",
+      "optimize" : "-O2 -g"
+   },
+   "tests" : {
+      "core" : "142 files, 1917 tests, PASS",
+      "linux_event_async" : "8 files, 65 tests, PASS"
+   },
+   "benchmark_runs" : {
+      "release_retest" : "seven measured rotated repeats after warmup; adjacent baseline and candidate builds",
+      "payload_retest" : "raw and native Delimiter; all nine policy sizes; one warmup and five measured repeats",
+      "cold_descriptor" : "raw and native Delimiter; cache cleared before every construction; 1000 warmups and nine repeats of 50000 constructions per mode"
+   },
+   "notes" : [
+      "candidate-performance-regression.json preserves the first comparison, which failed one threshold while unrelated rows degraded together",
+      "candidate-stream-payload-sweep.json preserves the corresponding visibly unstable first payload run",
+      "the retest-* files are the adjacent fresh baseline/candidate measurements used for the decision",
+      "payload configuration, transport, batching, read sizes and budgets, buffer limits, socket settings, concurrency, callbacks, reads, writes and CPU are embedded in each payload JSON"
+   ]
+}

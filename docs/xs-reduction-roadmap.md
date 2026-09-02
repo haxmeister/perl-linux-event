@@ -332,6 +332,16 @@ Try independently, with one benchmarked commit per extraction:
 Do not combine these initially; preserve attribution of both performance and
 complexity changes.
 
+**Extraction 1 status (2026-09-02): KEEP.** `BD-2026-09-02-003` moves the
+29-field private descriptor-shape validation and scalar normalization into
+Perl while retaining compact immutable native descriptors and defensive
+native bounds, parser-memory, and consumer-table checks. It removes 61 native
+lines and two native functions (13 net production lines after the Perl
+policy), passes the core and real `Linux::Event::Async` suites, and is neutral
+in adjacent established-Stream measurements. Deliberately rebuilding an
+uncached descriptor costs about 7.1 microseconds more; normal construction
+caches one descriptor per class.
+
 ### Phase 2 - consolidate the native data plane
 
 After cold policy is extracted, reorganize remaining native Stream code around:

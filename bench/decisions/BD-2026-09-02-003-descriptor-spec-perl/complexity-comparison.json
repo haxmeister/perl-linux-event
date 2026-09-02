@@ -1,0 +1,32 @@
+{
+   "schema_version" : 1,
+   "baseline" : {
+      "commit" : "926443f9afc33732210ed962dbb7c9fee1c6b6bb",
+      "tree" : "bc701b3c311ce1d6027072c6ef77639ebdf3676a",
+      "tracked_native_lines" : 3908,
+      "production_native_lines" : 3287,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 146,
+      "production_native_functions" : 121,
+      "private_test_provider_functions" : 25
+   },
+   "candidate" : {
+      "commit" : "03e22b7e2ac8d0931f6046d55fdff24e90b59ee7",
+      "tree" : "9ec6959a3998aca9d5d082a79b9f8ef0c53e2d31",
+      "tracked_native_lines" : 3847,
+      "production_native_lines" : 3226,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119,
+      "private_test_provider_functions" : 25
+   },
+   "delta" : {
+      "tracked_native_lines" : -61,
+      "production_native_lines" : -61,
+      "detected_native_functions" : -2,
+      "production_native_functions" : -2,
+      "perl_production_lines" : 48,
+      "net_production_lines" : -13
+   },
+   "counting_method" : "physical wc -l over Git-tracked xsstream .c/.h/.xs files; function delta is the Phase 0 inventory with the two removed descriptor-key scanners subtracted and the renamed XSUB counted once"
+}

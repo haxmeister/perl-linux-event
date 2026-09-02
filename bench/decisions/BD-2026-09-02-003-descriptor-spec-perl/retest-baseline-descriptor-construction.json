@@ -1,0 +1,223 @@
+{
+   "benchmark" : "Stream cold descriptor reconstruction",
+   "command" : "/tmp/descriptor-construction-bench.pl",
+   "commit" : "926443f9afc33732210ed962dbb7c9fee1c6b6bb",
+   "configuration" : {
+      "cache_policy" : "clear all class descriptors before every construction",
+      "concurrency" : 1,
+      "iterations_per_repeat" : 50000,
+      "modes" : [
+         "raw",
+         "delimiter"
+      ],
+      "repeats" : 9,
+      "transport" : "none; descriptor construction only",
+      "warmup_iterations_per_mode" : 1000
+   },
+   "runtime" : {
+      "archname" : "x86_64-linux-gnu-thread-multi",
+      "cc" : "x86_64-linux-gnu-gcc",
+      "ccflags" : "-D_REENTRANT -D_GNU_SOURCE -DDEBIAN -fwrapv -fno-strict-aliasing -pipe -I/usr/local/include -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64",
+      "optimize" : "-O2 -g",
+      "osname" : "linux",
+      "perl" : 5.038002
+   },
+   "samples" : [
+      {
+         "cpu_microseconds_each" : 17.4,
+         "cpu_seconds" : 0.87,
+         "descriptors_per_second" : 57374.969,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 1,
+         "wall_microseconds_each" : 17.429203,
+         "wall_seconds" : 0.871460167
+      },
+      {
+         "cpu_microseconds_each" : 17.4,
+         "cpu_seconds" : 0.87,
+         "descriptors_per_second" : 57311.512,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 1,
+         "wall_microseconds_each" : 17.448501,
+         "wall_seconds" : 0.872425065
+      },
+      {
+         "cpu_microseconds_each" : 16.8,
+         "cpu_seconds" : 0.84,
+         "descriptors_per_second" : 59733.661,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 2,
+         "wall_microseconds_each" : 16.74098,
+         "wall_seconds" : 0.837048985
+      },
+      {
+         "cpu_microseconds_each" : 17,
+         "cpu_seconds" : 0.85,
+         "descriptors_per_second" : 58555.585,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 2,
+         "wall_microseconds_each" : 17.07779,
+         "wall_seconds" : 0.853889513
+      },
+      {
+         "cpu_microseconds_each" : 17,
+         "cpu_seconds" : 0.85,
+         "descriptors_per_second" : 59118.048,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 3,
+         "wall_microseconds_each" : 16.915308,
+         "wall_seconds" : 0.845765408
+      },
+      {
+         "cpu_microseconds_each" : 18,
+         "cpu_seconds" : 0.9,
+         "descriptors_per_second" : 55670.106,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 3,
+         "wall_microseconds_each" : 17.962962,
+         "wall_seconds" : 0.898148095
+      },
+      {
+         "cpu_microseconds_each" : 17.4,
+         "cpu_seconds" : 0.87,
+         "descriptors_per_second" : 57225.188,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 4,
+         "wall_microseconds_each" : 17.474823,
+         "wall_seconds" : 0.873741126
+      },
+      {
+         "cpu_microseconds_each" : 18.4,
+         "cpu_seconds" : 0.92,
+         "descriptors_per_second" : 54572.781,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 4,
+         "wall_microseconds_each" : 18.324153,
+         "wall_seconds" : 0.916207668
+      },
+      {
+         "cpu_microseconds_each" : 16.8,
+         "cpu_seconds" : 0.84,
+         "descriptors_per_second" : 59087.01,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 5,
+         "wall_microseconds_each" : 16.924194,
+         "wall_seconds" : 0.846209684
+      },
+      {
+         "cpu_microseconds_each" : 17.4,
+         "cpu_seconds" : 0.87,
+         "descriptors_per_second" : 57621.607,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 5,
+         "wall_microseconds_each" : 17.354601,
+         "wall_seconds" : 0.867730047
+      },
+      {
+         "cpu_microseconds_each" : 16.8,
+         "cpu_seconds" : 0.84,
+         "descriptors_per_second" : 59683.011,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 6,
+         "wall_microseconds_each" : 16.755187,
+         "wall_seconds" : 0.837759344
+      },
+      {
+         "cpu_microseconds_each" : 18.6,
+         "cpu_seconds" : 0.93,
+         "descriptors_per_second" : 53703.381,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 6,
+         "wall_microseconds_each" : 18.620801,
+         "wall_seconds" : 0.931040072
+      },
+      {
+         "cpu_microseconds_each" : 17.6,
+         "cpu_seconds" : 0.88,
+         "descriptors_per_second" : 56854.9,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 7,
+         "wall_microseconds_each" : 17.588634,
+         "wall_seconds" : 0.879431682
+      },
+      {
+         "cpu_microseconds_each" : 17.8,
+         "cpu_seconds" : 0.89,
+         "descriptors_per_second" : 56344.992,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 7,
+         "wall_microseconds_each" : 17.747806,
+         "wall_seconds" : 0.887390314
+      },
+      {
+         "cpu_microseconds_each" : 16.6,
+         "cpu_seconds" : 0.83,
+         "descriptors_per_second" : 59840.328,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 8,
+         "wall_microseconds_each" : 16.711138,
+         "wall_seconds" : 0.835556913
+      },
+      {
+         "cpu_microseconds_each" : 17.2,
+         "cpu_seconds" : 0.86,
+         "descriptors_per_second" : 58492.737,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 8,
+         "wall_microseconds_each" : 17.09614,
+         "wall_seconds" : 0.854806976
+      },
+      {
+         "cpu_microseconds_each" : 16.6,
+         "cpu_seconds" : 0.83,
+         "descriptors_per_second" : 60076.874,
+         "iterations" : 50000,
+         "mode" : "raw",
+         "repeat" : 9,
+         "wall_microseconds_each" : 16.64534,
+         "wall_seconds" : 0.832267009
+      },
+      {
+         "cpu_microseconds_each" : 17.2,
+         "cpu_seconds" : 0.86,
+         "descriptors_per_second" : 58400.452,
+         "iterations" : 50000,
+         "mode" : "delimiter",
+         "repeat" : 9,
+         "wall_microseconds_each" : 17.123155,
+         "wall_seconds" : 0.856157758
+      }
+   ],
+   "schema_version" : 1,
+   "summary" : [
+      {
+         "median_cpu_microseconds_each" : 16.8,
+         "median_descriptors_per_second" : 59118.048,
+         "median_wall_microseconds_each" : 16.915308,
+         "mode" : "raw"
+      },
+      {
+         "median_cpu_microseconds_each" : 17.4,
+         "median_descriptors_per_second" : 57311.512,
+         "median_wall_microseconds_each" : 17.448501,
+         "mode" : "delimiter"
+      }
+   ],
+   "variant" : "retest-baseline"
+}

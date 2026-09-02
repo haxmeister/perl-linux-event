@@ -470,3 +470,79 @@ supplies the complementary serial request/reply and lifecycle coverage.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-02-002-xs-reduction-baseline/`
+
+---
+
+## BD-2026-09-02-003 - descriptor specification policy extraction
+
+**Decision:** KEEP
+
+**Hypothesis:** The private 29-field descriptor declaration/specification
+validation and normalization can move to the once-per-class Perl path while
+the compact immutable native descriptor and native memory/consumer-ABI safety
+checks remain in XS, reducing native policy without affecting established
+Stream performance.
+
+**Change:** The public `XSDescriptor->new` wrapper now rejects incomplete or
+unknown specifications, copies the specification, and normalizes boolean and
+numeric representation in Perl. The renamed private `_new_validated` XSUB
+retains a 29-field completeness backstop, safe field access, native size and
+parser-memory bounds, and consumer operations-table validation. Existing
+framer, callback, transport, and consumer policy continues to be validated by
+the earlier Perl class-descriptor path.
+
+**Adjacent release comparison:** Seven measured repeats after warmup; the
+candidate remained inside the permanent 10% gate for every row. The
+Stream-relevant medians were:
+
+| Workload | Throughput delta | CPU delta |
+|---|---:|---:|
+| raw Stream lifecycle | -0.03% | -0.02% |
+| framed Stream lifecycle | -1.91% | +1.96% |
+| raw Stream throughput | -1.79% | +1.81% |
+| deadline Stream throughput | +0.50% | -0.50% |
+| framed Stream throughput | +0.29% | -0.29% |
+| connect/listener lifecycle | -4.59% | +4.81% |
+
+The first non-adjacent comparison is also retained: it crossed the gate on
+framed lifecycle while registration, Timer, raw, and connect rows degraded
+together. Fresh adjacent baseline/candidate builds did not reproduce it.
+
+**Full payload sweep:** Raw and native Delimiter modes used 64 B, 256 B,
+1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B, one warmup and
+five measured repeats. Effective descriptor/framer settings, AF_UNIX
+transport, 256 KiB reads/budget, batching, buffer limits, socket settings,
+concurrency, reads/writes/callbacks, CPU, and input peaks are embedded in the
+raw JSON. Delimiter candidate medians ranged from +1.13% to +29.69% MiB/s;
+raw rows were noisy at small sizes as reads/message varied and ranged from
+-10.14% to +205.19%. No candidate code runs after the cached descriptor is
+built, and the adjacent release throughput rows were -1.79% raw and +0.29%
+framed, so the payload scatter is treated as host/socket splitting noise rather
+than an extraction effect.
+
+**Focused cold-path cost:** With the complete descriptor cache cleared before
+every iteration, nine repeats of 50,000 constructions per mode measured:
+
+| Descriptor | Baseline | Candidate | Wall-time delta |
+|---|---:|---:|---:|
+| raw | 16.915 us | 23.976 us | +41.74% |
+| Delimiter | 17.449 us | 24.600 us | +40.99% |
+
+This is an intentional approximately 7.1 us cost when creating a previously
+unseen class descriptor, not a per-Stream or per-message cost. Normal operation
+caches one descriptor per class.
+
+**Complexity/correctness:** Production native source falls from 3,287 to
+3,226 lines and from 121 to 119 detected functions. Adding 48 Perl production
+lines leaves a net 13-line production reduction while making declaration
+policy readable and testable without entering XS. The core suite passes 142
+files/1,917 tests and the real `Linux::Event::Async` cross-repository suite
+passes 8 files/65 tests.
+
+**Reason:** Keep the extraction. Its measured cost is isolated to deliberately
+uncached class-descriptor construction, the established data plane remains
+neutral, native ABI and memory-safety checks remain native, and the result
+shrinks the native policy surface without changing consumer semantics.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-003-descriptor-spec-perl/`

@@ -1,0 +1,41 @@
+{
+   "baseline" : {
+      "commit" : "926443f9afc33732210ed962dbb7c9fee1c6b6bb",
+      "variant" : "retest-baseline"
+   },
+   "baseline_evidence" : "bench/decisions/BD-2026-09-02-003-descriptor-spec-perl/retest-baseline-descriptor-construction.json",
+   "candidate" : {
+      "commit" : "03e22b7e2ac8d0931f6046d55fdff24e90b59ee7",
+      "variant" : "retest-candidate"
+   },
+   "candidate_evidence" : "bench/decisions/BD-2026-09-02-003-descriptor-spec-perl/retest-candidate-descriptor-construction.json",
+   "comparison" : "cold",
+   "configuration_equal" : true,
+   "rows" : [
+      {
+         "baseline_median_cpu_microseconds_each" : 16.8,
+         "baseline_median_descriptors_per_second" : 59118.048,
+         "baseline_median_wall_microseconds_each" : 16.915308,
+         "candidate_median_cpu_microseconds_each" : 24,
+         "candidate_median_descriptors_per_second" : 41707.921,
+         "candidate_median_wall_microseconds_each" : 23.976261,
+         "median_cpu_microseconds_each_delta_percent" : 42.857143,
+         "median_descriptors_per_second_delta_percent" : -29.449766,
+         "median_wall_microseconds_each_delta_percent" : 41.742976,
+         "mode" : "raw"
+      },
+      {
+         "baseline_median_cpu_microseconds_each" : 17.4,
+         "baseline_median_descriptors_per_second" : 57311.512,
+         "baseline_median_wall_microseconds_each" : 17.448501,
+         "candidate_median_cpu_microseconds_each" : 24.6,
+         "candidate_median_descriptors_per_second" : 40649.981,
+         "candidate_median_wall_microseconds_each" : 24.600258,
+         "median_cpu_microseconds_each_delta_percent" : 41.37931,
+         "median_descriptors_per_second_delta_percent" : -29.071875,
+         "median_wall_microseconds_each_delta_percent" : 40.987802,
+         "mode" : "delimiter"
+      }
+   ],
+   "schema_version" : 1
+}
