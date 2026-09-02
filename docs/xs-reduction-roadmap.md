@@ -367,6 +367,21 @@ established Stream rows remain within 3.3%. A dedicated 21-million-transition
 comparison measures an isolated 0.96–1.21 microsecond cost per explicit swap,
 with more than 160,000 transitions/second retained.
 
+**Extraction 5 status (2026-09-02): RETAIN CURRENT BOUNDARY.** The Priority 1
+correctness series already put close/error/lifecycle orchestration at the
+intended boundary before the Phase 0 baseline: Perl owns first-exception
+preservation, watcher and handle cleanup, typed error construction, callback
+ordering, detach ownership, and transitive directional-close policy. Native
+`_close` and `_close_read` retain only terminal state/buffer mutation plus the
+consumer terminal flush/event sequence that must remain adjacent for the
+documented reentrant ABI behavior; `_close_write` is a callback-free native
+state/queue primitive. Regressions in `t/stream-61-teardown-exceptions.t`
+exercise every callback-capable close shape. No further candidate was created:
+moving the remaining terminal work would cross the explicitly protected
+consumer semantic boundary, while merely relocating it between C files would
+not reduce XS/C complexity. The retained boundary is covered by the Phase 0
+performance/payload evidence and real Async compatibility results.
+
 ### Phase 2 - consolidate the native data plane
 
 After cold policy is extracted, reorganize remaining native Stream code around:

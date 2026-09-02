@@ -192,6 +192,17 @@ atomic swap, and buffered-input continuation. `BD-2026-09-02-006` records the
 direct transition cost, adjacent release suite, full payload sweep, and real
 Async coverage. Proceed independently with close/error/lifecycle orchestration.
 
+**Extraction 5 status (2026-09-02): RETAIN CURRENT BOUNDARY.** Priority 0's
+exception-safe teardown work already moved first-exception policy, watcher/fd
+ownership, typed errors, application callbacks, detach, and directional-close
+sequencing into Perl before the measured Phase 0 baseline. The remaining
+native close work is state/buffer mutation and the reentrant consumer terminal
+flush/event sequence protected by the ABI decision. Moving that sequence would
+change the boundary that `Linux::Event::Async` relies on; moving the same code
+between native files would not be XS reduction. The full close, `close_read`,
+failed `detach`, and transitive `close_write` regressions remain the gate.
+Proceed independently with transport setup/shutdown policy.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:
