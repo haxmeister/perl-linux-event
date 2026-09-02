@@ -98,6 +98,7 @@ sub new ($class, %opt) {
         $self->_configure_socket(
             $fh, $accepted ? 'accepted' : 'adopted', $resolved_peer,
         );
+        $self->_attach_to_loop($loop) if $loop;
         1;
     };
     if (!$configured) {
@@ -105,7 +106,6 @@ sub new ($class, %opt) {
         eval { $self->close; 1 };
         die $failure;
     }
-    $self->_attach_to_loop($loop) if $loop;
     return $self;
 }
 

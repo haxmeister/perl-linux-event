@@ -281,14 +281,15 @@ sub new ($class, %opt) {
         deadline_read_started => undef,
         deadline_write_started => undef,
     }, $class;
-    $self->_prepare_handles if !$pending;
-    if ($loop) {
-        my $attached = eval { $self->_attach_to_loop($loop); 1 };
-        if (!$attached) {
-            my $failure = $@ || 'Stream construction attachment failed';
-            $self->_abort_failed_construction;
-            die $failure;
-        }
+    my $constructed = eval {
+        $self->_prepare_handles if !$pending;
+        $self->_attach_to_loop($loop) if $loop;
+        1;
+    };
+    if (!$constructed) {
+        my $failure = $@ || 'Stream construction failed';
+        $self->_abort_failed_construction;
+        die $failure;
     }
     return $self;
 }
@@ -317,7 +318,7 @@ sub _prepare_handles ($self) {
         $self,
         defined($read_fh) ? fileno($read_fh) : -1,
         defined($write_fh) ? fileno($write_fh) : -1,
-        $descriptor->{xs},
+        $descriptor,
     );
     $self->{xs_state} = $xs_state;
 
@@ -327,21 +328,8 @@ sub _prepare_handles ($self) {
         croak 'new(): a native transport requires one shared read/write fh'
             if !defined($read_fh) || !defined($write_fh)
             || fileno($read_fh) != fileno($write_fh);
-        my @binding;
-        my $attached = eval {
-            @binding = $transport->_stream_transport_bind(fileno($read_fh));
-            $xs_state->_attach_transport(
-                $transport, @binding[0, 1, 2],
-            );
-            1;
-        };
-        if (!$attached) {
-            my $error = $@ || 'transport attachment failed';
-            $xs_state->_close;
-            $self->{xs_state} = undef;
-            $self->_close_handles;
-            die $error;
-        }
+        my @binding = $transport->_stream_transport_bind(fileno($read_fh));
+        $xs_state->_attach_transport($transport, @binding[0, 1, 2]);
         $initial_interest = $binding[3] // 0;
     }
 
@@ -1241,6 +1229,26 @@ sub stats ($self) {
     my %stats;
     @stats{@STAT_NAME} = @$values;
     return \%stats;
+}
+
+sub new ($class, $stream, $read_fd, $write_fd, $descriptor) {
+    Carp::croak 'Stream requires a read or write fd'
+        if $read_fd < 0 && $write_fd < 0;
+    if ($read_fd >= 0) {
+        if (!$descriptor->{framer}) {
+            Carp::croak 'readable raw Stream requires on_data callback'
+                if !$descriptor->{callbacks}{on_data};
+        } elsif (!$descriptor->{consumer}
+            && !$descriptor->{options}{message_batch_size}
+            && !$descriptor->{callbacks}{on_message}) {
+            Carp::croak 'readable framed Stream requires on_message or a native consumer';
+        }
+    } elsif ($descriptor->{consumer}) {
+        Carp::croak 'native Stream consumer requires a readable side';
+    }
+    return $class->_new_validated(
+        $stream, $read_fd, $write_fd, $descriptor->{xs},
+    );
 }
 
 sub CLONE_SKIP ($class) { 1 }

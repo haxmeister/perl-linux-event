@@ -320,7 +320,7 @@ MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSState
 PROTOTYPES: DISABLE
 
 SV *
-new(CLASS, stream, read_fd, write_fd, descriptor_obj)
+_new_validated(CLASS, stream, read_fd, write_fd, descriptor_obj)
     const char *CLASS
     SV *stream
     int read_fd
@@ -334,12 +334,6 @@ new(CLASS, stream, read_fd, write_fd, descriptor_obj)
         croak("Stream requires a read or write fd");
     descriptor = les_descriptor_from_sv(descriptor_obj);
     if (!descriptor) croak("Stream descriptor is closed");
-    les_require_read_sink(aTHX_ descriptor, read_fd,
-        "readable raw Stream requires on_data callback",
-        "readable framed Stream requires on_message or a native consumer");
-    if (read_fd < 0 && descriptor->consumer_ops)
-        croak("native Stream consumer requires a readable side");
-
     st = (les_xsstate_t *)calloc(1, sizeof(*st));
     if (!st) croak("calloc XSState failed");
     st->read_fd = read_fd;
