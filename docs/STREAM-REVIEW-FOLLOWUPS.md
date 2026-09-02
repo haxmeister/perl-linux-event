@@ -1,201 +1,303 @@
-# Linux::Event Stream/Socket Follow-up List
+# Linux::Event Stream/Socket Review Roadmap
 
-Created after review of PR #9 / branch `refactor/stream-simplify` ("Fix Stream/Socket correctness bugs and reduce complexity").
+This is the reconciled code-only roadmap after review of:
 
-Purpose: preserve the worthwhile discoveries and unresolved review items for the next high-effort/work-model session. Do not merge PR #9 unchanged.
+- `feature/stream-socket-split`
+- `fix/stream-socket-review` (`2681a0c`)
+- PR #9 / `refactor/stream-simplify`
+- the independent reviews of both branches
+- direct verification against the current core and `Linux::Event::Async` consumer implementation
 
-## Priority A - correctness / lifetime fixes to carry forward
+The intended continuation branch is `fix/review-bugfix-simplify`.
 
-1. **Terminal consumer flush ordering and single-terminal-event guarantee**
-   - Keep the discovery that end-of-drain flush must happen before the terminal event.
-   - But after `les_consumer_flush()` returns, re-check `closed` / `consumer_terminal` before sending the original terminal event.
-   - Explicitly test a provider whose `flush()` returns `LES_CONSUMER_CLOSE` during EOF/read-close so it cannot receive both CLOSED and EOF.
+Do not merge PR #9 unchanged. Use `fix/stream-socket-review` as the correctness baseline, then carry only the verified fixes and worthwhile simplifications forward.
 
-2. **Complete XS state lifetime protection for reentrant callbacks**
-   - The `LES_GUARD_STATE()` idea is worthwhile and should be kept.
-   - Audit *every* path capable of entering Perl and then touching `les_xsstate_t` again.
-   - In particular, `_consumer_resume` / host `resume()` can synchronously dispatch buffered messages and therefore still needs lifetime-safe handling.
-   - Add a regression where consumer resume -> message callback -> `$stream->close` occurs reentrantly.
+Documentation and packaging work are intentionally excluded from this roadmap.
 
-3. **Complete construction-failure cleanup**
-   - Keep `_abort_construction()` and the accepted-fd cleanup in `Listener`.
-   - Extend the same failure-safe construction region to generic `Stream->new(loop => ...)`: watcher-registration failure after XS state creation must break the Perl<->XS cycle and close owned handles.
-   - Audit detached/pending `Socket->connect()` ownership cycles as well.
+## Working rules
 
-4. **Readable transition sink validation**
-   - Keep `les_require_read_sink()` and enforce it both at construction and `transition_to()`.
-   - A readable raw target must have `on_data`; a readable framed target must have `on_message`, message batching, or a native consumer.
+1. Every correctness claim needs a targeted regression that fails without the fix.
+2. Any change that adds/removes work on a per-message, per-write, per-frame, or per-readiness path needs a before/after hot-path benchmark.
+3. Preserve externally visible Stream and native-consumer semantics unless a change is explicitly designed, tested, and cross-checked against `Linux::Event::Async`.
+4. Prefer removing duplicated state-machine rules over adding more local guards.
 
-5. **Native fd invalidation on directional close**
-   - Keep invalidating cached native `write_fd` / plain transport `write_fd` on `_close_write` so a recycled descriptor cannot be targeted by a late write path.
+## Priority 1 - remaining correctness and lifetime blockers
 
-6. **Deadline timer lifecycle fixes**
-   - Keep object identity comparison via `refaddr` rather than numeric comparison.
-   - Keep explicit cancellation of a fired-but-still-registered timer before replacing it.
-   - Add regression coverage for fired/rearm/replacement cases.
+### 1. Make callback-capable teardown exception-safe
 
-## Priority B - native consumer ABI semantics to decide deliberately
+The current Perl lifecycle can mark an object terminal, invoke native terminal consumer work, and then fail before watcher/handle teardown if provider code throws.
 
-7. **Define `LES_CONSUMER_CONTINUE` / pause / flush semantics precisely**
-   - The branch's observation about possible backpressure inversion is valuable, but changing `CONTINUE` to a pure no-op is not yet proven correct for the public ABI.
-   - Specify the interaction of:
-     - host `pause()`
-     - host `resume()`
-     - `message -> CONTINUE`
-     - `message -> PAUSE`
-     - `flush -> CONTINUE`
-     - `flush -> PAUSE`
-   - Do not silently change ABI behavior while still calling it API-compatible.
-   - Cross-test the final semantics against `Linux::Event::Async`, which is a real external native-consumer implementation.
+This is proven for full `close()` and applies to any lifecycle path that invokes callback-capable native terminal dispatch before finishing ownership teardown.
 
-8. **Terminal consumer liveness guard**
-   - Keep the unified `les_consumer_live()` concept for pause/resume/flush entry points.
-   - Ensure no provider callback is made after terminal state except destruction.
+Required invariant:
 
-## Priority C - simplifications worth keeping
+> Once terminal teardown begins, required watcher, fd, handle, and ownership cleanup must complete even if terminal provider/application code throws.
 
-9. **Named XSDescriptor fields**
-   - Keep replacing the 29 positional `XSDescriptor::new` arguments with one named hash/spec.
-   - Reject unknown fields.
-   - This is cold construction code and the maintainability/safety gain is worthwhile.
+Apply this invariant to:
 
-10. **Framer outbound prefix optimization**
-    - Keep pre-resolving LengthPrefix `pack` templates (`C`, `n`/`v`, `N`/`V`) at declaration time.
-    - Keep the Varint `< 128` one-octet fast path.
-    - Add byte-equivalence tests at width/endian/boundary values and retain an end-to-end microbenchmark.
+- full `close()` / `_close_now()`
+- `close_read()`
+- `detach()`
 
-11. **Test consumer source split**
-    - Keep moving the test-only native consumer provider out of `stream_consumer.c` into its own translation unit.
+Do not automatically classify `close_write()` as the same bug: its native `_close_write` path currently does not perform consumer terminal flush/event dispatch. Add it only if a failing test demonstrates an equivalent exception hole.
 
-12. **POD cleanup after Stream/Socket split**
-    - Keep deleting the hidden ~540-line obsolete pre-split Stream POD.
-    - Keep adding the Socket METHODS documentation.
-    - Correct wording: `end()` is the graceful TLS write-side replacement for `close_write`; it is not a replacement for `close_read`. For total immediate TLS shutdown, `close()` is closer semantically.
+Implementation direction:
 
-13. **Callback null checks**
-    - Keep failing loudly rather than reaching `call_sv(NULL)` if an internal callback invariant is broken.
+- capture the first exception from callback-capable native terminal dispatch;
+- always complete required watcher cancellation and handle/ownership teardown;
+- define and test whether `on_close` still runs when an earlier terminal provider callback threw;
+- preserve the original exception after teardown unless a more fundamental teardown failure must take precedence.
 
-## Priority D - changes to rework rather than merge as written
+Required regressions:
 
-14. **Stats layout refactor: keep organization, reject pointer justification unless benchmarked**
-    - The branch's claim that the 40 counters sat between hot read and hot write fields is incorrect; the hot write fields already precede the counters.
-    - The pointer/tail-allocation version grows total per-stream memory and adds indirection to counter updates without an obvious cache-layout benefit.
-    - Worth keeping: a dedicated `les_xsstats_t`, `LES_STAT` macro, and table-driven `stats()` export.
-    - Preferred first version: embed `les_xsstats_t stats;` at the tail of `les_xsstate_t` rather than storing `les_xsstats_t *stats`.
-    - Only use a separate pointer/block if an end-to-end Stream benchmark demonstrates a real win.
+- terminal consumer `event()` throws during full close;
+- terminal consumer `flush()` returns `LES_CONSUMER_ERROR` during full close;
+- the same two failure shapes through `close_read()` where applicable;
+- terminal provider work throws during `detach()`;
+- assert no fd leak, no live watcher/epoll registration, correct final object state, and exception propagation.
 
-15. **Future outbound zero-copy/COW work must preserve write value semantics**
-    - Do not simply retain the caller's mutable SV in queued write segments.
-    - Existing `write()` semantics allow the caller to modify/release its scalar immediately without changing queued bytes.
-    - Explore an owned/COW-safe SV representation or equivalent, benchmarked as a separate experiment.
+### 2. Make the exported consumer host `resume()` lifetime-safe
 
-## Priority E - API/documentation hygiene
+The core XSUB `_consumer_resume` is guarded, but that does not protect the public native-consumer host callback itself.
 
-16. **Do not call PR #9 fully API-compatible as written**
-    - Rejecting `socket_options()` / `configure_socket()` names on generic Stream subclasses is observable behavior and should be an intentional reservation if kept.
-    - `Socket->connect(transport => ...)` is effectively a new supported option, not merely a hidden fix; document/test it or split it into its own change.
+The ABI gives external providers a host table containing `resume(host_context)`. `Linux::Event::Async` already calls that host function directly from its own XS receive-arm path. Therefore the call can enter `les_consumer_resume(st)` without passing through the guarded core `_consumer_resume` XSUB.
 
-17. **Regression tests are required for every correctness claim**
-    - The old 1,788 tests passed with the original bugs, so simply retaining the same passing count does not validate the fixes.
-    - Add targeted tests for terminal-flush reentrancy, resume-close UAF, construction fd leaks, transition sink validation, deadline replacement, stale fd invalidation, and framer byte equivalence.
+This remains a real lifetime concern because host `resume()` may synchronously dispatch buffered messages, provider/user code may close the Stream, and `les_consumer_resume()` may then continue with the raw `les_xsstate_t *`.
 
-## Integration / workflow note
+Required work:
 
-18. **Retarget PR #9 to `main` before further work**
-    - `feature/stream-socket-split` has already been merged.
-    - Salvage the good commits/ideas above, fix the blockers, run core regression + Linux::Event::Async compatibility tests, and only then consider merging.
+- design lifetime protection at the exported host-entry boundary, not only at core XSUB wrappers;
+- do not require third-party consumers to know private `les_xsstate_t` details;
+- add a cross-repository regression using the real `Linux::Event::Async` path: direct host resume -> synchronous message -> user closes Stream -> host resume returns safely.
 
-## Follow-up from independent review of `fix/stream-socket-review` (`2681a0c`)
+Keep the existing XSUB guards; they are still useful for core entry points.
 
-This section records code-only findings from the later independent review. Ignore documentation and packaging concerns for implementation planning.
+### 3. Complete generic Stream construction-failure cleanup
 
-### Verified fixes worth preserving
+`Socket` construction cleanup and Listener accepted-fd cleanup are now validated and should be preserved.
 
-19. **Terminal flush-before-event ordering is now substantially correct**
-    - Keep the new guard on ordinary consumer flushes against closed / terminal / read-EOF state.
-    - Keep a distinct terminal-flush path so owed consumer work can be flushed before the terminal event.
-    - Keep the sequence-counter regression assertions proving `last_flush_sequence < last_event_sequence`; this tests the actual ordering contract, not merely call counts.
+The remaining generic case is `Stream->new(loop => ...)` after XS state creation when watcher registration/attachment fails. The constructor must not strand the Perl <-> XS state ownership cycle or owned handles.
 
-20. **Reentrant XS-state lifetime guarding is now broad enough on the real callback paths**
-    - Keep `ENTER` / `SAVEFREESV(SvREFCNT_inc(state_obj))` / `LEAVE` protection on `_read_ready`, `_write`, `_write_ready`, `_transition`, `_close`, `_close_read`, `_consumer_resume`, and the test arm path.
-    - Moving consumer terminal-event dispatch to the end of `_close` / `_close_read` is preferable to dispatching early and then attempting to re-check potentially stale state.
+Required regression:
 
-21. **Readable transition validation is fixed in the correct layer**
-    - Keep rejecting readable raw targets without `on_data` and readable framed targets without a message sink.
-    - Keep defensive NULL callback checks as a backstop even though descriptor/transition validation should make them unreachable.
+- deliberately force watcher registration failure after XS state creation;
+- verify fd delta returns to zero and no Stream/XS state remains stranded.
 
-22. **Consumer re-drive after a flush releases backpressure is worthwhile**
-    - Keep the behavior that, when a consumer was paused and flush resumes it while buffered input remains, buffered input is immediately re-driven rather than waiting for another fd readiness event.
-    - Preserve this for both existing-input processing and read-drain boundaries.
+Also audit pending `Socket->connect()` ownership for equivalent failure cycles, but do not claim a bug without a reproducer.
 
-23. **Directional native fd invalidation is correct and should remain**
-    - Keep setting the closed direction's cached native fd and matching plain-transport fd to `-1`.
-    - Keep explicit `EBADF` handling in plain transport operations so late native access cannot hit a recycled descriptor.
+### 4. Flush deferred consumer work at a protocol-change boundary
 
-24. **Construction/accept fd cleanup fixes are validated and worth keeping**
-    - Keep Listener's `defined fileno($fh)` guard before closing an accepted handle after failed construction.
-    - Keep Socket construction cleanup when socket configuration throws.
-    - Continue applying the same ownership principle to any generic Stream construction failure discovered later.
+If a message callback calls `transition_to()` while the old protocol still owes a consumer flush, parsing can continue under the new descriptor before the old protocol's deferred consumer work is flushed.
 
-25. **Purpose-built native consumer test modes are valuable infrastructure**
-    - Keep dedicated test consumers for cases such as `flush -> CONTINUE` and `message()` croaking.
-    - Keep them restricted to the test context so they cannot accidentally become public runtime providers.
+Keep `les_transition_descriptor()` callback-free.
 
-### New blocker discovered by the second review
+Fix the parser boundary instead:
 
-26. **BLOCKER: Perl-side close teardown must be exception-safe**
-    - `_close_now()` currently marks the Stream closed and then calls native `_close(4)` before cancelling watchers or closing owned handles.
-    - Native `_close(4)` can invoke terminal consumer flush and terminal consumer event callbacks, either of which may throw.
-    - If that happens, watcher cancellation and handle closure are skipped, while `{closed}` remains true. A later `close()` immediately returns, leaving a permanently stuck Stream with live fd(s) and epoll registration.
-    - Required invariant: once close begins, resource teardown must complete even when provider/application code throws.
-    - Preferred implementation: capture the first exception from native terminal dispatch, always complete watcher cancellation and requested handle closure, run any remaining close lifecycle that must be guaranteed, then rethrow the captured exception.
-    - Add a regression where a terminal consumer event throws and assert: fd delta returns to zero, watchers are gone, and the original exception still reaches the caller.
+- detect that message delivery changed the descriptor;
+- flush consumer work owed by the old parsing phase;
+- only then continue buffered input under the new descriptor.
 
-### Additional correctness fix worth making
+Required regression:
 
-27. **Flush native-consumer work at a protocol-change boundary**
-    - A message callback may call `transition_to()` while the old protocol still owes a deferred consumer flush.
-    - Current parsing can continue immediately under the new descriptor, causing old- and new-protocol deliveries to share one consumer flush interval.
-    - Preserve the useful property that `les_transition_descriptor()` itself remains callback-free.
-    - Therefore do NOT blindly add provider flush dispatch inside the descriptor-swapping primitive.
-    - Instead, when the parser detects that a callback changed the descriptor, flush consumer work owed by the old parsing phase before continuing buffered input under the new descriptor.
-    - Add a regression that proves the old protocol's flush happens before the first message under the new protocol.
+- prove the old protocol's flush occurs before the first message delivered under the new protocol.
 
-### Consumer-path simplifications worth doing
+## Priority 2 - native consumer semantics and simplification
 
-28. **Remove `JMPENV` bookkeeping for `consumer_flush_pending` if set-after-success is sufficient**
-    - Current code sets `consumer_flush_pending = 1` before calling provider `message()` and uses `JMPENV` only to clear the flag if `message()` throws.
-    - Prefer setting the flag after `message()` returns successfully.
-    - This is simpler and also avoids a nested close/terminal-flush seeing `flush_pending == 1` while the provider's `message()` call is still on the stack.
-    - The independent benchmark found `JMPENV` overhead negligible, so this is a state-machine simplicity improvement rather than a performance optimization.
+### 5. Reconcile `message`, flush, and terminal status handling as one coherent change
 
-29. **Separate consumer status validation from status application**
-    - A provider return value should be validated even if the Stream became closed / EOF / terminal during the `message()` callback.
-    - Current early return can silently ignore `LES_CONSUMER_ERROR` or an invalid enum in that situation.
-    - Preferred flow: call `message()` -> validate returned status unconditionally -> if Stream became terminal, stop -> mark flush pending as appropriate -> apply CONTINUE/PAUSE/CLOSE behavior.
-    - This preserves diagnostics without performing inappropriate state transitions after terminal state.
+`les_consumer_message()`, `les_consumer_flush()`, and `les_consumer_flush_terminal()` should be simplified together because their state/status rules are coupled.
 
-30. **Factor the common consumer flush primitive**
-    - `les_consumer_flush()` and `les_consumer_flush_terminal()` duplicate pending checks, `WANT_FLUSH`, pending-flag clearing, counter increment, provider invocation, and return-status validation.
-    - Factor a small shared helper that performs the common "call pending flush and validate result" operation.
-    - Keep ordinary-vs-terminal post-call behavior separate: ordinary flush applies PAUSE/CONTINUE/CLOSE semantics; terminal flush must not restart ordinary flow.
+First decide one semantic question explicitly:
 
-31. **Factor the duplicated resumed-with-buffered-input predicate**
-    - The subtle condition `was_consumer_paused && !LES_INPUT_PAUSED(st) && !st->closed && !st->read_eof && st->input_len` appears in more than one path.
-    - Move it behind a small predicate/helper so future changes to pause/liveness semantics cannot diverge between the read-boundary and existing-input paths.
+> Does a successfully entered `message()` become flush-owed immediately, including if it reentrantly closes the Stream before `message()` returns, or only after `message()` returns successfully?
 
-### Known architectural limitation - do not "fix" casually
+The current ABI explicitly permits a reentrant terminal flush while `message()` is still on the stack. Therefore simply moving `consumer_flush_pending = 1` after `message()` is not a behavior-preserving cleanup.
 
-32. **Loop-attached Stream lifetime cycle requires an ownership redesign, not a local refcount tweak**
-    - Constructed-and-dropped loop-attached Streams remain retained through the Stream <-> XS-state lifetime mechanism.
-    - The independent review confirmed this is unchanged rather than introduced by the hardening branch.
-    - Do not weaken that cycle locally: doing so could free a live Stream still owned operationally by the loop.
-    - If this becomes a target, solve it with an explicit loop-owned registry / ownership model and benchmark its hot-path and lifecycle cost separately.
+Until that decision is made, do not remove `JMPENV` merely for aesthetics.
 
-### Updated integration recommendation
+Regardless of the chosen ordering:
 
-33. **Use `fix/stream-socket-review` as the correctness baseline before salvaging PR #9 simplifications**
-    - The branch now contains targeted regression coverage and most of the important correctness hardening.
-    - Fix Priority 26 first, then 27-31.
-    - After that, rebase/salvage only the genuinely useful simplifications from PR #9 (named descriptor spec, framer templates/fast paths, test-provider source split, and a carefully reworked stats grouping).
-    - Avoid re-importing duplicate Stage-1 correctness changes from PR #9.
+- validate every provider status value unconditionally;
+- separate status validation from status application;
+- after validation, do not apply ordinary pause/resume/close transitions if the Stream became terminal during the provider call;
+- factor a shared helper for the duplicated "call pending flush and validate result" mechanics;
+- keep ordinary-vs-terminal post-flush behavior separate.
+
+At a terminal boundary, valid `CONTINUE`, `PAUSE`, and `CLOSE` are intentionally advisory/no-op lifecycle results because the Stream is already becoming terminal. `ERROR` and invalid values remain provider failures.
+
+### 6. Preserve current CONTINUE semantics unless deliberately changed
+
+Current behavior is:
+
+- `message -> CONTINUE`: does not clear an existing pause;
+- `flush -> CONTINUE`: may clear consumer pause and resume delivery.
+
+Do not import PR #9's blanket "CONTINUE is always a no-op" change without an explicit ABI decision.
+
+Before changing this contract, specify and test the interaction of:
+
+- host `pause()`
+- host `resume()`
+- `message -> CONTINUE`
+- `message -> PAUSE`
+- `flush -> CONTINUE`
+- `flush -> PAUSE`
+
+Cross-test the result against `Linux::Event::Async`.
+
+### 7. Factor the resumed-with-buffered-input predicate
+
+The condition describing "consumer was paused, flush resumed it, Stream remains live, and buffered input remains" appears in multiple paths.
+
+Move it behind one small helper/predicate so read-boundary and existing-input behavior cannot drift.
+
+## Priority 3 - completed fixes to preserve, with duplication cleanup
+
+### 8. Preserve the verified hardening from `2681a0c`
+
+Keep:
+
+- terminal flush-before-event ordering;
+- terminal event as the last callback-capable action in `_close` / `_close_read`;
+- guarded XSUB paths that can reenter Perl/provider code and then continue touching XS state;
+- re-drive after `flush -> CONTINUE` releases consumer backpressure;
+- directional native fd invalidation and explicit `EBADF` protection;
+- Socket construction cleanup and Listener accepted-fd cleanup;
+- defensive NULL callback checks;
+- purpose-built native test consumers and sequence-order assertions.
+
+Do not re-import duplicate Stage-1 fixes from PR #9.
+
+### 9. Centralize readable-sink validation
+
+The original construction/transition sink bug is fixed in both places.
+
+What remains is duplication risk: construction and transition independently encode the same readable-sink rule.
+
+Factor one internal helper such as `les_require_read_sink()` and use it from both sites.
+
+This is cleanup/hardening, not an open correctness bug.
+
+## Priority 4 - simplifications worth salvaging from PR #9
+
+### 10. Named XSDescriptor specification
+
+Replace the large positional `XSDescriptor::new` argument list with a named hash/spec and reject unknown fields.
+
+This is cold construction code, so maintainability and correctness are more important than avoiding hash lookup during descriptor creation.
+
+### 11. Framer fast paths
+
+Keep the worthwhile native framer simplifications:
+
+- pre-resolve LengthPrefix template/width/endian information;
+- Varint `< 128` one-octet fast path;
+- other clearly equivalent local parser simplifications.
+
+Require byte-equivalence boundary tests and an end-to-end benchmark before merging.
+
+### 12. Split test-only native consumer code from production consumer code
+
+Move the private conformance/test provider into its own translation unit.
+
+Keep test-only providers unavailable to normal runtime declaration paths.
+
+### 13. Rework stats organization as an embedded struct
+
+Keep the maintainability win:
+
+- one `les_xsstats_t` definition;
+- one counter-name/offset table;
+- table-driven `stats()` export;
+- optional `LES_STAT()` macro if it improves readability.
+
+Do not use the PR #9 pointer/tail-allocation form merely for cache-layout reasons. The counters already live after the hot write fields, and the branch allocates the stats block unconditionally anyway.
+
+Preferred first form:
+
+```c
+les_xsstats_t stats;
+```
+
+embedded at the tail of `les_xsstate_t`.
+
+Any separate allocation/pointer version requires a demonstrated end-to-end win.
+
+## Priority 5 - future write-path experiments
+
+### 14. Preserve write value semantics in any zero-copy/COW experiment
+
+Current queued writes own their bytes. A caller may modify or release the scalar supplied to `write()` immediately without changing bytes already queued.
+
+Do not replace that with a borrowed/refcounted caller SV that aliases mutable application memory.
+
+Potential experiments:
+
+- an owned/COW-safe SV representation;
+- native length-prefix construction queued as its own internal segment;
+- other segment representations that preserve snapshot/value semantics.
+
+Treat this as a separate benchmarked experiment, not part of the correctness merge.
+
+## Priority 6 - architectural limitation to leave alone for now
+
+### 15. Loop-attached Stream lifetime ownership
+
+The Stream <-> XS-state retention cycle is currently part of the lifetime mechanism for loop-attached Streams.
+
+Do not weaken it locally just to make constructed-and-dropped objects disappear; that risks freeing a live Stream still operationally owned by the loop.
+
+If this becomes a target, solve it as an explicit loop-owned registry/ownership redesign and measure lifecycle/hot-path cost separately.
+
+## Removed or demoted claims
+
+The following should not remain as open correctness items without new evidence:
+
+- **Deadline timer replacement/cancellation bug:** not demonstrated. One-shot timers are removed from the heap before callback, are `FIRING`/active during the callback so they can be rescheduled in place, and release loop ownership when finally expired. `refaddr` may still be stylistic hardening, but there is no current basis for a correctness fix.
+- **Post-terminal-event recheck in `_close` / `_close_read`:** stale after moving terminal event dispatch to the end; there is no subsequent XS state work to protect there.
+- **Readable sink validation as an open bug:** both construction and transition checks now exist; only deduplication remains.
+- **`flush_terminal -> CLOSE` as an unhandled bug:** valid terminal `CONTINUE`/`PAUSE`/`CLOSE` results are intentionally lifecycle no-ops at an already-terminal boundary.
+- **`close_write()` as the same callback-exception teardown bug:** not currently supported by the code path; add only with evidence.
+
+## Required validation gate before merge
+
+### Correctness regressions still missing
+
+At minimum add tests for:
+
+1. exception-safe full close teardown;
+2. exception-safe `close_read` teardown;
+3. exception-safe `detach` teardown;
+4. terminal flush returning `ERROR` while teardown still completes;
+5. external consumer host `resume()` reentrancy/lifetime using `Linux::Event::Async`;
+6. generic Stream watcher-registration construction failure;
+7. old-protocol consumer flush before first new-protocol message;
+8. terminal `flush -> CLOSE` ordering/single-terminal-event behavior;
+9. framer byte-equivalence boundaries for any salvaged parser optimization.
+
+### Performance gate
+
+For every change touching a hot path, capture a before/after number against an appropriate baseline.
+
+At minimum watch:
+
+- `_write` / queued-write throughput;
+- framed message dispatch throughput;
+- read-drain throughput;
+- callbacks/message and syscalls/message where relevant;
+- latency for representative small and large messages when a change could alter batching/re-drive behavior.
+
+Microbenchmarks may explain a result, but the merge decision should use an end-to-end Stream benchmark.
+
+## Integration sequence
+
+1. Bring the tested correctness baseline from `fix/stream-socket-review` onto `fix/review-bugfix-simplify`.
+2. Fix exception-safe teardown first.
+3. Resolve exported host `resume()` lifetime safety.
+4. Fix the protocol-transition flush boundary.
+5. Decide the flush-owed/reentrant-message semantic, then refactor consumer status/flush handling coherently.
+6. Centralize duplicated predicates/invariants.
+7. Run targeted regressions and the hot-path performance gate.
+8. Cross-test `Linux::Event::Async` against the branch.
+9. Salvage only the useful PR #9 simplifications: named descriptor spec, framer fast paths, test-provider source split, and embedded stats grouping.
+10. Re-run the full core suite, integration suite, and performance regression set before merge.
