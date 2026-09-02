@@ -414,12 +414,20 @@ epoll readiness
   -> write queue
 ```
 
-**Status (2026-09-02): in progress.** `BD-2026-09-02-007` centralizes the
+**Status (2026-09-02): complete.** The earlier focused-translation-unit split
+already maps the protected pipeline to `stream_transport.c`, `stream_read.c`,
+`stream_input.c`, the `framer_*.c` units, `stream_delivery.c`, and
+`stream_write.c`; `Stream.xs` is the XSUB/control boundary and
+`stream_state.c` owns destruction. `BD-2026-09-02-007` centralizes the
 callback-capable EOF/retry/error read-boundary rule: delivery work is settled
 under the descriptor that produced the result, and re-drive occurs only for a
 live, unpaused Stream whose descriptor changed. The compiler fully inlines the
 helper with unchanged object text size; core, real Async, release, and full
-payload gates pass. Consumer terminal and status semantics are unchanged.
+payload gates pass. The remaining deliberate cross-unit calls follow the data
+flow or enter the centralized Perl/native-consumer callback mechanics; further
+reshuffling would add indirection or merely move C without reducing ownership
+or state-machine duplication. Consumer terminal and status semantics are
+unchanged.
 
 ### Phase 3 - reconsider medium-risk code
 

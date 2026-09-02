@@ -229,11 +229,15 @@ epoll readiness
 Reduce duplicated ownership and callback-capable state-machine logic. Do not
 move hot work into Perl merely to reduce source lines.
 
-**Status (2026-09-02): in progress.** `BD-2026-09-02-007` replaces the three
+**Status (2026-09-02): complete.** The protected pipeline already has focused
+transport, read, input, framer, delivery, write, state, and XSUB boundary
+units. `BD-2026-09-02-007` replaces the three
 EOF/retry/error copies of old-descriptor delivery settlement and transition
 re-drive policy with one fully inlined native rule. Compiled text size is
 unchanged, established Stream throughput is neutral, and the core plus real
-Async suites pass without changing consumer ABI behavior.
+Async suites pass without changing consumer ABI behavior. The remaining
+cross-unit calls either follow that pipeline or enter centralized callback and
+consumer mechanics; moving them between C files would not reduce complexity.
 
 ## Priority 3 - preserve and extend realistic benchmarking
 
