@@ -1,0 +1,33 @@
+{
+  "decision_id": "BD-2026-08-28-001",
+  "experiment": "framed callback batching",
+  "date": "2026-08-28",
+  "decision": "KEEP",
+  "evidence_level": "recovered_summary",
+  "raw_per_repeat_output_available": false,
+  "historical_source": "XS roadmap retained measurements",
+  "workload": {
+    "messages": 1000000,
+    "payload_bytes": 64,
+    "native_read_bytes": 4096,
+    "warmups": 1,
+    "measured_repeats": 5,
+    "transports": ["AF_UNIX", "TCP_loopback"]
+  },
+  "median_mib_per_second": {
+    "AF_UNIX": {
+      "ordinary": 129.7,
+      "batch_16": 263.4,
+      "batch_32": 276.2,
+      "batch_64": 305.6
+    },
+    "TCP_loopback": {
+      "ordinary": 126.8,
+      "batch_16": 227.0,
+      "batch_32": 282.1,
+      "batch_64": 311.3
+    }
+  },
+  "batch_32_message_callback_reduction_percent": 96.9,
+  "caveat": "This historical experiment used only 64-byte messages. It predates the required payload sweep through approximately 200 KB and cannot establish a universal batch-size default."
+}
