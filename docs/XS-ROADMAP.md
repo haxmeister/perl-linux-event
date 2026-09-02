@@ -180,6 +180,12 @@ ordered counter snapshot and Perl owns the named public hash presentation.
 suite, full payload sweep, correctness, and complexity evidence. Proceed
 independently with construction/failure policy.
 
+**Extraction 3 status (2026-09-02): KEEP.** Stream readable-side construction
+policy and incomplete-construction cleanup now live in Perl around a private
+validated native allocator. `BD-2026-09-02-005` also records and fixes an
+adopted-Socket watcher-registration ownership gap, with core and real Async
+coverage. Proceed independently with transition eligibility/policy.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:

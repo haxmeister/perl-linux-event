@@ -615,3 +615,71 @@ polls 49-key Stream statistics frequently enough for 1.6 us to matter.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-02-004-stats-formatting-perl/`
+
+---
+
+## BD-2026-09-02-005 - Stream construction/failure policy extraction
+
+**Decision:** KEEP
+
+**Hypothesis:** Readable-side construction policy and incomplete-object
+ownership sequencing can live in Perl while XS remains a small validated state
+allocator, without materially changing successful lifecycle or established
+I/O cost.
+
+**Change:** `_prepare_handles` now validates readable raw/framed/native-
+consumer requirements from the Perl class descriptor and calls a private
+validated XS allocator. An in-progress construction marker lets Perl object
+destruction close owned handles when failure happens before an XS cycle is
+installed; existing explicit cleanup remains around transport and loop work
+that can fail after the cycle exists. Adopted `Socket->new(loop => ...)` now
+performs watcher attachment inside its construction cleanup guard.
+
+Two targeted regressions force native-consumer context creation failure and
+adopted-Socket watcher registration failure. Both assert the original error,
+weak-object release, and closed owned descriptor. The earlier generic Stream
+watcher regression remains in the same test.
+
+**Candidate refinement:** The first candidate used one exception frame around
+the entire constructor and measured -5.01% raw / -5.81% framed lifecycle
+throughput. Its complete report is retained. The final candidate narrows the
+guard to failure-capable post-cycle steps and uses the construction marker for
+pre-cycle unwinding.
+
+**Adjacent release comparison:** Seven measured repeats after warmup; all rows
+remain inside the permanent 10% gate:
+
+| Workload | Throughput delta | CPU delta |
+|---|---:|---:|
+| raw Stream lifecycle | -3.42% | +3.60% |
+| framed Stream lifecycle | -2.74% | +3.00% |
+| raw Stream throughput | -2.05% | +2.09% |
+| deadline Stream throughput | +3.21% | -3.10% |
+| framed Stream throughput | -3.46% | +3.59% |
+| connect/listener lifecycle | +0.07% | -0.07% |
+
+Registration and Timer control rows also remain within 5.51%.
+
+**Full payload sweep:** Raw and native Delimiter modes used 64 B, 256 B,
+1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B, one warmup and
+five measured repeats. Full configuration and all raw samples are retained.
+This shared host again showed extreme AF_UNIX splitting/scheduling variance,
+especially in raw 32 KiB–200 KB rows; median MiB/s deltas ranged from -72.35%
+to +75.49%. Construction policy does not execute after each Stream is built,
+and the adjacent serial release throughput rows remain within 3.46%, so these
+payload variations are not attributed to the extraction.
+
+**Complexity/correctness:** Production native source falls from 3,198 to
+3,192 lines; the constructor XSUB retains only fd/descriptor defensive
+backstops before allocation. Perl production code grows by 22 lines (16 net
+production lines) to make ownership state and readable policy explicit. The
+core suite passes 142 files/1,928 tests and the real `Linux::Event::Async`
+suite passes 8 files/65 tests.
+
+**Reason:** Keep the extraction. It closes a reproduced ownership leak,
+generalizes pre-cycle cleanup, moves user-facing construction decisions out of
+XS, and keeps successful lifecycle within the gate. The consumer ABI and its
+reentrant message/terminal-flush semantics are unchanged.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-005-construction-failure-policy/`

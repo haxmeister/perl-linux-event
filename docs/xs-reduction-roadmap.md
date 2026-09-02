@@ -350,6 +350,15 @@ lifecycle and established-throughput measurements. The focused introspection
 cost rises from about 3.4 to 5.0 microseconds per complete 49-key snapshot;
 `stats()` is not called from readiness, framing, delivery, or teardown paths.
 
+**Extraction 3 status (2026-09-02): KEEP.** `BD-2026-09-02-005` moves
+readable-side construction policy ahead of a private validated native state
+allocator, marks only an in-progress Perl construction for pre-cycle cleanup,
+and keeps explicit cleanup where a native ownership cycle can already exist.
+It also closes the adopted-Socket watcher-registration gap. Six native lines
+move out; eight new regressions cover consumer creation and Socket attachment
+failure without stranded objects or descriptors. The final narrowed guard is
+within 3.6% on all Stream lifecycle/throughput rows.
+
 ### Phase 2 - consolidate the native data plane
 
 After cold policy is extracted, reorganize remaining native Stream code around:

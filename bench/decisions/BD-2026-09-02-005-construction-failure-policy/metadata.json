@@ -1,0 +1,36 @@
+{
+   "schema_version" : 1,
+   "decision_id" : "BD-2026-09-02-005",
+   "title" : "Stream construction and failure policy in Perl",
+   "decision" : "KEEP",
+   "generated_at_epoch" : 1788360810,
+   "baseline" : {
+      "commit" : "5d2cd6645e4f02231831538557215293a17b26e8",
+      "tree" : "1acc3e279a005d87ab8d670a1816aae0d054167b"
+   },
+   "candidate" : {
+      "commit" : "6689b938b8bf97a1e46c81b8b3c95cd3ebf93c6d",
+      "tree" : "5a02e7265496949f4727a85be8d5c09c48ba6ad6"
+   },
+   "superseded_candidate" : {
+      "commit" : "2c02f0b353096407f6c84b7aa72cbfbabf45b851",
+      "tree" : "613b41f57acd9cd48f893d79c9c9ea77d41ff40c",
+      "reason" : "constructor-wide eval added avoidable success-path lifecycle cost; retained as initial-candidate-performance-regression.json"
+   },
+   "runtime" : {
+      "kernel" : "Linux 6.18.35 x86_64",
+      "perl" : "5.38.2",
+      "archname" : "x86_64-linux-gnu-thread-multi",
+      "compiler" : "x86_64-linux-gnu-gcc",
+      "optimize" : "-O2 -g"
+   },
+   "tests" : {
+      "core" : "142 files, 1928 tests, PASS",
+      "linux_event_async" : "8 files, 65 tests, PASS"
+   },
+   "benchmark_runs" : {
+      "release" : "seven measured rotated repeats after warmup; adjacent baseline and final candidate builds",
+      "payload" : "raw and native Delimiter; all nine policy sizes; one warmup and five measured repeats"
+   },
+   "configuration_note" : "Each payload JSON retains effective Stream tuning, native framer parameters, AF_UNIX transport, batching, read sizes and budgets, buffer limits, socket settings, concurrency, reads, writes, callbacks, CPU, and input peaks."
+}

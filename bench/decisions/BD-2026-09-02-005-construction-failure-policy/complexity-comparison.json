@@ -1,0 +1,31 @@
+{
+   "schema_version" : 1,
+   "baseline" : {
+      "commit" : "5d2cd6645e4f02231831538557215293a17b26e8",
+      "tree" : "1acc3e279a005d87ab8d670a1816aae0d054167b",
+      "tracked_native_lines" : 3819,
+      "production_native_lines" : 3198,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119
+   },
+   "candidate" : {
+      "commit" : "6689b938b8bf97a1e46c81b8b3c95cd3ebf93c6d",
+      "tree" : "5a02e7265496949f4727a85be8d5c09c48ba6ad6",
+      "tracked_native_lines" : 3813,
+      "production_native_lines" : 3192,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119
+   },
+   "delta" : {
+      "tracked_native_lines" : -6,
+      "production_native_lines" : -6,
+      "detected_native_functions" : 0,
+      "production_native_functions" : 0,
+      "perl_production_lines" : 22,
+      "net_production_lines" : 16,
+      "regression_test_lines" : 69
+   },
+   "counting_method" : "physical wc -l over Git-tracked xsstream .c/.h/.xs files; the XSState constructor XSUB is renamed and retains one function slot"
+}
