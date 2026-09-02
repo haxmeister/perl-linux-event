@@ -886,7 +886,33 @@ sub close ($self) {
 sub close_read ($self) {
     return $self if $self->{closed} || $self->{read_closed} || $self->{read_eof};
     $self->{read_closed} = 1;
-    $self->{xs_state}->_close_read(6) if $self->{xs_state};
+    my $failure;
+    _teardown_step(\$failure, sub {
+        $self->{xs_state}->_close_read(6) if $self->{xs_state};
+    });
+    _teardown_step(\$failure, sub { $self->_release_read_side });
+    _teardown_step(\$failure, sub { $self->_close_now(1) })
+        if $self->{write_ended};
+    die $failure if defined $failure;
+    return $self;
+}
+
+sub close_write ($self) {
+    return $self if $self->{closed} || $self->{write_ended};
+    my $failure;
+    _teardown_step(\$failure, sub {
+        $self->{xs_state}->_close_write if $self->{xs_state};
+    });
+    $self->{write_ending} = 0;
+    $self->{write_ended} = 1;
+    _teardown_step(\$failure, sub { $self->_release_write_side });
+    _teardown_step(\$failure, sub { $self->_close_now(1) })
+        if $self->{read_eof} || $self->{read_closed};
+    die $failure if defined $failure;
+    return $self;
+}
+
+sub _release_read_side ($self) {
     my $read_watcher = delete $self->{read_watcher};
     if ($read_watcher) {
         if ($self->{write_watcher}
@@ -902,15 +928,10 @@ sub close_read ($self) {
         CORE::close($read_fh);
         $self->{read_fh} = undef;
     }
-    $self->_close_now(1) if $self->{write_ended};
-    return $self;
+    return;
 }
 
-sub close_write ($self) {
-    return $self if $self->{closed} || $self->{write_ended};
-    $self->{xs_state}->_close_write if $self->{xs_state};
-    $self->{write_ending} = 0;
-    $self->{write_ended} = 1;
+sub _release_write_side ($self) {
     my $write_watcher = delete $self->{write_watcher};
     if ($write_watcher) {
         if ($self->{read_watcher}
@@ -926,8 +947,7 @@ sub close_write ($self) {
         CORE::close($write_fh);
         $self->{write_fh} = undef;
     }
-    $self->_close_now(1) if $self->{read_eof} || $self->{read_closed};
-    return $self;
+    return;
 }
 
 sub detach ($self) {
@@ -942,15 +962,21 @@ sub detach ($self) {
         read_fh  => $self->{read_fh},
         write_fh => $self->{write_fh},
     };
-    $self->_cancel_stream_deadline;
+    my $failure;
+    _teardown_step(\$failure, sub { $self->_cancel_stream_deadline });
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close(5);
+        _teardown_step(\$failure, sub { $xs_state->_close(5) });
     }
-    $self->_cancel_io_watchers;
+    _teardown_step(\$failure, sub { $self->_cancel_io_watchers });
     $self->{closed} = 1;
     $self->{detached} = 1;
-    $self->{read_fh} = undef;
-    $self->{write_fh} = undef;
+    if (defined $failure) {
+        _teardown_step(\$failure, sub { $self->_close_handles });
+        die $failure;
+    } else {
+        $self->{read_fh} = undef;
+        $self->{write_fh} = undef;
+    }
     return $handles;
 }
 
@@ -1093,25 +1119,36 @@ sub _fail ($self, $error) {
 sub _close_now ($self, $close_fh) {
     return if $self->{closed};
     $self->{closed} = 1;
-    $self->_cancel_pending;
+    my $failure;
+    _teardown_step(\$failure, sub { $self->_cancel_pending });
     $self->{preconnect_output} = [];
     $self->{preconnect_bytes} = 0;
     delete $self->{preconnect_write_blocked};
     delete $self->{preconnect_drain_reached};
-    $self->_cancel_stream_deadline;
-    $self->_destroy_transport_deadline;
+    _teardown_step(\$failure, sub { $self->_cancel_stream_deadline });
+    _teardown_step(\$failure, sub { $self->_destroy_transport_deadline });
 
     if (my $xs_state = delete $self->{xs_state}) {
-        $xs_state->_close(4);
+        _teardown_step(\$failure, sub { $xs_state->_close(4) });
     }
-    $self->_cancel_io_watchers;
-    $self->_close_handles if $close_fh;
+    _teardown_step(\$failure, sub { $self->_cancel_io_watchers });
+    _teardown_step(\$failure, sub { $self->_close_handles }) if $close_fh;
 
     if (!$self->{detached} && !$self->{close_fired}++) {
         if (my $callback = $self->{descriptor}{callbacks}{on_close}) {
-            $callback->($self);
+            _teardown_step(\$failure, sub { $callback->($self) });
         }
     }
+    die $failure if defined $failure;
+    return;
+}
+
+sub _teardown_step ($failure, $callback) {
+    my $completed = eval { $callback->(); 1 };
+    if (!$completed && !defined $$failure) {
+        $$failure = $@ || "Stream teardown step failed\n";
+    }
+    return;
 }
 
 sub _cancel_pending ($self) { return }
@@ -1361,7 +1398,10 @@ Receives a L<Linux::Event::Error> before failure closes the Stream.
 =item C<on_close($stream)>
 
 Runs once after explicit full close, failure, or both available directions
-become terminal. It is not called by C<detach>.
+become terminal. Required watcher, handle, and ownership teardown completes
+before this callback. It still runs if earlier terminal consumer/provider work
+throws, after which the first teardown exception is rethrown. It is not called
+by C<detach>.
 
 =item C<on_ready($stream)>
 
@@ -1407,6 +1447,11 @@ cancels Stream ownership without closing the handles and returns:
   }
 
 The two values may refer to the same shared handle.
+
+If terminal provider work throws during C<detach>, the handles cannot be
+returned. Stream therefore cancels its watchers, closes those otherwise
+unreturned handles, records the detached terminal state, and rethrows the
+provider exception.
 
 L<Linux::Event::Socket> maps these generic directional states onto socket
 C<shutdown> where appropriate.

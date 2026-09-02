@@ -363,6 +363,17 @@ les_test_event(pTHX_ void *opaque, uint32_t event, int error,
     }
 }
 
+static void
+les_test_event_croak(pTHX_ void *opaque, uint32_t event, int error,
+    const char *message)
+{
+    PERL_UNUSED_ARG(opaque);
+    PERL_UNUSED_ARG(event);
+    PERL_UNUSED_ARG(error);
+    PERL_UNUSED_ARG(message);
+    croak("synthetic consumer event exception");
+}
+
 static int
 les_test_flush(pTHX_ void *opaque)
 {
@@ -382,6 +393,16 @@ les_test_flush_continue(pTHX_ void *opaque)
     context->flushes++;
     context->last_flush_sequence = ++context->sequence;
     return LES_CONSUMER_CONTINUE;
+}
+
+static int
+les_test_flush_error(pTHX_ void *opaque)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    PERL_UNUSED_CONTEXT;
+    context->flushes++;
+    context->last_flush_sequence = ++context->sequence;
+    return LES_CONSUMER_ERROR;
 }
 
 static void
@@ -434,6 +455,30 @@ static const les_consumer_ops_v1_t les_test_croak_ops = {
     les_test_event,
     les_test_destroy,
     les_test_flush
+};
+
+static const les_consumer_ops_v1_t les_test_event_croak_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "event-croak test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message,
+    les_test_event_croak,
+    les_test_destroy,
+    les_test_flush
+};
+
+static const les_consumer_ops_v1_t les_test_flush_error_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "flush-error test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush_error
 };
 
 /* The original ABI v1 ended at destroy. Keep a provider with that exact
@@ -529,6 +574,8 @@ les_test_context(les_xsstate_t *st)
     if (!st || (st->consumer_ops != &les_test_ops
         && st->consumer_ops != &les_test_flush_continue_ops
         && st->consumer_ops != &les_test_croak_ops
+        && st->consumer_ops != &les_test_event_croak_ops
+        && st->consumer_ops != &les_test_flush_error_ops
         && st->consumer_ops != (const les_consumer_ops_v1_t *)
             &les_test_original_ops) || !st->consumer_context)
         croak("Stream does not use the Linux::Event core test consumer");
@@ -558,6 +605,10 @@ les_test_consumer_definition(pTHX_ const char *variant)
         ops = &les_test_flush_continue_ops;
     else if (strEQ(variant, "message-croak"))
         ops = &les_test_croak_ops;
+    else if (strEQ(variant, "event-croak"))
+        ops = &les_test_event_croak_ops;
+    else if (strEQ(variant, "flush-error"))
+        ops = &les_test_flush_error_ops;
     else if (strEQ(variant, "wrong-declaration-version"))
         declared_version++;
     else if (!strEQ(variant, "valid"))
