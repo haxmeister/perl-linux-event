@@ -47,6 +47,8 @@ Unreleased
       a named, complete specification that rejects unknown and missing fields.
     - Pre-resolve LengthPrefix encoding metadata and fast-path one-byte Varint
       prefixes while retaining byte-equivalent framing at encoding boundaries.
+    - Isolate the private native-consumer conformance providers in a dedicated
+      translation unit, separate from production host and state mechanics.
     - Clean up partially constructed Sockets when configure_socket fails,
       retain explicit transport providers for outbound connect, and reject
       socket policy methods placed on a generic Stream instead of silently

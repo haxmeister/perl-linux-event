@@ -245,6 +245,11 @@ Move the private conformance/test provider into its own translation unit.
 
 Keep test-only providers unavailable to normal runtime declaration paths.
 
+**Status (2026-09-02): complete.** Production host/state mechanics remain in
+`stream_consumer.c`; the private conformance providers and test accessors now
+live intact in `stream_test_consumer.c` and remain reachable only through the
+existing private test API.
+
 ### 13. Rework stats organization as an embedded struct
 
 Keep the maintainability win:

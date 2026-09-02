@@ -271,6 +271,7 @@ xsstream/Stream.xs
 xsstream/stream_callbacks.c
 xsstream/stream_consumer.c
 xsstream/stream_consumer_abi.h
+xsstream/stream_test_consumer.c
 xsstream/stream_delivery.c
 xsstream/stream_input.c
 xsstream/stream_internal.h

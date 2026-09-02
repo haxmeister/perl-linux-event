@@ -19,6 +19,7 @@ WriteMakefile(
         stream_input
         stream_delivery
         stream_consumer
+        stream_test_consumer
         stream_read
         stream_write
         stream_transition
