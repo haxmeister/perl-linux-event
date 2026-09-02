@@ -7,6 +7,23 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
 
+sub exception ($code) {
+    local $@;
+    eval { $code->(); 1 };
+    return $@;
+}
+
+like(exception(sub { Linux::Event::Stream::XSDescriptor->new([]) }),
+    qr/requires a hash reference/,
+    'native descriptor requires a named hash specification');
+like(exception(sub {
+    Linux::Event::Stream::XSDescriptor->new({ unexpected => 1 });
+}), qr/unknown Stream descriptor field 'unexpected'/,
+    'native descriptor rejects unknown specification fields');
+like(exception(sub { Linux::Event::Stream::XSDescriptor->new({}) }),
+    qr/missing Stream descriptor field 'read_size'/,
+    'native descriptor rejects missing specification fields');
+
 {
     package T::SharedLineStream;
     use parent 'Linux::Event::Socket';

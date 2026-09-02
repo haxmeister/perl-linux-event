@@ -219,6 +219,10 @@ Replace the large positional `XSDescriptor::new` argument list with a named hash
 
 This is cold construction code, so maintainability and correctness are more important than avoiding hash lookup during descriptor creation.
 
+**Status (2026-09-02): complete.** The private XS constructor now accepts one
+named specification, rejects unknown and missing fields, and retains the
+existing descriptor validation after extraction.
+
 ### 11. Framer fast paths
 
 Keep the worthwhile native framer simplifications:

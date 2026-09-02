@@ -43,6 +43,8 @@ Unreleased
       pending-flush mechanics and buffered-input re-drive eligibility.
     - Centralize the readable raw/framed sink invariant used by Stream
       construction and protocol transition while preserving public diagnostics.
+    - Replace the private 29-argument positional XS descriptor constructor with
+      a named, complete specification that rejects unknown and missing fields.
     - Clean up partially constructed Sockets when configure_socket fails,
       retain explicit transport providers for outbound connect, and reject
       socket policy methods placed on a generic Stream instead of silently
