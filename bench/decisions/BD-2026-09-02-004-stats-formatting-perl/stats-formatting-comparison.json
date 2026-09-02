@@ -1,0 +1,41 @@
+{
+   "baseline" : {
+      "commit" : "c8dbbb32276e27f4122f858812b2eaa19a4f514e",
+      "variant" : "baseline"
+   },
+   "baseline_evidence" : "bench/decisions/BD-2026-09-02-004-stats-formatting-perl/baseline-stats-formatting.json",
+   "candidate" : {
+      "commit" : "47adc21c10785ab4fc1015e41933a4401ed3d570",
+      "variant" : "candidate"
+   },
+   "candidate_evidence" : "bench/decisions/BD-2026-09-02-004-stats-formatting-perl/candidate-stats-formatting.json",
+   "comparison" : "stats",
+   "configuration_equal" : true,
+   "rows" : [
+      {
+         "baseline_median_calls_per_second" : 295185.037,
+         "baseline_median_cpu_microseconds_each" : 3.387698,
+         "baseline_median_wall_microseconds_each" : 3.387706,
+         "candidate_median_calls_per_second" : 202276.344,
+         "candidate_median_cpu_microseconds_each" : 4.943798,
+         "candidate_median_wall_microseconds_each" : 4.943732,
+         "median_calls_per_second_delta_percent" : -31.47473,
+         "median_cpu_microseconds_each_delta_percent" : 45.933847,
+         "median_wall_microseconds_each_delta_percent" : 45.931554,
+         "mode" : "raw"
+      },
+      {
+         "baseline_median_calls_per_second" : 290181.579,
+         "baseline_median_cpu_microseconds_each" : 3.446021,
+         "baseline_median_wall_microseconds_each" : 3.446118,
+         "candidate_median_calls_per_second" : 198738.729,
+         "candidate_median_cpu_microseconds_each" : 5.027253,
+         "candidate_median_wall_microseconds_each" : 5.031732,
+         "median_calls_per_second_delta_percent" : -31.512286,
+         "median_cpu_microseconds_each_delta_percent" : 45.885733,
+         "median_wall_microseconds_each_delta_percent" : 46.011599,
+         "mode" : "delimiter"
+      }
+   ],
+   "schema_version" : 1
+}

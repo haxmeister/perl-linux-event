@@ -1,0 +1,241 @@
+{
+   "benchmark" : "Stream stats presentation",
+   "commit" : "c8dbbb32276e27f4122f858812b2eaa19a4f514e",
+   "configuration" : {
+      "concurrency" : 1,
+      "counters_per_snapshot" : 49,
+      "iterations_per_repeat" : 100000,
+      "repeats" : 9,
+      "setup" : "one Stream per mode; construction and teardown excluded",
+      "stream_classes" : [
+         "raw",
+         "native-delimiter"
+      ],
+      "transport" : "idle AF_UNIX SOCK_STREAM socketpair",
+      "warmup_iterations_per_mode" : 10000
+   },
+   "runtime" : {
+      "archname" : "x86_64-linux-gnu-thread-multi",
+      "cc" : "x86_64-linux-gnu-gcc",
+      "ccflags" : "-D_REENTRANT -D_GNU_SOURCE -DDEBIAN -fwrapv -fno-strict-aliasing -pipe -I/usr/local/include -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64",
+      "optimize" : "-O2 -g",
+      "osname" : "linux",
+      "perl" : 5.038002
+   },
+   "samples" : [
+      {
+         "calls_per_second" : 307741.354,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.249413,
+         "cpu_seconds" : 0.324941261,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 1,
+         "wall_microseconds_each" : 3.249482,
+         "wall_seconds" : 0.324948203
+      },
+      {
+         "calls_per_second" : 297132.287,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.365516,
+         "cpu_seconds" : 0.336551629,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 1,
+         "wall_microseconds_each" : 3.365504,
+         "wall_seconds" : 0.336550434
+      },
+      {
+         "calls_per_second" : 296502.056,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.372516,
+         "cpu_seconds" : 0.337251619,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 2,
+         "wall_microseconds_each" : 3.372658,
+         "wall_seconds" : 0.337265789
+      },
+      {
+         "calls_per_second" : 306203.985,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.265804,
+         "cpu_seconds" : 0.326580407,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 2,
+         "wall_microseconds_each" : 3.265797,
+         "wall_seconds" : 0.326579682
+      },
+      {
+         "calls_per_second" : 295185.037,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.387698,
+         "cpu_seconds" : 0.338769762,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 3,
+         "wall_microseconds_each" : 3.387706,
+         "wall_seconds" : 0.338770559
+      },
+      {
+         "calls_per_second" : 285760.71,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.499437,
+         "cpu_seconds" : 0.349943738,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 3,
+         "wall_microseconds_each" : 3.499431,
+         "wall_seconds" : 0.349943139
+      },
+      {
+         "calls_per_second" : 287855.206,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.473995,
+         "cpu_seconds" : 0.347399535,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 4,
+         "wall_microseconds_each" : 3.473969,
+         "wall_seconds" : 0.347396878
+      },
+      {
+         "calls_per_second" : 282805.919,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.535622,
+         "cpu_seconds" : 0.353562194,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 4,
+         "wall_microseconds_each" : 3.535994,
+         "wall_seconds" : 0.353599389
+      },
+      {
+         "calls_per_second" : 280258.024,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.568092,
+         "cpu_seconds" : 0.356809219,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 5,
+         "wall_microseconds_each" : 3.56814,
+         "wall_seconds" : 0.356814048
+      },
+      {
+         "calls_per_second" : 245691.979,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 4.070173,
+         "cpu_seconds" : 0.407017315,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 5,
+         "wall_microseconds_each" : 4.070137,
+         "wall_seconds" : 0.407013694
+      },
+      {
+         "calls_per_second" : 290744.207,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.438962,
+         "cpu_seconds" : 0.343896195,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 6,
+         "wall_microseconds_each" : 3.439449,
+         "wall_seconds" : 0.343944944
+      },
+      {
+         "calls_per_second" : 298499.507,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.350001,
+         "cpu_seconds" : 0.335000087,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 6,
+         "wall_microseconds_each" : 3.350089,
+         "wall_seconds" : 0.335008929
+      },
+      {
+         "calls_per_second" : 299286.367,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.341387,
+         "cpu_seconds" : 0.334138687,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 7,
+         "wall_microseconds_each" : 3.341281,
+         "wall_seconds" : 0.33412815
+      },
+      {
+         "calls_per_second" : 291783.072,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.426852,
+         "cpu_seconds" : 0.342685205,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 7,
+         "wall_microseconds_each" : 3.427204,
+         "wall_seconds" : 0.342720362
+      },
+      {
+         "calls_per_second" : 311149.891,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.213651,
+         "cpu_seconds" : 0.321365073,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 8,
+         "wall_microseconds_each" : 3.213885,
+         "wall_seconds" : 0.32138851
+      },
+      {
+         "calls_per_second" : 290181.579,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.446021,
+         "cpu_seconds" : 0.344602081,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 8,
+         "wall_microseconds_each" : 3.446118,
+         "wall_seconds" : 0.344611813
+      },
+      {
+         "calls_per_second" : 281450.329,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.552539,
+         "cpu_seconds" : 0.355253921,
+         "iterations" : 100000,
+         "mode" : "raw",
+         "repeat" : 9,
+         "wall_microseconds_each" : 3.553025,
+         "wall_seconds" : 0.35530248
+      },
+      {
+         "calls_per_second" : 282376.567,
+         "checksum" : 0,
+         "cpu_microseconds_each" : 3.540242,
+         "cpu_seconds" : 0.354024188,
+         "iterations" : 100000,
+         "mode" : "delimiter",
+         "repeat" : 9,
+         "wall_microseconds_each" : 3.54137,
+         "wall_seconds" : 0.354137034
+      }
+   ],
+   "schema_version" : 1,
+   "summary" : [
+      {
+         "median_calls_per_second" : 295185.037,
+         "median_cpu_microseconds_each" : 3.387698,
+         "median_wall_microseconds_each" : 3.387706,
+         "mode" : "raw"
+      },
+      {
+         "median_calls_per_second" : 290181.579,
+         "median_cpu_microseconds_each" : 3.446021,
+         "median_wall_microseconds_each" : 3.446118,
+         "mode" : "delimiter"
+      }
+   ],
+   "variant" : "baseline"
+}

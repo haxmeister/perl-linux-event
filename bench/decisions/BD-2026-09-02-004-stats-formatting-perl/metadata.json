@@ -1,0 +1,32 @@
+{
+   "schema_version" : 1,
+   "decision_id" : "BD-2026-09-02-004",
+   "title" : "Stream stats result formatting in Perl",
+   "decision" : "KEEP",
+   "generated_at_epoch" : 1788359785,
+   "baseline" : {
+      "commit" : "c8dbbb32276e27f4122f858812b2eaa19a4f514e",
+      "tree" : "75317e9d143a856d2d388bf0970bbcd97b2b34fe"
+   },
+   "candidate" : {
+      "commit" : "47adc21c10785ab4fc1015e41933a4401ed3d570",
+      "tree" : "dff0930710be89db128dea260c2434a50dbb394c"
+   },
+   "runtime" : {
+      "kernel" : "Linux 6.18.35 x86_64",
+      "perl" : "5.38.2",
+      "archname" : "x86_64-linux-gnu-thread-multi",
+      "compiler" : "x86_64-linux-gnu-gcc",
+      "optimize" : "-O2 -g"
+   },
+   "tests" : {
+      "core" : "142 files, 1920 tests, PASS",
+      "linux_event_async" : "8 files, 65 tests, PASS"
+   },
+   "benchmark_runs" : {
+      "release" : "seven measured rotated repeats after warmup; adjacent baseline and candidate builds",
+      "payload" : "raw and native Delimiter; all nine policy sizes; one warmup and five measured repeats",
+      "stats_formatting" : "49-counter public snapshots; 10000 warmups and nine repeats of 100000 stats calls per mode"
+   },
+   "configuration_note" : "Each payload JSON retains effective Stream tuning, native framer parameters, AF_UNIX transport, batching, read sizes and budgets, buffer limits, socket settings, concurrency, reads, writes, callbacks, CPU, and input peaks."
+}

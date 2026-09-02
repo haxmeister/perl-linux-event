@@ -342,6 +342,14 @@ in adjacent established-Stream measurements. Deliberately rebuilding an
 uncached descriptor costs about 7.1 microseconds more; normal construction
 caches one descriptor per class.
 
+**Extraction 2 status (2026-09-02): KEEP.** `BD-2026-09-02-004` keeps all
+counters and snapshot reads native but moves the 49 public names and hash
+presentation into Perl. It removes 28 native lines (two net production lines),
+preserves the exact public key/value contract, and is neutral in adjacent
+lifecycle and established-throughput measurements. The focused introspection
+cost rises from about 3.4 to 5.0 microseconds per complete 49-key snapshot;
+`stats()` is not called from readiness, framing, delivery, or teardown paths.
+
 ### Phase 2 - consolidate the native data plane
 
 After cold policy is extracted, reorganize remaining native Stream code around:

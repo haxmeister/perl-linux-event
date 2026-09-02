@@ -1,0 +1,30 @@
+{
+   "schema_version" : 1,
+   "baseline" : {
+      "commit" : "c8dbbb32276e27f4122f858812b2eaa19a4f514e",
+      "tree" : "75317e9d143a856d2d388bf0970bbcd97b2b34fe",
+      "tracked_native_lines" : 3847,
+      "production_native_lines" : 3226,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119
+   },
+   "candidate" : {
+      "commit" : "47adc21c10785ab4fc1015e41933a4401ed3d570",
+      "tree" : "dff0930710be89db128dea260c2434a50dbb394c",
+      "tracked_native_lines" : 3819,
+      "production_native_lines" : 3198,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119
+   },
+   "delta" : {
+      "tracked_native_lines" : -28,
+      "production_native_lines" : -28,
+      "detected_native_functions" : 0,
+      "production_native_functions" : 0,
+      "perl_production_lines" : 26,
+      "net_production_lines" : -2
+   },
+   "counting_method" : "physical wc -l over Git-tracked xsstream .c/.h/.xs files; the native stats exporter is renamed from hash formatter to snapshot producer and therefore does not change function count"
+}

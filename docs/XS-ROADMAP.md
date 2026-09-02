@@ -174,6 +174,12 @@ runtime descriptor and memory/ABI safety checks. `BD-2026-09-02-003` records
 the paired release, full payload, focused cold-construction, correctness, and
 complexity evidence. Proceed independently with stats result formatting.
 
+**Extraction 2 status (2026-09-02): KEEP.** Native code now returns a compact
+ordered counter snapshot and Perl owns the named public hash presentation.
+`BD-2026-09-02-004` records the direct introspection cost, adjacent release
+suite, full payload sweep, correctness, and complexity evidence. Proceed
+independently with construction/failure policy.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:

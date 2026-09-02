@@ -546,3 +546,72 @@ shrinks the native policy surface without changing consumer semantics.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-02-003-descriptor-spec-perl/`
+
+---
+
+## BD-2026-09-02-004 - Stream stats presentation extraction
+
+**Decision:** KEEP
+
+**Hypothesis:** Stream counters and their coherent readout should remain
+native, but naming and formatting the cold `stats()` result as a public Perl
+hash can move to Perl without affecting lifecycle or established I/O paths.
+
+**Change:** The native primitive returns an ordered 49-value array snapshot.
+The Perl `XSState::stats` method validates the snapshot cardinality and maps it
+to the existing 49 public names in a fresh hash. Counter storage and updates,
+unsigned counter values, boolean values, descriptor tuning values, and every
+public key remain unchanged. No native-consumer operation or ABI changes.
+
+**Adjacent release comparison:** Seven measured repeats after warmup; all rows
+remain inside the permanent 10% gate:
+
+| Workload | Throughput delta | CPU delta |
+|---|---:|---:|
+| raw Stream lifecycle | -2.87% | +2.91% |
+| framed Stream lifecycle | +1.17% | -1.11% |
+| raw Stream throughput | -1.62% | +1.57% |
+| deadline Stream throughput | -1.09% | +1.08% |
+| framed Stream throughput | +0.41% | -0.44% |
+| connect/listener lifecycle | -4.89% | +5.14% |
+
+Registration and Timer control rows also remain within the gate.
+
+**Full payload sweep:** Raw and native Delimiter modes used 64 B, 256 B,
+1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B, one warmup and
+five measured repeats. Full configuration and every raw sample are retained.
+The saturated AF_UNIX runs were visibly noisy, including baseline Delimiter
+rows whose medians changed with socket splitting; candidate median MiB/s deltas
+ranged from -29.90% to +246.02%. Because neither the old nor new stats exporter
+runs during input delivery, those variations cannot be caused by this change.
+The adjacent serial release throughput rows provide the stable attribution and
+remain within 1.62%.
+
+**Focused `stats()` cost:** Nine repeats of 100,000 complete 49-key snapshots
+per mode, after 10,000 warmups, measured:
+
+| Stream | Baseline | Candidate | Wall-time delta |
+|---|---:|---:|---:|
+| raw | 3.388 us | 4.944 us | +45.93% |
+| Delimiter | 3.446 us | 5.032 us | +46.01% |
+
+The extraction therefore adds about 1.6 us per explicit introspection call.
+The candidate still produces about 200,000 complete snapshots per second and
+`stats()` is never entered by readiness, framing, delivery, transition, or
+teardown machinery.
+
+**Complexity/correctness:** Production native source falls from 3,226 to
+3,198 lines. Adding 26 Perl production lines leaves a net two-line production
+reduction while moving all user-facing naming to the presentation layer. The
+core suite passes 142 files/1,920 tests, including exact keys, snapshot size,
+values, and independence; the real `Linux::Event::Async` suite passes 8
+files/65 tests.
+
+**Reason:** Keep the extraction. The directly measured cost is confined to an
+explicit cold introspection API and is small in absolute terms, while all hot
+and lifecycle paths are neutral and the native layer no longer owns public
+hash presentation. Reconsider only if a real application demonstrates that it
+polls 49-key Stream statistics frequently enough for 1.6 us to matter.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-004-stats-formatting-perl/`
