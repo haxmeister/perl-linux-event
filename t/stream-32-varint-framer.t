@@ -5,6 +5,7 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
+use Linux::Event::Framer::Varint ();
 
 {
     package T::VarintStream;
@@ -55,6 +56,19 @@ sub varint_frame ($payload) {
         push @bytes, $byte;
     } while ($value);
     return pack('C*', @bytes) . $payload;
+}
+
+{
+    my $definition = Linux::Event::Framer::Varint->_build_definition;
+    for my $length (
+        0, 1, 2, 126, 127, 128, 255, 256, 16_383, 16_384,
+        65_535, 65_536, 200_000,
+    ) {
+        my $payload = 'x' x $length;
+        is($definition->{frame}->($definition->{native}, $payload),
+            varint_frame($payload),
+            "Varint prefix is byte-equivalent at $length");
+    }
 }
 
 sub read_exact ($fh, $wanted) {

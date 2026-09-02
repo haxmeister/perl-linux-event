@@ -5,6 +5,34 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
+use Linux::Event::Framer::LengthPrefix ();
+
+sub legacy_length_frame ($bytes, $little, $payload) {
+    my @octets;
+    my $value = length($payload);
+    for (1 .. $bytes) {
+        unshift @octets, $value & 0xff;
+        $value >>= 8;
+    }
+    @octets = reverse @octets if $little;
+    return pack('C*', @octets) . $payload;
+}
+
+for my $bytes (1, 2, 4) {
+    for my $endian (qw(big little)) {
+        my $definition = Linux::Event::Framer::LengthPrefix->_build_definition(
+            bytes => $bytes, endian => $endian,
+        );
+        my $max = $bytes == 1 ? 255 : $bytes == 2 ? 65_535 : 0xffff_ffff;
+        for my $length (grep { $_ <= $max }
+            0, 1, 2, 127, 128, 255, 256, 65_535, 65_536, 200_000) {
+            my $payload = 'x' x $length;
+            is($definition->{frame}->($definition->{native}, $payload),
+                legacy_length_frame($bytes, $endian eq 'little', $payload),
+                "$bytes-byte $endian prefix is byte-equivalent at $length");
+        }
+    }
+}
 
 {
     package T::LengthBEStream;

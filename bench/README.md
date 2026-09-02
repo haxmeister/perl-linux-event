@@ -107,6 +107,21 @@ The benchmark deliberately reports no latency percentile: it is a saturated
 local throughput diagnostic. Use a separate request/response or fairness
 workload when a change can alter latency or batching behavior.
 
+## Outbound framer send benchmark
+
+`run-framer-send-bench.pl` measures the complete framed `Stream->send()` path:
+Perl prefix encoding, native write/queue submission, Loop-driven `writev`
+draining, and peer receipt over an AF_UNIX socketpair. Its default sizes are the
+permanent full 64 B through 200 KB sweep and its JSON includes raw repeats,
+resolved Stream/framer settings, socket buffers, and native write statistics.
+
+```bash
+perl -Mblib bench/run-framer-send-bench.pl \
+  --framers=length,varint --repeats=5 --warmup=1 \
+  --variant=candidate --commit=COMMIT_SHA \
+  --output=bench/results/framer-send.json
+```
+
 ## Timer microbenchmark
 
 `run-timer-microbench.pl` isolates the native scheduler at increasing heap
