@@ -61,7 +61,6 @@ docs/STREAM-DESIGN.md
 docs/TIMER-DESIGN.md
 docs/TRANSPORT-BOUNDARY.md
 docs/WAKEUP-DESIGN.md
-docs/XS-ROADMAP.md
 examples/line-echo-client.pl
 examples/line-echo-server.pl
 examples/process-capture.pl
