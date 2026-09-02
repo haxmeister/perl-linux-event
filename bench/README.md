@@ -122,6 +122,25 @@ perl -Mblib bench/run-framer-send-bench.pl \
   --output=bench/results/framer-send.json
 ```
 
+## Stream payload-sweep baseline
+
+`run-stream-payload-sweep.pl` records established inbound raw and native
+Delimiter Stream performance across the permanent 64 B through 200 KB matrix.
+It uses a gated forked producer and reports receiver and producer CPU per byte,
+MiB/s, native reads, producer writes, Perl callbacks, buffering peaks, and the
+complete effective Stream/socket configuration in machine-readable JSON:
+
+```bash
+perl -Mblib bench/run-stream-payload-sweep.pl \
+  --modes=raw,delimiter --repeats=5 --warmup=1 \
+  --variant=baseline --commit=COMMIT_SHA \
+  --output=bench/results/stream-payload-sweep.json
+```
+
+This is a saturated one-way local throughput benchmark, so it does not claim
+request/response latency percentiles. Pair it with the performance-regression
+suite for construction, lifecycle, deadline, and serial echo coverage.
+
 ## Timer microbenchmark
 
 `run-timer-microbench.pl` isolates the native scheduler at increasing heap

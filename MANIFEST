@@ -36,6 +36,7 @@ bench/run-resolver-microbench.pl
 bench/run-signal-microbench.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
+bench/run-stream-payload-sweep.pl
 bench/run-stream-transition-bench.pl
 bench/run-stream-watcher-state-bench.pl
 bench/run-timer-microbench.pl

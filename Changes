@@ -52,6 +52,9 @@ Unreleased
     - Embed native Stream counters in one typed statistics structure and drive
       the public stats export from one counter-name/offset table while
       preserving the single XSState allocation and complete public key set.
+    - Add a machine-readable raw/framed Stream payload-sweep harness for the
+      XS-reduction baseline, covering the permanent 64-byte through 200-KB
+      matrix with full effective configuration and CPU/I/O/callback metrics.
     - Clean up partially constructed Sockets when configure_socket fails,
       retain explicit transport providers for outbound connect, and reject
       socket policy methods placed on a generic Stream instead of silently

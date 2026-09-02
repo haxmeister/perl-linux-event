@@ -71,4 +71,39 @@ for my $case (qw(length/64 varint/64)) {
         "$case records framer parameters");
 }
 
+my ($sweep_fh, $sweep_path) = tempfile();
+close $sweep_fh;
+my @sweep_cmd = (
+    $^X,
+    "$Bin/../bench/run-stream-payload-sweep.pl",
+    '--sizes=64',
+    '--modes=raw,delimiter',
+    '--repeats=1',
+    '--warmup=0',
+    '--target-bytes=640',
+    '--min-messages=10',
+    '--max-messages=10',
+    '--read-size=4096',
+    '--variant=smoke',
+    '--commit=test',
+    "--output=$sweep_path",
+);
+is(system(@sweep_cmd), 0, 'Stream payload sweep smoke exits successfully');
+open my $sweep_report_fh, '<:raw', $sweep_path
+    or die "open $sweep_path: $!";
+my $sweep_report = decode_json(do { local $/; <$sweep_report_fh> });
+close $sweep_report_fh;
+is($sweep_report->{benchmark}, 'stream-payload-sweep',
+    'payload sweep JSON names its contract');
+is(scalar @{ $sweep_report->{samples} }, 2,
+    'payload sweep retains raw samples for both delivery modes');
+for my $mode (qw(raw delimiter)) {
+    my $effective = $sweep_report->{effective_config_by_mode}{$mode};
+    is($effective->{transport}, 'AF_UNIX SOCK_STREAM socketpair',
+        "$mode sweep records its transport");
+    is($effective->{read_size}, 4096, "$mode sweep records read size");
+    ok(exists $effective->{message_batch_size},
+        "$mode sweep records batching configuration");
+}
+
 done_testing;
