@@ -58,6 +58,8 @@ Unreleased
     - Move named XS descriptor field validation and cold scalar normalization
       to the Perl control plane while retaining native parser-memory and
       consumer-ABI safety checks before constructing the immutable descriptor.
+    - Keep Stream counters native but format their compact snapshot into the
+      public stats hash in Perl.
     - Clean up partially constructed Sockets when configure_socket fails,
       retain explicit transport providers for outbound connect, and reject
       socket policy methods placed on a generic Stream instead of silently

@@ -39,6 +39,9 @@ $loop->run;
 is($state->{got}, 'abcdefghij', 'native read engine drains and delivers bytes');
 
 my $stats = $stream->{xs_state}->stats;
+my $snapshot = $stream->{xs_state}->_stats_snapshot;
+is(ref($snapshot), 'ARRAY', 'native stats primitive returns a compact snapshot');
+is(scalar($snapshot->@*), 49, 'native stats snapshot has one value per public key');
 is_deeply(
     [sort keys $stats->%*],
     [sort qw(
@@ -63,6 +66,9 @@ ok($stats->{read_ready_calls} >= 1, 'native readiness handler ran');
 ok($stats->{read_calls} >= 3, 'native engine performed multiple small read calls');
 is($stats->{bytes_read}, 10, 'native byte count is exact');
 ok($stats->{delivery_calls} >= 3, 'delivery callback follows successful reads');
+$stats->{bytes_read} = 0;
+is($stream->{xs_state}->stats->{bytes_read}, 10,
+    'stats presentation returns an independent hash snapshot');
 
 $stream->close;
 close $b;

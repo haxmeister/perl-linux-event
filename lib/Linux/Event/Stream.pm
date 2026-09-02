@@ -1217,6 +1217,32 @@ sub new ($class, $spec) {
 sub CLONE_SKIP ($class) { 1 }
 
 package Linux::Event::Stream::XSState;
+my @STAT_NAME = qw(
+    activity_clock_calls read_ready_calls read_calls bytes_read
+    read_eagain_count read_eintr_count eof_count read_error_count
+    delivery_calls read_batch_flushes read_batch_peak_bytes input_appends
+    input_compactions input_peak_bytes delimiter_searches frames_emitted
+    message_callback_calls message_batch_calls message_batch_peak_messages
+    message_batch_peak_bytes framing_error_count transition_count
+    consumer_message_calls consumer_pause_count consumer_resume_count
+    consumer_event_calls consumer_flush_calls write_submit_calls
+    write_ready_calls write_calls writev_calls bytes_written
+    write_eagain_count write_eintr_count write_error_count output_limit_count
+    queued_segments queue_peak_bytes drain_calls empty_calls read_budget_bytes
+    read_batch_bytes message_batch_size input_buffered_bytes
+    consumer_flush_pending consumer_paused pending_bytes write_blocked
+    activity_tracking
+);
+
+sub stats ($self) {
+    my $values = $self->_stats_snapshot;
+    Carp::croak 'native Stream stats snapshot has an unexpected field count'
+        if @$values != @STAT_NAME;
+    my %stats;
+    @stats{@STAT_NAME} = @$values;
+    return \%stats;
+}
+
 sub CLONE_SKIP ($class) { 1 }
 
 package Linux::Event::Stream::_Deadline;

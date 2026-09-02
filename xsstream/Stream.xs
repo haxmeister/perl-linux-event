@@ -693,10 +693,10 @@ transport_ready(state_obj)
     RETVAL
 
 SV *
-stats(state_obj)
+_stats_snapshot(state_obj)
     SV *state_obj
   CODE:
-    RETVAL = les_state_stats(aTHX_ les_state_from_sv(state_obj));
+    RETVAL = les_state_stats_snapshot(aTHX_ les_state_from_sv(state_obj));
   OUTPUT:
     RETVAL
 
