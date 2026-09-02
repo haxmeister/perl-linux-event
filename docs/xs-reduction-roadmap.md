@@ -382,6 +382,25 @@ consumer semantic boundary, while merely relocating it between C files would
 not reduce XS/C complexity. The retained boundary is covered by the Phase 0
 performance/payload evidence and real Async compatibility results.
 
+**Extraction 6 status (2026-09-02): RETAIN CURRENT BOUNDARY.** Transport
+setup and shutdown already match the control-plane design. Perl validates
+public TLS options, chooses client/server policy, enforces the shared-handle
+rule, starts handshake and shutdown deadlines, translates transport results
+into typed errors, and decides watcher/lifecycle action. Native code retains
+the ABI table and pointer checks needed before dereferencing an external
+provider, provider retention, readiness-driven transport operations, and one
+`shutdown_write` operation returning a status tuple to Perl. The OpenSSL
+provider likewise keeps only resource construction, cryptographic I/O/state,
+BIO, and timerfd mechanics native. No further extraction candidate was
+created: the remaining checks are native memory-safety backstops or the
+protected repeated transport data plane. The Phase 0 full payload evidence
+therefore remains the applicable performance record.
+
+**Phase 1 status (2026-09-02): complete.** Extractions 1–4 were kept with
+paired evidence. Extractions 5–6 were already at the target boundary due to
+the preceding correctness and TLS architecture work, so their protected
+native residue was retained without an artificial code movement.
+
 ### Phase 2 - consolidate the native data plane
 
 After cold policy is extracted, reorganize remaining native Stream code around:

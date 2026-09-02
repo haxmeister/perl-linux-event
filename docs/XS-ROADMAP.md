@@ -203,6 +203,16 @@ between native files would not be XS reduction. The full close, `close_read`,
 failed `detach`, and transitive `close_write` regressions remain the gate.
 Proceed independently with transport setup/shutdown policy.
 
+**Extraction 6 status (2026-09-02): RETAIN CURRENT BOUNDARY.** Perl already
+owns public TLS option validation, shared-handle eligibility, handshake and
+shutdown deadline policy, typed transport errors, watcher decisions, and
+lifecycle sequencing. XS retains the ABI/pointer/table safety checks required
+before provider dereference, the provider reference, native readiness-driven
+I/O, and the shutdown primitive whose status Perl interprets. Further movement
+would either remove a native safety backstop or cross into the protected
+transport data plane. Phase 1 is complete; proceed to native data-plane
+consolidation.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:
