@@ -39,7 +39,7 @@ Apply this invariant to:
 - `close_read()`
 - `detach()`
 
-Do not automatically classify `close_write()` as the same bug: its native `_close_write` path currently does not perform consumer terminal flush/event dispatch. Add it only if a failing test demonstrates an equivalent exception hole.
+The native `_close_write` path itself does not perform consumer terminal flush/event dispatch, so it needs no separate native exception-safety fix. However, public `close_write()` can call `_close_now(1)` when the read side is already terminal, so it reaches the proven full-close bug transitively. Cover that call path in the teardown regression matrix.
 
 Implementation direction:
 
@@ -54,21 +54,30 @@ Required regressions:
 - terminal consumer `flush()` returns `LES_CONSUMER_ERROR` during full close;
 - the same two failure shapes through `close_read()` where applicable;
 - terminal provider work throws during `detach()`;
+- `close_write()` with an already-terminal read side reaches `_close_now()` and still completes teardown if terminal provider work throws;
 - assert no fd leak, no live watcher/epoll registration, correct final object state, and exception propagation.
 
-### 2. Make the exported consumer host `resume()` lifetime-safe
+For `detach()`, define the failure-state contract explicitly. If native terminal dispatch throws, the object must not be left apparently live with watchers/handles but no XS state. Because an exception prevents normal handle return, ownership must still resolve deterministically: either retain a coherent detachable object or close/release the handles as part of failed teardown. No watcher or fd may be stranded.
 
-The core XSUB `_consumer_resume` is guarded, but that does not protect the public native-consumer host callback itself.
+### 2. Define and enforce the exported consumer host/provider lifetime contract
 
-The ABI gives external providers a host table containing `resume(host_context)`. `Linux::Event::Async` already calls that host function directly from its own XS receive-arm path. Therefore the call can enter `les_consumer_resume(st)` without passing through the guarded core `_consumer_resume` XSUB.
+The core XSUB `_consumer_resume` is guarded, but that does not protect the native-consumer host API as a whole.
 
-This remains a real lifetime concern because host `resume()` may synchronously dispatch buffered messages, provider/user code may close the Stream, and `les_consumer_resume()` may then continue with the raw `les_xsstate_t *`.
+The ABI gives external providers a host table containing `resume(host_context)`. `Linux::Event::Async` already calls that host function directly from its own XS receive-arm path, so the call can enter `les_consumer_resume(st)` without passing through the guarded core `_consumer_resume` XSUB.
+
+The lifetime hole is broader than the duration of the core `resume()` call. `Linux::Event::Async` continues to read its provider `ctx` and can call another host-table function after `resume()` returns. Synchronous delivery inside `resume()` may invoke provider/user code that closes the Stream, allowing core XS state and provider context destruction while the provider's own calling frame is still active. A core-side guard that keeps only `les_xsstate_t` alive until `resume()` returns therefore cannot by itself make the provider's post-call accesses safe.
+
+Treat this as an ABI ownership/lifetime design decision before implementation.
 
 Required work:
 
-- design lifetime protection at the exported host-entry boundary, not only at core XSUB wrappers;
+- state the lifetime invariant for every exported host-table entry point, not only `resume()`;
+- audit every host function for callback/reentrancy and post-callback state access; `resume()` is the known live case, while `pause()` is currently safe only because its callback-capable notification is the last stateful action;
+- ensure a provider can make a synchronous/reentrant host call without losing either the host object/context or the provider context underneath its active C frame;
 - do not require third-party consumers to know private `les_xsstate_t` details;
-- add a cross-repository regression using the real `Linux::Event::Async` path: direct host resume -> synchronous message -> user closes Stream -> host resume returns safely.
+- evaluate designs such as a stable/generation-checked host handle, a supported provider-held lifetime reference, or another explicit ownership mechanism. Merely returning a closed bit from `resume()` is not sufficient if the provider context itself can already have been destroyed;
+- preserve ABI-v1 append-only/versioning rules unless an intentional ABI revision is chosen;
+- add a cross-repository regression using the real `Linux::Event::Async` path: provider XSUB -> host `resume()` -> synchronous message -> user closes Stream -> provider frame continues and returns safely.
 
 Keep the existing XSUB guards; they are still useful for core entry points.
 
@@ -76,7 +85,7 @@ Keep the existing XSUB guards; they are still useful for core entry points.
 
 `Socket` construction cleanup and Listener accepted-fd cleanup are now validated and should be preserved.
 
-The remaining generic case is `Stream->new(loop => ...)` after XS state creation when watcher registration/attachment fails. The constructor must not strand the Perl <-> XS state ownership cycle or owned handles.
+The remaining generic case is `Stream->new(loop => ...)` after XS state creation when watcher registration/attachment fails. The constructor must not strand the Perl <-> XS state ownership cycle or owned handles. This does not conflict with Priority 15: on a failed construction/attachment path there is no successful loop-owned Stream lifetime to preserve, so explicitly breaking the partial cycle is safe and required. On a successfully attached Stream, the existing cycle remains part of the current lifetime mechanism until an ownership redesign replaces it.
 
 Required regression:
 
@@ -159,7 +168,7 @@ Keep:
 
 - terminal flush-before-event ordering;
 - terminal event as the last callback-capable action in `_close` / `_close_read`;
-- guarded XSUB paths that can reenter Perl/provider code and then continue touching XS state;
+- guarded XSUB paths that can reenter Perl/provider code and then continue touching XS state. Current audit: guarded `_read_ready`, `_write`, `_write_ready`, `_transition`, `_close`, `_close_read`, `_consumer_resume`, `_test_consumer_arm`; intentionally unguarded but currently benign `DESTROY` and `_test_consumer_cancel` because neither continues touching live context after its callback-capable final action;
 - re-drive after `flush -> CONTINUE` releases consumer backpressure;
 - directional native fd invalidation and explicit `EBADF` protection;
 - Socket construction cleanup and Listener accepted-fd cleanup;
@@ -194,7 +203,7 @@ Keep the worthwhile native framer simplifications:
 - Varint `< 128` one-octet fast path;
 - other clearly equivalent local parser simplifications.
 
-Require byte-equivalence boundary tests and an end-to-end benchmark before merging.
+Require byte-equivalence boundary tests and an end-to-end benchmark before merging. Historical review measurement for the LengthPrefix template pre-resolution was about 1.85x for the whole `_frame` call (roughly 1.19M/s -> 2.19M/s on that reviewer's machine). Do not use the earlier ~6.3x bare-`pack` micro-operation number as the expected end-to-end gain.
 
 ### 12. Split test-only native consumer code from production consumer code
 
@@ -257,7 +266,7 @@ The following should not remain as open correctness items without new evidence:
 - **Post-terminal-event recheck in `_close` / `_close_read`:** stale after moving terminal event dispatch to the end; there is no subsequent XS state work to protect there.
 - **Readable sink validation as an open bug:** both construction and transition checks now exist; only deduplication remains.
 - **`flush_terminal -> CLOSE` as an unhandled bug:** valid terminal `CONTINUE`/`PAUSE`/`CLOSE` results are intentionally lifecycle no-ops at an already-terminal boundary.
-- **`close_write()` as the same callback-exception teardown bug:** not currently supported by the code path; add only with evidence.
+- **native `_close_write()` as the same callback-exception teardown bug:** its native path performs no consumer terminal dispatch and needs no separate fix. Public `close_write()` can still enter `_close_now()` when the read side is already terminal, so that transitive call path belongs in the full-close regression matrix.
 
 ## Required validation gate before merge
 
@@ -267,17 +276,19 @@ At minimum add tests for:
 
 1. exception-safe full close teardown;
 2. exception-safe `close_read` teardown;
-3. exception-safe `detach` teardown;
-4. terminal flush returning `ERROR` while teardown still completes;
-5. external consumer host `resume()` reentrancy/lifetime using `Linux::Event::Async`;
-6. generic Stream watcher-registration construction failure;
-7. old-protocol consumer flush before first new-protocol message;
-8. terminal `flush -> CLOSE` ordering/single-terminal-event behavior;
-9. framer byte-equivalence boundaries for any salvaged parser optimization.
+3. exception-safe `detach` teardown with explicit final-state/handle-ownership assertions;
+4. `close_write()` reaching full teardown after the read side is already terminal;
+5. terminal flush returning `ERROR` while teardown still completes;
+6. exported consumer host/provider reentrancy and lifetime using `Linux::Event::Async`, including safe provider-frame execution after synchronous `resume()`;
+7. host-table audit coverage for any callback-capable entry point with post-callback state access;
+8. generic Stream watcher-registration construction failure;
+9. old-protocol consumer flush before first new-protocol message;
+10. terminal `flush -> CLOSE` ordering/single-terminal-event behavior;
+11. framer byte-equivalence boundaries for any salvaged parser optimization.
 
 ### Performance gate
 
-For every change touching a hot path, capture a before/after number against an appropriate baseline.
+For every change touching a hot path, run paired baseline/candidate measurements on the same host, Perl build, compiler/build flags, benchmark parameters, and workload. Use repeated runs and compare medians or another stable summary. Investigate any regression larger than normal run-to-run variance before merge.
 
 At minimum watch:
 
@@ -287,17 +298,24 @@ At minimum watch:
 - callbacks/message and syscalls/message where relevant;
 - latency for representative small and large messages when a change could alter batching/re-drive behavior.
 
-Microbenchmarks may explain a result, but the merge decision should use an end-to-end Stream benchmark.
+Historical measurements from the independent review are useful reference points, not permanent acceptance thresholds:
+
+- `ENTER` / `SAVEFREESV(SvREFCNT_inc)` / `LEAVE`: reviewer measured about 6.96 ns incremental cost per guarded XSUB call in a scratch microbenchmark;
+- `JMPENV_PUSH` / `JMPENV_POP`: reviewer measured about 1.32 ns incremental cost per call;
+- queued 64-byte `write()` with the socket buffer pre-filled: about 787,635/s on `c791e81` vs 814,642/s on `2681a0c`, showing no observed hardening regression within that run set;
+- LengthPrefix pre-resolved framing: about 1.19M/s -> 2.19M/s for the whole `_frame` call (~1.85x), which supersedes the misleading earlier ~6.3x bare-`pack` figure.
+
+Microbenchmarks may explain a result, but the merge decision should use an end-to-end Stream benchmark. Reproduce the relevant paired benchmark rather than treating the historical absolute values as machine-independent gates.
 
 ## Integration sequence
 
-1. Bring the tested correctness baseline from `fix/stream-socket-review` onto `fix/review-bugfix-simplify`.
+1. Merge or selectively cherry-pick the tested correctness baseline from `fix/stream-socket-review` onto `fix/review-bugfix-simplify`. The branches diverged from `668d3a0`, so this is not a fast-forward and conflicts should be expected/reviewed deliberately.
 2. Fix exception-safe teardown first.
-3. Resolve exported host `resume()` lifetime safety.
+3. Decide the exported consumer host/provider lifetime contract and ABI constraints before coding the host-lifetime fix; then implement and test it.
 4. Fix the protocol-transition flush boundary.
 5. Decide the flush-owed/reentrant-message semantic, then refactor consumer status/flush handling coherently.
 6. Centralize duplicated predicates/invariants.
 7. Run targeted regressions and the hot-path performance gate.
-8. Cross-test `Linux::Event::Async` against the branch.
+8. Cross-test `Linux::Event::Async` against the candidate core. Build the core branch first, then build/test Async with its `PERL5LIB`/test environment pointed at the candidate core `blib` so the external native-consumer ABI is exercised against the exact code being proposed.
 9. Salvage only the useful PR #9 simplifications: named descriptor spec, framer fast paths, test-provider source split, and embedded stats grouping.
-10. Re-run the full core suite, integration suite, and performance regression set before merge.
+10. Re-run the full core suite, integration suite, Async compatibility suite, and performance regression set before merge.
