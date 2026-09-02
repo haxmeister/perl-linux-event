@@ -414,6 +414,13 @@ epoll readiness
   -> write queue
 ```
 
+**Status (2026-09-02): in progress.** `BD-2026-09-02-007` centralizes the
+callback-capable EOF/retry/error read-boundary rule: delivery work is settled
+under the descriptor that produced the result, and re-drive occurs only for a
+live, unpaused Stream whose descriptor changed. The compiler fully inlines the
+helper with unchanged object text size; core, real Async, release, and full
+payload gates pass. Consumer terminal and status semantics are unchanged.
+
 ### Phase 3 - reconsider medium-risk code
 
 Only after the boundary is measured and stable should we test whether any

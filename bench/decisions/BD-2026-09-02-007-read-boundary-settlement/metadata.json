@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "decision_id": "BD-2026-09-02-007",
+  "title": "Centralized Stream read-boundary settlement",
+  "decision": "KEEP",
+  "generated_at_epoch": 1788365535,
+  "baseline": {
+    "commit": "afdbdd311259c7903946f021273c96b344974020",
+    "tree": "ebd11948ac38d420fc0cbe8e873a82cf7e083886"
+  },
+  "candidate": {
+    "commit": "b4e50d0ff9f3f83fdc8acbe31189bd9e4ebc179e",
+    "tree": "b1d88aaca966886442bffbf4ec38879e5debbb94"
+  },
+  "runtime": {
+    "kernel": "Linux 6.18.35 x86_64",
+    "perl": "5.38.2",
+    "archname": "x86_64-linux-gnu-thread-multi",
+    "compiler": "x86_64-linux-gnu-gcc",
+    "optimize": "-O2 -g"
+  },
+  "tests": {
+    "core": "142 files, 1928 tests, PASS",
+    "linux_event_async": "8 files, 65 tests, PASS"
+  },
+  "benchmark_runs": {
+    "quick_payload": "raw and native Delimiter; 64 B, 4 KiB, 32 KiB and 200000 B; one warmup and three measured repeats",
+    "full_payload": "raw and native Delimiter; all nine policy sizes; one warmup and five measured repeats, then one complete reverse-order retest",
+    "release": "seven measured rotated repeats after warmup; all release workloads; focused quick Stream throughput runs also retained"
+  },
+  "configuration_note": "Every payload JSON records effective Stream tuning, framer and delimiter, AF_UNIX transport, batching, read size/budget, buffer and queue limits, socket buffers/options, TLS state, concurrency, topology, reads, writes, callbacks, CPU and input peaks. The release JSON records resolved clients, messages, lifecycle iterations, pool, connections, warmups and workload order."
+}

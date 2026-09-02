@@ -764,3 +764,51 @@ semantics are unchanged.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-02-006-transition-policy/`
+
+---
+
+## BD-2026-09-02-007 - Centralized Stream read-boundary settlement
+
+**Decision:** KEEP
+
+**Hypothesis:** EOF, retry, and error exits from the native read drain can use
+one rule for flushing delivery work owed by the old descriptor and deciding
+whether a callback-triggered transition may re-drive, without changing the
+read data plane or consumer semantics.
+
+**Change:** `stream_read.c` now routes all three result boundaries through
+`les_settle_read_boundary()`. The helper flushes raw or framed work according
+to the descriptor that produced the result, then permits re-drive only when
+the Stream remains live and unpaused and the callback changed descriptors.
+Terminal consumer flush/event behavior and all ABI status rules are unchanged.
+
+**Release comparison:** Seven measured rotated repeats after warmup. Raw and
+framed established throughput changed by +2.87% and +4.98% respectively, with
+CPU per message improving by 2.86% and 4.74%. All nine release rows passed the
+10% regression gate; the largest CPU change was -9.42% on deadline Stream
+throughput.
+
+**Full payload sweeps:** Raw and native Delimiter modes used 64 B, 256 B,
+1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B, one warmup and
+five measured repeats. A complete reverse-order retest is also retained. The
+first pass ranged from -19.15% to +9.59% median MiB/s; the reverse-order pass
+ranged from -16.76% to +160.29%, with large changes in read/callback splitting
+and reversals at the same sizes. This is the shared-host AF_UNIX scheduling
+variance seen in earlier decisions. The serial release Stream rows are stable,
+and the compiled `stream_read.o` text remains exactly 2,274 bytes, so the
+payload scatter is not attributed to the source consolidation.
+
+**Complexity/correctness:** One source helper adds three physical native lines
+and one detected source function, but replaces three independently spelled
+old-descriptor settlement rules with one. The compiler fully inlines it and
+emits no helper symbol. The core suite passes 142 files/1,928 tests, including
+read, transition, batching, consumer, and TLS boundaries; the real
+`Linux::Event::Async` suite passes 8 files/65 tests.
+
+**Reason:** Keep the consolidation. It makes the callback-capable boundary
+decision single-sourced without adding a runtime call or growing compiled
+text, while measured established throughput remains neutral. Reconsider only
+if a quieter paired payload host reproduces a same-direction regression.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-007-read-boundary-settlement/`

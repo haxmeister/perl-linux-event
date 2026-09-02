@@ -229,6 +229,12 @@ epoll readiness
 Reduce duplicated ownership and callback-capable state-machine logic. Do not
 move hot work into Perl merely to reduce source lines.
 
+**Status (2026-09-02): in progress.** `BD-2026-09-02-007` replaces the three
+EOF/retry/error copies of old-descriptor delivery settlement and transition
+re-drive policy with one fully inlined native rule. Compiled text size is
+unchanged, established Stream throughput is neutral, and the core plus real
+Async suites pass without changing consumer ABI behavior.
+
 ## Priority 3 - preserve and extend realistic benchmarking
 
 Existing harnesses remain useful, but any harness used to justify a Stream

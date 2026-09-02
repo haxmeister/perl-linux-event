@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "commit": "afdbdd311259c7903946f021273c96b344974020",
+    "tree": "ebd11948ac38d420fc0cbe8e873a82cf7e083886",
+    "tracked_native_lines": 3787,
+    "production_native_lines": 3166,
+    "private_test_provider_lines": 621,
+    "detected_native_functions": 144,
+    "production_native_functions": 119,
+    "stream_read_lines": 193
+  },
+  "candidate": {
+    "commit": "b4e50d0ff9f3f83fdc8acbe31189bd9e4ebc179e",
+    "tree": "b1d88aaca966886442bffbf4ec38879e5debbb94",
+    "tracked_native_lines": 3790,
+    "production_native_lines": 3169,
+    "private_test_provider_lines": 621,
+    "detected_native_functions": 145,
+    "production_native_functions": 120,
+    "stream_read_lines": 196
+  },
+  "delta": {
+    "tracked_native_lines": 3,
+    "production_native_lines": 3,
+    "detected_native_functions": 1,
+    "production_native_functions": 1,
+    "duplicated_read_boundary_rules": -2,
+    "compiled_stream_read_text_bytes": 0
+  },
+  "compiled_text": {
+    "baseline_stream_read_text_bytes": 2274,
+    "candidate_stream_read_text_bytes": 2274,
+    "helper_symbol_emitted": false
+  },
+  "counting_method": "physical wc -l over Git-tracked xsstream .c/.h/.xs files and the Phase 0 function detector; EOF, retry and error now share one settlement rule. GNU size and nm were used on the two -O2 -g stream_read.o files; the compiler fully inlined the helper."
+}
