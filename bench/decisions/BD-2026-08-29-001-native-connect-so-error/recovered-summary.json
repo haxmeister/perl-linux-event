@@ -1,0 +1,23 @@
+{
+  "decision_id": "BD-2026-08-29-001",
+  "experiment": "native connect SO_ERROR completion probe",
+  "date": "2026-08-29",
+  "decision": "REJECT",
+  "evidence_level": "recovered_summary",
+  "raw_per_repeat_output_available": false,
+  "historical_source": "XS roadmap retained measurements",
+  "workload": {
+    "connections": 600000,
+    "transport": "TCP_loopback",
+    "concurrency": 10,
+    "comparison": ["Perl_completion_probe", "native_completion_probe"],
+    "analysis": "balanced paired comparison"
+  },
+  "aggregate_median_connections_per_second": {
+    "Perl_completion_probe": 10614.7,
+    "native_completion_probe": 10741.6
+  },
+  "apparent_aggregate_difference_percent": 1.2,
+  "repeat_pair_median_difference_percent": -0.5,
+  "decision_reason": "The apparent aggregate advantage did not survive paired analysis and was smaller than run variance, so the special native path did not justify its complexity."
+}
