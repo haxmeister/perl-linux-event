@@ -107,16 +107,23 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
         } else {
             int was_consumer_paused = st->consumer_paused;
             les_process_buffered(aTHX_ st);
+            if (st->descriptor != descriptor) {
+                /* message() may have transitioned the descriptor while the
+                 * old parsing phase still owes its deferred consumer flush.
+                 * Settle that phase before any preserved input reaches the
+                 * new descriptor. The consumer provider itself is invariant
+                 * across a live transition. */
+                les_consumer_flush(aTHX_ st);
+                continue;
+            }
             if (flush_batch) {
-                if (st->descriptor == descriptor)
-                    les_flush_message_batch(aTHX_ st);
+                les_flush_message_batch(aTHX_ st);
                 les_consumer_flush(aTHX_ st);
             }
             if (was_consumer_paused && !LES_INPUT_PAUSED(st)
                 && !st->closed && !st->read_eof && st->input_len)
                 continue;
         }
-
         if (st->descriptor != descriptor)
             continue;
         if (descriptor->read_mode == LES_READ_DELIVER

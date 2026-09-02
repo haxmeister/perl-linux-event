@@ -98,6 +98,8 @@ typedef struct les_xsstate_s {
 
     const les_consumer_ops_v1_t *consumer_ops;
     void *consumer_context;
+    UV consumer_host_retain_count;
+    int destroy_pending;
 
     /* Native framed-input storage. Logical bytes begin at input_start and
      * continue for input_len bytes. */
@@ -190,6 +192,7 @@ extern const les_transport_ops_t les_plain_transport_ops;
 
 les_xsstate_t *les_state_from_sv(SV *sv);
 les_descriptor_t *les_descriptor_from_sv(SV *sv);
+void les_state_destroy(pTHX_ les_xsstate_t *st);
 SV *les_store_cb(SV *cb, const char *name);
 SV *les_store_optional_cb(SV *cb, const char *name);
 
@@ -238,10 +241,12 @@ int les_consumer_resume(pTHX_ les_xsstate_t *st);
 void les_consumer_notify_paused(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_definition(pTHX_ const char *variant);
 void les_test_consumer_arm(pTHX_ les_xsstate_t *st, SV *callback);
+int les_test_consumer_external_arm(pTHX_ SV *stream, SV *callback);
 void les_test_consumer_cancel(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_take(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_events(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_stats(pTHX_ les_xsstate_t *st);
+SV *les_test_consumer_trace(pTHX_ les_xsstate_t *st);
 UV les_test_consumer_destroy_count(void);
 
 void les_clear_write_queue(les_xsstate_t *st);

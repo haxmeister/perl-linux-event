@@ -51,7 +51,33 @@ static int
 les_consumer_host_is_closed(pTHX_ void *host_context)
 {
     les_xsstate_t *st = (les_xsstate_t *)host_context;
-    return !st || st->closed ? 1 : 0;
+    return !st || st->closed || st->destroy_pending ? 1 : 0;
+}
+
+static int
+les_consumer_host_retain(pTHX_ void *host_context)
+{
+    les_xsstate_t *st = (les_xsstate_t *)host_context;
+    PERL_UNUSED_CONTEXT;
+
+    if (!st || st->destroy_pending)
+        return 0;
+    if (st->consumer_host_retain_count == (UV)-1)
+        croak("native Stream consumer host retain count overflow");
+    st->consumer_host_retain_count++;
+    return 1;
+}
+
+static void
+les_consumer_host_release(pTHX_ void *host_context)
+{
+    les_xsstate_t *st = (les_xsstate_t *)host_context;
+
+    if (!st || !st->consumer_host_retain_count)
+        croak("unbalanced native Stream consumer host release");
+    st->consumer_host_retain_count--;
+    if (!st->consumer_host_retain_count && st->destroy_pending)
+        les_state_destroy(aTHX_ st);
 }
 
 static const les_consumer_host_api_v1_t les_consumer_host_v1 = {
@@ -60,7 +86,9 @@ static const les_consumer_host_api_v1_t les_consumer_host_v1 = {
     les_consumer_host_resume,
     les_consumer_host_pause,
     les_consumer_host_stream,
-    les_consumer_host_is_closed
+    les_consumer_host_is_closed,
+    les_consumer_host_retain,
+    les_consumer_host_release
 };
 
 int
@@ -250,6 +278,7 @@ typedef struct les_test_consumer_s {
     void *host_context;
     AV *messages;
     AV *events;
+    AV *trace;
     SV *ready_cb;
     UV permits;
     UV delivered;
@@ -273,6 +302,7 @@ les_test_create(pTHX_ const les_consumer_host_api_v1_t *host,
     context->host_context = host_context;
     context->messages = newAV();
     context->events = newAV();
+    context->trace = newAV();
     return context;
 }
 
@@ -334,6 +364,35 @@ les_test_message_croak(pTHX_ void *opaque, SV *message)
     return LES_CONSUMER_ERROR;
 }
 
+static int
+les_test_message_transition(pTHX_ void *opaque, SV *message)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    SV *callback;
+    SV *entry;
+    dSP;
+
+    context->delivered++;
+    av_push(context->messages, newSVsv(message));
+    entry = newSVpvs("message:");
+    sv_catsv(entry, message);
+    av_push(context->trace, entry);
+
+    callback = context->ready_cb;
+    context->ready_cb = NULL;
+    if (callback) {
+        ENTER;
+        SAVETMPS;
+        SAVEFREESV(callback);
+        PUSHMARK(SP);
+        PUTBACK;
+        call_sv(callback, G_DISCARD | G_VOID);
+        FREETMPS;
+        LEAVE;
+    }
+    return LES_CONSUMER_CONTINUE;
+}
+
 static void
 les_test_event(pTHX_ void *opaque, uint32_t event, int error,
     const char *message)
@@ -382,6 +441,7 @@ les_test_flush(pTHX_ void *opaque)
 
     context->flushes++;
     context->last_flush_sequence = ++context->sequence;
+    av_push(context->trace, newSVpvs("flush"));
     return context->permits ? LES_CONSUMER_CONTINUE : LES_CONSUMER_PAUSE;
 }
 
@@ -392,6 +452,7 @@ les_test_flush_continue(pTHX_ void *opaque)
     PERL_UNUSED_CONTEXT;
     context->flushes++;
     context->last_flush_sequence = ++context->sequence;
+    av_push(context->trace, newSVpvs("flush"));
     return LES_CONSUMER_CONTINUE;
 }
 
@@ -402,6 +463,7 @@ les_test_flush_error(pTHX_ void *opaque)
     PERL_UNUSED_CONTEXT;
     context->flushes++;
     context->last_flush_sequence = ++context->sequence;
+    av_push(context->trace, newSVpvs("flush"));
     return LES_CONSUMER_ERROR;
 }
 
@@ -417,6 +479,7 @@ les_test_destroy(pTHX_ void *opaque)
         SvREFCNT_dec(context->ready_cb);
     SvREFCNT_dec((SV *)context->messages);
     SvREFCNT_dec((SV *)context->events);
+    SvREFCNT_dec((SV *)context->trace);
     Safefree(context);
     les_test_destroyed++;
 }
@@ -479,6 +542,18 @@ static const les_consumer_ops_v1_t les_test_flush_error_ops = {
     les_test_event,
     les_test_destroy,
     les_test_flush_error
+};
+
+static const les_consumer_ops_v1_t les_test_transition_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "transition trace test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message_transition,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush_continue
 };
 
 /* The original ABI v1 ended at destroy. Keep a provider with that exact
@@ -576,6 +651,7 @@ les_test_context(les_xsstate_t *st)
         && st->consumer_ops != &les_test_croak_ops
         && st->consumer_ops != &les_test_event_croak_ops
         && st->consumer_ops != &les_test_flush_error_ops
+        && st->consumer_ops != &les_test_transition_ops
         && st->consumer_ops != (const les_consumer_ops_v1_t *)
             &les_test_original_ops) || !st->consumer_context)
         croak("Stream does not use the Linux::Event core test consumer");
@@ -609,6 +685,8 @@ les_test_consumer_definition(pTHX_ const char *variant)
         ops = &les_test_event_croak_ops;
     else if (strEQ(variant, "flush-error"))
         ops = &les_test_flush_error_ops;
+    else if (strEQ(variant, "transition-trace"))
+        ops = &les_test_transition_ops;
     else if (strEQ(variant, "wrong-declaration-version"))
         declared_version++;
     else if (!strEQ(variant, "valid"))
@@ -631,6 +709,43 @@ les_test_consumer_arm(pTHX_ les_xsstate_t *st, SV *callback)
     if (callback && SvOK(callback))
         context->ready_cb = les_store_cb(callback, "test consumer callback");
     context->host->resume(aTHX_ context->host_context);
+}
+
+int
+les_test_consumer_external_arm(pTHX_ SV *stream, SV *callback)
+{
+    HV *stream_hv;
+    SV **state_slot;
+    les_xsstate_t *st;
+    les_test_consumer_t *context;
+    int resumed;
+    int observed_after_resume;
+
+    if (!SvROK(stream) || SvTYPE(SvRV(stream)) != SVt_PVHV)
+        croak("test consumer external arm requires a hash-based Stream");
+    stream_hv = (HV *)SvRV(stream);
+    state_slot = hv_fetchs(stream_hv, "xs_state", 0);
+    if (!state_slot || !SvOK(*state_slot))
+        croak("test consumer external arm requires live native state");
+    st = les_state_from_sv(*state_slot);
+    context = les_test_context(st);
+    if (context->permits || context->ready_cb)
+        croak("test consumer already has an armed receive");
+    if (context->host->struct_size
+        < LES_CONSUMER_HOST_V1_RETAIN_REQUIRED_SIZE
+        || !context->host->retain || !context->host->release)
+        croak("test consumer host lifetime extension is unavailable");
+
+    context->permits = 1;
+    if (callback && SvOK(callback))
+        context->ready_cb = les_store_cb(callback, "test consumer callback");
+    if (!context->host->retain(aTHX_ context->host_context))
+        croak("test consumer could not retain host lifetime");
+    resumed = context->host->resume(aTHX_ context->host_context);
+    observed_after_resume = context->delivered > 0
+        && context->host->is_closed(aTHX_ context->host_context);
+    context->host->release(aTHX_ context->host_context);
+    return resumed >= 0 && observed_after_resume;
 }
 
 void
@@ -687,6 +802,21 @@ les_test_consumer_stats(pTHX_ les_xsstate_t *st)
     hv_stores(stats, "last_event_sequence",
         newSVuv(context->last_event_sequence));
     return newRV_noinc((SV *)stats);
+}
+
+SV *
+les_test_consumer_trace(pTHX_ les_xsstate_t *st)
+{
+    les_test_consumer_t *context = les_test_context(st);
+    AV *copy = newAV();
+    SSize_t index;
+
+    for (index = 0; index <= av_top_index(context->trace); index++) {
+        SV **entry = av_fetch(context->trace, index, 0);
+        if (entry)
+            av_push(copy, newSVsv(*entry));
+    }
+    return newRV_noinc((SV *)copy);
 }
 
 UV

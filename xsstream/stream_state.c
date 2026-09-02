@@ -34,3 +34,19 @@ les_store_optional_cb(SV *cb, const char *name)
         return NULL;
     return les_store_cb(cb, name);
 }
+
+void
+les_state_destroy(pTHX_ les_xsstate_t *st)
+{
+    if (!st)
+        return;
+    les_clear_write_queue(st);
+    les_discard_message_batch(st);
+    les_consumer_destroy(aTHX_ st);
+    if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
+    if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
+    if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
+    free(st->read_buffer);
+    free(st->input_buffer);
+    free(st);
+}

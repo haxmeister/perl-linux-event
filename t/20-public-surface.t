@@ -158,6 +158,7 @@ my @bench_root = sort map { s{^.*/}{}r }
     grep { -f $_ }
     glob(File::Spec->catfile($root, 'bench', '*'));
 my %allowed = map { $_ => 1 } qw(
+    BENCHMARK-DECISIONS.md
     README.md
     STREAM-COMPETITOR-PLAN.md
     run-connect-microbench.pl

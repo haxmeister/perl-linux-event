@@ -355,16 +355,10 @@ DESTROY(state_obj)
   CODE:
     st = les_state_from_sv(state_obj);
     if (st) {
-        les_clear_write_queue(st);
-        les_discard_message_batch(st);
-        les_consumer_destroy(aTHX_ st);
-        if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
-        if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
-        if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
-        free(st->read_buffer);
-        free(st->input_buffer);
-        free(st);
         sv_setiv(SvRV(state_obj), 0);
+        st->destroy_pending = 1;
+        if (!st->consumer_host_retain_count)
+            les_state_destroy(aTHX_ st);
     }
 
 SV *
@@ -791,6 +785,14 @@ _test_consumer_stats(state_obj)
   OUTPUT:
     RETVAL
 
+SV *
+_test_consumer_trace(state_obj)
+    SV *state_obj
+  CODE:
+    RETVAL = les_test_consumer_trace(aTHX_ les_state_from_sv(state_obj));
+  OUTPUT:
+    RETVAL
+
 MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream
 PROTOTYPES: DISABLE
 
@@ -819,5 +821,14 @@ _test_consumer_destroy_count(CLASS)
   CODE:
     PERL_UNUSED_VAR(CLASS);
     RETVAL = les_test_consumer_destroy_count();
+  OUTPUT:
+    RETVAL
+
+int
+_test_consumer_external_arm(stream, callback)
+    SV *stream
+    SV *callback
+  CODE:
+    RETVAL = les_test_consumer_external_arm(aTHX_ stream, callback);
   OUTPUT:
     RETVAL

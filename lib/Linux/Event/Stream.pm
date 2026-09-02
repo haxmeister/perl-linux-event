@@ -282,7 +282,14 @@ sub new ($class, %opt) {
         deadline_write_started => undef,
     }, $class;
     $self->_prepare_handles if !$pending;
-    $self->_attach_to_loop($loop) if $loop;
+    if ($loop) {
+        my $attached = eval { $self->_attach_to_loop($loop); 1 };
+        if (!$attached) {
+            my $failure = $@ || 'Stream construction attachment failed';
+            $self->_abort_failed_construction;
+            die $failure;
+        }
+    }
     return $self;
 }
 
@@ -429,6 +436,18 @@ sub _attach_to_loop ($self, $loop) {
 
 sub _attach_pending ($self, $loop) {
     croak 'add(): Stream has no filehandle';
+}
+
+sub _abort_failed_construction ($self) {
+    my $ignored;
+    $self->{closed} = 1;
+    $self->{loop} = undef;
+    if (my $xs_state = delete $self->{xs_state}) {
+        _teardown_step(\$ignored, sub { $xs_state->_close });
+    }
+    _teardown_step(\$ignored, sub { $self->_cancel_io_watchers });
+    _teardown_step(\$ignored, sub { $self->_close_handles });
+    return;
 }
 
 sub _fire_ready ($self) {

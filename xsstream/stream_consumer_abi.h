@@ -35,7 +35,17 @@ typedef struct les_consumer_host_api_v1_s {
     int (*pause)(pTHX_ void *host_context);
     SV *(*stream)(pTHX_ void *host_context);
     int (*is_closed)(pTHX_ void *host_context);
+    /* Optional append-only ABI-v1 lifetime extension. A provider-owned entry
+     * frame retains before a callback-capable host call and releases only
+     * after its final provider-context access. release may destroy both the
+     * host state and provider context, so it must be the frame's last action. */
+    int (*retain)(pTHX_ void *host_context);
+    void (*release)(pTHX_ void *host_context);
 } les_consumer_host_api_v1_t;
+
+#define LES_CONSUMER_HOST_V1_RETAIN_REQUIRED_SIZE \
+    (offsetof(les_consumer_host_api_v1_t, release) \
+        + sizeof(((les_consumer_host_api_v1_t *)0)->release))
 
 typedef struct les_consumer_ops_v1_s {
     uint32_t abi_version;

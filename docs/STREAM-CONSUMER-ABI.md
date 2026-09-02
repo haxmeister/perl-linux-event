@@ -79,6 +79,8 @@ The host table passed to `create` contains:
 | `pause` | Stop application payload reads immediately, including while no message callback is active. |
 | `stream` | Return the borrowed Perl Stream `SV *`. |
 | `is_closed` | Report whether the host Stream is closed. |
+| `retain` | Retain the host state and provider context across a provider-owned entry frame. |
+| `release` | Release a prior retain; this may destroy both contexts and must be the frame's last action. |
 
 Every table begins with `abi_version` and `struct_size`. Linux::Event rejects
 version mismatches, tables smaller than the original v1 fields, unsupported
@@ -94,6 +96,16 @@ after a framed native-input drain that called `message` at least once and
 returns the same status values as `message`. This allows a provider to retain a
 bounded batch and defer one application wakeup until the current read or
 buffered-input drain is complete.
+
+`retain` and `release` were appended to the host table as an optional ABI-v1
+lifetime extension. A provider that calls callback-capable host functions from
+its own XSUB or another provider-owned entry frame must first verify
+`struct_size` reaches `LES_CONSUMER_HOST_V1_RETAIN_REQUIRED_SIZE`, call
+`retain`, and guarantee a matching `release` during both normal return and
+exception unwinding. The retain covers the entire provider frame, not merely
+the duration of `resume` or `pause`. The provider must perform no provider- or
+host-context access after `release`, because release may run the provider's
+`destroy` function immediately.
 
 If a message-side callback closes the Stream, the final `flush` may run
 reentrantly before `message` returns. The Stream first marks the relevant
@@ -118,7 +130,8 @@ that reference. Retaining the same scalar transfers no payload bytes and is the
 expected path for a native receive result.
 
 The provider context and any retained values belong to the provider. Stream
-calls `destroy` only after native delivery has stopped.
+calls `destroy` only after native delivery has stopped and all provider-held
+host lifetime retains have been released.
 
 ## Pause, resume, and reentrancy
 
@@ -142,7 +155,18 @@ or kernel-resident input.
 
 `resume` may synchronously invoke `message` before it returns when a complete
 frame is already buffered. Providers must therefore establish all pending
-operation state before calling it.
+operation state before calling it. If that delivery invokes provider or user
+code, the code may close the Stream and release its Perl XSState object before
+`resume` returns. A provider-owned caller that will inspect its context, call
+another host function, or otherwise continue afterward must hold the appended
+host lifetime retain across that complete frame. Retaining only the Stream
+Perl scalar or assuming the raw `host_context` outlives `resume` is not valid.
+
+The same rule applies to `pause`: its paused notification may enter Perl even
+though that notification is the host's last stateful action. `stream` and
+`is_closed` do not themselves enter provider or application code, but their
+borrowed results and the host context remain valid across reentrant work only
+while the provider holds a lifetime retain.
 
 Delivery is also reentrant. A provider may wake user code from `message`; that
 code may arm the next receive immediately. In that case the provider should
