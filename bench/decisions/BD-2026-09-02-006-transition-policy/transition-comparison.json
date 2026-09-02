@@ -1,0 +1,44 @@
+{
+   "baseline" : {
+      "commit" : null,
+      "variant" : null
+   },
+   "baseline_evidence" : "bench/decisions/BD-2026-09-02-006-transition-policy/baseline-transition.json",
+   "candidate" : {
+      "commit" : null,
+      "variant" : null
+   },
+   "candidate_evidence" : "bench/decisions/BD-2026-09-02-006-transition-policy/candidate-transition.json",
+   "comparison" : "transition",
+   "configuration_equal" : true,
+   "rows" : [
+      {
+         "baseline_cpu_us_per_transition" : 5.026011646,
+         "baseline_transitions_per_second" : 198802.060300817,
+         "candidate_cpu_us_per_transition" : 5.986204005,
+         "candidate_transitions_per_second" : 167045.997684386,
+         "case" : "raw-raw",
+         "cpu_us_per_transition_delta_percent" : 19.104459,
+         "transitions_per_second_delta_percent" : -15.973709
+      },
+      {
+         "baseline_cpu_us_per_transition" : 4.871785194,
+         "baseline_transitions_per_second" : 205249.333685341,
+         "candidate_cpu_us_per_transition" : 6.080034805,
+         "candidate_transitions_per_second" : 164467.707710228,
+         "case" : "framed-framed",
+         "cpu_us_per_transition_delta_percent" : 24.800962,
+         "transitions_per_second_delta_percent" : -19.86931
+      },
+      {
+         "baseline_cpu_us_per_transition" : 5.059164017,
+         "baseline_transitions_per_second" : 197656.661239435,
+         "candidate_cpu_us_per_transition" : 6.18093118500001,
+         "candidate_transitions_per_second" : 161773.632531407,
+         "case" : "raw-framed",
+         "cpu_us_per_transition_delta_percent" : 22.172975,
+         "transitions_per_second_delta_percent" : -18.154222
+      }
+   ],
+   "schema_version" : 1
+}

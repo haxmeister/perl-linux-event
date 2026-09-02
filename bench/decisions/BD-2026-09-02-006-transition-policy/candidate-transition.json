@@ -1,0 +1,268 @@
+{
+   "benchmark" : "linux-event-stream-transition",
+   "benchmark_contract_version" : 1,
+   "configuration" : {
+      "cases" : [
+         "raw-raw",
+         "framed-framed",
+         "raw-framed"
+      ],
+      "iterations" : 1000000,
+      "pool" : 256,
+      "repeats" : 7,
+      "warmup" : 10000
+   },
+   "environment" : {
+      "git_commit" : "288e4c842d70e859e660a3b4075c4ef9a9cf2765",
+      "linux_event_version" : "0.105",
+      "os" : "linux",
+      "perl_executable" : "/usr/bin/perl",
+      "perl_version" : "v5.38.2",
+      "uname" : {
+         "machine" : "x86_64",
+         "release" : "6.18.35",
+         "sysname" : "Linux",
+         "version" : "#1 SMP Mon Aug 31 18:10:37 UTC 2026"
+      }
+   },
+   "generated_at" : "2026-09-02T15:04:20Z",
+   "notes" : [
+      "Every timed operation changes one live Stream to the other class.",
+      "The fd, watcher, XSState, output queue, lifecycle, and data are retained.",
+      "No input is supplied, so results isolate descriptor and read-buffer changes.",
+      "raw-raw replaces raw scratch storage; framed-framed needs no raw scratch storage.",
+      "raw-framed alternates raw scratch allocation and release."
+   ],
+   "records" : [
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 5.761986668,
+         "cpu_us_per_transition" : 5.761986668,
+         "elapsed_seconds" : 5.76262402534485,
+         "repeat" : 1,
+         "transitions" : 1000000,
+         "transitions_per_second" : 173532.056854977
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 5.802534276,
+         "cpu_us_per_transition" : 5.802534276,
+         "elapsed_seconds" : 5.80357599258423,
+         "repeat" : 1,
+         "transitions" : 1000000,
+         "transitions_per_second" : 172307.556802529
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 6.241178916,
+         "cpu_us_per_transition" : 6.241178916,
+         "elapsed_seconds" : 6.24137210845947,
+         "repeat" : 1,
+         "transitions" : 1000000,
+         "transitions_per_second" : 160221.179353273
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 6.360627911,
+         "cpu_us_per_transition" : 6.360627911,
+         "elapsed_seconds" : 6.36083221435547,
+         "repeat" : 2,
+         "transitions" : 1000000,
+         "transitions_per_second" : 157212.132988376
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 6.138385606,
+         "cpu_us_per_transition" : 6.138385606,
+         "elapsed_seconds" : 6.13856410980225,
+         "repeat" : 2,
+         "transitions" : 1000000,
+         "transitions_per_second" : 162904.546097868
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 6.09410651,
+         "cpu_us_per_transition" : 6.09410651,
+         "elapsed_seconds" : 6.0945930480957,
+         "repeat" : 2,
+         "transitions" : 1000000,
+         "transitions_per_second" : 164079.864251553
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 6.262376111,
+         "cpu_us_per_transition" : 6.262376111,
+         "elapsed_seconds" : 6.26250696182251,
+         "repeat" : 3,
+         "transitions" : 1000000,
+         "transitions_per_second" : 159680.461210854
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 5.986204005,
+         "cpu_us_per_transition" : 5.986204005,
+         "elapsed_seconds" : 5.98637509346008,
+         "repeat" : 3,
+         "transitions" : 1000000,
+         "transitions_per_second" : 167045.997684386
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 6.080034805,
+         "cpu_us_per_transition" : 6.080034805,
+         "elapsed_seconds" : 6.08022093772888,
+         "repeat" : 3,
+         "transitions" : 1000000,
+         "transitions_per_second" : 164467.707710228
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 5.722000052,
+         "cpu_us_per_transition" : 5.722000052,
+         "elapsed_seconds" : 5.72217702865601,
+         "repeat" : 4,
+         "transitions" : 1000000,
+         "transitions_per_second" : 174758.661780668
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 6.099432988,
+         "cpu_us_per_transition" : 6.099432988,
+         "elapsed_seconds" : 6.09960699081421,
+         "repeat" : 4,
+         "transitions" : 1000000,
+         "transitions_per_second" : 163944.988833865
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 6.20052732900001,
+         "cpu_us_per_transition" : 6.20052732900001,
+         "elapsed_seconds" : 6.20163297653198,
+         "repeat" : 4,
+         "transitions" : 1000000,
+         "transitions_per_second" : 161247.852587241
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 6.07770108899999,
+         "cpu_us_per_transition" : 6.07770108899999,
+         "elapsed_seconds" : 6.07785987854004,
+         "repeat" : 5,
+         "transitions" : 1000000,
+         "transitions_per_second" : 164531.598290188
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 5.95576034299999,
+         "cpu_us_per_transition" : 5.95576034299999,
+         "elapsed_seconds" : 5.95592904090881,
+         "repeat" : 5,
+         "transitions" : 1000000,
+         "transitions_per_second" : 167899.918405913
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 6.01168462300001,
+         "cpu_us_per_transition" : 6.01168462300001,
+         "elapsed_seconds" : 6.011883020401,
+         "repeat" : 5,
+         "transitions" : 1000000,
+         "transitions_per_second" : 166337.235206765
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 5.976866293,
+         "cpu_us_per_transition" : 5.976866293,
+         "elapsed_seconds" : 5.97724199295044,
+         "repeat" : 6,
+         "transitions" : 1000000,
+         "transitions_per_second" : 167301.24046833
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 6.119023834,
+         "cpu_us_per_transition" : 6.119023834,
+         "elapsed_seconds" : 6.11925101280212,
+         "repeat" : 6,
+         "transitions" : 1000000,
+         "transitions_per_second" : 163418.692566769
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 6.06514395400001,
+         "cpu_us_per_transition" : 6.06514395400001,
+         "elapsed_seconds" : 6.06532597541809,
+         "repeat" : 6,
+         "transitions" : 1000000,
+         "transitions_per_second" : 164871.600315112
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_seconds" : 5.84181175500001,
+         "cpu_us_per_transition" : 5.84181175500001,
+         "elapsed_seconds" : 5.84198093414307,
+         "repeat" : 7,
+         "transitions" : 1000000,
+         "transitions_per_second" : 171174.81403535
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_seconds" : 6.084467778,
+         "cpu_us_per_transition" : 6.084467778,
+         "elapsed_seconds" : 6.08460402488708,
+         "repeat" : 7,
+         "transitions" : 1000000,
+         "transitions_per_second" : 164349.232244173
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_seconds" : 6.18093118500001,
+         "cpu_us_per_transition" : 6.18093118500001,
+         "elapsed_seconds" : 6.18147706985474,
+         "repeat" : 7,
+         "transitions" : 1000000,
+         "transitions_per_second" : 161773.632531407
+      }
+   ],
+   "summary" : [
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-raw",
+         "cpu_us_per_transition" : 5.986204005,
+         "transitions_per_second" : 167045.997684386
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "framed-framed",
+         "cpu_us_per_transition" : 6.080034805,
+         "transitions_per_second" : 164467.707710228
+      },
+      {
+         "benchmark_contract_version" : 1,
+         "case" : "raw-framed",
+         "cpu_us_per_transition" : 6.18093118500001,
+         "transitions_per_second" : 161773.632531407
+      }
+   ]
+}

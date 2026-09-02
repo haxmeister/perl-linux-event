@@ -186,6 +186,12 @@ validated native allocator. `BD-2026-09-02-005` also records and fixes an
 adopted-Socket watcher-registration ownership gap, with core and real Async
 coverage. Proceed independently with transition eligibility/policy.
 
+**Extraction 4 status (2026-09-02): KEEP.** Perl now owns transition target
+eligibility and limit policy; native code owns overflow safety, allocation,
+atomic swap, and buffered-input continuation. `BD-2026-09-02-006` records the
+direct transition cost, adjacent release suite, full payload sweep, and real
+Async coverage. Proceed independently with close/error/lifecycle orchestration.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:

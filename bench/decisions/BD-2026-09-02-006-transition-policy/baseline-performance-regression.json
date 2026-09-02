@@ -1,0 +1,798 @@
+{
+   "benchmark" : "linux-event-performance-regression",
+   "benchmark_contract_version" : 3,
+   "configuration" : {
+      "clients" : 100,
+      "connections" : 10000,
+      "iterations" : 100000,
+      "messages" : 1000,
+      "pool" : 256,
+      "repeats" : 7,
+      "warmup_connections" : 1000,
+      "warmup_iterations" : 5000,
+      "warmup_messages" : 100,
+      "workloads" : [
+         "registration-lifecycle",
+         "timer-lifecycle",
+         "timer-expiration",
+         "raw-stream-lifecycle",
+         "framed-stream-lifecycle",
+         "raw-stream-throughput",
+         "deadline-stream-throughput",
+         "framed-stream-throughput",
+         "connect-listener-lifecycle"
+      ]
+   },
+   "environment" : {
+      "cpu_model" : "AMD EPYC 9V74 80-Core Processor",
+      "hostname" : "localhost",
+      "kernel" : "6.18.35",
+      "machine" : "x86_64",
+      "os" : "Linux",
+      "perl" : "v5.38.2",
+      "perl_path" : "/usr/bin/perl"
+   },
+   "generated_at" : "2026-09-02T15:05:55Z",
+   "linux_event_version" : "0.105",
+   "notes" : [
+      "Each summary value is the median of rotated-order repeats.",
+      "Lifecycle socketpairs are allocated outside timed regions.",
+      "Timer lifecycle measures attach plus cancellation on one shared timerfd.",
+      "Timer expiration measures zero-delay delivery through the native heap.",
+      "Throughput workloads use one outstanding message per client.",
+      "Deadline throughput enables idle tracking without allowing expiration.",
+      "The connection workload measures the complete public connect/listen handoff.",
+      "Compare only reports with the same contract and configuration."
+   ],
+   "records" : [
+      {
+         "cpu_seconds" : 0.13637148,
+         "cpu_us_per_operation" : 1.3637148,
+         "elapsed_seconds" : 0.137964570999884,
+         "operations" : 100000,
+         "operations_per_second" : 724823.766531221,
+         "order_position" : 1,
+         "repeat" : 1,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.404677585,
+         "cpu_us_per_operation" : 4.04677585,
+         "elapsed_seconds" : 0.404761204999886,
+         "operations" : 100000,
+         "operations_per_second" : 247059.250651327,
+         "order_position" : 2,
+         "repeat" : 1,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.118083489,
+         "cpu_us_per_operation" : 1.18083489,
+         "elapsed_seconds" : 0.118102041999919,
+         "operations" : 100000,
+         "operations_per_second" : 846725.410556991,
+         "order_position" : 3,
+         "repeat" : 1,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 2.096553645,
+         "cpu_us_per_operation" : 20.96553645,
+         "elapsed_seconds" : 2.10222378899971,
+         "operations" : 100000,
+         "operations_per_second" : 47568.6749066723,
+         "order_position" : 4,
+         "repeat" : 1,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 1.8185018,
+         "cpu_us_per_operation" : 18.185018,
+         "elapsed_seconds" : 1.82345295699997,
+         "operations" : 100000,
+         "operations_per_second" : 54841.0089857896,
+         "order_position" : 5,
+         "repeat" : 1,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.634387982,
+         "cpu_us_per_operation" : 6.34387982,
+         "elapsed_seconds" : 0.634423308000351,
+         "operations" : 100000,
+         "operations_per_second" : 157623.464867947,
+         "order_position" : 6,
+         "repeat" : 1,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.661122162000001,
+         "cpu_us_per_operation" : 6.61122162000001,
+         "elapsed_seconds" : 0.661139662000096,
+         "operations" : 100000,
+         "operations_per_second" : 151253.972114572,
+         "order_position" : 7,
+         "repeat" : 1,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.76646159,
+         "cpu_us_per_operation" : 7.6646159,
+         "elapsed_seconds" : 0.766503103000105,
+         "operations" : 100000,
+         "operations_per_second" : 130462.616013684,
+         "order_position" : 8,
+         "repeat" : 1,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 2.216016087,
+         "cpu_us_per_operation" : 221.6016087,
+         "elapsed_seconds" : 2.22655049800005,
+         "operations" : 10000,
+         "operations_per_second" : 4491.25227969555,
+         "order_position" : 9,
+         "repeat" : 1,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.393710428,
+         "cpu_us_per_operation" : 3.93710428,
+         "elapsed_seconds" : 0.39383649399997,
+         "operations" : 100000,
+         "operations_per_second" : 253912.477699458,
+         "order_position" : 1,
+         "repeat" : 2,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.120764638999999,
+         "cpu_us_per_operation" : 1.20764638999999,
+         "elapsed_seconds" : 0.120772586999919,
+         "operations" : 100000,
+         "operations_per_second" : 828002.467149824,
+         "order_position" : 2,
+         "repeat" : 2,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 2.004978121,
+         "cpu_us_per_operation" : 20.04978121,
+         "elapsed_seconds" : 2.00995637400001,
+         "operations" : 100000,
+         "operations_per_second" : 49752.3236292886,
+         "order_position" : 3,
+         "repeat" : 2,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 2.011116566,
+         "cpu_us_per_operation" : 20.11116566,
+         "elapsed_seconds" : 2.01829599200028,
+         "operations" : 100000,
+         "operations_per_second" : 49546.7465606434,
+         "order_position" : 4,
+         "repeat" : 2,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.649428141,
+         "cpu_us_per_operation" : 6.49428141,
+         "elapsed_seconds" : 0.649499649000063,
+         "operations" : 100000,
+         "operations_per_second" : 153964.671349638,
+         "order_position" : 5,
+         "repeat" : 2,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.625933444000001,
+         "cpu_us_per_operation" : 6.25933444000001,
+         "elapsed_seconds" : 0.625965475000157,
+         "operations" : 100000,
+         "operations_per_second" : 159753.219616425,
+         "order_position" : 6,
+         "repeat" : 2,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.718303579000001,
+         "cpu_us_per_operation" : 7.18303579000001,
+         "elapsed_seconds" : 0.718377901000167,
+         "operations" : 100000,
+         "operations_per_second" : 139202.500328552,
+         "order_position" : 7,
+         "repeat" : 2,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 2.19780763,
+         "cpu_us_per_operation" : 219.780763,
+         "elapsed_seconds" : 2.2078778580003,
+         "operations" : 10000,
+         "operations_per_second" : 4529.23605523048,
+         "order_position" : 8,
+         "repeat" : 2,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.129528320000002,
+         "cpu_us_per_operation" : 1.29528320000002,
+         "elapsed_seconds" : 0.133294298999772,
+         "operations" : 100000,
+         "operations_per_second" : 750219.632425323,
+         "order_position" : 9,
+         "repeat" : 2,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.113577253999999,
+         "cpu_us_per_operation" : 1.13577253999999,
+         "elapsed_seconds" : 0.113588138000068,
+         "operations" : 100000,
+         "operations_per_second" : 880373.617885521,
+         "order_position" : 1,
+         "repeat" : 3,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 1.887531747,
+         "cpu_us_per_operation" : 18.87531747,
+         "elapsed_seconds" : 1.89160072799996,
+         "operations" : 100000,
+         "operations_per_second" : 52865.2788718964,
+         "order_position" : 2,
+         "repeat" : 3,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 1.904848931,
+         "cpu_us_per_operation" : 19.04848931,
+         "elapsed_seconds" : 1.90931987299973,
+         "operations" : 100000,
+         "operations_per_second" : 52374.6709046138,
+         "order_position" : 3,
+         "repeat" : 3,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.583686489000002,
+         "cpu_us_per_operation" : 5.83686489000002,
+         "elapsed_seconds" : 0.583686156000113,
+         "operations" : 100000,
+         "operations_per_second" : 171324.947443127,
+         "order_position" : 4,
+         "repeat" : 3,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.609145129000002,
+         "cpu_us_per_operation" : 6.09145129000002,
+         "elapsed_seconds" : 0.609191413999724,
+         "operations" : 100000,
+         "operations_per_second" : 164152.018071688,
+         "order_position" : 5,
+         "repeat" : 3,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.715401662000001,
+         "cpu_us_per_operation" : 7.15401662000001,
+         "elapsed_seconds" : 0.715407007000067,
+         "operations" : 100000,
+         "operations_per_second" : 139780.571089641,
+         "order_position" : 6,
+         "repeat" : 3,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 2.01785246,
+         "cpu_us_per_operation" : 201.785246,
+         "elapsed_seconds" : 2.0279557609997,
+         "operations" : 10000,
+         "operations_per_second" : 4931.07403638351,
+         "order_position" : 7,
+         "repeat" : 3,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.120627512000002,
+         "cpu_us_per_operation" : 1.20627512000002,
+         "elapsed_seconds" : 0.123545293999996,
+         "operations" : 100000,
+         "operations_per_second" : 809419.742042164,
+         "order_position" : 8,
+         "repeat" : 3,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.354749057000003,
+         "cpu_us_per_operation" : 3.54749057000003,
+         "elapsed_seconds" : 0.354765025999768,
+         "operations" : 100000,
+         "operations_per_second" : 281876.714645669,
+         "order_position" : 9,
+         "repeat" : 3,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 1.782984301,
+         "cpu_us_per_operation" : 17.82984301,
+         "elapsed_seconds" : 1.7875938469997,
+         "operations" : 100000,
+         "operations_per_second" : 55941.1189336103,
+         "order_position" : 1,
+         "repeat" : 4,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 1.856318267,
+         "cpu_us_per_operation" : 18.56318267,
+         "elapsed_seconds" : 1.86107217500012,
+         "operations" : 100000,
+         "operations_per_second" : 53732.4674149156,
+         "order_position" : 2,
+         "repeat" : 4,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.657432165000003,
+         "cpu_us_per_operation" : 6.57432165000003,
+         "elapsed_seconds" : 0.657526353999856,
+         "operations" : 100000,
+         "operations_per_second" : 152085.158855887,
+         "order_position" : 3,
+         "repeat" : 4,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.660030661999997,
+         "cpu_us_per_operation" : 6.60030661999997,
+         "elapsed_seconds" : 0.660843727999691,
+         "operations" : 100000,
+         "operations_per_second" : 151321.705515297,
+         "order_position" : 4,
+         "repeat" : 4,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.742089332999996,
+         "cpu_us_per_operation" : 7.42089332999996,
+         "elapsed_seconds" : 0.742135292000057,
+         "operations" : 100000,
+         "operations_per_second" : 134746.320621001,
+         "order_position" : 5,
+         "repeat" : 4,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 1.998028038,
+         "cpu_us_per_operation" : 199.8028038,
+         "elapsed_seconds" : 2.00714444599998,
+         "operations" : 10000,
+         "operations_per_second" : 4982.20246177543,
+         "order_position" : 6,
+         "repeat" : 4,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.133078260999994,
+         "cpu_us_per_operation" : 1.33078260999994,
+         "elapsed_seconds" : 0.134801501999846,
+         "operations" : 100000,
+         "operations_per_second" : 741831.496804201,
+         "order_position" : 7,
+         "repeat" : 4,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.375367144999998,
+         "cpu_us_per_operation" : 3.75367144999998,
+         "elapsed_seconds" : 0.375403018999805,
+         "operations" : 100000,
+         "operations_per_second" : 266380.38305188,
+         "order_position" : 8,
+         "repeat" : 4,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.110458388000005,
+         "cpu_us_per_operation" : 1.10458388000005,
+         "elapsed_seconds" : 0.110474336999687,
+         "operations" : 100000,
+         "operations_per_second" : 905187.6002685,
+         "order_position" : 9,
+         "repeat" : 4,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 1.768055666,
+         "cpu_us_per_operation" : 17.68055666,
+         "elapsed_seconds" : 1.77235445199995,
+         "operations" : 100000,
+         "operations_per_second" : 56422.1224976521,
+         "order_position" : 1,
+         "repeat" : 5,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.577976296999999,
+         "cpu_us_per_operation" : 5.77976296999999,
+         "elapsed_seconds" : 0.578018486000019,
+         "operations" : 100000,
+         "operations_per_second" : 173004.847460876,
+         "order_position" : 2,
+         "repeat" : 5,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.559230340999996,
+         "cpu_us_per_operation" : 5.59230340999996,
+         "elapsed_seconds" : 0.559233840000161,
+         "operations" : 100000,
+         "operations_per_second" : 178816.074506456,
+         "order_position" : 3,
+         "repeat" : 5,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.680730343,
+         "cpu_us_per_operation" : 6.80730343,
+         "elapsed_seconds" : 0.680747484000221,
+         "operations" : 100000,
+         "operations_per_second" : 146897.347915821,
+         "order_position" : 4,
+         "repeat" : 5,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 1.866960862,
+         "cpu_us_per_operation" : 186.6960862,
+         "elapsed_seconds" : 1.87608074199989,
+         "operations" : 10000,
+         "operations_per_second" : 5330.26099363937,
+         "order_position" : 5,
+         "repeat" : 5,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.120336932999997,
+         "cpu_us_per_operation" : 1.20336932999997,
+         "elapsed_seconds" : 0.123332307000055,
+         "operations" : 100000,
+         "operations_per_second" : 810817.558127371,
+         "order_position" : 6,
+         "repeat" : 5,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.362826418000004,
+         "cpu_us_per_operation" : 3.62826418000004,
+         "elapsed_seconds" : 0.363006864999988,
+         "operations" : 100000,
+         "operations_per_second" : 275476.88388759,
+         "order_position" : 7,
+         "repeat" : 5,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.104544928999999,
+         "cpu_us_per_operation" : 1.04544928999999,
+         "elapsed_seconds" : 0.104553613999997,
+         "operations" : 100000,
+         "operations_per_second" : 956447.091345911,
+         "order_position" : 8,
+         "repeat" : 5,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 1.742400168,
+         "cpu_us_per_operation" : 17.42400168,
+         "elapsed_seconds" : 1.74650371400003,
+         "operations" : 100000,
+         "operations_per_second" : 57257.250126866,
+         "order_position" : 9,
+         "repeat" : 5,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.558845273999999,
+         "cpu_us_per_operation" : 5.58845273999999,
+         "elapsed_seconds" : 0.558960241000023,
+         "operations" : 100000,
+         "operations_per_second" : 178903.601123923,
+         "order_position" : 1,
+         "repeat" : 6,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.567721558999999,
+         "cpu_us_per_operation" : 5.67721558999999,
+         "elapsed_seconds" : 0.567851133999739,
+         "operations" : 100000,
+         "operations_per_second" : 176102.492383234,
+         "order_position" : 2,
+         "repeat" : 6,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.68578643,
+         "cpu_us_per_operation" : 6.8578643,
+         "elapsed_seconds" : 0.685815203000402,
+         "operations" : 100000,
+         "operations_per_second" : 145811.874047857,
+         "order_position" : 3,
+         "repeat" : 6,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 2.096833164,
+         "cpu_us_per_operation" : 209.6833164,
+         "elapsed_seconds" : 2.11103038900001,
+         "operations" : 10000,
+         "operations_per_second" : 4737.02323382327,
+         "order_position" : 4,
+         "repeat" : 6,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.125808550000002,
+         "cpu_us_per_operation" : 1.25808550000002,
+         "elapsed_seconds" : 0.128068947999964,
+         "operations" : 100000,
+         "operations_per_second" : 780829.401362993,
+         "order_position" : 5,
+         "repeat" : 6,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.378601549000003,
+         "cpu_us_per_operation" : 3.78601549000003,
+         "elapsed_seconds" : 0.378637414999957,
+         "operations" : 100000,
+         "operations_per_second" : 264104.90891401,
+         "order_position" : 6,
+         "repeat" : 6,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.103904297999996,
+         "cpu_us_per_operation" : 1.03904297999996,
+         "elapsed_seconds" : 0.103913308999836,
+         "operations" : 100000,
+         "operations_per_second" : 962340.637234042,
+         "order_position" : 7,
+         "repeat" : 6,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 1.92827541,
+         "cpu_us_per_operation" : 19.2827541,
+         "elapsed_seconds" : 1.93329366800026,
+         "operations" : 100000,
+         "operations_per_second" : 51725.1991537514,
+         "order_position" : 8,
+         "repeat" : 6,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 1.84999300699999,
+         "cpu_us_per_operation" : 18.4999300699999,
+         "elapsed_seconds" : 1.85470280799973,
+         "operations" : 100000,
+         "operations_per_second" : 53916.9939079612,
+         "order_position" : 9,
+         "repeat" : 6,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.577591971999993,
+         "cpu_us_per_operation" : 5.77591971999993,
+         "elapsed_seconds" : 0.57762771500029,
+         "operations" : 100000,
+         "operations_per_second" : 173121.886992472,
+         "order_position" : 1,
+         "repeat" : 7,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 0.685942224000001,
+         "cpu_us_per_operation" : 6.85942224000001,
+         "elapsed_seconds" : 0.686023256000226,
+         "operations" : 100000,
+         "operations_per_second" : 145767.653101205,
+         "order_position" : 2,
+         "repeat" : 7,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_seconds" : 1.916230304,
+         "cpu_us_per_operation" : 191.6230304,
+         "elapsed_seconds" : 1.92539877800027,
+         "operations" : 10000,
+         "operations_per_second" : 5193.72927533799,
+         "order_position" : 3,
+         "repeat" : 7,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.128513476999998,
+         "cpu_us_per_operation" : 1.28513476999998,
+         "elapsed_seconds" : 0.13102575899984,
+         "operations" : 100000,
+         "operations_per_second" : 763208.706160764,
+         "order_position" : 4,
+         "repeat" : 7,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.384617098,
+         "cpu_us_per_operation" : 3.84617098,
+         "elapsed_seconds" : 0.384678718000032,
+         "operations" : 100000,
+         "operations_per_second" : 259957.193680758,
+         "order_position" : 5,
+         "repeat" : 7,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.112709689999996,
+         "cpu_us_per_operation" : 1.12709689999996,
+         "elapsed_seconds" : 0.112735215999692,
+         "operations" : 100000,
+         "operations_per_second" : 887034.269755366,
+         "order_position" : 6,
+         "repeat" : 7,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_seconds" : 1.715210037,
+         "cpu_us_per_operation" : 17.15210037,
+         "elapsed_seconds" : 1.71890736500018,
+         "operations" : 100000,
+         "operations_per_second" : 58176.4916691655,
+         "order_position" : 7,
+         "repeat" : 7,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 1.803262815,
+         "cpu_us_per_operation" : 18.03262815,
+         "elapsed_seconds" : 1.80755595999972,
+         "operations" : 100000,
+         "operations_per_second" : 55323.3217742347,
+         "order_position" : 8,
+         "repeat" : 7,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_seconds" : 0.553041233000002,
+         "cpu_us_per_operation" : 5.53041233000002,
+         "elapsed_seconds" : 0.553079071999946,
+         "operations" : 100000,
+         "operations_per_second" : 180805.973435946,
+         "order_position" : 9,
+         "repeat" : 7,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      }
+   ],
+   "summary" : [
+      {
+         "cpu_us_per_operation" : 1.28513476999998,
+         "operations_per_second" : 763208.706160764,
+         "unit" : "registration",
+         "workload" : "registration-lifecycle"
+      },
+      {
+         "cpu_us_per_operation" : 3.78601549000003,
+         "operations_per_second" : 264104.90891401,
+         "unit" : "timer",
+         "workload" : "timer-lifecycle"
+      },
+      {
+         "cpu_us_per_operation" : 1.12709689999996,
+         "operations_per_second" : 887034.269755366,
+         "unit" : "timer",
+         "workload" : "timer-expiration"
+      },
+      {
+         "cpu_us_per_operation" : 18.87531747,
+         "operations_per_second" : 52865.2788718964,
+         "unit" : "stream",
+         "workload" : "raw-stream-lifecycle"
+      },
+      {
+         "cpu_us_per_operation" : 18.4999300699999,
+         "operations_per_second" : 53916.9939079612,
+         "unit" : "stream",
+         "workload" : "framed-stream-lifecycle"
+      },
+      {
+         "cpu_us_per_operation" : 5.83686489000002,
+         "operations_per_second" : 171324.947443127,
+         "unit" : "message",
+         "workload" : "raw-stream-throughput"
+      },
+      {
+         "cpu_us_per_operation" : 6.09145129000002,
+         "operations_per_second" : 164152.018071688,
+         "unit" : "message",
+         "workload" : "deadline-stream-throughput"
+      },
+      {
+         "cpu_us_per_operation" : 7.15401662000001,
+         "operations_per_second" : 139780.571089641,
+         "unit" : "message",
+         "workload" : "framed-stream-throughput"
+      },
+      {
+         "cpu_us_per_operation" : 201.785246,
+         "operations_per_second" : 4931.07403638351,
+         "unit" : "connection",
+         "workload" : "connect-listener-lifecycle"
+      }
+   ]
+}

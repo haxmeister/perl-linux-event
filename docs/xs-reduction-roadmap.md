@@ -359,6 +359,14 @@ move out; eight new regressions cover consumer creation and Socket attachment
 failure without stranded objects or descriptors. The final narrowed guard is
 within 3.6% on all Stream lifecycle/throughput rows.
 
+**Extraction 4 status (2026-09-02): KEEP.** `BD-2026-09-02-006` moves target
+consumer, readable-sink, preserved-input, and queued-output eligibility policy
+into Perl. XS retains input-size overflow checks, replacement allocation,
+atomic descriptor/buffer swap, and continuation. It removes 26 native lines;
+established Stream rows remain within 3.3%. A dedicated 21-million-transition
+comparison measures an isolated 0.96–1.21 microsecond cost per explicit swap,
+with more than 160,000 transitions/second retained.
+
 ### Phase 2 - consolidate the native data plane
 
 After cold policy is extracted, reorganize remaining native Stream code around:

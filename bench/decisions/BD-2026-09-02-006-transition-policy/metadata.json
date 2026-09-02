@@ -1,0 +1,32 @@
+{
+   "schema_version" : 1,
+   "decision_id" : "BD-2026-09-02-006",
+   "title" : "Stream transition eligibility and target policy in Perl",
+   "decision" : "KEEP",
+   "generated_at_epoch" : 1788361764,
+   "baseline" : {
+      "commit" : "42f1188076842a4e6f17f1d2472e0bf816e0e5a7",
+      "tree" : "171221be9a5aee23d0dddffbc5e681132181d76f"
+   },
+   "candidate" : {
+      "commit" : "c9f0a4ae765f7a83369c5a7e3f3762620d1758f6",
+      "tree" : "2275bcececd15e341b1dc300fb3dc65500ef22f7"
+   },
+   "runtime" : {
+      "kernel" : "Linux 6.18.35 x86_64",
+      "perl" : "5.38.2",
+      "archname" : "x86_64-linux-gnu-thread-multi",
+      "compiler" : "x86_64-linux-gnu-gcc",
+      "optimize" : "-O2 -g"
+   },
+   "tests" : {
+      "core" : "142 files, 1928 tests, PASS",
+      "linux_event_async" : "8 files, 65 tests, PASS"
+   },
+   "benchmark_runs" : {
+      "transition" : "raw/raw, framed/framed and raw/framed; 10000 warmups and seven repeats of 1000000 transitions per case over a 256-Stream pool",
+      "release" : "seven measured rotated repeats after warmup; adjacent baseline and candidate builds",
+      "payload" : "raw and native Delimiter; all nine policy sizes; one warmup and five measured repeats"
+   },
+   "configuration_note" : "Each payload JSON retains effective Stream tuning, native framer parameters, AF_UNIX transport, batching, read sizes and budgets, buffer limits, socket settings, concurrency, reads, writes, callbacks, CPU, and input peaks."
+}

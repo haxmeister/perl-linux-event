@@ -108,6 +108,11 @@ not part of the CPAN distribution.
 | BD-2026-09-01-001 | 2026-09-01 | Native-consumer host lifetime leases | KEEP |
 | BD-2026-09-01-002 | 2026-09-01 | Native-consumer status reconciliation | KEEP |
 | BD-2026-09-02-001 | 2026-09-02 | Outbound LengthPrefix and Varint fast paths | KEEP |
+| BD-2026-09-02-002 | 2026-09-02 | XS-reduction Phase 0 baseline | RETEST |
+| BD-2026-09-02-003 | 2026-09-02 | Descriptor specification policy | KEEP |
+| BD-2026-09-02-004 | 2026-09-02 | Stream stats presentation | KEEP |
+| BD-2026-09-02-005 | 2026-09-02 | Stream construction/failure policy | KEEP |
+| BD-2026-09-02-006 | 2026-09-02 | Stream transition policy | KEEP |
 
 ---
 
@@ -683,3 +688,79 @@ reentrant message/terminal-flush semantics are unchanged.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-02-005-construction-failure-policy/`
+
+---
+
+## BD-2026-09-02-006 - Stream transition policy extraction
+
+**Decision:** KEEP
+
+**Hypothesis:** Target eligibility and user-facing limit policy can move to
+Perl while native code retains overflow safety, allocation, atomic descriptor
+and buffer replacement, and same-drain buffered-input continuation.
+
+**Change:** `transition_to` now validates the target consumer operations
+identity, readable raw/framed sink, preserved-input `max_buffer`, and queued
+output `max_pending_bytes` before invoking a private validated transition
+primitive. The native primitive retains descriptor validity, size overflow,
+allocation-before-mutation, reference transfer, state reset, counter update,
+and atomic swap. A scalar native buffered-byte accessor avoids allocating the
+complete 49-key stats presentation during transition validation.
+
+The existing tests continue to cover same-consumer transitions, rejection of
+consumer changes, raw/framed sink diagnostics, target buffer/output limits,
+failed-transition atomicity, reentrant transition, pause/resume, and flushing
+old-protocol deferred consumer work before new-descriptor continuation.
+
+**Dedicated transition comparison:** Each case used a pool of 256 live
+Streams, 10,000 warmups, and seven measured repeats of 1,000,000 transitions:
+
+| Case | Baseline | Candidate | CPU delta |
+|---|---:|---:|---:|
+| raw/raw | 5.026 us | 5.986 us | +19.10% |
+| framed/framed | 4.872 us | 6.080 us | +24.80% |
+| raw/framed | 5.059 us | 6.181 us | +22.17% |
+
+The extraction adds 0.96–1.21 us per explicit protocol swap and retains
+161,774–167,046 transitions/second. This benchmark intentionally alternates
+protocols millions of times; normal connections transition only at a protocol
+boundary such as handshake completion.
+
+**Adjacent release comparison:** Seven measured repeats after warmup; all rows
+remain inside the permanent 10% gate:
+
+| Workload | Throughput delta | CPU delta |
+|---|---:|---:|
+| raw Stream lifecycle | +1.35% | -1.34% |
+| framed Stream lifecycle | +3.28% | -3.20% |
+| raw Stream throughput | -0.40% | +0.45% |
+| deadline Stream throughput | +1.06% | -1.04% |
+| framed Stream throughput | +0.16% | -0.16% |
+| connect/listener lifecycle | +4.77% | -4.53% |
+
+Registration and Timer control rows also remain within 4.3%.
+
+**Full payload sweep:** Raw and native Delimiter modes used 64 B, 256 B,
+1 KiB, 4 KiB, 16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B, one warmup and
+five measured repeats. Full effective configuration and all raw samples are
+retained. Median MiB/s deltas ranged from -15.90% to +17.29%, with changes in
+reads/message and the shared-host variance already seen in earlier decisions.
+No transition occurs during these established-path runs, and the adjacent
+release throughput comparison is within 1.1%, so payload scatter is not
+attributed to the extraction.
+
+**Complexity/correctness:** Production native source falls from 3,192 to
+3,166 lines. Removing the shared native policy helper and adding one compact
+state accessor leave the native function count unchanged. Perl production code
+grows by 34 lines (eight net production lines) to make eligibility and public
+diagnostics explicit. The core suite passes 142 files/1,928 tests and the real
+`Linux::Event::Async` suite passes 8 files/65 tests.
+
+**Reason:** Keep the extraction. The direct cost is a small absolute amount on
+an explicitly cold protocol-boundary API, established I/O is neutral, and the
+native transition is now limited to state and memory operations that need to
+remain adjacent. Native-consumer ABI and reentrant message/terminal-flush
+semantics are unchanged.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-006-transition-policy/`

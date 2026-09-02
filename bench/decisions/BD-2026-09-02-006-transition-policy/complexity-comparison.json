@@ -1,0 +1,30 @@
+{
+   "schema_version" : 1,
+   "baseline" : {
+      "commit" : "42f1188076842a4e6f17f1d2472e0bf816e0e5a7",
+      "tree" : "171221be9a5aee23d0dddffbc5e681132181d76f",
+      "tracked_native_lines" : 3813,
+      "production_native_lines" : 3192,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119
+   },
+   "candidate" : {
+      "commit" : "c9f0a4ae765f7a83369c5a7e3f3762620d1758f6",
+      "tree" : "2275bcececd15e341b1dc300fb3dc65500ef22f7",
+      "tracked_native_lines" : 3787,
+      "production_native_lines" : 3166,
+      "private_test_provider_lines" : 621,
+      "detected_native_functions" : 144,
+      "production_native_functions" : 119
+   },
+   "delta" : {
+      "tracked_native_lines" : -26,
+      "production_native_lines" : -26,
+      "detected_native_functions" : 0,
+      "production_native_functions" : 0,
+      "perl_production_lines" : 34,
+      "net_production_lines" : 8
+   },
+   "counting_method" : "physical wc -l over Git-tracked xsstream .c/.h/.xs files; removing les_require_read_sink and adding the scalar _input_buffered_bytes XSUB leave function count unchanged"
+}
