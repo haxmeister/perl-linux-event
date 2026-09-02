@@ -403,3 +403,70 @@ affects the medium and large rows.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-01-002-consumer-status/`
+
+---
+
+## BD-2026-09-02-002 - XS-reduction Phase 0 baseline
+
+**Decision:** RETEST
+
+**Hypothesis:** Independent cold/control-plane XS reductions can be evaluated
+without confusing lifecycle cost with established Stream data-plane cost if
+the branch first records both the complete release suite and a realistic
+raw/framed payload sweep.
+
+**Baseline workload:**
+
+- all nine performance-regression workloads, seven rotated repeats, including
+  100,000-operation construction/lifecycle rows, 100 concurrent serial echo
+  clients, and 10,000 complete TCP connect/listener lifecycles;
+- raw and native Delimiter inbound Streams at 64 B, 256 B, 1 KiB, 4 KiB,
+  16 KiB, 32 KiB, 64 KiB, 128 KiB, and 200,000 B;
+- one warmup and five measured payload-sweep repeats, a gated forked producer,
+  256 KiB native reads/budget, disabled callback batching, OS-default AF_UNIX
+  socket buffers, and size-adjusted message counts;
+- full runtime/compiler, Stream/framer, transport, batching, buffer, socket,
+  concurrency, read/write/callback, CPU, and input-peak configuration retained
+  in the JSON evidence.
+
+**Release-suite medians:**
+
+| Workload | Rate | CPU |
+|---|---:|---:|
+| raw Stream lifecycle | 59,864 streams/s | 16.668 us/stream |
+| framed Stream lifecycle | 60,945 streams/s | 16.364 us/stream |
+| raw Stream throughput | 212,839 msg/s | 4.698 us/message |
+| deadline Stream throughput | 209,805 msg/s | 4.766 us/message |
+| framed Stream throughput | 169,135 msg/s | 5.912 us/message |
+| connect/listener lifecycle | 5,970 connections/s | 166.635 us/connection |
+
+The evidence also retains registration and Timer lifecycle/expiration rows.
+
+**Payload-sweep medians:**
+
+| Payload | Raw MiB/s | Raw CPU ns/B | Delimiter MiB/s | Delimiter CPU ns/B |
+|---:|---:|---:|---:|---:|
+| 64 B | 2,326.0 | 0.375 | 99.7 | 9.433 |
+| 256 B | 6,392.7 | 0.141 | 365.1 | 2.593 |
+| 1 KiB | 6,888.7 | 0.133 | 1,133.2 | 0.796 |
+| 4 KiB | 6,777.0 | 0.126 | 2,770.1 | 0.320 |
+| 16 KiB | 7,495.4 | 0.120 | 3,940.3 | 0.200 |
+| 32 KiB | 7,133.8 | 0.121 | 4,711.0 | 0.186 |
+| 64 KiB | 7,216.5 | 0.124 | 4,729.5 | 0.182 |
+| 128 KiB | 7,145.8 | 0.123 | 4,541.3 | 0.184 |
+| 200,000 B | 7,316.4 | 0.123 | 4,776.1 | 0.183 |
+
+**Complexity baseline:** 3,908 physical lines in tracked Stream native
+`.c`/`.h`/`.xs` sources, of which 3,287 are production and 621 are the private
+test provider. The inventory identifies 146 functions (121 production, 25
+test-only), classifies each by dominant invocation frequency, and records 18
+direct Perl/provider callers.
+
+**Reason:** This entry approves no extraction by itself. `RETEST` means each
+candidate must be built and measured independently against this exact tree and
+configuration, then receive its own KEEP/REJECT/DEFER/RETEST decision. The
+payload sweep is intentionally one-way and saturated; the release suite
+supplies the complementary serial request/reply and lifecycle coverage.
+
+**Evidence:**
+`bench/decisions/BD-2026-09-02-002-xs-reduction-baseline/`

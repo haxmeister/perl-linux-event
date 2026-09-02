@@ -1,0 +1,1049 @@
+{
+   "baseline_commit" : "926443f9afc33732210ed962dbb7c9fee1c6b6bb",
+   "classification_rule" : "each detected C function or XSUB has one dominant invocation-frequency category",
+   "counting_method" : "physical lines in Git-tracked xsstream .c/.h/.xs sources; generated Stream.c excluded",
+   "direct_perl_or_provider_callers" : [
+      "les_call_one",
+      "les_call_two",
+      "les_call_transport_event",
+      "les_call_deliver",
+      "les_call_framing_error",
+      "les_call_eof",
+      "les_call_read_error",
+      "les_call_write_error",
+      "les_call_output_limit",
+      "les_call_drain",
+      "les_call_empty",
+      "les_call_stream_method",
+      "les_consumer_create",
+      "les_consumer_destroy",
+      "les_consumer_notify_paused",
+      "les_consumer_message",
+      "les_consumer_call_pending_flush",
+      "les_consumer_event"
+   ],
+   "files" : [
+      {
+         "lines" : 850,
+         "path" : "xsstream/Stream.xs",
+         "production" : true,
+         "role" : "XSUB boundary; descriptor and state construction/control primitives"
+      },
+      {
+         "lines" : 82,
+         "path" : "xsstream/framer_decimal.c",
+         "production" : true,
+         "role" : "native DecimalLength parser"
+      },
+      {
+         "lines" : 81,
+         "path" : "xsstream/framer_delimiter.c",
+         "production" : true,
+         "role" : "native Delimiter parser and search"
+      },
+      {
+         "lines" : 17,
+         "path" : "xsstream/framer_fixed.c",
+         "production" : true,
+         "role" : "native Fixed parser"
+      },
+      {
+         "lines" : 98,
+         "path" : "xsstream/framer_length.c",
+         "production" : true,
+         "role" : "native LengthPrefix/U32BE parser"
+      },
+      {
+         "lines" : 98,
+         "path" : "xsstream/framer_netstring.c",
+         "production" : true,
+         "role" : "native Netstring parser"
+      },
+      {
+         "lines" : 81,
+         "path" : "xsstream/framer_varint.c",
+         "production" : true,
+         "role" : "native Varint parser"
+      },
+      {
+         "lines" : 146,
+         "path" : "xsstream/stream_callbacks.c",
+         "production" : true,
+         "role" : "Perl callback entry and lifecycle error notification"
+      },
+      {
+         "lines" : 287,
+         "path" : "xsstream/stream_consumer.c",
+         "production" : true,
+         "role" : "production native-consumer host, delivery status, flush, and lifetime"
+      },
+      {
+         "lines" : 70,
+         "path" : "xsstream/stream_consumer_abi.h",
+         "production" : true,
+         "role" : "exported versioned native-consumer ABI contract"
+      },
+      {
+         "lines" : 96,
+         "path" : "xsstream/stream_delivery.c",
+         "production" : true,
+         "role" : "raw/framed callback and native-consumer delivery/batching"
+      },
+      {
+         "lines" : 134,
+         "path" : "xsstream/stream_input.c",
+         "production" : true,
+         "role" : "native input storage, compaction, and parser dispatch"
+      },
+      {
+         "lines" : 290,
+         "path" : "xsstream/stream_internal.h",
+         "production" : true,
+         "role" : "private Stream state and translation-unit contract"
+      },
+      {
+         "lines" : 193,
+         "path" : "xsstream/stream_read.c",
+         "production" : true,
+         "role" : "transport read drain and read-boundary flushing"
+      },
+      {
+         "lines" : 157,
+         "path" : "xsstream/stream_state.c",
+         "production" : true,
+         "role" : "state lookup, validation, stats snapshot, and destruction"
+      },
+      {
+         "lines" : 621,
+         "path" : "xsstream/stream_test_consumer.c",
+         "production" : false,
+         "role" : "private conformance/test native-consumer providers"
+      },
+      {
+         "lines" : 98,
+         "path" : "xsstream/stream_transition.c",
+         "production" : true,
+         "role" : "descriptor swap and buffered-input transition mechanism"
+      },
+      {
+         "lines" : 197,
+         "path" : "xsstream/stream_transport.c",
+         "production" : true,
+         "role" : "plain/provider transport operations and activity tracking"
+      },
+      {
+         "lines" : 35,
+         "path" : "xsstream/stream_transport_abi.h",
+         "production" : true,
+         "role" : "private native transport operations contract"
+      },
+      {
+         "lines" : 277,
+         "path" : "xsstream/stream_write.c",
+         "production" : true,
+         "role" : "immediate writes, owned segmented queue, and writev drain"
+      }
+   ],
+   "functions" : [
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 111,
+         "symbol" : "les_descriptor_spec_key_known"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 126,
+         "symbol" : "les_descriptor_spec_check_keys"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 141,
+         "symbol" : "les_descriptor_spec_sv"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 152,
+         "symbol" : "les_descriptor_spec_uv"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 159,
+         "symbol" : "les_descriptor_spec_int"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 169,
+         "symbol" : "Linux::Event::Stream::XSDescriptor::new"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/Stream.xs",
+         "line" : 356,
+         "symbol" : "Linux::Event::Stream::XSDescriptor::DESTROY"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 384,
+         "symbol" : "Linux::Event::Stream::XSState::new"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/Stream.xs",
+         "line" : 440,
+         "symbol" : "Linux::Event::Stream::XSState::DESTROY"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 454,
+         "symbol" : "Linux::Event::Stream::XSState::stream"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/Stream.xs",
+         "line" : 463,
+         "symbol" : "Linux::Event::Stream::XSState::_read_ready"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/Stream.xs",
+         "line" : 472,
+         "symbol" : "Linux::Event::Stream::XSState::_write"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/Stream.xs",
+         "line" : 484,
+         "symbol" : "Linux::Event::Stream::XSState::_write_ready"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 493,
+         "symbol" : "Linux::Event::Stream::XSState::_attach_transport"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/Stream.xs",
+         "line" : 524,
+         "symbol" : "Linux::Event::Stream::XSState::_shutdown_write"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 546,
+         "symbol" : "Linux::Event::Stream::XSState::_pause"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 552,
+         "symbol" : "Linux::Event::Stream::XSState::_resume"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 574,
+         "symbol" : "Linux::Event::Stream::XSState::_set_activity_tracking"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 595,
+         "symbol" : "Linux::Event::Stream::XSState::_activity_snapshot"
+      },
+      {
+         "category" : "per_transition",
+         "file" : "xsstream/Stream.xs",
+         "line" : 608,
+         "symbol" : "Linux::Event::Stream::XSState::_transition"
+      },
+      {
+         "category" : "per_transition",
+         "file" : "xsstream/Stream.xs",
+         "line" : 620,
+         "symbol" : "Linux::Event::Stream::XSState::_transition_ready"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/Stream.xs",
+         "line" : 639,
+         "symbol" : "Linux::Event::Stream::XSState::_close"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/Stream.xs",
+         "line" : 661,
+         "symbol" : "Linux::Event::Stream::XSState::_close_read"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/Stream.xs",
+         "line" : 685,
+         "symbol" : "Linux::Event::Stream::XSState::_close_write"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 698,
+         "symbol" : "Linux::Event::Stream::XSState::consumer_paused"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/Stream.xs",
+         "line" : 706,
+         "symbol" : "Linux::Event::Stream::XSState::_consumer_resume"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 717,
+         "symbol" : "Linux::Event::Stream::XSState::is_read_eof"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 725,
+         "symbol" : "Linux::Event::Stream::XSState::pending_bytes"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 733,
+         "symbol" : "Linux::Event::Stream::XSState::is_write_blocked"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 741,
+         "symbol" : "Linux::Event::Stream::XSState::transport_name"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 749,
+         "symbol" : "Linux::Event::Stream::XSState::transport_ready"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 757,
+         "symbol" : "Linux::Event::Stream::XSState::stats"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 765,
+         "symbol" : "Linux::Event::Stream::XSState::_test_consumer_arm"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 775,
+         "symbol" : "Linux::Event::Stream::XSState::_test_consumer_cancel"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 781,
+         "symbol" : "Linux::Event::Stream::XSState::_test_consumer_take"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 789,
+         "symbol" : "Linux::Event::Stream::XSState::_test_consumer_events"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 797,
+         "symbol" : "Linux::Event::Stream::XSState::_test_consumer_stats"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 805,
+         "symbol" : "Linux::Event::Stream::XSState::_test_consumer_trace"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 816,
+         "symbol" : "Linux::Event::Stream::_native_consumer_abi_version"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 825,
+         "symbol" : "Linux::Event::Stream::_test_consumer_definition"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 835,
+         "symbol" : "Linux::Event::Stream::_test_consumer_destroy_count"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/Stream.xs",
+         "line" : 844,
+         "symbol" : "Linux::Event::Stream::_test_consumer_external_arm"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_decimal.c",
+         "line" : 6,
+         "symbol" : "les_process_decimal_length"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_delimiter.c",
+         "line" : 4,
+         "symbol" : "les_find_bytes"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_delimiter.c",
+         "line" : 28,
+         "symbol" : "les_process_delimiter"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_fixed.c",
+         "line" : 4,
+         "symbol" : "les_process_fixed"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_length.c",
+         "line" : 4,
+         "symbol" : "les_decode_prefix"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_length.c",
+         "line" : 20,
+         "symbol" : "les_frame_fits_buffer"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_length.c",
+         "line" : 49,
+         "symbol" : "les_process_length"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_netstring.c",
+         "line" : 4,
+         "symbol" : "les_process_netstring"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/framer_varint.c",
+         "line" : 6,
+         "symbol" : "les_process_varint"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 4,
+         "symbol" : "les_call_one"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 21,
+         "symbol" : "les_call_two"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 39,
+         "symbol" : "les_call_transport_event"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 63,
+         "symbol" : "les_call_deliver"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 70,
+         "symbol" : "les_call_framing_error"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 89,
+         "symbol" : "les_call_eof"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 96,
+         "symbol" : "les_call_read_error"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 105,
+         "symbol" : "les_call_write_error"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 112,
+         "symbol" : "les_call_output_limit"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 133,
+         "symbol" : "les_call_drain"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_callbacks.c",
+         "line" : 142,
+         "symbol" : "les_call_empty"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 4,
+         "symbol" : "les_call_stream_method"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 22,
+         "symbol" : "les_consumer_host_resume"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 28,
+         "symbol" : "les_consumer_host_pause"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 44,
+         "symbol" : "les_consumer_host_stream"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 51,
+         "symbol" : "les_consumer_host_is_closed"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 58,
+         "symbol" : "les_consumer_host_retain"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 72,
+         "symbol" : "les_consumer_host_release"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 95,
+         "symbol" : "les_consumer_create"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 113,
+         "symbol" : "les_consumer_destroy"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 128,
+         "symbol" : "les_consumer_notify_paused"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 135,
+         "symbol" : "les_consumer_validate_status"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 156,
+         "symbol" : "les_consumer_apply_status"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 184,
+         "symbol" : "les_consumer_message"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 210,
+         "symbol" : "les_consumer_call_pending_flush"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 232,
+         "symbol" : "les_consumer_flush"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 238,
+         "symbol" : "les_consumer_flush_terminal"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 244,
+         "symbol" : "les_consumer_resumed_with_buffered_input"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 252,
+         "symbol" : "les_consumer_event"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_consumer.c",
+         "line" : 265,
+         "symbol" : "les_consumer_resume"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_delivery.c",
+         "line" : 4,
+         "symbol" : "les_discard_message_batch"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_delivery.c",
+         "line" : 15,
+         "symbol" : "les_flush_message_batch"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_delivery.c",
+         "line" : 40,
+         "symbol" : "les_emit_message"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_delivery.c",
+         "line" : 76,
+         "symbol" : "les_flush_raw_batch"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_input.c",
+         "line" : 4,
+         "symbol" : "les_input_data"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_input.c",
+         "line" : 10,
+         "symbol" : "les_input_reserve"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_input.c",
+         "line" : 54,
+         "symbol" : "les_input_consume"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_input.c",
+         "line" : 66,
+         "symbol" : "les_process_buffered"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_input.c",
+         "line" : 91,
+         "symbol" : "les_process_existing_input"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_read.c",
+         "line" : 4,
+         "symbol" : "les_flush_framed_read_boundary"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_read.c",
+         "line" : 15,
+         "symbol" : "les_read_ready"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_state.c",
+         "line" : 4,
+         "symbol" : "les_state_from_sv"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_state.c",
+         "line" : 12,
+         "symbol" : "les_descriptor_from_sv"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_state.c",
+         "line" : 20,
+         "symbol" : "les_require_read_sink"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_state.c",
+         "line" : 36,
+         "symbol" : "les_store_cb"
+      },
+      {
+         "category" : "per_connection",
+         "file" : "xsstream/stream_state.c",
+         "line" : 47,
+         "symbol" : "les_store_optional_cb"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_state.c",
+         "line" : 109,
+         "symbol" : "les_state_stats"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_state.c",
+         "line" : 144,
+         "symbol" : "les_state_destroy"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 23,
+         "symbol" : "les_test_create"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 39,
+         "symbol" : "les_test_create_failure"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 50,
+         "symbol" : "les_test_message"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 78,
+         "symbol" : "les_test_message_pause"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 88,
+         "symbol" : "les_test_message_croak"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 97,
+         "symbol" : "les_test_message_continue"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 104,
+         "symbol" : "les_test_message_invalid"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 111,
+         "symbol" : "les_test_message_transition"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 140,
+         "symbol" : "les_test_event"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 169,
+         "symbol" : "les_test_event_croak"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 180,
+         "symbol" : "les_test_flush"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 192,
+         "symbol" : "les_test_flush_continue"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 203,
+         "symbol" : "les_test_flush_error"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 214,
+         "symbol" : "les_test_flush_close"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 221,
+         "symbol" : "les_test_destroy"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 433,
+         "symbol" : "les_test_context"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 451,
+         "symbol" : "les_test_consumer_definition"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 497,
+         "symbol" : "les_test_consumer_arm"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 510,
+         "symbol" : "les_test_consumer_external_arm"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 547,
+         "symbol" : "les_test_consumer_cancel"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 560,
+         "symbol" : "les_test_consumer_take"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 569,
+         "symbol" : "les_test_consumer_events"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 584,
+         "symbol" : "les_test_consumer_stats"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 603,
+         "symbol" : "les_test_consumer_trace"
+      },
+      {
+         "category" : "introspection_debug_only",
+         "file" : "xsstream/stream_test_consumer.c",
+         "line" : 618,
+         "symbol" : "les_test_consumer_destroy_count"
+      },
+      {
+         "category" : "per_transition",
+         "file" : "xsstream/stream_transition.c",
+         "line" : 12,
+         "symbol" : "les_transition_descriptor"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 14,
+         "symbol" : "les_plain_result"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 36,
+         "symbol" : "les_plain_read"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 48,
+         "symbol" : "les_plain_write"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 60,
+         "symbol" : "les_plain_writev"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 72,
+         "symbol" : "les_plain_shutdown_write"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 89,
+         "symbol" : "les_plain_drive"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 113,
+         "symbol" : "les_activity_now_ns"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 123,
+         "symbol" : "les_note_read_activity"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 132,
+         "symbol" : "les_note_write_activity"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 143,
+         "symbol" : "les_transport_read"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 153,
+         "symbol" : "les_transport_write"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 163,
+         "symbol" : "les_transport_writev"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 173,
+         "symbol" : "les_transport_shutdown_write"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 181,
+         "symbol" : "les_transport_ready"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_transport.c",
+         "line" : 188,
+         "symbol" : "les_drive_transport"
+      },
+      {
+         "category" : "per_teardown",
+         "file" : "xsstream/stream_write.c",
+         "line" : 4,
+         "symbol" : "les_clear_write_queue"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_write.c",
+         "line" : 21,
+         "symbol" : "les_queue_bytes"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_write.c",
+         "line" : 49,
+         "symbol" : "les_consume_written"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_write.c",
+         "line" : 79,
+         "symbol" : "les_maybe_drain_transition"
+      },
+      {
+         "category" : "per_message_frame",
+         "file" : "xsstream/stream_write.c",
+         "line" : 97,
+         "symbol" : "les_write_submit"
+      },
+      {
+         "category" : "per_read_write_readiness",
+         "file" : "xsstream/stream_write.c",
+         "line" : 190,
+         "symbol" : "les_write_ready"
+      }
+   ],
+   "generated_at_epoch" : 1788343209,
+   "notes" : [
+      "Categories describe dominant frequency, not whether a helper can also be reached from colder paths.",
+      "The private conformance provider is counted separately because it is compiled for tests but is not production consumer policy.",
+      "Direct callback/provider callers exclude functions that only reach Perl transitively through another listed native helper."
+   ],
+   "schema_version" : 1,
+   "totals" : {
+      "detected_functions" : 146,
+      "direct_perl_or_provider_callers" : 18,
+      "functions_by_category" : {
+         "introspection_debug_only" : 45,
+         "per_connection" : 20,
+         "per_message_frame" : 35,
+         "per_read_write_readiness" : 24,
+         "per_teardown" : 19,
+         "per_transition" : 3
+      },
+      "private_test_provider_functions" : 25,
+      "private_test_provider_lines" : 621,
+      "production_functions" : 121,
+      "production_native_lines" : 3287,
+      "tracked_native_lines" : 3908
+   }
+}

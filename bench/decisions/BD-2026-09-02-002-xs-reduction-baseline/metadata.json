@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "decision_id": "BD-2026-09-02-002",
+  "purpose": "Phase 0 reference for independent cold/control-plane XS reduction experiments",
+  "source": {
+    "repository": "haxmeister/perl-linux-event",
+    "branch": "fix/review-bugfix-simplify",
+    "remote_commit": "926443f9afc33732210ed962dbb7c9fee1c6b6bb",
+    "local_equivalent_commit": "391b8a1890ad9d694b0924b4d8dbd46707d4ce5b",
+    "tree": "bc701b3c311ce1d6027072c6ef77639ebdf3676a"
+  },
+  "execution": {
+    "order": [
+      "performance-regression",
+      "stream-payload-sweep"
+    ],
+    "host_load": "No deliberate competing workload; CPU affinity and power controls unavailable in this environment",
+    "build": "perl Makefile.PL; make, x86_64-linux-gnu-gcc, -O2 -g",
+    "performance_regression_command": "perl -Mblib bench/run-performance-regression.pl --json bench/decisions/BD-2026-09-02-002-xs-reduction-baseline/performance-regression.json",
+    "payload_sweep_command": "perl -Mblib bench/run-stream-payload-sweep.pl --modes=raw,delimiter --repeats=5 --warmup=1 --variant=xs-reduction-baseline --commit=926443f9afc33732210ed962dbb7c9fee1c6b6bb --output=bench/decisions/BD-2026-09-02-002-xs-reduction-baseline/stream-payload-sweep.json"
+  },
+  "performance_regression_effective_stream_configuration": {
+    "transport": "plain AF_UNIX SOCK_STREAM socketpair for Stream lifecycle/throughput; IPv4 TCP loopback for connect/listener lifecycle",
+    "payload_bytes": 64,
+    "framed_wire": "Delimiter newline, excluded from delivered payload",
+    "read_size": 65536,
+    "read_budget_bytes": 0,
+    "read_batch_bytes": 0,
+    "message_batch_size": 0,
+    "max_buffer": 8388608,
+    "high_watermark": 1048576,
+    "low_watermark": 262144,
+    "max_pending_bytes": 0,
+    "deadline_seconds": 3600,
+    "tls": false,
+    "edge_triggered": false,
+    "socket_options": "OS defaults except abortive SO_LINGER on lifecycle clients",
+    "throughput_pattern": "100 concurrent serial request/reply clients; one Perl callback per raw read or framed message",
+    "lifecycle_pool": 256,
+    "watcher_reclaim_for_connect_listener": true
+  },
+  "payload_sweep_effective_configuration": "Recorded separately for raw and delimiter modes in stream-payload-sweep.json, including Stream tuning, framer parameters, transport, batching, buffer limits, socket buffers/options, topology, concurrency, producer batches, read/write/callback counts, CPU, and input peaks.",
+  "latency": {
+    "performance_regression": "Serial request/reply wall rate is retained; per-message percentile samples are not collected by contract version 3",
+    "payload_sweep": "Not sampled because this is a saturated one-way throughput baseline"
+  },
+  "comparison_policy": {
+    "release_suite": "Use the built-in paired configuration check and 10 percent regression threshold; inspect rotated raw samples before deciding",
+    "payload_sweep": "Run baseline and candidate on the same host/build configuration and compare medians at all nine sizes; interpret read/write splitting and CPU per byte alongside wall throughput",
+    "baseline_reuse": "Rebuild or retest this baseline when the benchmark contract, compiler/runtime, host, or branch foundation changes"
+  }
+}

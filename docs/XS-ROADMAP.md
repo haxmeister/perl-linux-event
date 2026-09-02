@@ -163,6 +163,11 @@ Initial targets:
 The goal is a smaller native core organized around operations that actually
 need to be native, not merely fewer files.
 
+**Phase 0 baseline status (2026-09-02): complete.** The full release suite,
+full nine-size raw/framed payload sweep, resolved benchmark configuration, and
+per-file/function native ownership inventory are recorded under
+`BD-2026-09-02-002`. Each extraction remains an independent paired decision.
+
 ## Priority 2 - consolidate the remaining native Stream data plane
 
 After cold policy extraction, organize the native Stream implementation around:

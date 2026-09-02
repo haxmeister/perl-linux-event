@@ -313,6 +313,11 @@ Do not approve a hot-path regression merely because XS source shrank.
    - per teardown;
    - introspection/debug only.
 
+**Status (2026-09-02): complete.** `BD-2026-09-02-002` retains the seven-repeat
+release baseline, full raw/Delimiter 64 B–200 KB sweep, complete effective
+configuration, tracked native source sizes, functional ownership, and a
+dominant-frequency category for all 146 detected Stream native functions.
+
 ### Phase 1 - cold-path reductions
 
 Try independently, with one benchmarked commit per extraction:
