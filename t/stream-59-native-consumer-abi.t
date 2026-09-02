@@ -100,6 +100,57 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 }
 
 {
+    package T::MessageContinueBase;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::Stream->_test_consumer_definition('message-continue'),
+        );
+    }
+}
+
+{
+    package T::MessageContinueLine;
+    use parent -norequire, 'T::MessageContinueBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
+    package T::MessageInvalidBase;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::Stream->_test_consumer_definition('message-invalid'),
+        );
+    }
+}
+
+{
+    package T::MessageInvalidLine;
+    use parent -norequire, 'T::MessageInvalidBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
+    package T::FlushCloseBase;
+    use parent 'Linux::Event::Stream';
+    BEGIN {
+        Linux::Event::Stream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::Stream->_test_consumer_definition('flush-close'),
+        );
+    }
+}
+
+{
+    package T::FlushCloseLine;
+    use parent -norequire, 'T::FlushCloseBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
     package T::ConsumerShortLine;
     use parent -norequire, 'T::ConsumerBase';
     use Linux::Event::Framer 'Delimiter', "\n", max_frame => 3;
@@ -223,6 +274,47 @@ sub take ($stream) {
 {
     pipe(my $read, my $write) or die "pipe: $!";
     my $loop = Linux::Event::Loop->new;
+    my $stream = T::MessageInvalidLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    my $xs = $stream->{xs_state};
+    arm($stream, sub { $stream->close });
+    syswrite($write, "invalid\n") == 8 or die "syswrite: $!";
+    my $ok = eval { $loop->run_for(0.01); 1 };
+    ok(!$ok, 'invalid message status is rejected after reentrant close');
+    like($@, qr/returned invalid status 99/,
+        'post-terminal invalid message status keeps its diagnostic');
+    ok($stream->is_closed,
+        'invalid post-terminal status does not undo reentrant close');
+    is(scalar @{$xs->_test_consumer_events}, 1,
+        'invalid post-terminal status does not duplicate terminal event');
+    close $write;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::FlushCloseLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    my $xs = $stream->{xs_state};
+    arm($stream, sub { $stream->close });
+    syswrite($write, "close\n") == 6 or die "syswrite: $!";
+    $loop->run_for(0.01);
+    my $stats = $xs->_test_consumer_stats;
+    is($stats->{flushes}, 1,
+        'message entry makes one terminal flush owed before message returns');
+    cmp_ok($stats->{last_flush_sequence}, '<', $stats->{last_event_sequence},
+        'terminal flush CLOSE remains advisory and precedes terminal event');
+    is(scalar @{$xs->_test_consumer_events}, 1,
+        'terminal flush CLOSE produces one terminal event');
+    ok($stream->is_closed, 'terminal flush CLOSE leaves Stream closed');
+    close $write;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
     my $stream = T::CroakingConsumerLine->new(
         loop => $loop, read_fh => $read,
     );
@@ -302,8 +394,34 @@ sub take ($stream) {
     my $stats = $stream->{xs_state}->_test_consumer_stats;
     is($stats->{delivered}, 2,
         'flush CONTINUE re-drives complete input buffered after PAUSE');
+    ok(!$stream->{xs_state}->consumer_paused,
+        'flush CONTINUE clears consumer pause');
     cmp_ok($stats->{flushes}, '>=', 2,
         'each resumed buffered-input drain reaches its flush boundary');
+    $stream->close;
+    close $write;
+}
+
+{
+    pipe(my $read, my $write) or die "pipe: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = T::MessageContinueLine->new(
+        loop => $loop, read_fh => $read,
+    );
+    my $before = $stream->{xs_state}->stats;
+    arm($stream, sub {
+        cancel_arm($stream);
+        $loop->stop;
+    });
+    syswrite($write, "continue\n") == 9 or die "syswrite: $!";
+    $loop->run;
+    my $after = $stream->{xs_state}->stats;
+    ok($stream->{xs_state}->consumer_paused,
+        'message CONTINUE does not clear a provider-requested pause');
+    is($after->{consumer_resume_count} - $before->{consumer_resume_count}, 1,
+        'message CONTINUE adds no implicit resume beyond receive arm');
+    is($after->{consumer_pause_count} - $before->{consumer_pause_count}, 1,
+        'flush PAUSE does not duplicate an existing message-side pause');
     $stream->close;
     close $write;
 }

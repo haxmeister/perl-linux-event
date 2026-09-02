@@ -123,6 +123,13 @@ Required regression:
 
 ## Priority 2 - native consumer semantics and simplification
 
+**Status (2026-09-01): complete.** Message entry remains immediately
+flush-owed, including reentrant terminal flush before `message()` returns.
+Provider statuses are now validated unconditionally before terminal lifecycle
+application is skipped, ordinary and terminal pending-flush calls share one
+mechanic, the operation-sensitive `CONTINUE` behavior is covered explicitly,
+and the resumed-with-buffered-input rule has one predicate.
+
 ### 5. Reconcile `message`, flush, and terminal status handling as one coherent change
 
 `les_consumer_message()`, `les_consumer_flush()`, and `les_consumer_flush_terminal()` should be simplified together because their state/status rules are coupled.

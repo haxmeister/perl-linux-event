@@ -132,8 +132,29 @@ les_consumer_notify_paused(pTHX_ les_xsstate_t *st)
 }
 
 static int
+les_consumer_validate_status(pTHX_ les_xsstate_t *st, int status,
+    const char *operation)
+{
+    if (status < LES_CONSUMER_CONTINUE || status > LES_CONSUMER_ERROR) {
+        if (operation)
+            croak("native Stream consumer '%s' returned invalid status %d from %s",
+                st->consumer_ops->name, status, operation);
+        croak("native Stream consumer '%s' returned invalid status %d",
+            st->consumer_ops->name, status);
+    }
+    if (status == LES_CONSUMER_ERROR) {
+        if (operation)
+            croak("native Stream consumer '%s' reported an error from %s",
+                st->consumer_ops->name, operation);
+        croak("native Stream consumer '%s' reported an error",
+            st->consumer_ops->name);
+    }
+    return status;
+}
+
+static int
 les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
-    const char *operation, int resume_on_continue)
+    int resume_on_continue)
 {
     if (status == LES_CONSUMER_CONTINUE) {
         if (resume_on_continue && st->consumer_paused) {
@@ -155,17 +176,7 @@ les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
         les_call_stream_method(aTHX_ st, "_xs_consumer_close");
         return status;
     }
-    if (status == LES_CONSUMER_ERROR && !resume_on_continue)
-        croak("native Stream consumer '%s' reported an error",
-            st->consumer_ops->name);
-    if (status == LES_CONSUMER_ERROR)
-        croak("native Stream consumer '%s' reported an error from %s",
-            st->consumer_ops->name, operation);
-    if (!resume_on_continue)
-        croak("native Stream consumer '%s' returned invalid status %d",
-            st->consumer_ops->name, status);
-    croak("native Stream consumer '%s' returned invalid status %d from %s",
-        st->consumer_ops->name, status, operation);
+    croak("internal native Stream consumer status was not validated");
     return LES_CONSUMER_ERROR;
 }
 
@@ -189,48 +200,52 @@ les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
         JMPENV_POP;
         JMPENV_JUMP(jump_status);
     }
+    les_consumer_validate_status(aTHX_ st, status, NULL);
     if (st->closed || st->read_eof || st->consumer_terminal)
         return status;
-    return les_consumer_apply_status(aTHX_ st, status, "message", 0);
+    return les_consumer_apply_status(aTHX_ st, status, 0);
 }
 
-int
-les_consumer_flush(pTHX_ les_xsstate_t *st)
-{
-    int status;
-
-    if (!st || !st->consumer_ops || !st->consumer_context
-        || !st->consumer_flush_pending || st->consumer_terminal
-        || st->closed || st->read_eof)
-        return LES_CONSUMER_CONTINUE;
-    st->consumer_flush_pending = 0;
-    if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
-        return LES_CONSUMER_CONTINUE;
-    st->consumer_flush_calls++;
-    status = st->consumer_ops->flush(aTHX_ st->consumer_context);
-    return les_consumer_apply_status(aTHX_ st, status, "flush", 1);
-}
-
-int
-les_consumer_flush_terminal(pTHX_ les_xsstate_t *st)
+static int
+les_consumer_call_pending_flush(pTHX_ les_xsstate_t *st, int terminal)
 {
     int status;
 
     if (!st || !st->consumer_ops || !st->consumer_context
         || !st->consumer_flush_pending || st->consumer_terminal)
         return LES_CONSUMER_CONTINUE;
+    if (!terminal && (st->closed || st->read_eof))
+        return LES_CONSUMER_CONTINUE;
     st->consumer_flush_pending = 0;
     if (!(st->consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH))
         return LES_CONSUMER_CONTINUE;
     st->consumer_flush_calls++;
     status = st->consumer_ops->flush(aTHX_ st->consumer_context);
-    if (status < LES_CONSUMER_CONTINUE || status > LES_CONSUMER_ERROR)
-        croak("native Stream consumer '%s' returned invalid status %d from terminal flush",
-            st->consumer_ops->name, status);
-    if (status == LES_CONSUMER_ERROR)
-        croak("native Stream consumer '%s' reported an error from terminal flush",
-            st->consumer_ops->name);
-    return status;
+    les_consumer_validate_status(aTHX_ st, status,
+        terminal ? "terminal flush" : "flush");
+    if (terminal || st->closed || st->read_eof || st->consumer_terminal)
+        return status;
+    return les_consumer_apply_status(aTHX_ st, status, 1);
+}
+
+int
+les_consumer_flush(pTHX_ les_xsstate_t *st)
+{
+    return les_consumer_call_pending_flush(aTHX_ st, 0);
+}
+
+int
+les_consumer_flush_terminal(pTHX_ les_xsstate_t *st)
+{
+    return les_consumer_call_pending_flush(aTHX_ st, 1);
+}
+
+int
+les_consumer_resumed_with_buffered_input(const les_xsstate_t *st,
+    int was_consumer_paused)
+{
+    return was_consumer_paused && st && !LES_INPUT_PAUSED(st)
+        && !st->closed && !st->read_eof && st->input_len;
 }
 
 void
@@ -365,6 +380,20 @@ les_test_message_croak(pTHX_ void *opaque, SV *message)
 }
 
 static int
+les_test_message_continue(pTHX_ void *opaque, SV *message)
+{
+    les_test_message(aTHX_ opaque, message);
+    return LES_CONSUMER_CONTINUE;
+}
+
+static int
+les_test_message_invalid(pTHX_ void *opaque, SV *message)
+{
+    les_test_message(aTHX_ opaque, message);
+    return 99;
+}
+
+static int
 les_test_message_transition(pTHX_ void *opaque, SV *message)
 {
     les_test_consumer_t *context = (les_test_consumer_t *)opaque;
@@ -467,6 +496,13 @@ les_test_flush_error(pTHX_ void *opaque)
     return LES_CONSUMER_ERROR;
 }
 
+static int
+les_test_flush_close(pTHX_ void *opaque)
+{
+    les_test_flush(aTHX_ opaque);
+    return LES_CONSUMER_CLOSE;
+}
+
 static void
 les_test_destroy(pTHX_ void *opaque)
 {
@@ -520,6 +556,30 @@ static const les_consumer_ops_v1_t les_test_croak_ops = {
     les_test_flush
 };
 
+static const les_consumer_ops_v1_t les_test_message_continue_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "message-continue test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message_continue,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush
+};
+
+static const les_consumer_ops_v1_t les_test_message_invalid_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "message-invalid test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message_invalid,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush
+};
+
 static const les_consumer_ops_v1_t les_test_event_croak_ops = {
     LES_CONSUMER_ABI_VERSION,
     sizeof(les_consumer_ops_v1_t),
@@ -542,6 +602,18 @@ static const les_consumer_ops_v1_t les_test_flush_error_ops = {
     les_test_event,
     les_test_destroy,
     les_test_flush_error
+};
+
+static const les_consumer_ops_v1_t les_test_flush_close_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "flush-close test consumer",
+    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH,
+    les_test_create,
+    les_test_message,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush_close
 };
 
 static const les_consumer_ops_v1_t les_test_transition_ops = {
@@ -649,8 +721,11 @@ les_test_context(les_xsstate_t *st)
     if (!st || (st->consumer_ops != &les_test_ops
         && st->consumer_ops != &les_test_flush_continue_ops
         && st->consumer_ops != &les_test_croak_ops
+        && st->consumer_ops != &les_test_message_continue_ops
+        && st->consumer_ops != &les_test_message_invalid_ops
         && st->consumer_ops != &les_test_event_croak_ops
         && st->consumer_ops != &les_test_flush_error_ops
+        && st->consumer_ops != &les_test_flush_close_ops
         && st->consumer_ops != &les_test_transition_ops
         && st->consumer_ops != (const les_consumer_ops_v1_t *)
             &les_test_original_ops) || !st->consumer_context)
@@ -681,10 +756,16 @@ les_test_consumer_definition(pTHX_ const char *variant)
         ops = &les_test_flush_continue_ops;
     else if (strEQ(variant, "message-croak"))
         ops = &les_test_croak_ops;
+    else if (strEQ(variant, "message-continue"))
+        ops = &les_test_message_continue_ops;
+    else if (strEQ(variant, "message-invalid"))
+        ops = &les_test_message_invalid_ops;
     else if (strEQ(variant, "event-croak"))
         ops = &les_test_event_croak_ops;
     else if (strEQ(variant, "flush-error"))
         ops = &les_test_flush_error_ops;
+    else if (strEQ(variant, "flush-close"))
+        ops = &les_test_flush_close_ops;
     else if (strEQ(variant, "transition-trace"))
         ops = &les_test_transition_ops;
     else if (strEQ(variant, "wrong-declaration-version"))

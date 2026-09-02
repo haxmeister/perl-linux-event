@@ -122,6 +122,19 @@ pending-operation state before that invocation so exception unwinding leaves
 the context valid. An invalid message status or explicit consumer error is
 treated as a fatal provider bug.
 
+Entering `message` makes the current native drain flush-owed immediately. If
+provider or user code begins terminal teardown reentrantly, the terminal flush
+therefore runs before `message` returns. This ordering is an intentional ABI
+semantic, not an implementation accident. If `message` instead throws before
+terminal teardown consumes the pending flush, exception unwinding clears the
+incomplete marker.
+
+Every returned provider status is validated even if the provider call closed,
+detached, reached EOF, or otherwise made the Stream terminal. `ERROR` and
+out-of-range values remain fatal provider failures. After validation, valid
+`CONTINUE`, `PAUSE`, and `CLOSE` results are not applied to a Stream that became
+terminal during the provider call.
+
 ## Message ownership
 
 The `message` argument is borrowed and valid for the duration of the call. A
@@ -172,6 +185,12 @@ Delivery is also reentrant. A provider may wake user code from `message`; that
 code may arm the next receive immediately. In that case the provider should
 return `CONTINUE` when another receive is armed and `PAUSE` when none is armed.
 Stream checks pause, close, EOF, and descriptor state between frames.
+
+`CONTINUE` is deliberately operation-sensitive. A `message` result of
+`CONTINUE` does not clear an existing provider-requested pause. A deferred
+`flush` result of `CONTINUE` may clear consumer pause and re-drive already
+buffered input. This preserves pull-consumer cancellation and the existing
+end-of-drain wakeup contract.
 
 Transport progress is independent from consumer pause. In particular, TLS may
 continue its handshake or shutdown while application delivery is paused. Once

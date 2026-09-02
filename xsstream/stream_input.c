@@ -120,8 +120,8 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
                 les_flush_message_batch(aTHX_ st);
                 les_consumer_flush(aTHX_ st);
             }
-            if (was_consumer_paused && !LES_INPUT_PAUSED(st)
-                && !st->closed && !st->read_eof && st->input_len)
+            if (les_consumer_resumed_with_buffered_input(
+                    st, was_consumer_paused))
                 continue;
         }
         if (st->descriptor != descriptor)

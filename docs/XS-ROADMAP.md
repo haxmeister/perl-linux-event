@@ -137,11 +137,11 @@ Current blockers include:
 - old-protocol consumer flush ordering across descriptor transitions;
 - coherent consumer message/flush/terminal status semantics.
 
-Status as of 2026-09-01: the first four blockers above are implemented with
-targeted core regressions, and the lifetime contract has passed the real
-`Linux::Event::Async` suite. The final status-semantics item remains open; the
-existing reentrant message/terminal-flush contract is unchanged until that
-decision is made explicitly.
+Status as of 2026-09-01: all five blockers above are implemented with targeted
+core regressions, and the lifetime/status contract has passed the real
+`Linux::Event::Async` suite. The semantic decision preserves immediate
+flush-owed message entry, reentrant terminal flush, and operation-sensitive
+`CONTINUE` behavior.
 
 Do not simplify or move the consumer ABI boundary until its ownership contract
 is sound and cross-tested with `Linux::Event::Async`.

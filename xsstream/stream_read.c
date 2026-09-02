@@ -7,8 +7,7 @@ les_flush_framed_read_boundary(pTHX_ les_xsstate_t *st)
 
     les_flush_message_batch(aTHX_ st);
     les_consumer_flush(aTHX_ st);
-    if (was_consumer_paused && !LES_INPUT_PAUSED(st)
-        && !st->closed && !st->read_eof && st->input_len)
+    if (les_consumer_resumed_with_buffered_input(st, was_consumer_paused))
         les_process_existing_input(aTHX_ st, 1);
 }
 
