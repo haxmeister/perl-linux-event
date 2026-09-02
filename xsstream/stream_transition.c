@@ -32,14 +32,9 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
         croak("transition_to(): target Stream type is already active");
     if (next_descriptor->consumer_ops != st->descriptor->consumer_ops)
         croak("transition_to(): cannot change native consumer provider");
-    if (st->read_fd >= 0 && next_descriptor->read_mode == LES_READ_DELIVER
-        && !next_descriptor->deliver_cb)
-        croak("transition_to(): target readable raw Stream has no on_data callback");
-    if (st->read_fd >= 0 && next_descriptor->read_mode != LES_READ_DELIVER
-        && !next_descriptor->consumer_ops
-        && !next_descriptor->message_batch_size
-        && !next_descriptor->message_cb)
-        croak("transition_to(): target readable framed Stream has no message sink");
+    les_require_read_sink(aTHX_ next_descriptor, st->read_fd,
+        "transition_to(): target readable raw Stream has no on_data callback",
+        "transition_to(): target readable framed Stream has no message sink");
 
     if (input_sv && SvOK(input_sv))
         injected = SvPVbyte(input_sv, injected_len);

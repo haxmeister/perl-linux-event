@@ -180,6 +180,9 @@ Move it behind one small helper/predicate so read-boundary and existing-input be
 
 ## Priority 3 - completed fixes to preserve, with duplication cleanup
 
+**Status (2026-09-02): complete.** The `2681a0c` hardening remains covered,
+and construction plus transition now use one readable-sink validation helper.
+
 ### 8. Preserve the verified hardening from `2681a0c`
 
 Keep:
@@ -204,6 +207,9 @@ What remains is duplication risk: construction and transition independently enco
 Factor one internal helper such as `les_require_read_sink()` and use it from both sites.
 
 This is cleanup/hardening, not an open correctness bug.
+
+Implemented by `les_require_read_sink()`, with construction and raw/framed
+transition diagnostics retained and tested.
 
 ## Priority 4 - simplifications worth salvaging from PR #9
 

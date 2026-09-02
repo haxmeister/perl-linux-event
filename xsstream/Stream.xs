@@ -302,13 +302,9 @@ new(CLASS, stream, read_fd, write_fd, descriptor_obj)
         croak("Stream requires a read or write fd");
     descriptor = les_descriptor_from_sv(descriptor_obj);
     if (!descriptor) croak("Stream descriptor is closed");
-    if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER
-        && !descriptor->deliver_cb)
-        croak("readable raw Stream requires on_data callback");
-    if (read_fd >= 0 && descriptor->read_mode != LES_READ_DELIVER
-        && !descriptor->consumer_ops && !descriptor->message_batch_size
-        && !descriptor->message_cb)
-        croak("readable framed Stream requires on_message or a native consumer");
+    les_require_read_sink(aTHX_ descriptor, read_fd,
+        "readable raw Stream requires on_data callback",
+        "readable framed Stream requires on_message or a native consumer");
     if (read_fd < 0 && descriptor->consumer_ops)
         croak("native Stream consumer requires a readable side");
 

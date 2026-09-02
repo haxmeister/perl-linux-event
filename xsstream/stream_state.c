@@ -16,6 +16,22 @@ les_descriptor_from_sv(SV *sv)
     return INT2PTR(les_descriptor_t *, SvIV((SV *)SvRV(sv)));
 }
 
+void
+les_require_read_sink(pTHX_ const les_descriptor_t *descriptor, int read_fd,
+    const char *raw_error, const char *framed_error)
+{
+    if (read_fd < 0)
+        return;
+    if (descriptor->read_mode == LES_READ_DELIVER) {
+        if (!descriptor->deliver_cb)
+            croak("%s", raw_error);
+        return;
+    }
+    if (!descriptor->consumer_ops && !descriptor->message_batch_size
+        && !descriptor->message_cb)
+        croak("%s", framed_error);
+}
+
 SV *
 les_store_cb(SV *cb, const char *name)
 {

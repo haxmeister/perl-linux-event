@@ -239,6 +239,11 @@ for my $case (
 }
 
 {
+    package T::Transition::NoDataSink;
+    use parent 'Linux::Event::Socket';
+}
+
+{
     my $state = { input => '' };
     my ($loop, $stream, $peer) = stream_pair(
         'T::Transition::Handshake', $state,
@@ -252,6 +257,24 @@ for my $case (
         'transition rejects a readable framed target without delivery');
     isa_ok($stream, 'T::Transition::Handshake',
         'failed callback validation leaves source class active');
+    $stream->close;
+    close $peer;
+}
+
+{
+    my $state = { input => '' };
+    my ($loop, $stream, $peer) = stream_pair(
+        'T::Transition::Handshake', $state,
+    );
+    my $ok = eval {
+        $stream->transition_to('T::Transition::NoDataSink');
+        1;
+    };
+    ok(!$ok, 'transition without a raw data sink is rejected');
+    like($@, qr/target readable raw Stream has no on_data callback/,
+        'transition rejects a readable raw target without delivery');
+    isa_ok($stream, 'T::Transition::Handshake',
+        'failed raw callback validation leaves source class active');
     $stream->close;
     close $peer;
 }
