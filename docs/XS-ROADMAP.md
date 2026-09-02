@@ -360,3 +360,12 @@ shrink the Stream core.
    stable.
 6. Reopen buffer, framing-family, or protocol-acceleration work only when
    profiling or a real application requirement justifies it.
+
+**Status (2026-09-02): steps 1–5 complete.** Correctness and lifetime are
+stabilized, the required baseline is retained, cold/control work is complete,
+and the native data plane is consolidated. The medium-risk consumer review
+retains the explicitly decided immediate flush-owed/reentrant terminal
+contract, backed by `BD-2026-09-01-001` and `BD-2026-09-01-002` against the
+real Async provider through 200 KB. Step 6 is intentionally demand-driven;
+there is no current profile or application requirement authorizing speculative
+buffer, framing-family, or protocol-specific native growth.

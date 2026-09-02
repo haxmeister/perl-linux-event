@@ -435,6 +435,19 @@ Only after the boundary is measured and stable should we test whether any
 consumer flush, terminal handling, or outbound framing code can move further
 out without measurable cost across the full payload range.
 
+**Status (2026-09-02): complete; retain current boundary.** The consumer
+semantic question was explicitly resolved by the Priority 2 work: message
+entry is immediately flush-owed, terminal flush may run reentrantly, and
+`CONTINUE` remains operation-sensitive. `BD-2026-09-01-001` and
+`BD-2026-09-01-002` cover the real Async provider and the full nine-size
+payload range. Consumer message/flush/status work is per-frame/per-drain and
+must remain adjacent to native parser state; terminal work is the protected
+residue identified in Extraction 5. Outbound framing is already Perl policy
+and was optimized with byte-equivalence coverage in the framer fast-path
+series. There is no behavior-preserving extraction left in this phase without
+reopening an ABI semantic or moving protected hot work. Reopen only for a
+separately specified semantic change or representative profile.
+
 ## Initial success criteria
 
 The first XS-reduction series is successful if it:
