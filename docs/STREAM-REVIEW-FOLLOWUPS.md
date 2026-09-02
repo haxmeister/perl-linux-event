@@ -20,6 +20,8 @@ Documentation and packaging work are intentionally excluded from this roadmap.
 2. Any change that adds/removes work on a per-message, per-write, per-frame, or per-readiness path needs a before/after hot-path benchmark.
 3. Preserve externally visible Stream and native-consumer semantics unless a change is explicitly designed, tested, and cross-checked against `Linux::Event::Async`.
 4. Prefer removing duplicated state-machine rules over adding more local guards.
+5. Performance decisions must not be based on tiny-message benchmarks alone. Any Stream, framing, buffering, write-queue, callback-boundary, native-consumer, or transport-I/O change that could affect payload processing must include representative message sizes through 200 KB.
+6. Every benchmark-driven engineering decision must be recorded in `bench/BENCHMARK-DECISIONS.md`, with the actual machine-readable baseline/candidate evidence committed under `bench/decisions/<decision-id>/`. Rejected and neutral experiments are retained too.
 
 ## Priority 1 - remaining correctness and lifetime blockers
 
@@ -289,6 +291,13 @@ At minimum add tests for:
 ### Performance gate
 
 For every change touching a hot path, run paired baseline/candidate measurements on the same host, Perl build, compiler/build flags, benchmark parameters, and workload. Use repeated runs and compare medians or another stable summary. Investigate any regression larger than normal run-to-run variance before merge.
+
+Tiny-message benchmarks remain useful diagnostics for fixed per-message and callback overhead, but they are not sufficient evidence for an architectural or merge decision. The required payload policy is:
+
+- quick development sweep: 64 B, 4 KB, 32 KB, 200 KB;
+- full architectural/merge sweep: 64 B, 256 B, 1 KB, 4 KB, 16 KB, 32 KB, 64 KB, 128 KB, 200 KB.
+
+A benchmark may substitute a nearby size when a protocol has a natural boundary, but the sweep must still cover small, medium, read-size-adjacent, and large payloads up to approximately 200 KB. For larger payloads report MiB/s and CPU per byte or per MiB in addition to messages/s; also record reads/message, writes/message, callbacks/message, and p50/p99 latency when relevant.
 
 At minimum watch:
 
