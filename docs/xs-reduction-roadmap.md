@@ -63,6 +63,14 @@ Historical absolute results are context, not gates. Baseline and candidate must
 be measured on the same host, Perl build, compiler/build flags, power/load
 conditions, and benchmark configuration.
 
+A benchmark-driven extraction is not complete until its decision is appended to
+`bench/BENCHMARK-DECISIONS.md` and the actual machine-readable baseline,
+candidate, and comparison outputs used for that decision are committed under
+`bench/decisions/<decision-id>/`. Preserve rejected and neutral experiments as
+carefully as successful ones. Historical entries whose original raw output is
+unavailable must be marked as recovered summaries rather than presented as raw
+evidence.
+
 ## Working hypothesis
 
 Historical testing suggests that Linux::Event gets most of its speed from a
