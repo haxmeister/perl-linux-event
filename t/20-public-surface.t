@@ -16,6 +16,7 @@ for my $required (
     'docs/DEVELOPMENT-HISTORY.md',
     'docs/IO-KERNEL-ARCHITECTURE.md',
     'docs/ORDERED-BYTE-IO-DESIGN.md',
+    'docs/ORDERED-BYTE-CONSUMER-ABI.md',
     'docs/ORDERED-BYTE-DEADLINES.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
@@ -118,6 +119,7 @@ for my $required (
     'examples/udp-echo-client.pl',
     'examples/wakeup-thread.pl',
     'examples/process-capture.pl',
+    't/architecture-20-native-consumer.t',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");
 }
@@ -128,6 +130,7 @@ for my $live (
     'docs/ARCHITECTURE.md',
     'docs/IO-KERNEL-ARCHITECTURE.md',
     'docs/ORDERED-BYTE-IO-DESIGN.md',
+    'docs/ORDERED-BYTE-CONSUMER-ABI.md',
     'docs/ORDERED-BYTE-DEADLINES.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
@@ -210,6 +213,7 @@ ok(!-d File::Spec->catdir($root, 'tls'),
 for my $removed (
     'docs/STREAM-DESIGN.md',
     'docs/STREAM-DEADLINES.md',
+    'docs/STREAM-CONSUMER-ABI.md',
     'docs/WAKEUP-DESIGN.md',
     'docs/DATAGRAM-DESIGN.md',
     'lib/Linux/Event/Watcher.pm',
