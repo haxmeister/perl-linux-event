@@ -8,6 +8,14 @@ our $VERSION = '0.105';
 use Carp qw(croak);
 use Linux::Event::_ByteStream::Descriptor ();
 
+sub _byte_stream_base ($target) {
+    return 'Linux::Event::_ByteStream'
+        if $target->isa('Linux::Event::_ByteStream');
+    return 'Linux::Event::Stream'
+        if $target->isa('Linux::Event::Stream');
+    return undef;
+}
+
 sub import ($class, $keyword = undef, @args) {
     my $target = caller;
     croak "use $class requires a built-in framer name"
@@ -15,11 +23,7 @@ sub import ($class, $keyword = undef, @args) {
     croak "invalid framer name '$keyword'"
         if $keyword !~ /\A[A-Za-z_][A-Za-z0-9_]*\z/;
 
-    my $base = $target->isa('Linux::Event::_ByteStream')
-        ? 'Linux::Event::_ByteStream'
-        : $target->isa('Linux::Event::Stream')
-            ? 'Linux::Event::Stream'
-            : undef;
+    my $base = _byte_stream_base($target);
     croak "$target must be a Linux::Event byte-stream subclass before declaring a framer"
         if !defined $base;
 
@@ -46,13 +50,29 @@ sub import ($class, $keyword = undef, @args) {
     return;
 }
 
+sub declare_native_consumer ($class, $target, $definition) {
+    croak 'declare_native_consumer(): must be called as a class method'
+        if ref $class;
+    croak 'declare_native_consumer(): target class is required'
+        if !defined($target) || ref($target) || $target eq '';
+
+    my $base = _byte_stream_base($target);
+    croak "$target must be a Linux::Event byte-stream subclass before declaring a native consumer"
+        if !defined $base;
+
+    Linux::Event::_ByteStream::Descriptor::declare_consumer(
+        $base, $target, $definition,
+    );
+    return;
+}
+
 1;
 
 __END__
 
 =head1 NAME
 
-Linux::Event::Framer - declare native framing for byte-stream I/O subclasses
+Linux::Event::Framer - native framing and framed-consumer declarations
 
 =head1 SYNOPSIS
 
@@ -79,37 +99,61 @@ keeps only its changing parser state.
 
 =head1 DECLARATIONS
 
-  use Linux::Event::Framer 'Delimiter', "\r\n", # required delimiter
-      max_frame => 1_048_576;                    # optional
+  use Linux::Event::Framer 'Delimiter', "\r\n",
+      max_frame => 1_048_576;
 
   use Linux::Event::Framer 'Fixed',
-      size => 32; # required
+      size => 32;
 
   use Linux::Event::Framer 'LengthPrefix',
-      bytes     => 2,         # optional; default 4
-      endian    => 'big',     # default
-      max_frame => 1_048_576; # optional
+      bytes     => 2,
+      endian    => 'big',
+      max_frame => 1_048_576;
 
   use Linux::Event::Framer 'U32BE',
-      max_frame => 16 * 1024 * 1024; # optional
+      max_frame => 16 * 1024 * 1024;
 
   use Linux::Event::Framer 'Netstring',
-      max_frame => 1_048_576; # optional
+      max_frame => 1_048_576;
 
   use Linux::Event::Framer 'Varint',
-      max_frame => 1_048_576; # optional
+      max_frame => 1_048_576;
 
   use Linux::Event::Framer 'DecimalLength',
-      separator => ' ',       # default
-      max_frame => 1_048_576; # optional
+      separator => ' ',
+      max_frame => 1_048_576;
 
 =head1 RAW BYTE STREAMS
 
-A subclass that does not import a framer is raw byte I/O and must define
-C<on_data>. A framed subclass normally defines C<on_message>; a subclass that
-explicitly enables C<message_batch_size> defines C<on_messages> instead. See
-L<Linux::Event::IO::Pipe>, L<Linux::Event::IO::TTY>,
+A readable subclass that does not import a framer uses raw byte delivery and
+must define C<on_data>. A framed subclass normally defines C<on_message>; a
+subclass that explicitly enables C<message_batch_size> defines C<on_messages>
+instead.
+
+See L<Linux::Event::IO::Pipe>, L<Linux::Event::IO::TTY>,
 L<Linux::Event::IO::Sock::Stream>, and F<docs/FRAMING.md>.
+
+=head1 NATIVE CONSUMER EXTENSIONS
+
+External XS integrations that consume complete native-framed messages without
+an ordinary Perl C<on_message> callback declare their provider through:
+
+  Linux::Event::Framer->declare_native_consumer(
+      'My::FramedConnection',
+      {
+          provider           => $provider_lifetime_token,
+          abi_version        => 1,
+          operations_address => $native_table_address,
+      },
+  );
+
+This is an extension-author interface, not an application callback API. The
+target must already inherit an ordered-byte Linux::Event leaf and must use a
+built-in native framer. The consumer contract is intentionally independent of
+Future, coroutine, or async-subroutine policy.
+
+The native ABI, ownership, pause/resume, reentrancy, transition, and terminal
+event rules are documented in F<docs/ORDERED-BYTE-CONSUMER-ABI.md>.
 
 =head1 EXTENDING THE BUILT-IN FAMILY
 
