@@ -8,10 +8,14 @@ our $VERSION = '0.105';
 use parent 'Linux::Event::Wakeup';
 use Carp qw(croak);
 
+sub new ($class, %option) {
+    croak 'new(): must be called as a class method' if ref $class;
+    croak "$class must define on_event()" if !$class->can('on_event');
+    return $class->SUPER::new(%option);
+}
+
 sub on_wakeup ($self, $count) {
-    my $callback = $self->can('on_event')
-        // croak ref($self) . ' must define on_event()';
-    return $callback->($self, $count);
+    return $self->on_event($count);
 }
 
 1;
