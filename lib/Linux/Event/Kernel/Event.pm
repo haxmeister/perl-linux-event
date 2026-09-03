@@ -9,9 +9,8 @@ use parent 'Linux::Event::Wakeup';
 use Carp qw(croak);
 
 sub on_wakeup ($self, $count) {
-    my $callback = $self->can('on_event');
-    croak ref($self) . ' must define on_event()'
-        if !$callback || $callback == __PACKAGE__->can('on_event');
+    my $callback = $self->can('on_event')
+        // croak ref($self) . ' must define on_event()';
     return $callback->($self, $count);
 }
 
