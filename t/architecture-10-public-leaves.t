@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Test::More;
+use File::Temp qw(tempfile);
 use Socket qw(AF_UNIX SOCK_DGRAM SOCK_STREAM);
 
 use Linux::Event::IO ();
@@ -21,6 +22,12 @@ use Linux::Event::Kernel::Process ();
 {
     package T::ArchitecturePipe;
     use parent 'Linux::Event::IO::Pipe';
+    sub on_data ($self, $bytes) { }
+}
+
+{
+    package T::ArchitectureTTY;
+    use parent 'Linux::Event::IO::TTY';
     sub on_data ($self, $bytes) { }
 }
 
@@ -69,6 +76,35 @@ ok($pipe->has_read && !$pipe->has_write, 'Pipe leaf preserves directional IO');
 $pipe->close;
 close $pipe_write;
 
+my ($regular_fh) = tempfile();
+my $pipe_error = eval {
+    T::ArchitecturePipe->new(read_fh => $regular_fh);
+    1;
+} ? '' : "$@";
+like($pipe_error, qr/not a pipe or FIFO/,
+    'Pipe leaf rejects a non-pipe handle');
+close $regular_fh;
+
+pipe(my $not_tty_read, my $not_tty_write) or die "pipe: $!";
+my $tty_error = eval {
+    T::ArchitectureTTY->new(read_fh => $not_tty_read);
+    1;
+} ? '' : "$@";
+like($tty_error, qr/not a TTY or PTY/,
+    'TTY leaf rejects a non-terminal handle');
+close $not_tty_read;
+close $not_tty_write;
+
+SKIP: {
+    open my $ptmx, '+<', '/dev/ptmx'
+        or skip '/dev/ptmx is unavailable for TTY validation', 1;
+    skip '/dev/ptmx is not reported as a TTY on this system', 1 if !-t $ptmx;
+    my $tty = T::ArchitectureTTY->new(fh => $ptmx);
+    ok($tty->isa('Linux::Event::IO::TTY'),
+        'TTY leaf accepts a real pseudo-terminal handle');
+    $tty->close;
+}
+
 socketpair(my $stream_fh, my $stream_peer, AF_UNIX, SOCK_STREAM, 0)
     or die "stream socketpair: $!";
 my $stream = T::ArchitectureSockStream->new(fh => $stream_fh);
@@ -76,6 +112,17 @@ ok($stream->isa('Linux::Event::IO::Sock::Stream'),
     'connected SOCK_STREAM constructs through new leaf');
 $stream->close;
 close $stream_peer;
+
+socketpair(my $pipe_socket, my $pipe_socket_peer, AF_UNIX, SOCK_STREAM, 0)
+    or die "stream socketpair: $!";
+$pipe_error = eval {
+    T::ArchitecturePipe->new(fh => $pipe_socket);
+    1;
+} ? '' : "$@";
+like($pipe_error, qr/not a pipe or FIFO/,
+    'Pipe leaf rejects a stream socket even though both carry ordered bytes');
+close $pipe_socket;
+close $pipe_socket_peer;
 
 socketpair(my $dgram_fh, my $dgram_peer, AF_UNIX, SOCK_DGRAM, 0)
     or die "datagram socketpair: $!";
