@@ -56,13 +56,13 @@ docs/INTROSPECTION.md
 docs/IO-KERNEL-ARCHITECTURE.md
 docs/LISTENER-DESIGN.md
 docs/OBJECT-LIFECYCLE.md
+docs/ORDERED-BYTE-CONSUMER-ABI.md
 docs/ORDERED-BYTE-DEADLINES.md
 docs/ORDERED-BYTE-IO-DESIGN.md
 docs/PROCESS-DESIGN.md
 docs/SIGNAL-DESIGN.md
 docs/SOCKET-CONFIGURATION.md
 docs/SOCKET-CONNECTIONS.md
-docs/STREAM-CONSUMER-ABI.md
 docs/TIMER-DESIGN.md
 docs/TRANSPORT-BOUNDARY.md
 examples/line-echo-client.pl
@@ -165,6 +165,7 @@ t/35-loop-introspection-types.t
 t/36-configure-platform.t
 t/architecture-00-private-layers.t
 t/architecture-10-public-leaves.t
+t/architecture-20-native-consumer.t
 t/connect-13-benchmark-smoke.t
 t/datagram-00-api.t
 t/datagram-10-udp.t
