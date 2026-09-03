@@ -82,6 +82,7 @@ WriteMakefile(
                 Linux::Event::_ByteStream
                 Linux::Event::_ByteStream::Descriptor
                 Linux::Event::_Socket
+                Linux::Event::_Socket::Descriptor
                 Linux::Event::_Socket::Stream
                 Linux::Event::_Socket::Listener
                 Linux::Event::_Socket::Dgram
