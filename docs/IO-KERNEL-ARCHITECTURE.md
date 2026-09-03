@@ -42,8 +42,8 @@ implementation taxonomy.
 
 ## IO branch
 
-C<Linux::Event::IO> is a namespace category, not the generic replacement for
-the old C<Linux::Event::Stream> class.
+`Linux::Event::IO` is a namespace category, not the generic replacement for
+the old `Linux::Event::Stream` class.
 
 ### IO::Pipe
 
@@ -60,26 +60,26 @@ engine.
 
 ### IO::Sock::Stream
 
-Represents C<SOCK_STREAM> socket I/O. IPv4, IPv6, and Unix-domain addressing
+Represents `SOCK_STREAM` socket I/O. IPv4, IPv6, and Unix-domain addressing
 are socket-family configuration rather than different stream classes.
 Connected stream sockets use the common ordered-byte engine plus socket
 semantics.
 
 ### IO::Sock::Listener
 
-Represents a listening C<SOCK_STREAM> socket. It is a separate Linux::Event
+Represents a listening `SOCK_STREAM` socket. It is a separate Linux::Event
 public object because its useful interface is bind/listen/accept rather than
 connected byte-stream processing. Namespace placement states that it is a
 socket role; it does not imply inheritance from IO::Sock::Stream.
 
 ### IO::Sock::Dgram
 
-Represents C<SOCK_DGRAM> sockets. Datagram boundaries are kernel-provided, so
+Represents `SOCK_DGRAM` sockets. Datagram boundaries are kernel-provided, so
 stream framing is not part of this class.
 
 ### IO::Sock::SeqPacket
 
-Reserved for future C<SOCK_SEQPACKET> support. Like datagrams, kernel message
+Reserved for future `SOCK_SEQPACKET` support. Like datagrams, kernel message
 boundaries make byte-stream framing inappropriate.
 
 ## Kernel branch
@@ -88,13 +88,13 @@ The Kernel branch exposes Linux::Event abstractions over Linux kernel
 notification/state facilities. The public names describe the abstraction,
 while the backing fd mechanism remains an implementation fact.
 
-- C<Kernel::Timer> uses timerfd-backed scheduling machinery.
-- C<Kernel::Signal> uses signalfd-backed signal delivery.
-- C<Kernel::Event> uses eventfd-backed counter/notification semantics.
-- C<Kernel::Process> uses pidfd lifecycle observation and also owns Linux::Event
+- `Kernel::Timer` uses timerfd-backed scheduling machinery.
+- `Kernel::Signal` uses signalfd-backed signal delivery.
+- `Kernel::Event` uses eventfd-backed counter/notification semantics.
+- `Kernel::Process` uses pidfd lifecycle observation and also owns Linux::Event
   process spawning and asynchronous stdio behavior.
 
-C<Process> remains the correct leaf name because the existing object is richer
+`Process` remains the correct leaf name because the existing object is richer
 than a pidfd wrapper.
 
 ## Private behavior layers
@@ -118,7 +118,7 @@ It must not become a public catch-all object.
 
 Shared ordered-byte behavior used where message boundaries are not supplied by
 the kernel. This is the intended home for behavior currently concentrated in
-C<Linux::Event::Stream>:
+`Linux::Event::Stream`:
 
 - readable and writable directions;
 - one shared handle or split directional handles;
@@ -132,7 +132,7 @@ C<Linux::Event::Stream>:
 - established deadlines;
 - EOF and directional lifecycle.
 
-The public C<IO::Pipe>, C<IO::TTY>, and C<IO::Sock::Stream> leaves may all use
+The public `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream` leaves may all use
 this behavior without claiming that one public facility is a subtype of
 another.
 
