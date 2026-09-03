@@ -76,6 +76,9 @@ lib/Linux/Event/_ByteStream.pm
 lib/Linux/Event/_IO.pm
 lib/Linux/Event/_Resolver.pm
 lib/Linux/Event/_Socket.pm
+lib/Linux/Event/_Socket/Dgram.pm
+lib/Linux/Event/_Socket/Listener.pm
+lib/Linux/Event/_Socket/Stream.pm
 lib/Linux/Event/_SocketConfig.pm
 lib/Linux/Event/Address.pm
 lib/Linux/Event/Datagram.pm
