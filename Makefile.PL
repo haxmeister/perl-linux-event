@@ -80,6 +80,7 @@ WriteMakefile(
                 Linux::Event::_Registration
                 Linux::Event::_IO
                 Linux::Event::_ByteStream
+                Linux::Event::_ByteStream::Descriptor
                 Linux::Event::_Socket
                 Linux::Event::_Socket::Stream
                 Linux::Event::_Socket::Listener
