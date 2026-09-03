@@ -15,7 +15,7 @@ for my $required (
     'docs/ARCHITECTURE.md',
     'docs/DEVELOPMENT-HISTORY.md',
     'docs/IO-KERNEL-ARCHITECTURE.md',
-    'docs/STREAM-DESIGN.md',
+    'docs/ORDERED-BYTE-IO-DESIGN.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
     'docs/SOCKET-CONNECTIONS.md',
@@ -126,7 +126,7 @@ for my $live (
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
     'docs/IO-KERNEL-ARCHITECTURE.md',
-    'docs/STREAM-DESIGN.md',
+    'docs/ORDERED-BYTE-IO-DESIGN.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
     'docs/SOCKET-CONNECTIONS.md',
@@ -206,6 +206,7 @@ ok(!-d File::Spec->catdir($root, 'tls'),
     'TLS does not have a nested distribution tree');
 
 for my $removed (
+    'docs/STREAM-DESIGN.md',
     'lib/Linux/Event/Watcher.pm',
     'lib/Linux/Event/XSLoop.pm',
     'lib/Linux/Event/XSWatcher.pm',
