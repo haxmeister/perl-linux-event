@@ -6,6 +6,15 @@ use warnings;
 our $VERSION = '0.105';
 
 use parent 'Linux::Event::_ByteStream';
+use Carp qw(croak);
+
+sub new ($class, %option) {
+    for my $handle (Linux::Event::_IO::_constructor_handles('new', \%option)) {
+        my ($name, $fh) = @$handle;
+        croak "new(): $name is not a TTY or PTY" if !-t $fh;
+    }
+    return $class->SUPER::new(%option);
+}
 
 1;
 
@@ -23,6 +32,7 @@ L<Linux::Event::_ByteStream> implementation boundary.
 
 A TTY object may have C<read_fh>, C<write_fh>, or both. The two directions may
 use different handles, such as standard input and standard output associated
-with the same logical terminal interaction.
+with the same logical terminal interaction. Every supplied handle is validated
+as a terminal or pseudo-terminal before byte-stream setup.
 
 =cut
