@@ -6,6 +6,7 @@ use warnings;
 our $VERSION = '0.105';
 
 use Carp qw(croak);
+use Linux::Event::_ByteStream::Descriptor ();
 
 sub import ($class, $keyword = undef, @args) {
     my $target = caller;
@@ -13,8 +14,14 @@ sub import ($class, $keyword = undef, @args) {
         if !defined($keyword) || $keyword eq '';
     croak "invalid framer name '$keyword'"
         if $keyword !~ /\A[A-Za-z_][A-Za-z0-9_]*\z/;
-    croak "$target must inherit from Linux::Event::Stream before declaring a framer"
-        if !$target->isa('Linux::Event::Stream');
+
+    my $base = $target->isa('Linux::Event::_ByteStream')
+        ? 'Linux::Event::_ByteStream'
+        : $target->isa('Linux::Event::Stream')
+            ? 'Linux::Event::Stream'
+            : undef;
+    croak "$target must be a Linux::Event byte-stream subclass before declaring a framer"
+        if !defined $base;
 
     my $package = "${class}::${keyword}";
     (my $file = "$package.pm") =~ s{::}{/}g;
@@ -33,7 +40,9 @@ sub import ($class, $keyword = undef, @args) {
         || ref($definition->{frame}) ne 'CODE';
 
     $definition->{package} = $package;
-    Linux::Event::Stream->_declare_framer($target, $definition);
+    Linux::Event::_ByteStream::Descriptor::declare_framer(
+        $base, $target, $definition,
+    );
     return;
 }
 
@@ -43,12 +52,12 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Framer - declare native framing for a Stream subclass
+Linux::Event::Framer - declare native framing for byte-stream I/O subclasses
 
 =head1 SYNOPSIS
 
-  package LineStream;
-  use parent 'Linux::Event::Stream';
+  package LineSocket;
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Delimiter', "\n";
 
   sub on_message ($stream, $message) {
@@ -57,15 +66,16 @@ Linux::Event::Framer - declare native framing for a Stream subclass
 
 =head1 DESCRIPTION
 
-The import declares one built-in native framing rule for the calling Stream
-subclass. The first argument is the exact final component of a package below
-C<Linux::Event::Framer>. Linux::Event constructs that package name,
-loads it, validates its definition, and incorporates it into the subclass's
-cached native descriptor.
+The import declares one built-in native framing rule for a Linux::Event class
+with ordered byte-stream behavior. This includes pipe-like I/O, TTY I/O, and
+C<SOCK_STREAM> sockets. The first argument is the exact final component of a
+package below C<Linux::Event::Framer>. Linux::Event constructs that package
+name, loads it, validates its definition, and incorporates it into the
+subclass's cached native descriptor.
 
 There is deliberately no central keyword table and no per-connection framer
-object. A Stream subclass describes one protocol type; every instance keeps
-only its changing parser state.
+object. A byte-stream subclass describes one protocol type; every instance
+keeps only its changing parser state.
 
 =head1 DECLARATIONS
 
@@ -93,12 +103,13 @@ only its changing parser state.
       separator => ' ',       # default
       max_frame => 1_048_576; # optional
 
-=head1 RAW STREAMS
+=head1 RAW BYTE STREAMS
 
-A subclass that does not import a framer is a raw Stream type and must define
+A subclass that does not import a framer is raw byte I/O and must define
 C<on_data>. A framed subclass normally defines C<on_message>; a subclass that
 explicitly enables C<message_batch_size> defines C<on_messages> instead. See
-L<Linux::Event::Stream> and F<docs/FRAMING.md>.
+L<Linux::Event::IO::Pipe>, L<Linux::Event::IO::TTY>,
+L<Linux::Event::IO::Sock::Stream>, and F<docs/FRAMING.md>.
 
 =head1 EXTENDING THE BUILT-IN FAMILY
 
@@ -106,7 +117,7 @@ The declaration loader derives the implementation package from the final name
 instead of maintaining a duplicate keyword registry. New native framing
 semantics still require corresponding XS parser support; arbitrary Perl
 C<next_frame> objects are not accepted. Applications with unusual protocols
-should use a raw Stream's C<on_data>, while generally useful framing families
-can be added to Linux::Event as native built-ins.
+should use raw C<on_data> byte processing, while generally useful framing
+families can be added to Linux::Event as native built-ins.
 
 =cut
