@@ -10,7 +10,6 @@ if ($^O ne 'linux') {
 my @public_modules = qw(
     Linux::Event
     Linux::Event::Address
-    Linux::Event::Datagram
     Linux::Event::Error
     Linux::Event::Framer
     Linux::Event::Framer::DecimalLength
@@ -32,15 +31,8 @@ my @public_modules = qw(
     Linux::Event::Kernel::Signal
     Linux::Event::Kernel::Event
     Linux::Event::Kernel::Process
-    Linux::Event::Listener
     Linux::Event::Loop
-    Linux::Event::Process
-    Linux::Event::Signal
-    Linux::Event::Socket
-    Linux::Event::Stream
     Linux::Event::TLS
-    Linux::Event::Timer
-    Linux::Event::Wakeup
 );
 
 my $distribution_version = MM->parse_version('lib/Linux/Event.pm');
@@ -86,6 +78,14 @@ WriteMakefile(
                 Linux::Event::_Socket::Stream
                 Linux::Event::_Socket::Listener
                 Linux::Event::_Socket::Dgram
+                Linux::Event::Datagram
+                Linux::Event::Listener
+                Linux::Event::Process
+                Linux::Event::Signal
+                Linux::Event::Socket
+                Linux::Event::Stream
+                Linux::Event::Timer
+                Linux::Event::Wakeup
                 Linux::Event::Loop::Introspection
                 Linux::Event::_Resolver
                 Linux::Event::_Resolver::_Native
