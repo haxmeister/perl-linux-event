@@ -20,6 +20,18 @@ my @public_modules = qw(
     Linux::Event::Framer::Netstring
     Linux::Event::Framer::U32BE
     Linux::Event::Framer::Varint
+    Linux::Event::IO
+    Linux::Event::IO::Pipe
+    Linux::Event::IO::TTY
+    Linux::Event::IO::Sock
+    Linux::Event::IO::Sock::Stream
+    Linux::Event::IO::Sock::Listener
+    Linux::Event::IO::Sock::Dgram
+    Linux::Event::Kernel
+    Linux::Event::Kernel::Timer
+    Linux::Event::Kernel::Signal
+    Linux::Event::Kernel::Event
+    Linux::Event::Kernel::Process
     Linux::Event::Listener
     Linux::Event::Loop
     Linux::Event::Process
@@ -44,7 +56,7 @@ my %provides = map {
 WriteMakefile(
     NAME             => 'Linux::Event',
     VERSION_FROM     => 'lib/Linux/Event.pm',
-    ABSTRACT         => 'Linux-native reactor, streams, datagrams, and processes',
+    ABSTRACT         => 'Linux-native reactor, I/O, kernel events, and processes',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
@@ -66,6 +78,12 @@ WriteMakefile(
         no_index => {
             package => [qw(
                 Linux::Event::_Registration
+                Linux::Event::_IO
+                Linux::Event::_ByteStream
+                Linux::Event::_Socket
+                Linux::Event::_Socket::Stream
+                Linux::Event::_Socket::Listener
+                Linux::Event::_Socket::Dgram
                 Linux::Event::Loop::Introspection
                 Linux::Event::_Resolver
                 Linux::Event::_Resolver::_Native
