@@ -73,6 +73,7 @@ examples/udp-echo-server.pl
 examples/wakeup-thread.pl
 lib/Linux/Event.pm
 lib/Linux/Event/_ByteStream.pm
+lib/Linux/Event/_ByteStream/Descriptor.pm
 lib/Linux/Event/_IO.pm
 lib/Linux/Event/_Resolver.pm
 lib/Linux/Event/_Socket.pm
