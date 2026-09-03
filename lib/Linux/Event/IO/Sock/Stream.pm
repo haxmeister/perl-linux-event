@@ -5,7 +5,7 @@ use warnings;
 
 our $VERSION = '0.105';
 
-use parent 'Linux::Event::Socket';
+use parent 'Linux::Event::_Socket::Stream';
 
 1;
 
@@ -21,7 +21,8 @@ This class is the public C<SOCK_STREAM> leaf of the corrected Linux::Event I/O
 taxonomy. IPv4, IPv6, and Unix-domain stream sockets share this class; socket
 family is configuration rather than a different public type.
 
-The class currently delegates to the proven connected-socket implementation
-while byte-stream and socket responsibilities are moved behind private layers.
+Its implementation is reached through the private
+L<Linux::Event::_Socket::Stream> boundary so later refactors do not change the
+public leaf.
 
 =cut
