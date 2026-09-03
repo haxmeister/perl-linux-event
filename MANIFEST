@@ -88,6 +88,18 @@ lib/Linux/Event/Framer/LengthPrefix.pm
 lib/Linux/Event/Framer/Netstring.pm
 lib/Linux/Event/Framer/U32BE.pm
 lib/Linux/Event/Framer/Varint.pm
+lib/Linux/Event/IO.pm
+lib/Linux/Event/IO/Pipe.pm
+lib/Linux/Event/IO/Sock.pm
+lib/Linux/Event/IO/Sock/Dgram.pm
+lib/Linux/Event/IO/Sock/Listener.pm
+lib/Linux/Event/IO/Sock/Stream.pm
+lib/Linux/Event/IO/TTY.pm
+lib/Linux/Event/Kernel.pm
+lib/Linux/Event/Kernel/Event.pm
+lib/Linux/Event/Kernel/Process.pm
+lib/Linux/Event/Kernel/Signal.pm
+lib/Linux/Event/Kernel/Timer.pm
 lib/Linux/Event/Listener.pm
 lib/Linux/Event/Loop.pm
 lib/Linux/Event/Loop/Introspection.pm
@@ -147,6 +159,7 @@ t/34-loop-introspection.t
 t/35-loop-introspection-types.t
 t/36-configure-platform.t
 t/architecture-00-private-layers.t
+t/architecture-10-public-leaves.t
 t/connect-13-benchmark-smoke.t
 t/datagram-00-api.t
 t/datagram-10-udp.t
