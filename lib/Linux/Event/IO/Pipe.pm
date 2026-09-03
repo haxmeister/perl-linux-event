@@ -6,6 +6,15 @@ use warnings;
 our $VERSION = '0.105';
 
 use parent 'Linux::Event::_ByteStream';
+use Carp qw(croak);
+
+sub new ($class, %option) {
+    for my $handle (Linux::Event::_IO::_constructor_handles('new', \%option)) {
+        my ($name, $fh) = @$handle;
+        croak "new(): $name is not a pipe or FIFO" if !-p $fh;
+    }
+    return $class->SUPER::new(%option);
+}
 
 1;
 
@@ -22,7 +31,8 @@ taxonomy. Its byte-stream behavior is provided through the private
 L<Linux::Event::_ByteStream> implementation boundary.
 
 A pipe object may have C<read_fh>, C<write_fh>, or both. The two directions may
-use different descriptors. Anonymous pipes, FIFOs, and child-process pipe pairs
-are the intended facilities.
+use different descriptors. Every supplied handle is validated as an anonymous
+pipe or FIFO before byte-stream setup. Child-process pipe pairs are a primary
+use case.
 
 =cut
