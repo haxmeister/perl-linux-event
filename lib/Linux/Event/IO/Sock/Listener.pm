@@ -5,7 +5,7 @@ use warnings;
 
 our $VERSION = '0.105';
 
-use parent 'Linux::Event::Listener';
+use parent 'Linux::Event::_Socket::Listener';
 
 1;
 
@@ -22,7 +22,9 @@ I/O taxonomy. It remains distinct from L<Linux::Event::IO::Sock::Stream>
 because Linux::Event exposes an accept-oriented listener API rather than the
 connected byte-stream API on listening sockets.
 
-Namespace placement records that the object is a socket role; it does not
-require Listener to inherit connected-stream behavior.
+Its implementation is reached through the private
+L<Linux::Event::_Socket::Listener> boundary. Namespace placement records that
+the object is a socket role; it does not require Listener to inherit connected
+byte-stream behavior.
 
 =cut
