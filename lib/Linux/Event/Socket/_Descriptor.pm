@@ -27,14 +27,15 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Socket::_Descriptor - temporary private migration shim
+Linux::Event::Socket::_Descriptor - private historical socket descriptor forwarding package
 
 =head1 DESCRIPTION
 
-Socket class descriptor storage now lives in
-L<Linux::Event::_Socket::Descriptor>. This package remains only while the old
-Socket implementation is migrated to the corrected private socket namespace.
+Stream-socket descriptor storage now lives in
+L<Linux::Event::_Socket::Descriptor>. This historical package forwards to that
+implementation because the stable private socket engine still references its
+package name.
 
-It is not a public API.
+It is not a public API and is excluded from distribution indexing.
 
 =cut
