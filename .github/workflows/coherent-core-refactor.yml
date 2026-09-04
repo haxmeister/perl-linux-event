@@ -38,12 +38,14 @@ jobs:
           python3 tools/coherent-core-refactor.py
           python3 tools/coherent-core-refactor-fixup.py
 
-      - name: Build and test transformed tree
+      - name: Build transformed tree
         run: |
           perl Makefile.PL
           make manifest
           make --jobs=2
-          make test
+
+      - name: Test transformed tree verbosely
+        run: timeout 300 make test TEST_VERBOSE=1
 
       - name: Commit transformed tree
         run: |
