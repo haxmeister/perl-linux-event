@@ -1,0 +1,60 @@
+name: Public API Performance
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-api-performance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTOMATED_TESTING: 1
+
+jobs:
+  public-api-overhead:
+    name: Old vs new public surface
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up latest Perl
+        uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5"
+          multi-thread: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+
+      - name: Install Perl dependencies
+        run: cpanm --notest --installdeps .
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+
+      - name: Compare old implementation classes with new public leaves
+        run: |
+          mkdir -p bench/results
+          perl -Mblib bench/run-public-api-overhead.pl \
+            --threshold-percent 10 \
+            --fail-on-regression \
+            --json bench/results/public-api-overhead.json
+
+      - name: Preserve report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: public-api-overhead-${{ github.event.pull_request.number || github.run_id }}
+          path: bench/results/public-api-overhead.json
+          if-no-files-found: warn
