@@ -10,6 +10,10 @@ private_replacements = {
         'Linux::Event::_Socket::Dgram::_ReadyTimer',
     'Linux::Event::IO::Sock::Stream::_Connection':
         'Linux::Event::_Socket::Connection',
+    'Linux::Event::IO::Sock::Stream::_deadline_now':
+        'Linux::Event::_ByteStream::_deadline_now',
+    'Linux::Event::IO::Sock::Stream::_rearm_stream_deadline':
+        'Linux::Event::_ByteStream::_rearm_stream_deadline',
 }
 
 for base in (ROOT / 't', ROOT / 'bench'):
