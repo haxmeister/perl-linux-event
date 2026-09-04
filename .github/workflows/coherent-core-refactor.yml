@@ -1,0 +1,51 @@
+name: Coherent core refactor
+
+on:
+  push:
+    branches: [refactor/coherent-private-core]
+    paths:
+      - tools/coherent-core-refactor.py
+      - .github/workflows/coherent-core-refactor.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out refactor branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refactor/coherent-private-core
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5"
+          multi-thread: false
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+
+      - name: Apply structural refactor
+        run: python3 tools/coherent-core-refactor.py
+
+      - name: Build and test transformed tree
+        run: |
+          perl Makefile.PL
+          make manifest
+          make --jobs=2
+          make test
+
+      - name: Commit transformed tree
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Refactor core around coherent IO and Kernel implementation"
+          git push origin HEAD:refactor/coherent-private-core
