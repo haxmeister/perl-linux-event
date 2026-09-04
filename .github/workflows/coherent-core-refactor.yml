@@ -37,7 +37,14 @@ jobs:
 
       - name: Apply structural refactor
         run: |
-          python3 tools/coherent-core-refactor.py
+          if [[ -f lib/Linux/Event/Stream.pm ]]; then
+            python3 tools/coherent-core-refactor.py
+          elif [[ -f lib/Linux/Event/_ByteStream.pm ]]; then
+            echo "coherent structural refactor already applied"
+          else
+            echo "inconsistent tree: neither legacy Stream.pm nor coherent _ByteStream.pm exists" >&2
+            exit 1
+          fi
           python3 tools/coherent-core-refactor-fixup.py
           python3 tools/coherent-core-contract-fixup.py
           python3 tools/coherent-core-native-names-fixup.py
@@ -68,6 +75,10 @@ jobs:
 
       - name: Commit transformed tree
         run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "transformed tree is already up to date"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
