@@ -52,6 +52,12 @@ my $retired_parent = qr{
     (?:Stream|Socket|Listener|Datagram|Timer|Signal|Wakeup|Process)['"]
 }x;
 
+sub pod_text ($text) {
+    return $1 if $text =~ /^__END__\s*\R(.*)\z/ms;
+    return $1 if $text =~ /(^=head1\b.*)\z/ms;
+    return '';
+}
+
 for my $relative (@current_docs) {
     my $path = File::Spec->catfile($root, split m{/}, $relative);
     open my $fh, '<', $path or die "open $path: $!";
@@ -118,8 +124,9 @@ for my $module (@public_modules) {
     local $/;
     my $text = <$fh>;
     close $fh;
-    unlike($text, $retired_parent,
-        "$module public module does not teach retired top-level inheritance");
+    my $pod = pod_text($text);
+    unlike($pod, $retired_parent,
+        "$module public POD does not teach retired top-level inheritance");
 }
 
 done_testing;
