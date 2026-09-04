@@ -49,7 +49,7 @@ Linux::Event::Framer::DecimalLength - native decimal-length framing declaration
 =head1 SYNOPSIS
 
   package SyslogStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'DecimalLength',
       separator => ' ',       # default
       max_frame => 1_048_576; # optional
