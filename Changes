@@ -1,6 +1,6 @@
 Revision history for Linux-Event
 
-Unreleased
+0.110  2026-09-03
     - Replace the misleading top-level Stream, Socket, Listener, Datagram,
       Timer, Signal, Wakeup, and Process public model with semantic IO and
       Kernel leaves. Application data I/O now uses Linux::Event::IO::Pipe,
