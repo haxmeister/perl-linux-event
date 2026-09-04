@@ -20,18 +20,18 @@ Linux::Event::_ByteStream - private ordered-byte I/O implementation layer
 
 =head1 DESCRIPTION
 
-This package is an internal implementation boundary for ordered byte streams.
-It is not a public subclassing API.
+This package is the internal implementation boundary for ordered-byte I/O. It
+is not a public subclassing API.
 
-During the architecture migration it inherits the proven
-L<Linux::Event::Stream> implementation so new public leaves can depend on this
-private boundary rather than on the old public name. Existing byte-stream
-implementation will move behind this boundary in later commits.
+The proven native byte engine is hosted under historical
+C<Linux::Event::Stream> XS/Perl package identifiers. Those names are retained
+privately for native ABI stability; public classes depend on this boundary
+instead of treating that implementation package as an application API.
 
-The byte-stream layer owns behavior shared by pipe-like I/O and C<SOCK_STREAM>
-sockets: directional handles, nonblocking reads and writes, input buffering,
-output queues, backpressure, framing, message batching, deadlines, EOF, and
-directional lifecycle.
+The byte-stream layer owns behavior shared by pipe-like I/O, terminals, and
+C<SOCK_STREAM> sockets: directional handles, nonblocking reads and writes,
+input buffering, output queues, backpressure, framing, message batching,
+deadlines, EOF, and directional lifecycle.
 
 Socket identity, addressing, connection acquisition, listening, and datagram
 semantics do not belong to this layer.
