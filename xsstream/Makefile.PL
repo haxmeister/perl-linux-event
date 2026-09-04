@@ -3,8 +3,8 @@ use warnings;
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
-    NAME             => 'Linux::Event::Stream',
-    VERSION_FROM     => '../lib/Linux/Event/Stream.pm',
+    NAME             => 'Linux::Event::_ByteStream',
+    VERSION_FROM     => '../lib/Linux/Event/_ByteStream.pm',
     ABSTRACT         => 'Native ordered-byte I/O engine for Linux::Event',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
