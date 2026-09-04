@@ -63,7 +63,7 @@ Linux::Event::Framer::LengthPrefix - native binary length framing declaration
 =head1 SYNOPSIS
 
   package MessageStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'LengthPrefix',
       bytes     => 2,         # optional; default 4
       endian    => 'big',     # default
