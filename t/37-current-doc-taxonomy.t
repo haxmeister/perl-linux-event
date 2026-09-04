@@ -88,7 +88,30 @@ my ($public_module_block) = $makefile_src =~
 ok(defined $public_module_block,
     'Makefile.PL declares the public module source of truth');
 
-for my $module (grep { length } split /\s+/, ($public_module_block // '')) {
+my @public_modules = grep { length }
+    split /\s+/, ($public_module_block // '');
+my %public_module = map { $_ => 1 } @public_modules;
+
+for my $private (qw(
+    Linux::Event::Stream
+    Linux::Event::Socket
+    Linux::Event::Listener
+    Linux::Event::Datagram
+    Linux::Event::Timer
+    Linux::Event::Signal
+    Linux::Event::Wakeup
+    Linux::Event::Process
+)) {
+    ok(!$public_module{$private},
+        "$private is not in the public module/manpage source list");
+}
+
+like($makefile_src, qr/my \%man3pods = map \{.*?\} \@public_modules;/s,
+    'manpage mapping is derived from the public module source of truth');
+like($makefile_src, qr/MAN3PODS\s*=>\s*\\%man3pods/,
+    'MakeMaker receives the public-only MAN3PODS mapping');
+
+for my $module (@public_modules) {
     (my $relative = "lib/$module.pm") =~ s{::}{/}g;
     my $path = File::Spec->catfile($root, split m{/}, $relative);
     open my $fh, '<', $path or die "open $path: $!";
