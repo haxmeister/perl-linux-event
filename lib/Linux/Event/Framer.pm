@@ -11,8 +11,6 @@ use Linux::Event::_ByteStream::Descriptor ();
 sub _byte_stream_base ($target) {
     return 'Linux::Event::_ByteStream'
         if $target->isa('Linux::Event::_ByteStream');
-    return 'Linux::Event::Stream'
-        if $target->isa('Linux::Event::Stream');
     return undef;
 }
 
@@ -74,7 +72,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Framer - native framing and framed-consumer declarations
+Linux::Event::Framer - native framing for ordered-byte I/O
 
 =head1 SYNOPSIS
 
@@ -88,86 +86,39 @@ Linux::Event::Framer - native framing and framed-consumer declarations
 
 =head1 DESCRIPTION
 
-The import declares one built-in native framing rule for a Linux::Event class
-with ordered byte-stream behavior. This includes pipe-like I/O, TTY I/O, and
-C<SOCK_STREAM> sockets. The first argument is the exact final component of a
-package below C<Linux::Event::Framer>. Linux::Event constructs that package
-name, loads it, validates its definition, and incorporates it into the
-subclass's cached native descriptor.
+C<Linux::Event::Framer> declares native framing policy for an ordered-byte
+Linux::Event subclass. Pipes, TTYs, and C<SOCK_STREAM> connections share the
+same framing engine. The declaration is resolved once per concrete subclass;
+there is no per-connection framer object.
 
-A bare C<use Linux::Event::Framer;> simply loads this module. Extension authors
-use that form when they need C<declare_native_consumer> without declaring a
-framer in the caller package.
+=head1 BUILT-IN FRAMERS
 
-There is deliberately no central keyword table and no per-connection framer
-object. A byte-stream subclass describes one protocol type; every instance
-keeps only its changing parser state.
+Supported declarations include C<Delimiter>, C<Fixed>, C<LengthPrefix>,
+C<U32BE>, C<Netstring>, C<Varint>, and C<DecimalLength>. Each framer accepts
+its own framing options; see F<docs/FRAMING.md> and the corresponding framer
+module POD.
 
-=head1 DECLARATIONS
+Readable classes without a framer use C<on_data>. Framed classes normally use
+C<on_message>, or C<on_messages> when explicit message batching is enabled.
 
-  use Linux::Event::Framer 'Delimiter', "\r\n",
-      max_frame => 1_048_576;
+=head1 NATIVE CONSUMERS
 
-  use Linux::Event::Framer 'Fixed',
-      size => 32;
-
-  use Linux::Event::Framer 'LengthPrefix',
-      bytes     => 2,
-      endian    => 'big',
-      max_frame => 1_048_576;
-
-  use Linux::Event::Framer 'U32BE',
-      max_frame => 16 * 1024 * 1024;
-
-  use Linux::Event::Framer 'Netstring',
-      max_frame => 1_048_576;
-
-  use Linux::Event::Framer 'Varint',
-      max_frame => 1_048_576;
-
-  use Linux::Event::Framer 'DecimalLength',
-      separator => ' ',
-      max_frame => 1_048_576;
-
-=head1 RAW BYTE STREAMS
-
-A readable subclass that does not import a framer uses raw byte delivery and
-must define C<on_data>. A framed subclass normally defines C<on_message>; a
-subclass that explicitly enables C<message_batch_size> defines C<on_messages>
-instead.
-
-See L<Linux::Event::IO::Pipe>, L<Linux::Event::IO::TTY>,
-L<Linux::Event::IO::Sock::Stream>, and F<docs/FRAMING.md>.
-
-=head1 NATIVE CONSUMER EXTENSIONS
-
-External XS integrations that consume complete native-framed messages without
-an ordinary Perl C<on_message> callback declare their provider through:
+External XS extensions may consume complete framed messages without routing
+them through a Perl C<on_message> callback:
 
   Linux::Event::Framer->declare_native_consumer(
       'My::FramedConnection',
       {
           provider           => $provider_lifetime_token,
-          abi_version        => 1,
+          abi_version        => $abi_version,
           operations_address => $native_table_address,
       },
   );
 
-This is an extension-author interface, not an application callback API. The
-target must already inherit an ordered-byte Linux::Event leaf and must use a
-built-in native framer. The consumer contract is intentionally independent of
-Future, coroutine, or async-subroutine policy.
+This is an extension boundary for high-performance integrations such as
+coroutine or awaitable layers. It is independent of the public Perl class
+names and must not depend on retired implementation packages.
 
-The native ABI, ownership, pause/resume, reentrancy, transition, and terminal
-event rules are documented in F<docs/ORDERED-BYTE-CONSUMER-ABI.md>.
-
-=head1 EXTENDING THE BUILT-IN FAMILY
-
-The declaration loader derives the implementation package from the final name
-instead of maintaining a duplicate keyword registry. New native framing
-semantics still require corresponding XS parser support; arbitrary Perl
-C<next_frame> objects are not accepted. Applications with unusual protocols
-should use raw C<on_data> byte processing, while generally useful framing
-families can be added to Linux::Event as native built-ins.
+See F<docs/ORDERED-BYTE-CONSUMER-ABI.md>.
 
 =cut
