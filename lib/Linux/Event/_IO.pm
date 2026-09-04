@@ -31,6 +31,28 @@ sub _constructor_handles ($method, $option) {
     return @handle;
 }
 
+sub _transition_resource_kind ($target) {
+    return 'pipe' if $target->isa('Linux::Event::IO::Pipe');
+    return 'tty' if $target->isa('Linux::Event::IO::TTY');
+    return 'stream-socket'
+        if $target->isa('Linux::Event::IO::Sock::Stream');
+    return undef;
+}
+
+sub _guard_transition_resource_kind ($self, $class) {
+    return if !defined($class) || ref($class) || $class eq '';
+
+    my $source_kind = _transition_resource_kind($self);
+    return if !defined $source_kind;
+
+    my $target_kind = _transition_resource_kind($class);
+    croak 'transition_to(): cannot change ordered-byte resource kind ('
+        . $source_kind . ' -> '
+        . (defined($target_kind) ? $target_kind : 'other') . ')'
+        if !defined($target_kind) || $source_kind ne $target_kind;
+    return;
+}
+
 1;
 
 __END__
@@ -50,5 +72,7 @@ remaining invisible to application code.
 
 C<_constructor_handles> is a cold construction helper used by concrete I/O
 leaves to validate the actual Linux facility before generic byte-stream setup.
+The private transition helpers enforce that protocol transitions retain the
+same public ordered-byte resource kind: Pipe, TTY, or C<SOCK_STREAM> socket.
 
 =cut
