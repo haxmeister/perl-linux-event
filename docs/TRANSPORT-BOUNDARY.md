@@ -54,8 +54,8 @@ The plain path performs direct descriptor operations:
 - resource-specific writable completion where supported.
 
 For `IO::Sock::Stream`, graceful writable completion maps to kernel
-`shutdown(SHUT_WR)` where appropriate. Generic shared non-socket descriptors do
-not receive invented socket half-close semantics.
+`shutdown(SHUT_WR)` where appropriate. Shared non-socket descriptors do not
+receive invented socket half-close semantics.
 
 The plain path is specialized in XS. After the minimal provider identity check,
 it issues the direct syscall path without Perl method dispatch or a generic
@@ -208,6 +208,6 @@ The native transport contract is versioned with the distribution. The
 ordered-byte state retains the provider object so its operations table and
 native context outlive every in-flight operation.
 
-Historical native headers and XS package names still contain `Stream` during
-the namespace migration. They are private ABI details and do not define the
-public resource taxonomy.
+Historical native headers and XS package names contain `Stream` because they
+are stable private ABI identifiers. They do not define the public resource
+taxonomy and are not evidence of a second public Stream API.
