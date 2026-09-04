@@ -21,7 +21,7 @@
 ^bench/BENCHMARK-DECISIONS\.md$
 ^bench/decisions(?:/|$)
 ^bench/run-public-api-overhead\.pl$
-^docs/(?:XS-ROADMAP|STREAM-REVIEW-FOLLOWUPS|xs-reduction-roadmap)\.md$
+^docs/(?:XS-ROADMAP|STREAM-REVIEW-FOLLOWUPS|xs-reduction-roadmap|POST-0\.110-AUDIT)\.md$
 ^\.prove$
 ~$
 \.bak$
