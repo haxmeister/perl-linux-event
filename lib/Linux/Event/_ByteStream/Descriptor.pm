@@ -181,14 +181,6 @@ sub for_class ($class) {
     croak "$class is not a Linux::Event ordered-byte class"
         if !$is_ordered_byte;
 
-    my $fd_kind = 0;
-    if (my $kind = $class->can('_ordered_byte_fd_kind')) {
-        $fd_kind = $kind->($class);
-        croak "$class returned an invalid ordered-byte fd kind"
-            if $fd_kind !~ /\A[12]\z/;
-        $fd_kind = 0 + $fd_kind;
-    }
-
     my $is_stream_socket = $class->isa('Linux::Event::_Socket::Stream')
         || $class->isa('Linux::Event::Socket');
     if (!$is_stream_socket) {
@@ -279,7 +271,6 @@ sub for_class ($class) {
     my $descriptor = {
         class     => $class,
         xs        => $xs,
-        fd_kind   => $fd_kind,
         options   => $option,
         native    => $native,
         framer    => $framer,
