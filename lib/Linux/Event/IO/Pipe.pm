@@ -6,23 +6,10 @@ use warnings;
 our $VERSION = '0.105';
 
 use parent 'Linux::Event::_ByteStream';
-use Carp qw(croak);
 
-sub new ($class, %option) {
-    # Keep the public leaf semantically honest without duplicating the generic
-    # Stream constructor's handle-shape and fileno validation.  A file test on
-    # each supplied direction is sufficient here; SUPER::new performs the
-    # complete generic validation immediately afterwards.
-    if (defined(my $fh = $option{fh})) {
-        croak 'new(): fh is not a pipe or FIFO' if !-p $fh;
-    } else {
-        croak 'new(): read_fh is not a pipe or FIFO'
-            if defined($option{read_fh}) && !-p $option{read_fh};
-        croak 'new(): write_fh is not a pipe or FIFO'
-            if defined($option{write_fh}) && !-p $option{write_fh};
-    }
-    return $class->SUPER::new(%option);
-}
+# Private descriptor declaration.  The ordered-byte constructor resolves this
+# once per concrete subclass and performs the fd identity check natively.
+sub _ordered_byte_fd_kind ($class) { 1 }
 
 1;
 
@@ -72,7 +59,8 @@ C<new> accepts exactly one of these handle shapes:
 
 C<fh> means that one descriptor supplies both directions and cannot be combined
 with C<read_fh> or C<write_fh>. Every supplied handle must report as a pipe or
-FIFO. Linux::Event makes owned descriptors nonblocking and close-on-exec.
+FIFO. Linux::Event validates that identity before changing descriptor flags,
+then makes owned descriptors nonblocking and close-on-exec.
 
 C<loop =E<gt> $loop> attaches immediately. Otherwise construct detached and
 pass the object to C<< $loop->add($pipe) >>. C<data> stores arbitrary
