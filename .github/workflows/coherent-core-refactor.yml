@@ -5,6 +5,7 @@ on:
     branches: [refactor/coherent-private-core]
     paths:
       - tools/coherent-core-refactor.py
+      - tools/coherent-core-refactor-fixup.py
       - .github/workflows/coherent-core-refactor.yml
 
 permissions:
@@ -33,7 +34,9 @@ jobs:
           cpanm --notest --installdeps .
 
       - name: Apply structural refactor
-        run: python3 tools/coherent-core-refactor.py
+        run: |
+          python3 tools/coherent-core-refactor.py
+          python3 tools/coherent-core-refactor-fixup.py
 
       - name: Build and test transformed tree
         run: |
