@@ -5,8 +5,18 @@ use warnings;
 use Test::More;
 use FindBin qw($Bin);
 use File::Spec;
+use JSON::PP qw(decode_json);
+use CPAN::Meta::YAML ();
 
 my $root = File::Spec->catdir($Bin, '..');
+
+sub _slurp ($path) {
+    open my $fh, '<', $path or die "open $path: $!";
+    local $/;
+    my $src = <$fh>;
+    close $fh;
+    return $src;
+}
 
 for my $required (
     'README.md',
@@ -167,10 +177,7 @@ for my $live (
     'bench/run-timer-microbench.pl',
 ) {
     my $path = File::Spec->catfile($root, split m{/}, $live);
-    open my $fh, '<', $path or die "open $path: $!";
-    local $/;
-    my $src = <$fh>;
-    close $fh;
+    my $src = _slurp($path);
     unlike($src, qr/\b(?:Phase|phase)\d+[A-Za-z]?\b/, "$live has no development-phase vocabulary");
 }
 
@@ -252,6 +259,13 @@ while (my $line = <$manifest_fh>) {
 }
 close $manifest_fh;
 
+my @root_tests = sort map { File::Spec->abs2rel($_, $root) }
+    grep { -f $_ }
+    glob(File::Spec->catfile($root, 't', '*.t'));
+for my $path (@root_tests) {
+    ok($manifest_entry{$path}, "$path is included in MANIFEST");
+}
+
 my $manifest_skip_path = File::Spec->catfile($root, 'MANIFEST.SKIP');
 open my $manifest_skip_fh, '<', $manifest_skip_path
     or die "open $manifest_skip_path: $!";
@@ -265,6 +279,66 @@ for my $path (@engineering_history) {
     ok(!$manifest_entry{$path}, "$path is excluded from MANIFEST");
     ok(scalar(grep { $path =~ $_ } @manifest_skip),
         "$path is excluded by MANIFEST.SKIP");
+}
+
+my @public_modules = qw(
+    Linux::Event
+    Linux::Event::Address
+    Linux::Event::Error
+    Linux::Event::Framer
+    Linux::Event::Framer::DecimalLength
+    Linux::Event::Framer::Delimiter
+    Linux::Event::Framer::Fixed
+    Linux::Event::Framer::LengthPrefix
+    Linux::Event::Framer::Netstring
+    Linux::Event::Framer::U32BE
+    Linux::Event::Framer::Varint
+    Linux::Event::IO
+    Linux::Event::IO::Pipe
+    Linux::Event::IO::TTY
+    Linux::Event::IO::Sock
+    Linux::Event::IO::Sock::Stream
+    Linux::Event::IO::Sock::Listener
+    Linux::Event::IO::Sock::Dgram
+    Linux::Event::Kernel
+    Linux::Event::Kernel::Timer
+    Linux::Event::Kernel::Signal
+    Linux::Event::Kernel::Event
+    Linux::Event::Kernel::Process
+    Linux::Event::Loop
+    Linux::Event::TLS
+);
+my @expected_provides = sort @public_modules;
+
+my $meta_json = decode_json(
+    _slurp(File::Spec->catfile($root, 'META.json'))
+);
+is($meta_json->{abstract},
+    'Linux-native reactor, I/O, kernel events, and processes',
+    'META.json has the current distribution abstract');
+is_deeply([sort keys %{ $meta_json->{provides} }], \@expected_provides,
+    'META.json provides exactly the current public taxonomy');
+
+my $meta_yml_path = File::Spec->catfile($root, 'META.yml');
+my $meta_yml_docs = CPAN::Meta::YAML->read($meta_yml_path);
+ok($meta_yml_docs && @$meta_yml_docs, 'META.yml parses');
+if ($meta_yml_docs && @$meta_yml_docs) {
+    my $meta_yml = $meta_yml_docs->[0];
+    is($meta_yml->{abstract},
+        'Linux-native reactor, I/O, kernel events, and processes',
+        'META.yml has the current distribution abstract');
+    is_deeply([sort keys %{ $meta_yml->{provides} }], \@expected_provides,
+        'META.yml provides exactly the current public taxonomy');
+}
+
+my $readme = _slurp(File::Spec->catfile($root, 'README.md'));
+my ($stream_server_prefix) = $readme =~
+    /## Stream socket server\b(.*?)package EchoConnection;/s;
+ok(defined $stream_server_prefix,
+    'README contains the flagship stream socket example');
+if (defined $stream_server_prefix) {
+    unlike($stream_server_prefix, qr/use Linux::Event::Framer\b/,
+        'flagship framer declaration lives inside the stream subclass');
 }
 
 done_testing;
