@@ -254,6 +254,10 @@ t/stream-57-callback-batching-benchmark-smoke.t
 t/stream-58-callback-batching-fairness-smoke.t
 t/stream-59-native-consumer-abi.t
 t/stream-60-generic-handles.t
+t/stream-61-teardown-exceptions.t
+t/stream-62-consumer-host-lifetime.t
+t/stream-63-construction-failure.t
+t/stream-64-transition-consumer-flush.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
