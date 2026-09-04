@@ -47,7 +47,7 @@ Linux::Event::Framer::Delimiter - native delimiter framing declaration
 =head1 SYNOPSIS
 
   package LineStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Delimiter', "\n"; # required delimiter
 
 =head1 DESCRIPTION
