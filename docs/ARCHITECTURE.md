@@ -45,7 +45,7 @@ stream sockets all use `IO::Sock::Stream`; UDP and Unix-domain datagrams use
 
 ## Private implementation boundaries
 
-The current migration uses private packages including:
+Private implementation packages include:
 
 ```text
 Linux::Event::_IO
@@ -61,15 +61,14 @@ Linux::Event::_Socket::Descriptor
 These are implementation boundaries only. Applications must not construct or
 subclass them.
 
-Several historical package names still host proven implementation and XS ABI
-surfaces while code is moved behind the private boundaries. They are not
-advertised as public modules. This includes the implementation packages named
-`Stream`, `Socket`, `Listener`, `Datagram`, `Timer`, `Signal`, `Wakeup`, and
-`Process`.
+Several historical package names remain stable hosts for proven implementation
+and XS ABI surfaces. They are not advertised as public modules. This includes
+the implementation packages named `Stream`, `Socket`, `Listener`, `Datagram`,
+`Timer`, `Signal`, `Wakeup`, and `Process`.
 
-Keeping the existing XS package names during the architecture refactor avoids
-combining a public semantic rename with an unnecessary native ABI change. The
-native hot path can therefore remain stable while the public API is corrected.
+Keeping those XS package names stable avoids combining the public semantic API
+with unnecessary native ABI churn. The native hot path can therefore remain
+stable while applications use the IO and Kernel public taxonomy.
 
 ## Reactor hot path
 
@@ -188,8 +187,8 @@ framer_*.c
 These files link into one XS extension. Splitting source files does not create
 additional dynamic-loading or Perl dispatch boundaries.
 
-The current XS package names remain under `Linux::Event::Stream::*` as a
-private native ABI detail during the public architecture migration.
+The XS package names under `Linux::Event::Stream::*` are stable private native
+ABI details. They do not define the public class hierarchy.
 
 ## Framing
 
@@ -353,8 +352,8 @@ threads, forked children, or native code can signal the eventfd, while payloads
 remain in an explicit thread-safe queue or IPC mechanism owned by the
 application.
 
-The historical `Wakeup` implementation name is private migration machinery and
-is not the public semantic class.
+The historical `Wakeup` package is the stable private implementation host for
+this eventfd machinery and is not the public semantic class.
 
 ## Process layer
 
@@ -377,6 +376,11 @@ It does not maintain a duplicate public-object registry in readiness dispatch.
 Object, resource, liveness, census, and pressure queries derive their answers
 from existing Loop, timer, signal, resolver, and resource ownership state.
 Optional profiling adds timing instrumentation only when explicitly enabled.
+
+Public introspection types follow the IO/Kernel taxonomy: `pipe`, `tty`,
+`stream`, `listener`, `dgram`, `timer`, `signal`, `event`, and `process`.
+Here `stream` means `IO::Sock::Stream`; Pipe and TTY remain distinct public
+resource types even though they share the ordered-byte engine.
 
 ## Performance constraints on architecture
 
