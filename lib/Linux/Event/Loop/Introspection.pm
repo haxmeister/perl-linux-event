@@ -77,9 +77,9 @@ sub _owner_of ($candidate) {
     return undef if !ref($candidate);
     if (blessed($candidate)) {
         return $candidate if _type_of($candidate) ne 'unknown';
-        return _owner_of(eval { $candidate->stream })
+        return _owner_of(scalar eval { $candidate->stream })
             if $candidate->isa('Linux::Event::Stream::XSState');
-        return _owner_of(eval { $candidate->_introspection_owner })
+        return _owner_of(scalar eval { $candidate->_introspection_owner })
             if $candidate->can('_introspection_owner');
         return undef;
     }
