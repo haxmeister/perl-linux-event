@@ -1,0 +1,48 @@
+{
+  "decision_id": "BD-2026-09-04-001",
+  "experiment": "IO/Kernel architecture performance regression",
+  "decision": "KEEP",
+  "evidence_level": "raw_ci_artifact",
+  "baseline_commit": "b65e389e655844346557628cc6d11c20374c3faa",
+  "candidate_commit": "a3cb42cb5ec67c9baf67372776ec7f2c7bc84f11",
+  "ci_run_id": 33824019754,
+  "ci_job_id": 100872695175,
+  "artifact_id": 9919332201,
+  "artifact_name": "performance-regression-10",
+  "artifact_sha256": "06c9b12c259f19198e3918f8be342c963853212bee51f25080206f03674e48b6",
+  "baseline_json_sha256": "4a127ffca3196ece826bd0bfc11f17efb007ae220dc616e2446d9f9273286c9a",
+  "candidate_json_sha256": "5f1b19f2accb97d710c9bda9f8e438ff850cd8ac7c152772e4e53f220c6f510f",
+  "benchmark": "bench/run-performance-regression.pl",
+  "benchmark_contract_version": 3,
+  "perl": "v5.44.0",
+  "runner": "ubuntu-24.04",
+  "threshold_percent": 10,
+  "fail_on_regression": true,
+  "configuration": {
+    "repeats": 7,
+    "iterations": 100000,
+    "pool": 256,
+    "clients": 100,
+    "messages": 1000,
+    "connections": 10000,
+    "warmup_iterations": 5000,
+    "warmup_messages": 100,
+    "warmup_connections": 1000
+  },
+  "workload_deltas": {
+    "registration-lifecycle": {"rate_percent": -0.42, "cpu_percent": 0.46},
+    "timer-lifecycle": {"rate_percent": -1.29, "cpu_percent": 1.31},
+    "timer-expiration": {"rate_percent": 1.18, "cpu_percent": -1.17},
+    "raw-stream-lifecycle": {"rate_percent": -0.42, "cpu_percent": 0.42},
+    "framed-stream-lifecycle": {"rate_percent": 0.14, "cpu_percent": -0.14},
+    "raw-stream-throughput": {"rate_percent": -0.02, "cpu_percent": 0.03},
+    "deadline-stream-throughput": {"rate_percent": 0.69, "cpu_percent": -0.66},
+    "framed-stream-throughput": {"rate_percent": -0.16, "cpu_percent": 0.17},
+    "connect-listener-lifecycle": {"rate_percent": -2.17, "cpu_percent": 2.21}
+  },
+  "notes": [
+    "Baseline and candidate were built and measured sequentially on the same GitHub Actions runner.",
+    "The ZIP contains the unchanged machine-readable baseline and candidate JSON files emitted by the benchmark harness.",
+    "No workload crossed the 10 percent throughput or CPU regression threshold."
+  ]
+}
