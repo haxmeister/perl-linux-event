@@ -204,6 +204,7 @@ my %allowed = map { $_ => 1 } qw(
     run-framer-send-bench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
+    run-public-api-overhead.pl
     run-timer-microbench.pl
 );
 is_deeply([grep { !$allowed{$_} } @bench_root], [], 'bench root contains only current public files');
@@ -237,6 +238,7 @@ my @engineering_history = qw(
     docs/XS-ROADMAP.md
     docs/xs-reduction-roadmap.md
     bench/BENCHMARK-DECISIONS.md
+    bench/run-public-api-overhead.pl
 );
 
 my $manifest_path = File::Spec->catfile($root, 'MANIFEST');
