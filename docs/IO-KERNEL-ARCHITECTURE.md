@@ -2,9 +2,10 @@
 
 ## Status
 
-This document records the namespace and responsibility model agreed before the
-next public release. The migration must preserve tested behavior and measured
-performance before old public names are removed.
+This document describes the public architecture introduced in Linux::Event
+0.110. The IO and Kernel namespaces are the supported application model. Older
+top-level resource packages may remain as private implementation or ABI hosts,
+but they are not the public subclassing or construction surface.
 
 ## Public namespace model
 
@@ -36,26 +37,27 @@ Linux::Event
 ```
 
 The namespace is semantic rather than an inheritance declaration. Public leaf
-classes name completed facilities that applications use. Internal behavior may
-be shared through private classes or helpers without exposing that
-implementation taxonomy.
+classes name concrete facilities that applications use. Shared implementation
+behavior lives behind private classes or helpers and does not define the public
+taxonomy.
 
 ## IO branch
 
-`Linux::Event::IO` is a namespace category, not the generic replacement for
-the old `Linux::Event::Stream` class.
+`Linux::Event::IO` is a namespace category, not an instantiable generic I/O
+object.
 
 ### IO::Pipe
 
 Represents pipe-like ordered-byte I/O. It may have a readable handle, a
 writable handle, or both. Two handles need not be the same descriptor.
-Anonymous pipes, FIFOs, and child-process pipe pairs are the primary use cases.
+Anonymous pipes and FIFOs are the primary direct use cases; process stdio uses
+the same Linux pipe semantics through `Kernel::Process`.
 
 ### IO::TTY
 
 Represents terminal and pseudo-terminal ordered-byte I/O. It may have a
 readable handle, a writable handle, or both. Terminal configuration remains a
-terminal concern rather than a reason to duplicate the common byte-stream
+terminal concern rather than a reason to duplicate the common ordered-byte
 engine.
 
 ### IO::Sock::Stream
@@ -69,18 +71,18 @@ semantics.
 
 Represents a listening `SOCK_STREAM` socket. It is a separate Linux::Event
 public object because its useful interface is bind/listen/accept rather than
-connected byte-stream processing. Namespace placement states that it is a
-socket role; it does not imply inheritance from IO::Sock::Stream.
+connected-byte processing. Namespace placement states that it is a socket
+role; it does not imply inheritance from `IO::Sock::Stream`.
 
 ### IO::Sock::Dgram
 
 Represents `SOCK_DGRAM` sockets. Datagram boundaries are kernel-provided, so
-stream framing is not part of this class.
+ordered-byte framing is not part of this class.
 
 ### IO::Sock::SeqPacket
 
-Reserved for future `SOCK_SEQPACKET` support. Like datagrams, kernel message
-boundaries make byte-stream framing inappropriate.
+Reserved for future `SOCK_SEQPACKET` support. Kernel message boundaries make
+ordered-byte framing inappropriate there as well.
 
 ## Kernel branch
 
@@ -94,12 +96,11 @@ while the backing fd mechanism remains an implementation fact.
 - `Kernel::Process` uses pidfd lifecycle observation and also owns Linux::Event
   process spawning and asynchronous stdio behavior.
 
-`Process` remains the correct leaf name because the existing object is richer
-than a pidfd wrapper.
+`Process` is intentionally richer than a pidfd wrapper.
 
 ## Private behavior layers
 
-The first private roots are:
+The private roots are:
 
 ```text
 Linux::Event::_IO
@@ -112,13 +113,12 @@ This is an implementation taxonomy only.
 ### _IO
 
 Shared descriptor/reactor/lifecycle mechanics for application I/O facilities.
-It must not become a public catch-all object.
+It is not a public catch-all object.
 
 ### _ByteStream
 
 Shared ordered-byte behavior used where message boundaries are not supplied by
-the kernel. This is the intended home for behavior currently concentrated in
-`Linux::Event::Stream`:
+the kernel:
 
 - readable and writable directions;
 - one shared handle or split directional handles;
@@ -132,9 +132,8 @@ the kernel. This is the intended home for behavior currently concentrated in
 - established deadlines;
 - EOF and directional lifecycle.
 
-The public `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream` leaves may all use
-this behavior without claiming that one public facility is a subtype of
-another.
+`IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream` all use this behavior without
+claiming that one public facility is a subtype of another.
 
 ### _Socket
 
@@ -147,23 +146,31 @@ Shared behavior that exists because a descriptor is a socket:
 - common ownership/lifecycle support.
 
 Connection acquisition, listen/accept, stream-byte processing, and datagram
-processing stay in their specialized layers.
+processing stay in their specialized private layers.
 
-## Migration rule
+## Stable private implementation hosts
 
-The migration is behavior-first:
+Some historical package names and native extension names remain in the source
+tree because they are established implementation and ABI boundaries. They are
+`no_index`, are excluded from META `provides`, and must not be used as the
+application API.
 
-1. Add private architecture boundaries without changing the public API.
-2. Move existing implementation responsibilities behind those boundaries in
-   small testable steps.
-3. Establish the new IO and Kernel leaf classes while retaining equivalent
-   behavior and performance tests.
-4. Migrate examples, POD, design documents, benchmarks, and tests.
-5. Remove the old misleading public names only after the complete replacement
-   surface is tested.
-6. Run the full test matrix, distribution checks, and performance regression
-   suite before release.
+Keeping those private hosts stable avoids needless native ABI churn and avoids
+adding Perl dispatch layers to hot paths. The public contract is defined by the
+IO and Kernel leaves above, not by the names of the private XS packages that
+implement them.
 
-The refactor must not preserve an old name merely for compatibility if that
-name contradicts the corrected architecture. The release is intentionally
-allowed to make incompatible API changes once the replacement is complete.
+## Architecture invariants
+
+Changes to this architecture must preserve these rules:
+
+1. Public classes name concrete Linux resources or lifecycle roles.
+2. Socket type and socket address family remain separate axes.
+3. Shared implementation belongs behind private boundaries, not generic public
+   base objects.
+4. Public examples, POD, design documents, benchmarks, and diagnostics use the
+   IO/Kernel taxonomy.
+5. Historical implementation names may remain only where they are genuinely
+   private implementation or ABI details.
+6. API changes that can affect hot paths require the full test matrix,
+   distribution checks, and performance-regression suite.
