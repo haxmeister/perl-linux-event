@@ -103,7 +103,6 @@ use v5.36;
 use Linux::Event::Loop;
 use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
-use Linux::Event::Framer 'Delimiter', "\n";
 
 {
     package EchoConnection;
