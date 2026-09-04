@@ -40,7 +40,7 @@ Linux::Event::Framer::Fixed - native fixed-size framing declaration
 =head1 SYNOPSIS
 
   package RecordStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Fixed',
       size => 32; # required
 
