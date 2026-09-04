@@ -5,8 +5,18 @@ use warnings;
 use Test::More;
 use FindBin qw($Bin);
 use File::Spec;
+use JSON::PP qw(decode_json);
+use CPAN::Meta::YAML ();
 
 my $root = File::Spec->catdir($Bin, '..');
+
+sub _slurp ($path) {
+    open my $fh, '<', $path or die "open $path: $!";
+    local $/;
+    my $src = <$fh>;
+    close $fh;
+    return $src;
+}
 
 for my $required (
     'README.md',
@@ -14,16 +24,19 @@ for my $required (
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
     'docs/DEVELOPMENT-HISTORY.md',
-    'docs/STREAM-DESIGN.md',
+    'docs/IO-KERNEL-ARCHITECTURE.md',
+    'docs/ORDERED-BYTE-IO-DESIGN.md',
+    'docs/ORDERED-BYTE-CONSUMER-ABI.md',
+    'docs/ORDERED-BYTE-DEADLINES.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
     'docs/SOCKET-CONNECTIONS.md',
     'docs/LISTENER-DESIGN.md',
     'docs/TIMER-DESIGN.md',
     'docs/SIGNAL-DESIGN.md',
-    'docs/WAKEUP-DESIGN.md',
+    'docs/EVENT-DESIGN.md',
     'docs/SOCKET-CONFIGURATION.md',
-    'docs/DATAGRAM-DESIGN.md',
+    'docs/DGRAM-DESIGN.md',
     'docs/PROCESS-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
@@ -67,6 +80,18 @@ for my $required (
     'lib/Linux/Event/TLS.pm',
     'lib/Linux/Event/Loop.pm',
     'lib/Linux/Event/Loop/Introspection.pm',
+    'lib/Linux/Event/IO.pm',
+    'lib/Linux/Event/IO/Pipe.pm',
+    'lib/Linux/Event/IO/TTY.pm',
+    'lib/Linux/Event/IO/Sock.pm',
+    'lib/Linux/Event/IO/Sock/Stream.pm',
+    'lib/Linux/Event/IO/Sock/Listener.pm',
+    'lib/Linux/Event/IO/Sock/Dgram.pm',
+    'lib/Linux/Event/Kernel.pm',
+    'lib/Linux/Event/Kernel/Timer.pm',
+    'lib/Linux/Event/Kernel/Signal.pm',
+    'lib/Linux/Event/Kernel/Event.pm',
+    'lib/Linux/Event/Kernel/Process.pm',
     'lib/Linux/Event/Signal.pm',
     'lib/Linux/Event/Wakeup.pm',
     'lib/Linux/Event/Listener.pm',
@@ -104,6 +129,7 @@ for my $required (
     'examples/udp-echo-client.pl',
     'examples/wakeup-thread.pl',
     'examples/process-capture.pl',
+    't/architecture-20-native-consumer.t',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");
 }
@@ -112,16 +138,19 @@ for my $live (
     'README.md',
     'docs/CORE.md',
     'docs/ARCHITECTURE.md',
-    'docs/STREAM-DESIGN.md',
+    'docs/IO-KERNEL-ARCHITECTURE.md',
+    'docs/ORDERED-BYTE-IO-DESIGN.md',
+    'docs/ORDERED-BYTE-CONSUMER-ABI.md',
+    'docs/ORDERED-BYTE-DEADLINES.md',
     'docs/TRANSPORT-BOUNDARY.md',
     'docs/OBJECT-LIFECYCLE.md',
     'docs/SOCKET-CONNECTIONS.md',
     'docs/LISTENER-DESIGN.md',
     'docs/TIMER-DESIGN.md',
     'docs/SIGNAL-DESIGN.md',
-    'docs/WAKEUP-DESIGN.md',
+    'docs/EVENT-DESIGN.md',
     'docs/SOCKET-CONFIGURATION.md',
-    'docs/DATAGRAM-DESIGN.md',
+    'docs/DGRAM-DESIGN.md',
     'docs/PROCESS-DESIGN.md',
     'docs/CHOOSING-A-FRAMER.md',
     'docs/FRAMING.md',
@@ -148,10 +177,7 @@ for my $live (
     'bench/run-timer-microbench.pl',
 ) {
     my $path = File::Spec->catfile($root, split m{/}, $live);
-    open my $fh, '<', $path or die "open $path: $!";
-    local $/;
-    my $src = <$fh>;
-    close $fh;
+    my $src = _slurp($path);
     unlike($src, qr/\b(?:Phase|phase)\d+[A-Za-z]?\b/, "$live has no development-phase vocabulary");
 }
 
@@ -185,6 +211,7 @@ my %allowed = map { $_ => 1 } qw(
     run-framer-send-bench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
+    run-public-api-overhead.pl
     run-timer-microbench.pl
 );
 is_deeply([grep { !$allowed{$_} } @bench_root], [], 'bench root contains only current public files');
@@ -192,8 +219,12 @@ ok(!-d File::Spec->catdir($root, 'tls'),
     'TLS does not have a nested distribution tree');
 
 for my $removed (
+    'docs/STREAM-DESIGN.md',
+    'docs/STREAM-DEADLINES.md',
+    'docs/STREAM-CONSUMER-ABI.md',
+    'docs/WAKEUP-DESIGN.md',
+    'docs/DATAGRAM-DESIGN.md',
     'lib/Linux/Event/Watcher.pm',
-    'lib/Linux/Event/IO.pm',
     'lib/Linux/Event/XSLoop.pm',
     'lib/Linux/Event/XSWatcher.pm',
     'lib/Linux/Event/Connect.pm',
@@ -214,6 +245,7 @@ my @engineering_history = qw(
     docs/XS-ROADMAP.md
     docs/xs-reduction-roadmap.md
     bench/BENCHMARK-DECISIONS.md
+    bench/run-public-api-overhead.pl
 );
 
 my $manifest_path = File::Spec->catfile($root, 'MANIFEST');
@@ -226,6 +258,13 @@ while (my $line = <$manifest_fh>) {
     $manifest_entry{$path} = 1;
 }
 close $manifest_fh;
+
+my @root_tests = sort map { File::Spec->abs2rel($_, $root) }
+    grep { -f $_ }
+    glob(File::Spec->catfile($root, 't', '*.t'));
+for my $path (@root_tests) {
+    ok($manifest_entry{$path}, "$path is included in MANIFEST");
+}
 
 my $manifest_skip_path = File::Spec->catfile($root, 'MANIFEST.SKIP');
 open my $manifest_skip_fh, '<', $manifest_skip_path
@@ -240,6 +279,45 @@ for my $path (@engineering_history) {
     ok(!$manifest_entry{$path}, "$path is excluded from MANIFEST");
     ok(scalar(grep { $path =~ $_ } @manifest_skip),
         "$path is excluded by MANIFEST.SKIP");
+}
+
+my $makefile_pl = _slurp(File::Spec->catfile($root, 'Makefile.PL'));
+my ($public_module_block) = $makefile_pl =~
+    /my \@public_modules = qw\(\s*(.*?)\s*\);/s;
+ok(defined $public_module_block,
+    'Makefile.PL declares the public module source of truth');
+my @expected_provides = sort grep { length }
+    split /\s+/, ($public_module_block // '');
+
+my $meta_json = decode_json(
+    _slurp(File::Spec->catfile($root, 'META.json'))
+);
+is($meta_json->{abstract},
+    'Linux-native reactor, I/O, kernel events, and processes',
+    'META.json has the current distribution abstract');
+is_deeply([sort keys %{ $meta_json->{provides} }], \@expected_provides,
+    'META.json provides exactly the Makefile.PL public taxonomy');
+
+my $meta_yml_path = File::Spec->catfile($root, 'META.yml');
+my $meta_yml_docs = CPAN::Meta::YAML->read($meta_yml_path);
+ok($meta_yml_docs && @$meta_yml_docs, 'META.yml parses');
+if ($meta_yml_docs && @$meta_yml_docs) {
+    my $meta_yml = $meta_yml_docs->[0];
+    is($meta_yml->{abstract},
+        'Linux-native reactor, I/O, kernel events, and processes',
+        'META.yml has the current distribution abstract');
+    is_deeply([sort keys %{ $meta_yml->{provides} }], \@expected_provides,
+        'META.yml provides exactly the Makefile.PL public taxonomy');
+}
+
+my $readme = _slurp(File::Spec->catfile($root, 'README.md'));
+my ($stream_server_prefix) = $readme =~
+    /## Stream socket server\b(.*?)package EchoConnection;/s;
+ok(defined $stream_server_prefix,
+    'README contains the flagship stream socket example');
+if (defined $stream_server_prefix) {
+    unlike($stream_server_prefix, qr/use Linux::Event::Framer\b/,
+        'flagship framer declaration lives inside the stream subclass');
 }
 
 done_testing;

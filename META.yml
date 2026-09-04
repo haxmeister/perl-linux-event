@@ -1,5 +1,5 @@
 ---
-abstract: 'Linux-native reactor, streams, datagrams, and processes'
+abstract: 'Linux-native reactor, I/O, kernel events, and processes'
 author:
   - 'Joshua S. Day <hax@cpan.org>'
 build_requires:
@@ -21,6 +21,22 @@ no_index:
     - inc
   package:
     - Linux::Event::_Registration
+    - Linux::Event::_IO
+    - Linux::Event::_ByteStream
+    - Linux::Event::_ByteStream::Descriptor
+    - Linux::Event::_Socket
+    - Linux::Event::_Socket::Descriptor
+    - Linux::Event::_Socket::Stream
+    - Linux::Event::_Socket::Listener
+    - Linux::Event::_Socket::Dgram
+    - Linux::Event::Datagram
+    - Linux::Event::Listener
+    - Linux::Event::Process
+    - Linux::Event::Signal
+    - Linux::Event::Socket
+    - Linux::Event::Stream
+    - Linux::Event::Timer
+    - Linux::Event::Wakeup
     - Linux::Event::Loop::Introspection
     - Linux::Event::_Resolver
     - Linux::Event::_Resolver::_Native
@@ -40,67 +56,79 @@ no_index:
 provides:
   Linux::Event:
     file: lib/Linux/Event.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Address:
     file: lib/Linux/Event/Address.pm
-    version: '0.105'
-  Linux::Event::Datagram:
-    file: lib/Linux/Event/Datagram.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Error:
     file: lib/Linux/Event/Error.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer:
     file: lib/Linux/Event/Framer.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::DecimalLength:
     file: lib/Linux/Event/Framer/DecimalLength.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::Delimiter:
     file: lib/Linux/Event/Framer/Delimiter.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::Fixed:
     file: lib/Linux/Event/Framer/Fixed.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::LengthPrefix:
     file: lib/Linux/Event/Framer/LengthPrefix.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::Netstring:
     file: lib/Linux/Event/Framer/Netstring.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::U32BE:
     file: lib/Linux/Event/Framer/U32BE.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::Framer::Varint:
     file: lib/Linux/Event/Framer/Varint.pm
-    version: '0.105'
-  Linux::Event::Listener:
-    file: lib/Linux/Event/Listener.pm
-    version: '0.105'
+    version: '0.110'
+  Linux::Event::IO:
+    file: lib/Linux/Event/IO.pm
+    version: '0.110'
+  Linux::Event::IO::Pipe:
+    file: lib/Linux/Event/IO/Pipe.pm
+    version: '0.110'
+  Linux::Event::IO::Sock:
+    file: lib/Linux/Event/IO/Sock.pm
+    version: '0.110'
+  Linux::Event::IO::Sock::Dgram:
+    file: lib/Linux/Event/IO/Sock/Dgram.pm
+    version: '0.110'
+  Linux::Event::IO::Sock::Listener:
+    file: lib/Linux/Event/IO/Sock/Listener.pm
+    version: '0.110'
+  Linux::Event::IO::Sock::Stream:
+    file: lib/Linux/Event/IO/Sock/Stream.pm
+    version: '0.110'
+  Linux::Event::IO::TTY:
+    file: lib/Linux/Event/IO/TTY.pm
+    version: '0.110'
+  Linux::Event::Kernel:
+    file: lib/Linux/Event/Kernel.pm
+    version: '0.110'
+  Linux::Event::Kernel::Event:
+    file: lib/Linux/Event/Kernel/Event.pm
+    version: '0.110'
+  Linux::Event::Kernel::Process:
+    file: lib/Linux/Event/Kernel/Process.pm
+    version: '0.110'
+  Linux::Event::Kernel::Signal:
+    file: lib/Linux/Event/Kernel/Signal.pm
+    version: '0.110'
+  Linux::Event::Kernel::Timer:
+    file: lib/Linux/Event/Kernel/Timer.pm
+    version: '0.110'
   Linux::Event::Loop:
     file: lib/Linux/Event/Loop.pm
-    version: '0.105'
-  Linux::Event::Process:
-    file: lib/Linux/Event/Process.pm
-    version: '0.105'
-  Linux::Event::Signal:
-    file: lib/Linux/Event/Signal.pm
-    version: '0.105'
-  Linux::Event::Socket:
-    file: lib/Linux/Event/Socket.pm
-    version: '0.105'
-  Linux::Event::Stream:
-    file: lib/Linux/Event/Stream.pm
-    version: '0.105'
+    version: '0.110'
   Linux::Event::TLS:
     file: lib/Linux/Event/TLS.pm
-    version: '0.105'
-  Linux::Event::Timer:
-    file: lib/Linux/Event/Timer.pm
-    version: '0.105'
-  Linux::Event::Wakeup:
-    file: lib/Linux/Event/Wakeup.pm
-    version: '0.105'
+    version: '0.110'
 requires:
   Socket: '2.033'
   perl: '5.036000'
@@ -108,5 +136,5 @@ resources:
   bugtracker: https://github.com/haxmeister/perl-linux-event/issues
   homepage: https://github.com/haxmeister/perl-linux-event
   repository: https://github.com/haxmeister/perl-linux-event.git
-version: '0.105'
+version: '0.110'
 x_serialization_backend: 'CPAN::Meta::YAML version 0.018'

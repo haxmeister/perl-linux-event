@@ -5,7 +5,7 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME             => 'Linux::Event::Stream',
     VERSION_FROM     => '../lib/Linux/Event/Stream.pm',
-    ABSTRACT         => 'Buffered byte streams for Linux::Event',
+    ABSTRACT         => 'Native ordered-byte I/O engine for Linux::Event',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',

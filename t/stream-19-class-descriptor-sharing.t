@@ -18,10 +18,10 @@ like(exception(sub { Linux::Event::Stream::XSDescriptor->new([]) }),
     'native descriptor requires a named hash specification');
 like(exception(sub {
     Linux::Event::Stream::XSDescriptor->new({ unexpected => 1 });
-}), qr/unknown Stream descriptor field 'unexpected'/,
+}), qr/unknown ordered-byte descriptor field 'unexpected'/,
     'native descriptor rejects unknown specification fields');
 like(exception(sub { Linux::Event::Stream::XSDescriptor->new({}) }),
-    qr/missing Stream descriptor field 'read_size'/,
+    qr/missing ordered-byte descriptor field 'read_size'/,
     'native descriptor rejects missing specification fields');
 like(exception(sub {
     Linux::Event::Stream::XSDescriptor->_new_validated({});
@@ -101,11 +101,11 @@ is(refaddr($a->{descriptor}{callbacks}{on_message}),
 syswrite($ca, 'hel');
 syswrite($cb, "world\n");
 $loop->run_for(0.01);
-is($state_a->{got}, undef, 'partial Stream A frame remains buffered');
-is($state_b->{got}, 'world', 'Stream B parses independently');
+is($state_a->{got}, undef, 'partial connection A frame remains buffered');
+is($state_b->{got}, 'world', 'connection B parses independently');
 syswrite($ca, "lo\n");
 $loop->run_for(0.01);
-is($state_a->{got}, 'hello', 'Stream A completes its own parser state');
+is($state_a->{got}, 'hello', 'connection A completes its own parser state');
 
 $a->close;
 $b->close;

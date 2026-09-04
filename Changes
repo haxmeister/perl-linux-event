@@ -1,86 +1,67 @@
 Revision history for Linux-Event
 
 Unreleased
-    - Split the public byte-stream model into generic Linux::Event::Stream and
-      its Linux::Event::Socket specialization. Stream now accepts one shared,
-      separate read/write, read-only, or write-only handle without performing
-      socket address discovery. Socket owns SOCK_STREAM validation, connect,
-      addresses, socket policy, kernel shutdown, and TLS declarations.
-    - Make Stream lifecycle directional: read EOF leaves an independent write
-      side usable, end drains only output, immediate close_read/close_write
-      stop one direction, close stops both, and generic detach transfers both
-      handles. The native engine retains one parser, consumer context, and
-      segmented output queue across one or two descriptors.
-    - Migrate Listener-created, TCP, Unix stream, socketpair, outbound connect,
-      and TLS protocol classes to Socket. Add generic pipe, FIFO, split-handle,
-      STDIN/STDOUT, directional lifecycle, backpressure, framing, and native
-      consumer ABI regression coverage.
-    - Add a versioned native framed-message consumer ABI for separate XS
-      integrations. Providers own one context per Stream, receive borrowed
-      message SVs directly from every built-in native framer, control
-      pause/resume without a second core queue, and observe terminal input and
-      lifecycle events. The core remains callback/reactor-first and contains no
-      Future or async/await policy.
-    - Add optional read_budget_bytes fairness control while preserving the
-      existing unlimited drain as the default. Native consumer pause remains
-      independent from TLS handshake and shutdown progress.
-    - Extend consumer ABI v1 compatibly with an opt-in end-of-drain flush hook.
-      Providers can defer one wakeup while retaining a bounded batch; original
-      v1 operation tables remain accepted by struct_size.
-    - Harden native consumer reentrancy so callback-driven close cannot free an
-      active XSState. Flush pending work before terminal events, preserve
-      pause/continue semantics across buffered input, validate readable
-      transition targets, clear exception-aborted flush state, and invalidate
-      native directional descriptors when one side closes.
-    - Make callback-capable close, close_read, close_write, and detach teardown
-      exception-safe. Extend the consumer host table append-only with explicit
-      provider-frame lifetime retain/release operations, clean up generic
-      Stream constructor attachment failures, and flush old-protocol consumer
-      work before transitioned buffered input reaches the new descriptor.
-    - Preserve immediate flush-owed native-consumer message entry and
-      operation-sensitive CONTINUE behavior while validating every provider
-      status after reentrant terminal transitions. Share ordinary/terminal
-      pending-flush mechanics and buffered-input re-drive eligibility.
-    - Centralize the readable raw/framed sink invariant used by Stream
-      construction and protocol transition while preserving public diagnostics.
-    - Replace the private 29-argument positional XS descriptor constructor with
-      a named, complete specification that rejects unknown and missing fields.
-    - Pre-resolve LengthPrefix encoding metadata and fast-path one-byte Varint
-      prefixes while retaining byte-equivalent framing at encoding boundaries.
-    - Isolate the private native-consumer conformance providers in a dedicated
-      translation unit, separate from production host and state mechanics.
-    - Embed native Stream counters in one typed statistics structure and drive
-      the public stats export from one counter-name/offset table while
-      preserving the single XSState allocation and complete public key set.
-    - Add a machine-readable raw/framed Stream payload-sweep harness for the
-      XS-reduction baseline, covering the permanent 64-byte through 200-KB
-      matrix with full effective configuration and CPU/I/O/callback metrics.
-    - Move named XS descriptor field validation and cold scalar normalization
-      to the Perl control plane while retaining native parser-memory and
-      consumer-ABI safety checks before constructing the immutable descriptor.
-    - Keep Stream counters native but format their compact snapshot into the
-      public stats hash in Perl.
-    - Centralize Stream construction failure cleanup and readable-side policy
-      in Perl while retaining a small defensive native state allocator.
-    - Move protocol-transition eligibility and target buffer/output-limit
-      policy to Perl while retaining atomic native descriptor/buffer swaps.
-    - Clean up partially constructed Sockets when configure_socket fails,
-      retain explicit transport providers for outbound connect, and reject
-      socket policy methods placed on a generic Stream instead of silently
-      ignoring them.
-    - Incompatible migration details: socket policy moves from stream_options
-      to socket_options; connect and TLS declarations require a Socket
-      subclass; Listener stream_class must name a Socket subclass; generic
-      Stream detach returns { read_fh, write_fh } while Socket detach returns
-      one handle; Listener setup errors now use operation accepted_socket
-      instead of accepted_stream.
-    - Move repetitive Linux::Event::Process stdout and stderr pipe reads into
-      a private native drain helper while preserving read_size,
-      max_reads_per_tick, callback chunking, EOF ordering, and error behavior.
-    - Add a gated Process pipe benchmark that excludes spawning and watcher
-      registration from its timed interval, compares the retained Perl
-      reference with native draining, records parent CPU, and optionally
-      measures recurring-Timer fairness.
+    - Replace the misleading top-level Stream, Socket, Listener, Datagram,
+      Timer, Signal, Wakeup, and Process public model with semantic IO and
+      Kernel leaves. Application data I/O now uses Linux::Event::IO::Pipe,
+      IO::TTY, IO::Sock::Stream, IO::Sock::Listener, and IO::Sock::Dgram;
+      kernel notification/state objects use Linux::Event::Kernel::Timer,
+      Kernel::Signal, Kernel::Event, and Kernel::Process.
+    - Treat IO and Kernel as namespace categories rather than generic public
+      base objects. Keep shared implementation mechanics behind private _IO,
+      _ByteStream, and _Socket boundaries so public inheritance does not imply
+      false Linux relationships.
+    - Make Linux SOCK_STREAM and SOCK_DGRAM type names explicit in the socket
+      namespace while keeping AF_INET, AF_INET6, and AF_UNIX as address-family
+      configuration. Listener remains a distinct public accept-oriented role
+      for listening SOCK_STREAM sockets.
+    - Preserve the native ordered-byte hot path for Pipe, TTY, and stream
+      sockets. The shared engine supports one handle, split read/write handles,
+      read-only or write-only operation, framing, batching, backpressure,
+      output limits, established deadlines, protocol transitions, and
+      directional lifecycle without adding a public generic byte-stream class.
+    - Validate Pipe handles as pipes/FIFOs and TTY handles as terminals/PTYS
+      before attachment. Add tested interactive STDIN/STDOUT terminal usage and
+      pipe-oriented framing examples.
+    - Move connection, address, socket-option, kernel half-close, and TLS
+      semantics to IO::Sock::Stream. Outbound connect retains one object through
+      asynchronous resolution, connection, optional TLS readiness, established
+      I/O, and close. Listener stream_class now names an IO::Sock::Stream
+      subclass.
+    - Keep datagrams packet-oriented under IO::Sock::Dgram. Kernel-provided
+      packet boundaries, per-packet peers, truncation detection, whole-packet
+      queues, and UDP/Unix datagram policy remain separate from byte framing.
+    - Present eventfd through Kernel::Event with on_event while retaining the
+      proven native eventfd implementation privately. Timer, Signal, and
+      Process likewise retain their timerfd, signalfd, and pidfd-backed engines
+      behind the corrected public Kernel leaves.
+    - Make Linux::Event::Framer the public native-framing declaration surface
+      for every ordered-byte leaf. A bare module import is valid for extension
+      authors, and declare_native_consumer() provides the stable declaration
+      boundary for separate XS integrations such as Linux::Event::Async without
+      depending on the historical Stream package.
+    - Retain the versioned native framed-message consumer ABI while hardening
+      pause/resume, terminal flush ordering, provider-frame lifetime,
+      construction failure cleanup, transition safety, and reentrant close.
+      Add optional read_budget_bytes fairness while preserving unlimited drain
+      as the default.
+    - Keep historical Stream XS package/symbol names and consumer/transport ABI
+      headers stable as private native implementation identifiers. They are
+      no_index and are not advertised as application classes; the public API is
+      the IO/Kernel leaf surface.
+    - Move repetitive Process stdout/stderr pipe draining into the native helper
+      while preserving read_size, max_reads_per_tick, callback chunking, EOF
+      order, and error behavior. Retain the gated process-pipe and ordered-byte
+      performance regression coverage.
+    - Rewrite README, module POD, architecture/design guides, framing/TLS/socket
+      documentation, examples, MANIFEST, load contracts, and META provides for
+      the new taxonomy. Rename Stream-, Wakeup-, and Datagram-centric design
+      documents to ordered-byte, Event, and Dgram terminology and prevent the
+      obsolete document names from returning through public-surface tests.
+    - Keep all former top-level implementation packages out of META provides and
+      mark them no_index. Public leaf POD now documents construction, callbacks,
+      framing, flow control, deadlines, TLS, packet semantics, kernel ownership,
+      and lifecycle directly rather than relying on internal implementation POD.
 
 0.105  2026-08-29
     - Add query-driven Loop introspection through running, count, has, objects,

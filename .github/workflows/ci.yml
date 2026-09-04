@@ -76,6 +76,105 @@ jobs:
       - name: Test
         run: make test
 
+  performance:
+    name: Performance regression
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+
+    steps:
+      - name: Check out baseline
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: baseline
+
+      - name: Check out candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+
+      - name: Set up latest Perl
+        uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5"
+          multi-thread: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+
+      - name: Install baseline dependencies
+        working-directory: baseline
+        run: cpanm --notest --installdeps .
+
+      - name: Install candidate dependencies
+        working-directory: candidate
+        run: cpanm --notest --installdeps .
+
+      - name: Build baseline
+        working-directory: baseline
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+
+      - name: Capture full baseline
+        working-directory: baseline
+        run: |
+          mkdir -p bench/results
+          perl -Mblib bench/run-performance-regression.pl \
+            --json bench/results/performance-baseline.json
+
+      - name: Build candidate
+        working-directory: candidate
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+
+      - name: Compare full candidate
+        working-directory: candidate
+        run: |
+          mkdir -p bench/results
+          perl -Mblib bench/run-performance-regression.pl \
+            --baseline ../baseline/bench/results/performance-baseline.json \
+            --threshold-percent 10 \
+            --fail-on-regression \
+            --json bench/results/performance-candidate.json
+
+      - name: Compare old implementation classes with new public leaves
+        working-directory: candidate
+        run: |
+          perl -Mblib bench/run-public-api-overhead.pl \
+            --payload-sizes=64,4096,65536 \
+            --threshold-percent 10 \
+            --fail-on-regression \
+            --json bench/results/public-api-overhead.json
+
+      - name: Compare 200 KB public stream surface
+        working-directory: candidate
+        run: |
+          perl -Mblib bench/run-public-api-overhead.pl \
+            --repeats=7 \
+            --payload-sizes=200000 \
+            --target-bytes=1073741824 \
+            --threshold-percent 10 \
+            --fail-on-regression \
+            --json bench/results/public-api-overhead-200k.json
+
+      - name: Preserve benchmark reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: performance-regression-${{ github.event.pull_request.number }}
+          path: |
+            baseline/bench/results/performance-baseline.json
+            candidate/bench/results/performance-candidate.json
+            candidate/bench/results/public-api-overhead.json
+            candidate/bench/results/public-api-overhead-200k.json
+          if-no-files-found: warn
+
   distribution:
     name: Distribution integrity
     runs-on: ubuntu-24.04
