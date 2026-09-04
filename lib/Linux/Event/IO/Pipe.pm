@@ -9,9 +9,17 @@ use parent 'Linux::Event::_ByteStream';
 use Carp qw(croak);
 
 sub new ($class, %option) {
-    for my $handle (Linux::Event::_IO::_constructor_handles('new', \%option)) {
-        my ($name, $fh) = @$handle;
-        croak "new(): $name is not a pipe or FIFO" if !-p $fh;
+    # Keep the public leaf semantically honest without duplicating the generic
+    # Stream constructor's handle-shape and fileno validation.  A file test on
+    # each supplied direction is sufficient here; SUPER::new performs the
+    # complete generic validation immediately afterwards.
+    if (defined(my $fh = $option{fh})) {
+        croak 'new(): fh is not a pipe or FIFO' if !-p $fh;
+    } else {
+        croak 'new(): read_fh is not a pipe or FIFO'
+            if defined($option{read_fh}) && !-p $option{read_fh};
+        croak 'new(): write_fh is not a pipe or FIFO'
+            if defined($option{write_fh}) && !-p $option{write_fh};
     }
     return $class->SUPER::new(%option);
 }
