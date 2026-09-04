@@ -6,6 +6,7 @@ on:
     paths:
       - tools/coherent-core-refactor.py
       - tools/coherent-core-refactor-fixup.py
+      - tools/coherent-core-contract-fixup.py
       - .github/workflows/coherent-core-refactor.yml
 
 permissions:
@@ -37,12 +38,28 @@ jobs:
         run: |
           python3 tools/coherent-core-refactor.py
           python3 tools/coherent-core-refactor-fixup.py
+          python3 tools/coherent-core-contract-fixup.py
 
       - name: Build transformed tree
         run: |
           perl Makefile.PL
           make manifest
           make --jobs=2
+
+      - name: Test architecture and core contracts
+        run: |
+          prove -b -v \
+            t/00-load.t \
+            t/20-public-surface.t \
+            t/25-performance-regression-benchmark-smoke.t \
+            t/26-timer-api.t \
+            t/27-timer-scheduling.t \
+            t/28-timer-lifecycle.t \
+            t/37-current-doc-taxonomy.t \
+            t/architecture-00-private-layers.t \
+            t/architecture-10-public-leaves.t \
+            t/architecture-20-native-consumer.t \
+            t/datagram-00-api.t
 
       - name: Test transformed tree verbosely
         run: timeout 300 make test TEST_VERBOSE=1
