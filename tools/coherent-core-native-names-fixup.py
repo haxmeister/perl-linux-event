@@ -27,6 +27,11 @@ for base in (ROOT / 'lib', ROOT / 't', ROOT / 'bench', ROOT / 'xsbytestream'):
         text = p.read_text()
         for old, new in replacements:
             text = text.replace(old, new)
+        # The coherent descriptor cache exposes its native wrapper under one
+        # implementation-neutral key. The retired Stream implementation used
+        # `xs`; construction and transition must not retain that second name.
+        if p == ROOT / 'lib/Linux/Event/_ByteStream.pm':
+            text = text.replace('$descriptor->{xs}', '$descriptor->{native}')
         # Class-level test-consumer constructors/destruction counters are test
         # support, not methods inherited by every public ordered-byte leaf.
         text = text.replace(
