@@ -2,6 +2,16 @@ use v5.36;
 use Test::More;
 use FindBin qw($Bin);
 use File::Spec;
+use JSON::PP qw(decode_json);
+use CPAN::Meta::YAML ();
+
+sub _slurp ($path) {
+    open my $fh, '<', $path or die "open $path: $!";
+    local $/;
+    my $src = <$fh>;
+    close $fh;
+    return $src;
+}
 
 use_ok('Linux::Event');
 use_ok('Linux::Event::Loop');
@@ -29,12 +39,7 @@ my $loop = Linux::Event::Loop->new;
 ok($loop, 'created loop');
 
 my $root = File::Spec->catdir($Bin, '..');
-my $makefile_pl = File::Spec->catfile($root, 'Makefile.PL');
-open my $makefile_fh, '<', $makefile_pl or die "open $makefile_pl: $!";
-local $/;
-my $makefile_src = <$makefile_fh>;
-close $makefile_fh;
-
+my $makefile_src = _slurp(File::Spec->catfile($root, 'Makefile.PL'));
 my ($public_module_block) = $makefile_src =~
     /my \@public_modules = qw\(\s*(.*?)\s*\);/s;
 ok(defined $public_module_block,
@@ -48,6 +53,30 @@ for my $module (@public_modules) {
     require $file;
     is($module->VERSION, $distribution_version,
         "$module version matches Linux::Event $distribution_version");
+}
+
+my $meta_json = decode_json(
+    _slurp(File::Spec->catfile($root, 'META.json'))
+);
+is($meta_json->{version}, $distribution_version,
+    'META.json distribution version matches Linux::Event');
+for my $module (@public_modules) {
+    is($meta_json->{provides}{$module}{version}, $distribution_version,
+        "META.json $module version matches distribution");
+}
+
+my $meta_yml_docs = CPAN::Meta::YAML->read(
+    File::Spec->catfile($root, 'META.yml')
+);
+ok($meta_yml_docs && @$meta_yml_docs, 'META.yml parses');
+if ($meta_yml_docs && @$meta_yml_docs) {
+    my $meta_yml = $meta_yml_docs->[0];
+    is($meta_yml->{version}, $distribution_version,
+        'META.yml distribution version matches Linux::Event');
+    for my $module (@public_modules) {
+        is($meta_yml->{provides}{$module}{version}, $distribution_version,
+            "META.yml $module version matches distribution");
+    }
 }
 
 done_testing;
