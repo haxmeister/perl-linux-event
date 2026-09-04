@@ -20,6 +20,7 @@
 ^bench/results/.*\.(?:json|html)$
 ^bench/BENCHMARK-DECISIONS\.md$
 ^bench/decisions(?:/|$)
+^bench/run-public-api-overhead\.pl$
 ^docs/(?:XS-ROADMAP|STREAM-REVIEW-FOLLOWUPS|xs-reduction-roadmap)\.md$
 ^\.prove$
 ~$
