@@ -6,6 +6,17 @@ use warnings;
 our $VERSION = '0.105';
 
 use parent 'Linux::Event::_Socket::Listener';
+use Carp qw(croak);
+
+sub new ($class, %option) {
+    if (exists $option{stream_class}) {
+        my $stream_class = $option{stream_class};
+        croak 'new(): stream_class must name a Linux::Event::IO::Sock::Stream subclass'
+            if ref($stream_class)
+            || !$stream_class->isa('Linux::Event::IO::Sock::Stream');
+    }
+    return $class->SUPER::new(%option);
+}
 
 1;
 
