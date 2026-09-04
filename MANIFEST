@@ -259,6 +259,7 @@ t/stream-61-teardown-exceptions.t
 t/stream-62-consumer-host-lifetime.t
 t/stream-63-construction-failure.t
 t/stream-64-transition-consumer-flush.t
+t/stream-65-resource-kind-transition.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
