@@ -9,9 +9,17 @@ use parent 'Linux::Event::_ByteStream';
 use Carp qw(croak);
 
 sub new ($class, %option) {
-    for my $handle (Linux::Event::_IO::_constructor_handles('new', \%option)) {
-        my ($name, $fh) = @$handle;
-        croak "new(): $name is not a TTY or PTY" if !-t $fh;
+    # Validate only the terminal identity here.  The generic ordered-byte
+    # constructor immediately performs handle-shape, fileno, ownership, and
+    # readiness setup, so repeating that work in the public leaf would add
+    # construction cost without increasing correctness.
+    if (defined(my $fh = $option{fh})) {
+        croak 'new(): fh is not a TTY or PTY' if !-t $fh;
+    } else {
+        croak 'new(): read_fh is not a TTY or PTY'
+            if defined($option{read_fh}) && !-t $option{read_fh};
+        croak 'new(): write_fh is not a TTY or PTY'
+            if defined($option{write_fh}) && !-t $option{write_fh};
     }
     return $class->SUPER::new(%option);
 }
