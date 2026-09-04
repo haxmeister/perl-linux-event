@@ -39,7 +39,7 @@ Linux::Event::Framer::Netstring - native netstring framing declaration
 =head1 SYNOPSIS
 
   package NetstringStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Netstring',
       max_frame => 1_048_576; # optional
 
