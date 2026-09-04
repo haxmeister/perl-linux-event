@@ -8,6 +8,7 @@ on:
       - tools/coherent-core-refactor-fixup.py
       - tools/coherent-core-contract-fixup.py
       - tools/coherent-core-native-names-fixup.py
+      - tools/coherent-core-test-fixup.py
       - .github/workflows/coherent-core-refactor.yml
 
 permissions:
@@ -48,6 +49,7 @@ jobs:
           python3 tools/coherent-core-refactor-fixup.py
           python3 tools/coherent-core-contract-fixup.py
           python3 tools/coherent-core-native-names-fixup.py
+          python3 tools/coherent-core-test-fixup.py
 
       - name: Build transformed tree
         run: |
