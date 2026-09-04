@@ -3,19 +3,16 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.105';
+our $VERSION = '0.111';
 
 use Carp qw(croak);
 use mro ();
 
-# Private descriptor storage belongs to ordered-byte behavior rather than to a
-# public Stream class name. Historical Stream package names remain only where
-# the stable native extension requires them.
 my %FRAMER_DEFINITION;
 my %CONSUMER_DEFINITION;
 my %CLASS_DESCRIPTOR;
 
-my @XS_SPEC_FIELD = qw(
+my @NATIVE_SPEC_FIELD = qw(
     read_size read_budget_bytes read_batch_bytes message_batch_size
     high_watermark low_watermark max_pending_bytes max_buffer read_mode
     deliver_cb message_cb message_batch_cb drain_cb eof_cb read_error_cb
@@ -24,23 +21,17 @@ my @XS_SPEC_FIELD = qw(
     include_prefix consumer_provider consumer_abi_version
     consumer_ops_address
 );
-my %XS_SPEC_FIELD = map { $_ => 1 } @XS_SPEC_FIELD;
+my %NATIVE_SPEC_FIELD = map { $_ => 1 } @NATIVE_SPEC_FIELD;
 
-# The public class declaration path already validates ordered-byte/framer/
-# consumer policy. This last cold step owns only the private XS specification
-# contract: reject misspelled or incomplete fields and normalize scalar
-# representation. The native constructor retains parser-memory and
-# consumer-table checks as defensive backstops before storing pointers or
-# parser configuration.
-sub _validate_xs_spec ($spec) {
-    croak 'XSDescriptor::new requires a hash reference'
+sub _validate_native_spec ($spec) {
+    croak 'native descriptor requires a hash reference'
         if ref($spec) ne 'HASH';
-    my @unknown = grep { !$XS_SPEC_FIELD{$_} } keys %$spec;
+    my @unknown = grep { !$NATIVE_SPEC_FIELD{$_} } keys %$spec;
     croak "unknown ordered-byte descriptor field '$unknown[0]'"
         if @unknown == 1;
     croak 'unknown ordered-byte descriptor fields: '
         . join(', ', sort @unknown) if @unknown;
-    for my $field (@XS_SPEC_FIELD) {
+    for my $field (@NATIVE_SPEC_FIELD) {
         croak "missing ordered-byte descriptor field '$field'"
             if !exists $spec->{$field};
     }
@@ -163,7 +154,7 @@ sub _stream_options_for ($class) {
     croak "$class max_buffer must be a positive integer"
         if $option{max_buffer} !~ /\A\d+\z/ || $option{max_buffer} <= 0;
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
-        $option{$name} = Linux::Event::Stream::_timeout_value(
+        $option{$name} = Linux::Event::_ByteStream::_timeout_value(
             $class, $name, $option{$name},
         );
     }
@@ -173,16 +164,12 @@ sub _stream_options_for ($class) {
 sub for_class ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
 
-    croak 'Linux::Event::Stream is a private implementation base; construct a public ordered-byte leaf subclass'
-        if $class eq 'Linux::Event::Stream';
-
-    my $is_ordered_byte = $class->isa('Linux::Event::_ByteStream')
-        || $class->isa('Linux::Event::Stream');
+    croak 'Linux::Event::_ByteStream is a private implementation base'
+        if $class eq 'Linux::Event::_ByteStream';
     croak "$class is not a Linux::Event ordered-byte class"
-        if !$is_ordered_byte;
+        if !$class->isa('Linux::Event::_ByteStream');
 
-    my $is_stream_socket = $class->isa('Linux::Event::_Socket::Stream')
-        || $class->isa('Linux::Event::Socket');
+    my $is_stream_socket = $class->isa('Linux::Event::_Socket::Stream');
     if (!$is_stream_socket) {
         croak "$class defines socket_options() but is not a Linux::Event stream-socket class"
             if $class->can('socket_options');
@@ -229,9 +216,9 @@ sub for_class ($class) {
             if $option->{message_batch_size};
     }
 
-    my $native = $framer ? { %{ $framer->{native} } } : { read_mode => 0 };
+    my $framing = $framer ? { %{ $framer->{native} } } : { read_mode => 0 };
 
-    my $xs = Linux::Event::Stream::XSDescriptor->new({
+    my $native = Linux::Event::_ByteStream::Descriptor::Native->new({
         read_size          => $option->{read_size},
         read_budget_bytes  => $option->{read_budget_bytes},
         read_batch_bytes   => $option->{read_batch_bytes},
@@ -240,27 +227,27 @@ sub for_class ($class) {
         low_watermark      => $option->{low_watermark},
         max_pending_bytes  => $option->{max_pending_bytes},
         max_buffer         => $option->{max_buffer},
-        read_mode          => $native->{read_mode},
+        read_mode          => $framing->{read_mode},
 
         deliver_cb       => $callback{on_data},
         message_cb       => $callback{on_message},
         message_batch_cb => $callback{on_messages},
         drain_cb         => $callback{on_drain}
-            ? \&Linux::Event::Stream::_xs_drain : undef,
-        eof_cb           => \&Linux::Event::Stream::_xs_read_eof,
-        read_error_cb    => \&Linux::Event::Stream::_xs_read_error,
-        write_error_cb   => \&Linux::Event::Stream::_xs_write_error,
-        output_limit_cb  => \&Linux::Event::Stream::_xs_output_limit,
-        write_empty_cb   => \&Linux::Event::Stream::_xs_write_empty,
-        framing_error_cb => \&Linux::Event::Stream::_xs_framing_error,
+            ? \&Linux::Event::_ByteStream::_xs_drain : undef,
+        eof_cb           => \&Linux::Event::_ByteStream::_xs_read_eof,
+        read_error_cb    => \&Linux::Event::_ByteStream::_xs_read_error,
+        write_error_cb   => \&Linux::Event::_ByteStream::_xs_write_error,
+        output_limit_cb  => \&Linux::Event::_ByteStream::_xs_output_limit,
+        write_empty_cb   => \&Linux::Event::_ByteStream::_xs_write_empty,
+        framing_error_cb => \&Linux::Event::_ByteStream::_xs_framing_error,
 
-        delimiter         => $native->{delimiter},
-        include_delimiter => $native->{include_delimiter} // 0,
-        max_frame         => $native->{max_frame},
-        fixed_size        => $native->{fixed_size} // 0,
-        prefix_bytes      => $native->{prefix_bytes} // 0,
-        prefix_little     => $native->{prefix_little} // 0,
-        include_prefix    => $native->{include_prefix} // 0,
+        delimiter         => $framing->{delimiter},
+        include_delimiter => $framing->{include_delimiter} // 0,
+        max_frame         => $framing->{max_frame},
+        fixed_size        => $framing->{fixed_size} // 0,
+        prefix_bytes      => $framing->{prefix_bytes} // 0,
+        prefix_little     => $framing->{prefix_little} // 0,
+        include_prefix    => $framing->{include_prefix} // 0,
 
         consumer_provider    => $consumer ? $consumer->{provider} : undef,
         consumer_abi_version => $consumer ? $consumer->{abi_version} : 0,
@@ -270,9 +257,9 @@ sub for_class ($class) {
 
     my $descriptor = {
         class     => $class,
-        xs        => $xs,
-        options   => $option,
         native    => $native,
+        options   => $option,
+        framing   => $framing,
         framer    => $framer,
         consumer  => $consumer,
         callbacks => \%callback,
