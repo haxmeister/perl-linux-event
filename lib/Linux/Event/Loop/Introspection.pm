@@ -4,19 +4,21 @@ use strict;
 use warnings;
 
 use Scalar::Util qw(blessed refaddr);
-my @CENSUS_TYPES = qw(stream listener datagram timer signal wakeup process);
+my @CENSUS_TYPES = qw(pipe tty stream listener dgram timer signal event process);
 
 sub _type_of ($object) {
     return 'unknown'
         if $object->isa('Linux::Event::Stream::_Deadline')
         || $object->isa('Linux::Event::Datagram::_ReadyTimer');
-    return 'stream'   if $object->isa('Linux::Event::Stream');
-    return 'listener' if $object->isa('Linux::Event::Listener');
-    return 'datagram' if $object->isa('Linux::Event::Datagram');
-    return 'timer'    if $object->isa('Linux::Event::Timer');
-    return 'signal'   if $object->isa('Linux::Event::Signal');
-    return 'wakeup'   if $object->isa('Linux::Event::Wakeup');
-    return 'process'  if $object->isa('Linux::Event::Process');
+    return 'pipe'     if $object->isa('Linux::Event::IO::Pipe');
+    return 'tty'      if $object->isa('Linux::Event::IO::TTY');
+    return 'stream'   if $object->isa('Linux::Event::IO::Sock::Stream');
+    return 'listener' if $object->isa('Linux::Event::IO::Sock::Listener');
+    return 'dgram'    if $object->isa('Linux::Event::IO::Sock::Dgram');
+    return 'timer'    if $object->isa('Linux::Event::Kernel::Timer');
+    return 'signal'   if $object->isa('Linux::Event::Kernel::Signal');
+    return 'event'    if $object->isa('Linux::Event::Kernel::Event');
+    return 'process'  if $object->isa('Linux::Event::Kernel::Process');
     return 'unknown';
 }
 
@@ -110,15 +112,11 @@ sub _inspect_object ($self, $object, $registered) {
     return $result if !$registered;
 
     $result->{state} = _value($object, 'state');
-    if ($type eq 'stream') {
-        @$result{qw(fd read_fd write_fd stream_kind local peer transport
-            pending_bytes read_paused read_eof read_closed write_ended
-            write_blocked)} = (
+    if ($type eq 'pipe' || $type eq 'tty' || $type eq 'stream') {
+        @$result{qw(fd read_fd write_fd pending_bytes read_paused read_eof
+            read_closed write_ended write_blocked)} = (
             _fd($object), _value($object, 'read_fd'),
             _value($object, 'write_fd'),
-            $object->isa('Linux::Event::Socket') ? 'socket' : 'stream',
-            _value($object, 'local'), _value($object, 'peer'),
-            _value($object, 'transport_name'),
             _value($object, 'pending_bytes'),
             _value($object, 'is_read_paused') ? 1 : 0,
             _value($object, 'is_read_eof') ? 1 : 0,
@@ -126,6 +124,12 @@ sub _inspect_object ($self, $object, $registered) {
             _value($object, 'is_write_ended') ? 1 : 0,
             _value($object, 'is_write_blocked') ? 1 : 0,
         );
+        if ($type eq 'stream') {
+            @$result{qw(local peer transport)} = (
+                _value($object, 'local'), _value($object, 'peer'),
+                _value($object, 'transport_name'),
+            );
+        }
     }
     elsif ($type eq 'listener') {
         @$result{qw(fd host port path family paused accepted)} = (
@@ -135,7 +139,7 @@ sub _inspect_object ($self, $object, $registered) {
             _value($object, 'accepted'),
         );
     }
-    elsif ($type eq 'datagram') {
+    elsif ($type eq 'dgram') {
         @$result{qw(fd local peer connected pending_bytes pending_datagrams
             read_paused)} = (
             _fd($object), _value($object, 'local'),

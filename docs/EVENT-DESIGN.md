@@ -120,13 +120,15 @@ kernel failure synchronously.
 Application callback exceptions propagate from Loop dispatch; they are not
 silently converted into cancellation.
 
-## Internal migration
+## Private implementation host
 
-The historical `Linux::Event::Wakeup` implementation and native extension
-remain private migration machinery while the public API moves to
-`Linux::Event::Kernel::Event`. A temporary internal `on_wakeup` bridge routes
-native delivery to the public `on_event` callback.
+The historical `Linux::Event::Wakeup` package and native extension remain the
+stable private implementation host for the eventfd engine. Public
+`Linux::Event::Kernel::Event` objects use that engine and expose `on_event` as
+the application callback.
 
-The historical name is `no_index` and is not the application subclassing
-contract. Moving the proven eventfd implementation physically can happen later
-without changing the public Event semantics or adding a hot-path wrapper.
+The historical package is `no_index`, is excluded from META `provides`, and is
+not an application subclassing contract. Its retained name is an implementation
+and native-ABI choice, not a second public API. Keeping that host stable avoids
+needless native churn and does not add a Perl wrapper to the eventfd delivery
+path.

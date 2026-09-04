@@ -113,7 +113,7 @@ A connecting `IO::Sock::Stream` can temporarily own connection-attempt,
 resolver, and deadline resources before its established socket registration is
 installed. The application holds the same connection object throughout.
 
-A `IO::Sock::Listener` owns its listening registration and creates one
+An `IO::Sock::Listener` owns its listening registration and creates one
 `IO::Sock::Stream` subclass instance per accepted descriptor. The connection is
 attached before listener `on_accept`; plain connection `on_ready` follows, while
 TLS `on_ready` waits for successful handshake/verification.
@@ -141,9 +141,9 @@ inseparable.
 machinery but retain resource-specific public lifecycle semantics.
 
 Read EOF and write completion are independent. Split Pipe/TTY descriptors can
-be closed directionally. A generic shared non-socket descriptor has no
-universal kernel half-close operation. Stream sockets can map graceful write
-completion to socket `shutdown()`.
+be closed directionally. A shared non-socket descriptor has no universal kernel
+half-close operation. Stream sockets can map graceful write completion to
+socket `shutdown()`.
 
 Plain detach transfers underlying handle ownership only when the concrete leaf
 allows it and pending output has drained. TLS connections cannot detach a bare
@@ -154,9 +154,10 @@ See `ORDERED-BYTE-IO-DESIGN.md` for the shared native engine and
 
 ## Listener acceptance
 
-The listener's `stream_class` must name the supported connected stream-socket
-protocol class. Listener data is initially passed to each accepted connection.
-`on_accept` can replace connection data, retain the object, or close it.
+The listener's `stream_class` must name a supported
+`Linux::Event::IO::Sock::Stream` subclass. Listener data is initially passed to
+each accepted connection. `on_accept` can replace connection data, retain the
+object, or close it.
 
 Accepted connections do not receive an intermediate public watcher or temporary
 socket object. The accepted descriptor is transferred directly into the
@@ -182,15 +183,15 @@ state. Linux::Event restores only signal-mask entries that its service changed.
 
 ## Event lifecycle
 
-`Kernel::Event` uses eventfd for wakeup semantics. `signal()` writes the counter
-without invoking the callback inline. `on_event` always runs on the owning Loop
-thread/interpreter.
+`Kernel::Event` uses eventfd notification semantics. `signal()` writes the
+counter without invoking the callback inline. `on_event` always runs on the
+owning Loop thread/interpreter.
 
 Thread clones or forked children do not gain ownership of the parent's Loop,
 callback state, or application data. They can only use the narrow signaling
 boundary documented in `EVENT-DESIGN.md`.
 
-## Datagram lifecycle
+## Dgram lifecycle
 
 `IO::Sock::Dgram::close()` releases an owned descriptor and owned Unix path
 according to the selected configuration. `detach()` transfers the open handle
@@ -255,6 +256,6 @@ interpreter. Immutable native class descriptors are rebuilt there on first use
 where required. An object created before a thread boundary remains owned by its
 original interpreter.
 
-The historical implementation package names used internally during this
-architecture migration do not change these ownership rules and are not public
-subclassing APIs.
+Historical package names that remain as private implementation or native ABI
+hosts do not alter these ownership rules. They are `no_index` implementation
+details, not application subclassing APIs.

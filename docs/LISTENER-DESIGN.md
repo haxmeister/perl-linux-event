@@ -14,13 +14,13 @@ ordered-byte connection.
 my $server_state = { connections => {} };
 
 my $listener = Linux::Event::IO::Sock::Listener->new(
-    loop                => $loop,              # optional
-    stream_class        => 'ServerConnection', # required
-    host                => '0.0.0.0',          # TCP/IPv4 or IPv6 address
+    loop                => $loop,
+    stream_class        => 'ServerConnection',
+    host                => '0.0.0.0',
     port                => 9999,
-    backlog             => 4096,               # default
-    max_accept_per_tick => 256,                # default
-    edge_triggered      => 0,                  # default
+    backlog             => 4096,
+    max_accept_per_tick => 256,
+    edge_triggered      => 0,
     data                => $server_state,
 );
 ```
@@ -248,13 +248,14 @@ is handled.
 predicates can distinguish Internet versus Unix-domain sources without
 pretending address family is the socket type.
 
-## Internal implementation
+## Private implementation host
 
-The historical `Linux::Event::Listener` package and its XS accept engine are
-private migration implementation details. The public contract is
+The historical `Linux::Event::Listener` package and its XS accept engine remain
+the stable private implementation host beneath
+`Linux::Event::_Socket::Listener`. The supported public contract is
 `Linux::Event::IO::Sock::Listener`.
 
-Keeping the proven native accept engine in place during the namespace refactor
-avoids adding dispatch layers or altering the listener hot path merely to move
-source files. The implementation can be relocated later behind the private
-`Linux::Event::_Socket::Listener` boundary without changing the public leaf.
+The historical package is `no_index` and excluded from META `provides`.
+Retaining the proven native accept engine there avoids source churn or an extra
+dispatch boundary solely for naming. It is an implementation detail, not an
+alternate public listener API or an unfinished relocation.

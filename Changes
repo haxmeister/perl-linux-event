@@ -1,5 +1,32 @@
 Revision history for Linux-Event
 
+0.111  2026-09-03
+    - Complete the post-0.110 public-surface audit so current architecture,
+      lifecycle, transport, benchmark, and introspection documentation describe
+      the released IO/Kernel taxonomy rather than an unfinished migration.
+    - Align Loop introspection with public resource semantics. Stable type labels
+      are now pipe, tty, stream, listener, dgram, timer, signal, event, and
+      process; stream means IO::Sock::Stream, and the obsolete stream_kind field
+      has been removed.
+    - Restrict installed manpages to the public module list from Makefile.PL.
+      Retained no_index implementation and native ABI host packages remain
+      available internally without being installed as application documentation.
+    - Add a current-document taxonomy regression test that rejects stale
+      migration-state wording and retired top-level subclass examples while
+      preserving historical release records and development history.
+    - Add a dedicated public-API overhead benchmark and CI gate comparing the
+      retained implementation paths with the public IO/Kernel leaves. Pipe
+      lifecycle comparison now performs equivalent resource validation on both
+      sides, while the one-time F_GETPIPE_SZ semantic-validation cost is reported
+      separately as a diagnostic rather than misclassified as wrapper overhead.
+    - Extend the public stream overhead gate through 64-byte, 4 KiB, 64 KiB, and
+      200 KiB payloads and retain the full performance-regression comparison.
+      The audited public/private architecture remains within the regression
+      threshold without adding steady-state Perl dispatch to the hot path.
+    - Refresh benchmark guidance, manifests, release metadata, and public module
+      versions for the corrected 0.111 distribution while leaving historical
+      private XS/ABI identifiers unchanged.
+
 0.110  2026-09-03
     - Replace the misleading top-level Stream, Socket, Listener, Datagram,
       Timer, Signal, Wakeup, and Process public model with semantic IO and

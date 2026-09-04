@@ -1,4 +1,4 @@
-# Datagram socket design
+# Dgram socket design
 
 `Linux::Event::IO::Sock::Dgram` is the packet-preserving socket leaf for Linux
 `SOCK_DGRAM`. It supports UDP and Unix-domain datagram sockets without
@@ -173,7 +173,7 @@ packet and report `output_limit`; already queued packets remain in order.
 
 ## Class policy
 
-Datagram-specific class policy caches packet limits, fairness, watermarks, and
+Dgram-specific class policy caches packet limits, fairness, watermarks, and
 socket options once per concrete subclass. Per-instance constructor values can
 override supported settings for one socket.
 
@@ -205,12 +205,14 @@ Resolver/acquisition failure before activation is terminal.
 `on_error`; otherwise the implementation's documented default reporting policy
 applies.
 
-## Internal migration
+## Private implementation host
 
-The historical `Linux::Event::Datagram` Perl/XS implementation remains a
-private `no_index` host while the public API moves to
-`Linux::Event::IO::Sock::Dgram` through `Linux::Event::_Socket::Dgram`.
+The historical `Linux::Event::Datagram` Perl/XS package remains the stable
+private `no_index` packet-engine host beneath
+`Linux::Event::_Socket::Dgram`. The supported application class is
+`Linux::Event::IO::Sock::Dgram`.
 
-This preserves the proven native packet engine during the namespace refactor.
-The public leaf, not the historical source package name, is the application
-contract.
+The historical package is excluded from META `provides` and is not an
+application construction or subclassing surface. Keeping the proven native
+packet engine in that package is an implementation choice, not an unfinished
+namespace transition.

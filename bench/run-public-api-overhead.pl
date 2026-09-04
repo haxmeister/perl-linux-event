@@ -66,6 +66,24 @@ die "payload sizes must be positive\n" if grep { $_ < 1 } @payload_sizes;
     sub on_data ($self, $bytes) { return }
 }
 {
+    package Linux::Event::Bench::PublicAPI::OldValidatedPipe;
+    use parent -norequire, 'Linux::Event::Stream';
+    sub on_data ($self, $bytes) { return }
+    sub new ($class, %option) {
+        my @handle = defined($option{fh})
+            ? ($option{fh})
+            : grep { defined } @option{qw(read_fh write_fh)};
+        my %seen;
+        for my $fh (@handle) {
+            my $fd = fileno($fh);
+            next if defined($fd) && $seen{$fd}++;
+            die "benchmark expected a pipe or FIFO\n"
+                if !defined fcntl($fh, 1032, 0);
+        }
+        return $class->SUPER::new(%option);
+    }
+}
+{
     package Linux::Event::Bench::PublicAPI::NewPipe;
     use parent -norequire, 'Linux::Event::IO::Pipe';
     sub on_data ($self, $bytes) { return }
@@ -82,6 +100,7 @@ die "payload sizes must be positive\n" if grep { $_ < 1 } @payload_sizes;
 }
 
 my @comparison;
+my @diagnostic;
 
 run_pair(
     'socket-stream-lifecycle',
@@ -89,9 +108,14 @@ run_pair(
     sub { socket_lifecycle('Linux::Event::Bench::PublicAPI::NewSocket') },
 );
 run_pair(
-    'pipe-lifecycle',
-    sub { pipe_lifecycle('Linux::Event::Bench::PublicAPI::OldPipe') },
+    'pipe-lifecycle-equivalent-validation',
+    sub { pipe_lifecycle('Linux::Event::Bench::PublicAPI::OldValidatedPipe') },
     sub { pipe_lifecycle('Linux::Event::Bench::PublicAPI::NewPipe') },
+);
+run_diagnostic_pair(
+    'pipe-resource-validation-cost',
+    sub { pipe_lifecycle('Linux::Event::Bench::PublicAPI::OldPipe') },
+    sub { pipe_lifecycle('Linux::Event::Bench::PublicAPI::OldValidatedPipe') },
 );
 run_pair(
     'timer-lifecycle',
@@ -122,6 +146,7 @@ my $report = {
         threshold_percent => $threshold_percent,
     },
     comparisons => \@comparison,
+    diagnostics => \@diagnostic,
     regressions => 0 + $regressions,
 };
 
@@ -149,7 +174,7 @@ sub run_pair ($name, $old_code, $new_code) {
             my ($label, $code, $target) = @$entry;
             my $row = $code->();
             push @$target, $row;
-            printf "%-34s %-3s repeat=%d %12.1f op/s cpu=%9.3f us/op\n",
+            printf "%-38s %-3s repeat=%d %12.1f op/s cpu=%9.3f us/op\n",
                 $name, $label, $repeat,
                 $row->{operations_per_second}, $row->{cpu_us_per_operation};
         }
@@ -164,7 +189,7 @@ sub run_pair ($name, $old_code, $new_code) {
     my $regression = $rate_delta <= -$threshold_percent
         || $cpu_delta >= $threshold_percent;
 
-    printf "%-34s rate=%+7.2f%% cpu=%+7.2f%% %s\n",
+    printf "%-38s rate=%+7.2f%% cpu=%+7.2f%% %s\n",
         $name, $rate_delta, $cpu_delta, $regression ? 'REGRESSION' : 'ok';
 
     push @comparison, {
@@ -178,6 +203,45 @@ sub run_pair ($name, $old_code, $new_code) {
         regression => $regression ? JSON::PP::true : JSON::PP::false,
         old_records => \@old,
         new_records => \@new,
+    };
+}
+
+sub run_diagnostic_pair ($name, $without_code, $with_code) {
+    my (@without, @with);
+    for my $repeat (1 .. $repeats) {
+        my @order = $repeat % 2
+            ? ([plain => $without_code, \@without], [validated => $with_code, \@with])
+            : ([validated => $with_code, \@with], [plain => $without_code, \@without]);
+        for my $entry (@order) {
+            my ($label, $code, $target) = @$entry;
+            my $row = $code->();
+            push @$target, $row;
+            printf "%-38s %-9s repeat=%d %12.1f op/s cpu=%9.3f us/op\n",
+                $name, $label, $repeat,
+                $row->{operations_per_second}, $row->{cpu_us_per_operation};
+        }
+    }
+
+    my $without_rate = median(map { $_->{operations_per_second} } @without);
+    my $with_rate = median(map { $_->{operations_per_second} } @with);
+    my $without_cpu = median(map { $_->{cpu_us_per_operation} } @without);
+    my $with_cpu = median(map { $_->{cpu_us_per_operation} } @with);
+    my $rate_delta = percent_delta($with_rate, $without_rate);
+    my $cpu_delta = percent_delta($with_cpu, $without_cpu);
+
+    printf "%-38s rate=%+7.2f%% cpu=%+7.2f%% diagnostic\n",
+        $name, $rate_delta, $cpu_delta;
+
+    push @diagnostic, {
+        workload => $name,
+        without_validation_operations_per_second => $without_rate,
+        with_validation_operations_per_second => $with_rate,
+        rate_delta_percent => $rate_delta,
+        without_validation_cpu_us_per_operation => $without_cpu,
+        with_validation_cpu_us_per_operation => $with_cpu,
+        cpu_delta_percent => $cpu_delta,
+        without_validation_records => \@without,
+        with_validation_records => \@with,
     };
 }
 

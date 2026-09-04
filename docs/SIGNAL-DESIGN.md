@@ -120,12 +120,12 @@ every record.
 This keeps Signal semantics out of asynchronous kernel handler context without
 turning every subscription into a separate fd or Perl watcher object.
 
-## Internal migration
+## Private implementation host
 
-The historical `Linux::Event::Signal` implementation package and native
-service remain private `no_index` machinery while the public class is
-`Linux::Event::Kernel::Signal`.
+The historical `Linux::Event::Signal` package and native service remain the
+stable private `no_index` implementation host for signalfd fan-out. The
+supported public class is `Linux::Event::Kernel::Signal`.
 
-The namespace migration must preserve the one-signalfd fan-out architecture and
-must not introduce an additional Perl dispatch layer between native delivery
-and the cached application callback.
+Retaining that package/service name avoids unnecessary native churn. It is
+excluded from META `provides` and does not add an extra Perl dispatch layer
+between native delivery and the cached public callback.

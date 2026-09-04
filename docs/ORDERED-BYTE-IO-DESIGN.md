@@ -95,9 +95,9 @@ This is a performance-critical design choice. Callback lookup and tuning-policy
 assembly occur at the class descriptor boundary, not for every readiness event
 or every connection instance.
 
-The historical method name `stream_options()` remains the current tuning hook
-while the implementation migration is completed. It describes ordered-byte
-engine policy, not a public `Linux::Event::Stream` object.
+The method name `stream_options()` is retained as the public ordered-byte
+tuning hook. It describes shared engine policy; it does not imply a public
+generic `Linux::Event::Stream` object.
 
 ## Read sink rules
 
@@ -140,8 +140,8 @@ Read and write termination are independent normal states.
 For distinct pipe or terminal handles, ending a direction can close that
 specific descriptor.
 
-A generic shared non-socket descriptor has no universal half-close syscall.
-The ordered-byte engine therefore records logical write completion without
+A shared non-socket descriptor has no universal half-close syscall. The
+ordered-byte engine therefore records logical write completion without
 inventing kernel semantics that may not exist.
 
 `IO::Sock::Stream` adds the socket-specific mapping to `shutdown()` where
@@ -249,12 +249,11 @@ transition. Existing queued output is not reframed.
 TCP, Unix-domain stream sockets, and socketpairs share this leaf because they
 share `SOCK_STREAM` semantics. Address family remains configuration.
 
-## Private implementation migration
+## Private implementation hosts
 
-The current release work is moving the public API away from the historical
-`Linux::Event::Stream` and `Linux::Event::Socket` names. Proven XS package names
-and portions of the Perl implementation still use those historical names
-internally while they are moved behind:
+The public API is `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream`. The historical
+`Linux::Event::Stream` and `Linux::Event::Socket` packages remain stable private
+implementation/ABI hosts beneath:
 
 ```text
 Linux::Event::_ByteStream
@@ -263,12 +262,12 @@ Linux::Event::_Socket::Stream
 Linux::Event::_Socket::Descriptor
 ```
 
-Those historical/internal names are `no_index` and are not the public
-subclassing contract.
+Those historical/internal names are `no_index`, are excluded from META
+`provides`, and are not the public subclassing contract.
 
-This migration deliberately leaves the native hot path intact. Renaming native
-symbols is not a reason to add ABI churn, dynamic loading boundaries, or Perl
-indirection.
+Retaining their native names deliberately leaves the hot path intact. A native
+symbol rename is not a reason to add ABI churn, dynamic-loading boundaries, or
+Perl indirection.
 
 ## Native consumer ABI
 
@@ -276,14 +275,15 @@ The framed-message native consumer ABI belongs to the private ordered-byte
 engine and remains independent of Linux::Event::Async. Stream-socket subclasses
 use the same consumer mechanism; there is no socket-specific duplicate path.
 
-Existing ABI versioning, borrowed message ownership, pause/resume semantics,
-and terminal-event contracts remain unchanged during the public namespace
-refactor.
+ABI versioning, borrowed message ownership, pause/resume semantics, and
+terminal-event contracts are stable private native contracts. External
+consumers declare through the public `Linux::Event::Framer` boundary rather
+than depending on the historical Stream application name.
 
 ## Performance invariant
 
-The architectural rename must not reduce the performance properties that drove
-the existing implementation:
+The current architecture preserves the performance properties that drove the
+existing implementation:
 
 - one native mutable state per logical ordered-byte object;
 - one cached immutable descriptor per concrete class;
@@ -294,6 +294,6 @@ the existing implementation:
 - no generic public dispatch layer;
 - one watcher for the common single-fd stream-socket path.
 
-Any later physical source or XS package rename should be benchmarked as a
-refactor, not assumed to be free merely because the public semantics are
-unchanged.
+Any future physical source or XS package rename should be benchmarked as an
+implementation refactor, not assumed to be free merely because public semantics
+would remain unchanged.
