@@ -13,9 +13,9 @@ my %TLS_DEFINITION;
 my %CLASS_DESCRIPTOR;
 
 sub declare_tls ($base, $target, $definition) {
-    croak 'TLS may be declared only for a Linux::Event::Socket subclass'
+    croak 'TLS may be declared only for a Linux::Event stream-socket subclass'
         if $target eq $base || !$target->isa($base);
-    croak "$target already has a Socket descriptor"
+    croak "$target already has a stream-socket descriptor"
         if exists $CLASS_DESCRIPTOR{$target};
     croak "$target already declares TLS" if exists $TLS_DEFINITION{$target};
     croak 'TLS declaration must be a hash reference'
@@ -33,10 +33,14 @@ sub _tls_for ($class) {
 
 sub for_class ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Socket is a base class; construct a Socket subclass'
+    croak 'Linux::Event::Socket is a private implementation base; construct a public IO::Sock::Stream subclass'
         if $class eq 'Linux::Event::Socket';
-    croak "$class is not a Linux::Event::Socket subclass"
-        if !$class->isa('Linux::Event::Socket');
+
+    my $is_stream_socket = $class->isa('Linux::Event::_Socket::Stream')
+        || $class->isa('Linux::Event::Socket');
+    croak "$class is not a Linux::Event stream-socket class"
+        if !$is_stream_socket;
+
     my %option = map { $_ => undef } Linux::Event::_SocketConfig::names();
     if (my $configure = $class->can('socket_options')) {
         my @configured = $configure->($class);
