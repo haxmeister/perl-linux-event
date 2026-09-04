@@ -69,8 +69,8 @@ application async API in Linux::Event core.
 ## Canonical C contract
 
 The canonical ABI-v1 declarations remain in
-`xsstream/stream_consumer_abi.h`. The historical filename is a private native
-ABI artifact during the namespace migration.
+`xsstream/stream_consumer_abi.h`. The historical filename is a stable private
+native ABI identifier and does not define the public Perl resource taxonomy.
 
 External XS distributions should vendor the canonical versioned header and
 retain the ABI version/size checks rather than including unrelated private
@@ -295,5 +295,5 @@ New optional table fields require a larger `struct_size`. An incompatible
 contract requires a new ABI version.
 
 Historical C identifiers and the canonical header filename still use `Stream`
-because they are native ABI names. The public Perl resource taxonomy can change
-without gratuitously renaming those stable native symbols.
+because they are stable native ABI names. The public Perl resource taxonomy can
+change independently without gratuitously renaming those native symbols.
