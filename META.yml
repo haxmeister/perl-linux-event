@@ -2,13 +2,18 @@
 abstract: 'Linux-native reactor, I/O, kernel events, and processes'
 author:
   - 'Joshua S. Day <hax@cpan.org>'
+build_requires:
+  ExtUtils::MakeMaker: '0'
+  Test::More: '0'
+configure_requires:
+  ExtUtils::CBuilder: '0'
+  ExtUtils::MakeMaker: '0'
 dynamic_config: 1
 generated_by: 'ExtUtils::MakeMaker version 7.70, CPAN::Meta::Converter version 2.150010'
-license:
-  - perl_5
+license: perl
 meta-spec:
-  url: http://search.cpan.org/perldoc?CPAN::Meta::Spec
-  version: 2
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: '1.4'
 name: Linux-Event
 no_index:
   directory:
@@ -48,21 +53,6 @@ no_index:
     - Linux::Event::Stream::XSState
     - Linux::Event::Timer::_Descriptor
     - Linux::Event::Wakeup::_OwnerState
-prereqs:
-  build:
-    requires:
-      ExtUtils::MakeMaker: '0'
-  configure:
-    requires:
-      ExtUtils::CBuilder: '0'
-      ExtUtils::MakeMaker: '0'
-  runtime:
-    requires:
-      Socket: '2.033'
-      perl: '5.036000'
-  test:
-    requires:
-      Test::More: '0'
 provides:
   Linux::Event:
     file: lib/Linux/Event.pm
@@ -139,14 +129,12 @@ provides:
   Linux::Event::TLS:
     file: lib/Linux/Event/TLS.pm
     version: '0.105'
-release_status: stable
+requires:
+  Socket: '2.033'
+  perl: '5.036000'
 resources:
-  bugtracker:
-    web: https://github.com/haxmeister/perl-linux-event/issues
+  bugtracker: https://github.com/haxmeister/perl-linux-event/issues
   homepage: https://github.com/haxmeister/perl-linux-event
-  repository:
-    type: git
-    url: https://github.com/haxmeister/perl-linux-event.git
-    web: https://github.com/haxmeister/perl-linux-event
+  repository: https://github.com/haxmeister/perl-linux-event.git
 version: '0.105'
 x_serialization_backend: 'JSON::PP version 4.16'
