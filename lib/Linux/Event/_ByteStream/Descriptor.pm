@@ -8,9 +8,9 @@ our $VERSION = '0.105';
 use Carp qw(croak);
 use mro ();
 
-# Private descriptor storage belongs to byte-stream behavior rather than to a
-# public Stream class name. The old Stream::_Descriptor package forwards here
-# during the namespace migration.
+# Private descriptor storage belongs to ordered-byte behavior rather than to a
+# public Stream class name. Historical Stream package names remain only where
+# the stable native extension requires them.
 my %FRAMER_DEFINITION;
 my %CONSUMER_DEFINITION;
 my %CLASS_DESCRIPTOR;
@@ -26,21 +26,22 @@ my @XS_SPEC_FIELD = qw(
 );
 my %XS_SPEC_FIELD = map { $_ => 1 } @XS_SPEC_FIELD;
 
-# The public class declaration path already validates Stream/framer/consumer
-# policy. This last cold step owns only the private XS specification contract:
-# reject misspelled or incomplete fields and normalize scalar representation.
-# The native constructor retains parser-memory and consumer-table checks as
-# defensive backstops before storing pointers or parser configuration.
+# The public class declaration path already validates ordered-byte/framer/
+# consumer policy. This last cold step owns only the private XS specification
+# contract: reject misspelled or incomplete fields and normalize scalar
+# representation. The native constructor retains parser-memory and
+# consumer-table checks as defensive backstops before storing pointers or
+# parser configuration.
 sub _validate_xs_spec ($spec) {
     croak 'XSDescriptor::new requires a hash reference'
         if ref($spec) ne 'HASH';
     my @unknown = grep { !$XS_SPEC_FIELD{$_} } keys %$spec;
-    croak "unknown Stream descriptor field '$unknown[0]'"
+    croak "unknown ordered-byte descriptor field '$unknown[0]'"
         if @unknown == 1;
-    croak 'unknown Stream descriptor fields: ' . join(', ', sort @unknown)
-        if @unknown;
+    croak 'unknown ordered-byte descriptor fields: '
+        . join(', ', sort @unknown) if @unknown;
     for my $field (@XS_SPEC_FIELD) {
-        croak "missing Stream descriptor field '$field'"
+        croak "missing ordered-byte descriptor field '$field'"
             if !exists $spec->{$field};
     }
 
@@ -59,9 +60,9 @@ sub _validate_xs_spec ($spec) {
 }
 
 sub declare_framer ($base, $target, $definition) {
-    croak 'a framer may be declared only for a Linux::Event::Stream subclass'
+    croak 'a framer may be declared only for a Linux::Event ordered-byte subclass'
         if $target eq $base || !$target->isa($base);
-    croak "$target already has a Stream descriptor"
+    croak "$target already has an ordered-byte descriptor"
         if exists $CLASS_DESCRIPTOR{$target};
     croak "$target already declares a framer"
         if exists $FRAMER_DEFINITION{$target};
@@ -78,26 +79,26 @@ sub _framer_for ($class) {
 }
 
 sub declare_consumer ($base, $target, $definition) {
-    croak 'a consumer may be declared only for a Linux::Event::Stream subclass'
+    croak 'a native consumer may be declared only for a Linux::Event ordered-byte subclass'
         if $target eq $base || !$target->isa($base);
-    croak "$target already has a Stream descriptor"
+    croak "$target already has an ordered-byte descriptor"
         if exists $CLASS_DESCRIPTOR{$target};
-    croak "$target already declares a consumer"
+    croak "$target already declares a native consumer"
         if exists $CONSUMER_DEFINITION{$target};
-    croak 'consumer declaration must be a hash reference'
+    croak 'native consumer declaration must be a hash reference'
         if ref($definition) ne 'HASH';
     my @unknown = grep {
         $_ ne 'provider' && $_ ne 'abi_version'
             && $_ ne 'operations_address'
     } keys %$definition;
-    croak 'consumer declaration has unknown fields: '
+    croak 'native consumer declaration has unknown fields: '
         . join(', ', sort @unknown) if @unknown;
-    croak 'consumer declaration requires provider'
+    croak 'native consumer declaration requires provider'
         if !exists($definition->{provider}) || !defined($definition->{provider});
-    croak 'consumer declaration requires a positive integer abi_version'
+    croak 'native consumer declaration requires a positive integer abi_version'
         if !defined($definition->{abi_version})
         || $definition->{abi_version} !~ /\A[1-9]\d*\z/;
-    croak 'consumer declaration requires a positive operations_address'
+    croak 'native consumer declaration requires a positive operations_address'
         if !defined($definition->{operations_address})
         || $definition->{operations_address} !~ /\A[1-9]\d*\z/;
     $CONSUMER_DEFINITION{$target} = { %$definition };
@@ -114,17 +115,17 @@ sub _consumer_for ($class) {
 
 sub _stream_options_for ($class) {
     my %option = (
-        high_watermark   => 1_048_576,
-        low_watermark    =>   262_144,
-        max_pending_bytes =>         0,
-        read_size        =>    65_536,
-        read_budget_bytes =>         0,
-        read_batch_bytes =>         0,
-        message_batch_size =>       0,
-        max_buffer       => 8_388_608,
-        idle_timeout     =>         0,
-        read_timeout     =>         0,
-        write_timeout    =>         0,
+        high_watermark     => 1_048_576,
+        low_watermark      =>   262_144,
+        max_pending_bytes  =>         0,
+        read_size          =>    65_536,
+        read_budget_bytes  =>         0,
+        read_batch_bytes   =>         0,
+        message_batch_size =>         0,
+        max_buffer         => 8_388_608,
+        idle_timeout       =>         0,
+        read_timeout       =>         0,
+        write_timeout      =>         0,
     );
 
     if (my $configure = $class->can('stream_options')) {
@@ -171,14 +172,21 @@ sub _stream_options_for ($class) {
 
 sub for_class ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Stream is a base class; construct a Stream subclass'
+
+    croak 'Linux::Event::Stream is a private implementation base; construct a public ordered-byte leaf subclass'
         if $class eq 'Linux::Event::Stream';
-    croak "$class is not a Linux::Event::Stream subclass"
-        if !$class->isa('Linux::Event::Stream');
-    if (!$class->isa('Linux::Event::Socket')) {
-        croak "$class defines socket_options() but does not inherit from Linux::Event::Socket"
+
+    my $is_ordered_byte = $class->isa('Linux::Event::_ByteStream')
+        || $class->isa('Linux::Event::Stream');
+    croak "$class is not a Linux::Event ordered-byte class"
+        if !$is_ordered_byte;
+
+    my $is_stream_socket = $class->isa('Linux::Event::_Socket::Stream')
+        || $class->isa('Linux::Event::Socket');
+    if (!$is_stream_socket) {
+        croak "$class defines socket_options() but is not a Linux::Event stream-socket class"
             if $class->can('socket_options');
-        croak "$class defines configure_socket() but does not inherit from Linux::Event::Socket"
+        croak "$class defines configure_socket() but is not a Linux::Event stream-socket class"
             if $class->can('configure_socket');
     }
 
@@ -190,7 +198,7 @@ sub for_class ($class) {
            on_ready on_transport_ready);
 
     if ($framer) {
-        croak "$class read_batch_bytes is available only to raw Streams"
+        croak "$class read_batch_bytes is available only to raw ordered-byte classes"
             if $option->{read_batch_bytes};
         croak "$class cannot define on_data() when it declares a framer"
             if $callback{on_data};
@@ -211,13 +219,13 @@ sub for_class ($class) {
                 if $callback{on_messages};
         }
     } else {
-        croak "$class native consumer requires a framed Stream"
+        croak "$class native consumer requires a framed ordered-byte class"
             if $consumer;
         croak "$class defines on_message() but does not declare a framer"
             if $callback{on_message};
         croak "$class defines on_messages() but does not declare a framer"
             if $callback{on_messages};
-        croak "$class message_batch_size is available only to framed Streams"
+        croak "$class message_batch_size is available only to framed ordered-byte classes"
             if $option->{message_batch_size};
     }
 
