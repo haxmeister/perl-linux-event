@@ -10,6 +10,11 @@ use parent qw(
     Linux::Event::Stream
 );
 
+sub transition_to ($self, $class, %option) {
+    Linux::Event::_IO::_guard_transition_resource_kind($self, $class);
+    return Linux::Event::Stream::transition_to($self, $class, %option);
+}
+
 1;
 
 __END__
@@ -32,6 +37,10 @@ The byte-stream layer owns behavior shared by pipe-like I/O, terminals, and
 C<SOCK_STREAM> sockets: directional handles, nonblocking reads and writes,
 input buffering, output queues, backpressure, framing, message batching,
 deadlines, EOF, and directional lifecycle.
+
+Protocol transitions may change the application protocol subclass but must
+retain the concrete public resource kind. Pipe and TTY transitions are checked
+here before the historical Stream transition machinery swaps descriptors.
 
 Socket identity, addressing, connection acquisition, listening, and datagram
 semantics do not belong to this layer.
