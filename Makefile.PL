@@ -45,6 +45,13 @@ my %provides = map {
     };
 } @public_modules;
 
+my %man3pods = map {
+    my $module = $_;
+    my $file = "lib/$module.pm";
+    $file =~ s{::}{/}g;
+    $file => "\$(INST_MAN3DIR)/$module.\$(MAN3EXT)";
+} @public_modules;
+
 WriteMakefile(
     NAME             => 'Linux::Event',
     VERSION_FROM     => 'lib/Linux/Event.pm',
@@ -63,6 +70,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Socket' => '2.033',
     },
+    MAN3PODS         => \%man3pods,
     META_MERGE       => {
         'meta-spec' => {
             version => 2,
