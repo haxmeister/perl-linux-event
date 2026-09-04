@@ -414,14 +414,14 @@ sub descriptor_error ($class) {
 
 subtest 'batching policies reject ambiguous class contracts' => sub {
     like(descriptor_error('T::Batch::InvalidRawMessageBatch'),
-        qr/message_batch_size is available only to framed Streams/,
-        'raw Stream rejects framed batching policy');
+        qr/message_batch_size is available only to framed ordered-byte classes/,
+        'raw ordered-byte class rejects framed batching policy');
     like(descriptor_error('T::Batch::InvalidRawMessages'),
         qr/on_messages.*does not declare a framer/,
-        'raw Stream rejects on_messages');
+        'raw ordered-byte class rejects on_messages');
     like(descriptor_error('T::Batch::InvalidFramedReadBatch'),
-        qr/read_batch_bytes is available only to raw Streams/,
-        'framed Stream rejects raw batching policy');
+        qr/read_batch_bytes is available only to raw ordered-byte classes/,
+        'framed ordered-byte class rejects raw batching policy');
     like(descriptor_error('T::Batch::InvalidMissingMessages'),
         qr/does not define on_messages/,
         'batch policy requires batch callback');
