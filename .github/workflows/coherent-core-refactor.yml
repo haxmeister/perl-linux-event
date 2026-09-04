@@ -3,13 +3,6 @@ name: Coherent core refactor
 on:
   push:
     branches: [refactor/coherent-private-core]
-    paths:
-      - tools/coherent-core-refactor.py
-      - tools/coherent-core-refactor-fixup.py
-      - tools/coherent-core-contract-fixup.py
-      - tools/coherent-core-native-names-fixup.py
-      - tools/coherent-core-test-fixup.py
-      - .github/workflows/coherent-core-refactor.yml
 
 permissions:
   contents: write
