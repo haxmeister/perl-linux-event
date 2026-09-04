@@ -70,29 +70,26 @@ jobs:
             t/architecture-20-native-consumer.t \
             t/datagram-00-api.t
 
-      - name: Test transformed tree verbosely
-        id: full_test
+      - name: Identify first failing regression test
         shell: bash
         run: |
-          set +e
-          set -o pipefail
-          timeout 300 make test TEST_VERBOSE=1 2>&1 | tee full-test.log
-          status=${PIPESTATUS[0]}
-          if (( status != 0 )); then
-            echo "::group::Full test failure tail"
-            tail -n 250 full-test.log
-            echo "::endgroup::"
-          fi
-          exit "$status"
+          set -euo pipefail
+          while IFS= read -r test; do
+            echo "===== $test ====="
+            set +e
+            timeout 45 prove -b -v "$test"
+            status=$?
+            set -e
+            if (( status != 0 )); then
+              echo "::error file=$test,title=Regression test failed::$test exited with status $status"
+              exit "$status"
+            fi
+          done < <(find t -type f -name '*.t' -print | sort)
 
-      - name: Upload full-suite log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coherent-core-full-test-log
-          path: full-test.log
-          if-no-files-found: warn
-          retention-days: 7
+      - name: Test transformed tree with distribution harness
+        shell: bash
+        run: |
+          timeout 300 make test TEST_VERBOSE=1
 
       - name: Commit transformed tree
         run: |
