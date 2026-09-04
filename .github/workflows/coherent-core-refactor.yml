@@ -71,7 +71,28 @@ jobs:
             t/datagram-00-api.t
 
       - name: Test transformed tree verbosely
-        run: timeout 300 make test TEST_VERBOSE=1
+        id: full_test
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          timeout 300 make test TEST_VERBOSE=1 2>&1 | tee full-test.log
+          status=${PIPESTATUS[0]}
+          if (( status != 0 )); then
+            echo "::group::Full test failure tail"
+            tail -n 250 full-test.log
+            echo "::endgroup::"
+          fi
+          exit "$status"
+
+      - name: Upload full-suite log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coherent-core-full-test-log
+          path: full-test.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Commit transformed tree
         run: |
