@@ -14,6 +14,8 @@ replacements = (
      'Linux::Event::_ByteStream::Descriptor::Native'),
     ('Linux::Event::IO::Sock::Stream::XSState',
      'Linux::Event::_ByteStream::State'),
+    ('Linux::Event::_ByteStream::Descriptor::_validate_xs_spec',
+     'Linux::Event::_ByteStream::Descriptor::_validate_native_spec'),
 )
 
 for base in (ROOT / 'lib', ROOT / 't', ROOT / 'bench', ROOT / 'xsbytestream'):
