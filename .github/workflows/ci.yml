@@ -80,7 +80,7 @@ jobs:
     name: Performance regression
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
 
     steps:
       - name: Check out baseline
@@ -143,6 +143,14 @@ jobs:
             --fail-on-regression \
             --json bench/results/performance-candidate.json
 
+      - name: Compare old implementation classes with new public leaves
+        working-directory: candidate
+        run: |
+          perl -Mblib bench/run-public-api-overhead.pl \
+            --threshold-percent 10 \
+            --fail-on-regression \
+            --json bench/results/public-api-overhead.json
+
       - name: Preserve benchmark reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -151,6 +159,7 @@ jobs:
           path: |
             baseline/bench/results/performance-baseline.json
             candidate/bench/results/performance-candidate.json
+            candidate/bench/results/public-api-overhead.json
           if-no-files-found: warn
 
   distribution:
