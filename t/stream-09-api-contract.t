@@ -80,12 +80,14 @@ sub construction_error ($class, @extra) {
 }
 
 my ($made, $error) = construction_error('Linux::Event::Stream');
-ok(!$made, 'base Stream class cannot be constructed');
-like($error, qr/base class/, 'base-class error is clear');
+ok(!$made, 'historical Stream implementation base cannot be constructed');
+like($error, qr/private implementation base.*public ordered-byte leaf/,
+    'private Stream implementation-base error points to the public model');
 
 ($made, $error) = construction_error('Linux::Event::Socket');
-ok(!$made, 'base Socket class cannot be constructed');
-like($error, qr/base class/, 'Socket base-class error is clear');
+ok(!$made, 'historical Socket implementation base cannot be constructed');
+like($error, qr/private implementation base.*IO::Sock::Stream/,
+    'private Socket implementation-base error points to the public leaf');
 
 ($made, $error) = construction_error('T::API::Missing');
 ok(!$made, 'raw subclass requires on_data');
@@ -107,13 +109,13 @@ like($error, qr/unknown options: on_data, read_size/,
     'constructor identifies removed object-configured options');
 
 for my $case (
-    ['T::API::GenericSocketOptions', qr/defines socket_options.*Linux::Event::Socket/],
-    ['T::API::GenericSocketHook', qr/defines configure_socket.*Linux::Event::Socket/],
+    ['T::API::GenericSocketOptions', qr/defines socket_options.*stream-socket class/],
+    ['T::API::GenericSocketHook', qr/defines configure_socket.*stream-socket class/],
 ) {
     pipe(my $read, my $write) or die "pipe: $!";
     my $made = eval { $case->[0]->new(read_fh => $read); 1 };
     ok(!$made, "$case->[0] rejects misplaced socket policy");
-    like($@, $case->[1], 'generic Stream migration mistake fails loudly');
+    like($@, $case->[1], 'ordered-byte/socket boundary mistake fails loudly');
     close $read;
     close $write;
 }
