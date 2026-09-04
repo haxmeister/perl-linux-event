@@ -20,9 +20,11 @@ Linux::Event::_Socket::Stream - private C<SOCK_STREAM> implementation boundary
 
 =head1 DESCRIPTION
 
-This package is internal. During migration it bridges the corrected socket
-architecture to the proven connected C<SOCK_STREAM> implementation. Later
-commits may move that implementation behind this boundary without changing the
-public L<Linux::Event::IO::Sock::Stream> leaf.
+This package is internal. It joins the private socket classification with the
+proven connected C<SOCK_STREAM> implementation hosted under the historical
+C<Linux::Event::Socket> package name. That historical package is retained as a
+private implementation/ABI host and is not an application subclassing API.
+
+The public leaf is L<Linux::Event::IO::Sock::Stream>.
 
 =cut
