@@ -29,7 +29,7 @@ Linux::Event::Framer::U32BE - native 32-bit big-endian framing declaration
 =head1 SYNOPSIS
 
   package MessageStream;
-  use parent 'Linux::Event::Stream';
+  use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'U32BE',
       max_frame => 16 * 1024 * 1024; # optional
 
