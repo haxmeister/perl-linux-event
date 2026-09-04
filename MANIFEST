@@ -163,6 +163,7 @@ t/33-loop-driver-contract.t
 t/34-loop-introspection.t
 t/35-loop-introspection-types.t
 t/36-configure-platform.t
+t/37-current-doc-taxonomy.t
 t/architecture-00-private-layers.t
 t/architecture-10-public-leaves.t
 t/architecture-20-native-consumer.t
