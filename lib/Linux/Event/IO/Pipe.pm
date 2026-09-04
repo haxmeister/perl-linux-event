@@ -6,10 +6,28 @@ use warnings;
 our $VERSION = '0.105';
 
 use parent 'Linux::Event::_ByteStream';
+use Carp qw(croak);
 
-# Private descriptor declaration.  The ordered-byte constructor resolves this
-# once per concrete subclass and performs the fd identity check natively.
-sub _ordered_byte_fd_kind ($class) { 1 }
+# Linux fcntl.h: F_LINUX_SPECIFIC_BASE + 8. Linux::Event is Linux-only and
+# F_GETPIPE_SZ succeeds only for pipe/FIFO descriptors, so this avoids the
+# heavier stat-backed -p file test while preserving the concrete leaf contract.
+use constant _F_GETPIPE_SZ => 1032;
+
+sub _is_pipe ($fh) {
+    return defined fcntl($fh, _F_GETPIPE_SZ, 0);
+}
+
+sub new ($class, %option) {
+    if (defined(my $fh = $option{fh})) {
+        croak 'new(): fh is not a pipe or FIFO' if !_is_pipe($fh);
+    } else {
+        croak 'new(): read_fh is not a pipe or FIFO'
+            if defined($option{read_fh}) && !_is_pipe($option{read_fh});
+        croak 'new(): write_fh is not a pipe or FIFO'
+            if defined($option{write_fh}) && !_is_pipe($option{write_fh});
+    }
+    return $class->SUPER::new(%option);
+}
 
 1;
 
@@ -58,8 +76,8 @@ C<new> accepts exactly one of these handle shapes:
   MyPipe->new(write_fh => $output);
 
 C<fh> means that one descriptor supplies both directions and cannot be combined
-with C<read_fh> or C<write_fh>. Every supplied handle must report as a pipe or
-FIFO. Linux::Event validates that identity before changing descriptor flags,
+with C<read_fh> or C<write_fh>. Every supplied handle must be a Linux pipe or
+FIFO. Linux::Event validates that identity before generic ordered-byte setup,
 then makes owned descriptors nonblocking and close-on-exec.
 
 C<loop =E<gt> $loop> attaches immediately. Otherwise construct detached and
