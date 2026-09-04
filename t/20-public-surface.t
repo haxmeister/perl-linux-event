@@ -281,34 +281,13 @@ for my $path (@engineering_history) {
         "$path is excluded by MANIFEST.SKIP");
 }
 
-my @public_modules = qw(
-    Linux::Event
-    Linux::Event::Address
-    Linux::Event::Error
-    Linux::Event::Framer
-    Linux::Event::Framer::DecimalLength
-    Linux::Event::Framer::Delimiter
-    Linux::Event::Framer::Fixed
-    Linux::Event::Framer::LengthPrefix
-    Linux::Event::Framer::Netstring
-    Linux::Event::Framer::U32BE
-    Linux::Event::Framer::Varint
-    Linux::Event::IO
-    Linux::Event::IO::Pipe
-    Linux::Event::IO::TTY
-    Linux::Event::IO::Sock
-    Linux::Event::IO::Sock::Stream
-    Linux::Event::IO::Sock::Listener
-    Linux::Event::IO::Sock::Dgram
-    Linux::Event::Kernel
-    Linux::Event::Kernel::Timer
-    Linux::Event::Kernel::Signal
-    Linux::Event::Kernel::Event
-    Linux::Event::Kernel::Process
-    Linux::Event::Loop
-    Linux::Event::TLS
-);
-my @expected_provides = sort @public_modules;
+my $makefile_pl = _slurp(File::Spec->catfile($root, 'Makefile.PL'));
+my ($public_module_block) = $makefile_pl =~
+    /my \@public_modules = qw\(\s*(.*?)\s*\);/s;
+ok(defined $public_module_block,
+    'Makefile.PL declares the public module source of truth');
+my @expected_provides = sort grep { length }
+    split /\s+/, ($public_module_block // '');
 
 my $meta_json = decode_json(
     _slurp(File::Spec->catfile($root, 'META.json'))
@@ -317,7 +296,7 @@ is($meta_json->{abstract},
     'Linux-native reactor, I/O, kernel events, and processes',
     'META.json has the current distribution abstract');
 is_deeply([sort keys %{ $meta_json->{provides} }], \@expected_provides,
-    'META.json provides exactly the current public taxonomy');
+    'META.json provides exactly the Makefile.PL public taxonomy');
 
 my $meta_yml_path = File::Spec->catfile($root, 'META.yml');
 my $meta_yml_docs = CPAN::Meta::YAML->read($meta_yml_path);
@@ -328,7 +307,7 @@ if ($meta_yml_docs && @$meta_yml_docs) {
         'Linux-native reactor, I/O, kernel events, and processes',
         'META.yml has the current distribution abstract');
     is_deeply([sort keys %{ $meta_yml->{provides} }], \@expected_provides,
-        'META.yml provides exactly the current public taxonomy');
+        'META.yml provides exactly the Makefile.PL public taxonomy');
 }
 
 my $readme = _slurp(File::Spec->catfile($root, 'README.md'));
