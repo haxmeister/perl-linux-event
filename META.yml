@@ -1,19 +1,14 @@
 ---
-abstract: 'Linux-native reactor, streams, datagrams, and processes'
+abstract: 'Linux-native reactor, I/O, kernel events, and processes'
 author:
   - 'Joshua S. Day <hax@cpan.org>'
-build_requires:
-  ExtUtils::MakeMaker: '0'
-  Test::More: '0'
-configure_requires:
-  ExtUtils::CBuilder: '0'
-  ExtUtils::MakeMaker: '0'
 dynamic_config: 1
 generated_by: 'ExtUtils::MakeMaker version 7.70, CPAN::Meta::Converter version 2.150010'
-license: perl
+license:
+  - perl_5
 meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: '1.4'
+  url: http://search.cpan.org/perldoc?CPAN::Meta::Spec
+  version: 2
 name: Linux-Event
 no_index:
   directory:
@@ -21,6 +16,22 @@ no_index:
     - inc
   package:
     - Linux::Event::_Registration
+    - Linux::Event::_IO
+    - Linux::Event::_ByteStream
+    - Linux::Event::_ByteStream::Descriptor
+    - Linux::Event::_Socket
+    - Linux::Event::_Socket::Descriptor
+    - Linux::Event::_Socket::Stream
+    - Linux::Event::_Socket::Listener
+    - Linux::Event::_Socket::Dgram
+    - Linux::Event::Datagram
+    - Linux::Event::Listener
+    - Linux::Event::Process
+    - Linux::Event::Signal
+    - Linux::Event::Socket
+    - Linux::Event::Stream
+    - Linux::Event::Timer
+    - Linux::Event::Wakeup
     - Linux::Event::Loop::Introspection
     - Linux::Event::_Resolver
     - Linux::Event::_Resolver::_Native
@@ -37,15 +48,27 @@ no_index:
     - Linux::Event::Stream::XSState
     - Linux::Event::Timer::_Descriptor
     - Linux::Event::Wakeup::_OwnerState
+prereqs:
+  build:
+    requires:
+      ExtUtils::MakeMaker: '0'
+  configure:
+    requires:
+      ExtUtils::CBuilder: '0'
+      ExtUtils::MakeMaker: '0'
+  runtime:
+    requires:
+      Socket: '2.033'
+      perl: '5.036000'
+  test:
+    requires:
+      Test::More: '0'
 provides:
   Linux::Event:
     file: lib/Linux/Event.pm
     version: '0.105'
   Linux::Event::Address:
     file: lib/Linux/Event/Address.pm
-    version: '0.105'
-  Linux::Event::Datagram:
-    file: lib/Linux/Event/Datagram.pm
     version: '0.105'
   Linux::Event::Error:
     file: lib/Linux/Event/Error.pm
@@ -74,39 +97,56 @@ provides:
   Linux::Event::Framer::Varint:
     file: lib/Linux/Event/Framer/Varint.pm
     version: '0.105'
-  Linux::Event::Listener:
-    file: lib/Linux/Event/Listener.pm
+  Linux::Event::IO:
+    file: lib/Linux/Event/IO.pm
+    version: '0.105'
+  Linux::Event::IO::Pipe:
+    file: lib/Linux/Event/IO/Pipe.pm
+    version: '0.105'
+  Linux::Event::IO::Sock:
+    file: lib/Linux/Event/IO/Sock.pm
+    version: '0.105'
+  Linux::Event::IO::Sock::Dgram:
+    file: lib/Linux/Event/IO/Sock/Dgram.pm
+    version: '0.105'
+  Linux::Event::IO::Sock::Listener:
+    file: lib/Linux/Event/IO/Sock/Listener.pm
+    version: '0.105'
+  Linux::Event::IO::Sock::Stream:
+    file: lib/Linux/Event/IO/Sock/Stream.pm
+    version: '0.105'
+  Linux::Event::IO::TTY:
+    file: lib/Linux/Event/IO/TTY.pm
+    version: '0.105'
+  Linux::Event::Kernel:
+    file: lib/Linux/Event/Kernel.pm
+    version: '0.105'
+  Linux::Event::Kernel::Event:
+    file: lib/Linux/Event/Kernel/Event.pm
+    version: '0.105'
+  Linux::Event::Kernel::Process:
+    file: lib/Linux/Event/Kernel/Process.pm
+    version: '0.105'
+  Linux::Event::Kernel::Signal:
+    file: lib/Linux/Event/Kernel/Signal.pm
+    version: '0.105'
+  Linux::Event::Kernel::Timer:
+    file: lib/Linux/Event/Kernel/Timer.pm
     version: '0.105'
   Linux::Event::Loop:
     file: lib/Linux/Event/Loop.pm
     version: '0.105'
-  Linux::Event::Process:
-    file: lib/Linux/Event/Process.pm
-    version: '0.105'
-  Linux::Event::Signal:
-    file: lib/Linux/Event/Signal.pm
-    version: '0.105'
-  Linux::Event::Socket:
-    file: lib/Linux/Event/Socket.pm
-    version: '0.105'
-  Linux::Event::Stream:
-    file: lib/Linux/Event/Stream.pm
-    version: '0.105'
   Linux::Event::TLS:
     file: lib/Linux/Event/TLS.pm
     version: '0.105'
-  Linux::Event::Timer:
-    file: lib/Linux/Event/Timer.pm
-    version: '0.105'
-  Linux::Event::Wakeup:
-    file: lib/Linux/Event/Wakeup.pm
-    version: '0.105'
-requires:
-  Socket: '2.033'
-  perl: '5.036000'
+release_status: stable
 resources:
-  bugtracker: https://github.com/haxmeister/perl-linux-event/issues
+  bugtracker:
+    web: https://github.com/haxmeister/perl-linux-event/issues
   homepage: https://github.com/haxmeister/perl-linux-event
-  repository: https://github.com/haxmeister/perl-linux-event.git
+  repository:
+    type: git
+    url: https://github.com/haxmeister/perl-linux-event.git
+    web: https://github.com/haxmeister/perl-linux-event
 version: '0.105'
-x_serialization_backend: 'CPAN::Meta::YAML version 0.018'
+x_serialization_backend: 'JSON::PP version 4.16'
