@@ -6,10 +6,19 @@ use warnings;
 our $VERSION = '0.105';
 
 use parent 'Linux::Event::_ByteStream';
+use Carp qw(croak);
 
-# Private descriptor declaration.  The ordered-byte constructor resolves this
-# once per concrete subclass and performs the terminal identity check natively.
-sub _ordered_byte_fd_kind ($class) { 2 }
+sub new ($class, %option) {
+    if (defined(my $fh = $option{fh})) {
+        croak 'new(): fh is not a TTY or PTY' if !-t $fh;
+    } else {
+        croak 'new(): read_fh is not a TTY or PTY'
+            if defined($option{read_fh}) && !-t $option{read_fh};
+        croak 'new(): write_fh is not a TTY or PTY'
+            if defined($option{write_fh}) && !-t $option{write_fh};
+    }
+    return $class->SUPER::new(%option);
+}
 
 1;
 
@@ -49,14 +58,13 @@ need those settings configure the terminal separately.
 =head1 CONSTRUCTION
 
 C<new> accepts a shared C<fh>, separate C<read_fh> and C<write_fh>, or either
-direction alone. Every supplied handle must be a TTY or PTY. Linux::Event
-validates terminal identity before changing descriptor flags. Separate input
-and output handles are intentionally supported, so C<STDIN> and C<STDOUT> can
-form one logical terminal object.
+direction alone. Every supplied handle must be a TTY or PTY according to Perl's
+C<-t> test. Separate input and output handles are intentionally supported, so
+C<STDIN> and C<STDOUT> can form one logical terminal object.
 
 C<loop =E<gt> $loop> attaches immediately; detached objects may instead be
-passed to C<< $loop->add($tty) >>. C<data> stores arbitrary application state.
-Owned handles are made nonblocking and close-on-exec.
+passed to C<< $loop->add($tty) >>. C<data> stores application state. Owned
+handles are made nonblocking and close-on-exec.
 
 Established C<idle_timeout>, C<read_timeout>, C<write_timeout>, and explicit
 C<deadline> options use the common ordered-byte deadline model.
