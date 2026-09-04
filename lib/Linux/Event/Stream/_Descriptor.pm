@@ -37,15 +37,15 @@ __END__
 
 =head1 NAME
 
-Linux::Event::Stream::_Descriptor - temporary private migration shim
+Linux::Event::Stream::_Descriptor - private historical descriptor forwarding package
 
 =head1 DESCRIPTION
 
-Descriptor storage and validation now live in
-L<Linux::Event::_ByteStream::Descriptor>. This package remains only while the
-old Stream implementation and its XS wrapper are migrated to the corrected
-private byte-stream namespace.
+Ordered-byte descriptor storage and validation live in
+L<Linux::Event::_ByteStream::Descriptor>. This historical package forwards to
+that implementation because the stable private Stream engine still references
+its package name.
 
-It is not a public API.
+It is not a public API and is excluded from distribution indexing.
 
 =cut
