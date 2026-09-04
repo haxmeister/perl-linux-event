@@ -17,6 +17,8 @@ sub _byte_stream_base ($target) {
 }
 
 sub import ($class, $keyword = undef, @args) {
+    return if !defined($keyword) && !@args;
+
     my $target = caller;
     croak "use $class requires a built-in framer name"
         if !defined($keyword) || $keyword eq '';
@@ -92,6 +94,10 @@ C<SOCK_STREAM> sockets. The first argument is the exact final component of a
 package below C<Linux::Event::Framer>. Linux::Event constructs that package
 name, loads it, validates its definition, and incorporates it into the
 subclass's cached native descriptor.
+
+A bare C<use Linux::Event::Framer;> simply loads this module. Extension authors
+use that form when they need C<declare_native_consumer> without declaring a
+framer in the caller package.
 
 There is deliberately no central keyword table and no per-connection framer
 object. A byte-stream subclass describes one protocol type; every instance
