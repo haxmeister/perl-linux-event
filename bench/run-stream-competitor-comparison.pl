@@ -446,7 +446,6 @@ sub run_case ($system, $count, $repeat) {
     wait_for_files(\@measure_done_files, $post_deadline, 'measure done barrier');
     waitpid($control_pid, 0);
     my $control_failure = $? != 0 ? 1 : 0;
-    close $control_read;
     touch_gate($teardown_gate);
 
     my $client_failures = reap_clients(\@pids, 30);
@@ -554,6 +553,7 @@ sub run_case ($system, $count, $repeat) {
     }
 
     $driver->{cleanup}->();
+    close $control_read;
     close $_ for @sockets;
     return \%result;
 }
@@ -772,6 +772,9 @@ sub setup_uv_tcp ($sockets, $c, $phase, $control_read) {
     my $loop = UV::Loop->new;
     my %buffers;
     my @streams;
+    my $write_done = sub ($error) {
+        stream_error($c, $phase, "$error") if $error;
+    };
     my $input = sub ($stream, $error, $chunk) {
         if (defined($error) && $error) {
             stream_error($c, $phase, "$error");
@@ -783,7 +786,7 @@ sub setup_uv_tcp ($sockets, $c, $phase, $control_read) {
         }
         if ($workload eq 'raw') {
             record_raw_input($c, $chunk);
-            $stream->write($chunk);
+            $stream->write($chunk, $write_done);
             $c->{bytes_queued} += length($chunk);
             $c->{echoed_bytes} += length($chunk);
             return;
@@ -792,7 +795,9 @@ sub setup_uv_tcp ($sockets, $c, $phase, $control_read) {
         $buffers{$key} .= $chunk;
         consume_delimited_buffer(
             \$buffers{$key},
-            sub ($message) { $stream->write($message . $delimiter); },
+            sub ($message) {
+                $stream->write($message . $delimiter, $write_done);
+            },
             $c,
         );
     };
@@ -835,7 +840,7 @@ sub setup_uv_tcp ($sockets, $c, $phase, $control_read) {
                 callback_api => $workload eq 'raw'
                     ? 'UV::TCP read closure'
                     : 'UV::TCP read closure using buffered delimiter parsing',
-                callback_reuse => 'one shared input CV per case',
+                callback_reuse => 'one shared input CV and one shared write CV per case',
                 uv_version => version_text($UV::VERSION),
                 libuv_version => version_text(eval { UV::version_string() }),
             };
