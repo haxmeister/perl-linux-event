@@ -172,7 +172,6 @@ for my $repeat (1 .. $repeats) {
 
 my @summary;
 for my $config (@configuration) {
-    my %method;
     for my $case (@case) {
         my @rows = grep {
             $_->{case} eq $case->{name}
@@ -197,17 +196,27 @@ for my $config (@configuration) {
                 map { $_->{rss_after_setup_kib} } @rows,
             ),
         };
-        if ($case->{name} eq 'subclass_method') {
-            %method = %$summary;
-        } else {
-            $summary->{throughput_delta_percent} = 100 * (
-                $summary->{median_messages_per_second}
-                    / $method{median_messages_per_second} - 1
-            );
-            $summary->{cpu_delta_percent} = 100 * (
-                $summary->{median_cpu_us_per_message}
-                    / $method{median_cpu_us_per_message} - 1
-            );
+        if ($case->{name} ne 'subclass_method') {
+            my (@throughput_delta, @cpu_delta);
+            for my $row (@rows) {
+                my ($paired_method) = grep {
+                    $_->{case} eq 'subclass_method'
+                        && $_->{payload_size} == $config->{payload_size}
+                        && $_->{idle_connections}
+                            == $config->{idle_connections}
+                        && $_->{repeat} == $row->{repeat}
+                } @raw;
+                push @throughput_delta, 100 * (
+                    $row->{messages_per_second}
+                        / $paired_method->{messages_per_second} - 1
+                );
+                push @cpu_delta, 100 * (
+                    $row->{cpu_us_per_message}
+                        / $paired_method->{cpu_us_per_message} - 1
+                );
+            }
+            $summary->{throughput_delta_percent} = median(@throughput_delta);
+            $summary->{cpu_delta_percent} = median(@cpu_delta);
         }
         push @summary, $summary;
     }
@@ -232,7 +241,7 @@ for my $row (@summary) {
 if (defined $json_path) {
     my $report = {
         benchmark => 'linux-event-cached-closure-native-dispatch',
-        benchmark_contract_version => 1,
+        benchmark_contract_version => 2,
         linux_event_version => $Linux::Event::VERSION,
         perl_version => 0 + $],
         configuration => {
