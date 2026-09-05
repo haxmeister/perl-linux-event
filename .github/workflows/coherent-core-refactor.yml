@@ -88,6 +88,7 @@ jobs:
 
       - name: Commit transformed tree
         run: |
+          make realclean
           if [[ -z "$(git status --porcelain)" ]]; then
             echo "transformed tree is already up to date"
             exit 0
