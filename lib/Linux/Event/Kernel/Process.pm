@@ -826,6 +826,42 @@ class callbacks once per subclass. Constructor callbacks override same-named
 methods for one object and are retained once in its effective descriptor; no
 event-time method lookup or callback-style branch is added.
 
+=head2 process_options
+
+Return key/value pairs, or one hash reference. C<spawn> accepts the same names
+as per-process overrides. The complete option set is:
+
+=over 4
+
+=item * C<read_size> (default 65,536)
+
+Positive maximum byte size of one stdout or stderr callback payload.
+
+=item * C<max_reads_per_tick> (default 64)
+
+Positive maximum successful reads from each child output pipe during one
+readiness dispatch, providing fairness between active resources.
+
+=item * C<stdin_high_watermark> (default 1,048,576)
+
+Non-negative pending-stdin byte level at which C<write_stdin> begins returning
+false while still accepting the bytes.
+
+=item * C<stdin_low_watermark> (default 262,144)
+
+Non-negative pending-stdin byte level at or below which C<on_stdin_drain>
+fires after high-watermark backpressure. It must not exceed
+C<stdin_high_watermark>.
+
+=item * C<max_pending_stdin> (default 0)
+
+Hard non-negative pending-stdin byte limit. Zero means unbounded.
+
+=back
+
+Linux::Event validates and caches these integer values once per concrete
+subclass.
+
 =head1 SPAWNING
 
 C<spawn> accepts a command argument vector and does not insert a shell:

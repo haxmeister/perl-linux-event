@@ -274,11 +274,21 @@ collection without resetting existing statistics. Statistics remain readable
 while profiling is disabled. Profiling changes the measured workload, so it
 should be disabled for normal benchmarks.
 
-C<event_capacity> and C<set_event_capacity> inspect or change the reusable
-event array. C<callback_scope_limit> and C<set_callback_scope_limit> control
-bounded Perl temporary scopes. C<enable_watcher_reclaim> exposes an
-experimental native memory/throughput tradeoff. The measured defaults should
-normally remain unchanged.
+C<event_capacity> returns the reusable epoll event-array capacity, default
+8,192. C<set_event_capacity($capacity)> accepts an integer from 1 through
+1,048,576 while the Loop is neither running nor dispatching. A larger value can
+return more ready registrations from one C<epoll_wait>; it also allocates a
+larger reusable array.
+
+C<callback_scope_limit> returns the maximum callbacks sharing one bounded Perl
+temporary scope, default 128. C<set_callback_scope_limit($limit)> accepts an
+integer from 0 through 1,048,576. Zero uses one scope for the whole dispatch
+batch; a positive value rotates the scope after that many callbacks.
+
+C<enable_watcher_reclaim($boolean = 1)> toggles immediate watcher-structure
+recycling after dispatch. It defaults off and exposes an experimental native
+memory/throughput tradeoff. The measured defaults should normally remain
+unchanged unless application-specific benchmarks justify tuning them.
 
 =head1 INTERPRETER OWNERSHIP
 

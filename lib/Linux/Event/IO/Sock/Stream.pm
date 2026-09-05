@@ -79,6 +79,121 @@ retained once in that object's effective descriptor. This makes it natural to
 combine reusable high-performance protocol policy with per-connection lexical
 state without adding event-time method lookup or callback-style selection.
 
+=head2 stream_options
+
+Return key/value pairs, or one hash reference. These options apply to Stream,
+Pipe, and TTY subclasses; the complete Stream option set is:
+
+=over 4
+
+=item * C<read_size> (default 65,536)
+
+Maximum bytes requested by one native read; a positive integer.
+
+=item * C<read_budget_bytes> (default 0)
+
+Maximum bytes read during one readiness drain. Zero drains until the socket
+would block.
+
+=item * C<read_batch_bytes> (default 0)
+
+For an unframed class, combine successful reads before C<on_data> up to this
+non-negative byte target. Partial batches flush when the current drain ends;
+zero preserves normal read callback boundaries. It is invalid with framing.
+
+=item * C<message_batch_size> (default 0)
+
+For a framed class, deliver arrays of at most this many messages to
+C<on_messages>. Partial batches flush when the current drain ends; zero uses
+C<on_message>. A positive value requires C<on_messages> and framing.
+
+=item * C<max_buffer> (default 8,388,608)
+
+Positive hard byte bound for retained input, an incomplete frame, and the
+aggregate payload retained for one message batch.
+
+=item * C<high_watermark> (default 1,048,576)
+
+Non-negative pending-output byte level at which C<write> or C<send> begins
+returning false while still accepting the data.
+
+=item * C<low_watermark> (default 262,144)
+
+Non-negative pending-output byte level at or below which C<on_drain> fires
+after high-watermark backpressure. It must not exceed C<high_watermark>.
+
+=item * C<max_pending_bytes> (default 0)
+
+Hard non-negative pending-output byte limit. Zero means unbounded.
+
+=item * C<idle_timeout> (default 0 seconds)
+
+Maximum inactivity interval since successful established input or output
+progress. Zero disables it.
+
+=item * C<read_timeout> (default 0 seconds)
+
+Maximum interval without inbound progress while reading is active. Pausing
+input suspends it; zero disables it.
+
+=item * C<write_timeout> (default 0 seconds)
+
+Maximum interval without output progress while data is queued. Zero disables
+it.
+
+=back
+
+Byte counts are integers. Timeout values are finite non-negative seconds and
+may be fractional. Constructor timeout values override class defaults for one
+Stream; the other values are class policy.
+
+=head2 socket_options
+
+This hook also returns key/value pairs or one hash reference. Unspecified
+options retain kernel defaults. The complete set is:
+
+=over 4
+
+=item * C<tcp_nodelay>
+
+Boolean C<0> or C<1> controlling C<TCP_NODELAY>; TCP only.
+
+=item * C<keepalive>
+
+Boolean C<0> or C<1> controlling C<SO_KEEPALIVE>; TCP only.
+
+=item * C<keepalive_idle>
+
+Positive integer seconds before the first TCP keepalive probe.
+
+=item * C<keepalive_interval>
+
+Positive integer seconds between TCP keepalive probes.
+
+=item * C<keepalive_count>
+
+Positive integer number of failed TCP keepalive probes allowed.
+
+=item * C<tcp_user_timeout>
+
+Finite non-negative seconds for C<TCP_USER_TIMEOUT>; fractional values are
+rounded up to milliseconds. TCP only.
+
+=item * C<send_buffer>
+
+Positive integer requested C<SO_SNDBUF> size.
+
+=item * C<receive_buffer>
+
+Positive integer requested C<SO_RCVBUF> size.
+
+=back
+
+Positive socket integers are at most 2,147,483,647. Constructor values override
+class policy for one connection. C<bind_device> is a constructor option, not a
+C<socket_options> key. C<configure_socket> is the cached cold-path hook for
+Linux options not covered above.
+
 =head1 OUTBOUND CONNECTIONS
 
 C<connect> constructs one connection object whose identity is retained through
@@ -178,19 +293,16 @@ A subclass may define C<socket_options> for acquisition-time socket policy:
       );
   }
 
-Supported policy includes TCP_NODELAY, keepalive tuning, TCP_USER_TIMEOUT,
-send/receive buffers, and interface binding where applicable. Constructor
-values override class policy for one connection. C<configure_socket> is an
-optional cached cold-path hook for Linux options not covered by the built-ins.
-See F<docs/SOCKET-CONFIGURATION.md>.
+The complete option contract appears near the top of this document. See
+F<docs/SOCKET-CONFIGURATION.md> for application order and failure behavior.
 
 =head1 ORDERED-BYTE POLICY AND DEADLINES
 
-C<stream_options> configures read size and fairness, batching, input/output
-limits, watermarks, and established C<idle_timeout>, C<read_timeout>, and
-C<write_timeout>. One explicit operation C<deadline> may also be set or changed
-at runtime. These policies begin when the application transport is usable; DNS,
-connect, TLS handshake, and TLS shutdown retain their own lifecycle deadlines.
+C<stream_options> has the complete option contract listed near the top of this
+document. One explicit operation C<deadline> may also be set or changed at
+runtime. Established timeout policy begins when the application transport is
+usable; DNS, connect, TLS handshake, and TLS shutdown retain separate lifecycle
+deadlines.
 
 =head1 TLS
 

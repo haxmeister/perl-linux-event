@@ -71,6 +71,75 @@ than looking up methods during packet delivery.
 Datagrams already have kernel packet boundaries, so byte-stream framers and TLS
 policy do not apply to this class.
 
+=head2 datagram_options
+
+Return key/value pairs, or one hash reference. Constructor values override
+this cached class policy for one socket. The complete option set is:
+
+=over 4
+
+=item * C<max_datagram_size> (default 65,535)
+
+Largest accepted packet, from 1 through 16,777,216 bytes. An oversized packet
+is rejected whole rather than delivered as a truncated prefix.
+
+=item * C<max_datagrams_per_tick> (default 256)
+
+Non-negative receive fairness limit. Zero drains until C<EAGAIN> and is
+required when C<edge_triggered> is enabled.
+
+=item * C<edge_triggered> (default 0)
+
+Boolean C<0> or C<1> selecting edge-triggered receive readiness.
+
+=item * C<high_watermark> (default 1,048,576)
+
+Non-negative queued-payload byte level at which C<send> begins returning false
+while still accepting the datagram.
+
+=item * C<low_watermark> (default 262,144)
+
+Non-negative queued-payload byte level at or below which C<on_drain> fires
+after high-watermark backpressure. It must not exceed C<high_watermark>.
+
+=item * C<max_pending_bytes> (default 0)
+
+Hard non-negative queued-payload byte limit. Zero means unbounded.
+
+=item * C<max_pending_datagrams> (default 0)
+
+Hard non-negative queued-datagram count limit. Zero means unbounded.
+
+=item * C<reuseaddr> (default 0)
+
+Boolean C<0> or C<1> controlling C<SO_REUSEADDR>.
+
+=item * C<reuseport> (default 0)
+
+Boolean C<0> or C<1> controlling C<SO_REUSEPORT>.
+
+=item * C<broadcast> (default 0)
+
+Boolean C<0> or C<1> controlling C<SO_BROADCAST>.
+
+=item * C<v6only> (default unspecified)
+
+Optional boolean C<0> or C<1> controlling C<IPV6_V6ONLY> on IPv6 sockets.
+
+=item * C<send_buffer> (default unspecified)
+
+Optional positive integer requested C<SO_SNDBUF> size, at most 2,147,483,647.
+
+=item * C<receive_buffer> (default unspecified)
+
+Optional positive integer requested C<SO_RCVBUF> size, at most 2,147,483,647.
+
+=back
+
+C<bind_device>, Unix path ownership options, and C<owns_socket> are constructor
+policy rather than C<datagram_options> keys. C<configure_socket> is the cached
+hook for uncommon Linux socket configuration.
+
 =head1 BOUND AND CONNECTED FORMS
 
 C<new> creates or adopts an unconnected packet socket. For UDP:
@@ -137,11 +206,10 @@ operation.
 
 =head1 SOCKET POLICY
 
-C<datagram_options> caches packet limits, watermarks, fairness, and common socket
-policy per subclass. Internet sockets support options such as C<reuseaddr>,
-C<reuseport>, C<broadcast>, optional C<v6only>, C<bind_device>, and socket
-buffers where applicable. Unix sockets support path ownership and permissions.
-Constructor values override class policy for one object.
+C<datagram_options> caches packet limits, watermarks, fairness, and common
+socket policy per subclass. Its complete contract appears near the top of this
+document. Unix path ownership, permissions, and interface binding remain
+per-object constructor policy.
 
 =head1 METHODS AND LIFECYCLE
 

@@ -70,6 +70,23 @@ buffer sizing is meaningful for both Internet and Unix-domain stream sockets.
 `tcp_user_timeout` is expressed publicly in seconds and converted to Linux
 milliseconds; a positive duration below one millisecond is rounded up.
 
+The complete `socket_options()` set is:
+
+| Option | Value and scope |
+| --- | --- |
+| `tcp_nodelay` | Boolean `TCP_NODELAY`; TCP only |
+| `keepalive` | Boolean `SO_KEEPALIVE`; TCP only |
+| `keepalive_idle` | Positive integer seconds; TCP only |
+| `keepalive_interval` | Positive integer seconds; TCP only |
+| `keepalive_count` | Positive integer probe count; TCP only |
+| `tcp_user_timeout` | Finite non-negative seconds; TCP only |
+| `send_buffer` | Positive integer requested `SO_SNDBUF` |
+| `receive_buffer` | Positive integer requested `SO_RCVBUF` |
+
+Unspecified values leave kernel defaults intact. Positive integers are at most
+2,147,483,647. `bind_device` is deliberately a constructor option rather than
+a `socket_options()` key.
+
 ## Local source binding
 
 For an outbound Internet stream socket, remote `host` and `port` identify the

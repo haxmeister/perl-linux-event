@@ -50,6 +50,27 @@ callbacks override same-named methods for one object and are retained once in
 its effective descriptor. Each instance owns its socket, packet queue,
 backpressure state, addresses, and application `data`.
 
+The complete cached `datagram_options()` policy is:
+
+| Option | Default | Contract |
+| --- | ---: | --- |
+| `max_datagram_size` | 65,535 | Integer from 1 through 16,777,216 |
+| `max_datagrams_per_tick` | 256 | Non-negative fairness limit; zero drains to `EAGAIN` |
+| `edge_triggered` | 0 | Boolean; requires an unlimited per-tick drain |
+| `high_watermark` | 1,048,576 | Cooperative queued-byte backpressure level |
+| `low_watermark` | 262,144 | Drain level; no greater than high watermark |
+| `max_pending_bytes` | 0 | Hard queued-byte limit; zero is unbounded |
+| `max_pending_datagrams` | 0 | Hard queued-packet limit; zero is unbounded |
+| `reuseaddr` | 0 | Boolean `SO_REUSEADDR` |
+| `reuseport` | 0 | Boolean `SO_REUSEPORT` |
+| `broadcast` | 0 | Boolean `SO_BROADCAST` |
+| `v6only` | unspecified | Optional boolean `IPV6_V6ONLY` |
+| `send_buffer` | unspecified | Positive integer requested `SO_SNDBUF` |
+| `receive_buffer` | unspecified | Positive integer requested `SO_RCVBUF` |
+
+Constructor values override class policy. Interface binding, Unix path
+ownership, permissions, and adopted-handle ownership are constructor-only.
+
 ## Socket type versus family
 
 The public class represents `SOCK_DGRAM`. Address family is separate

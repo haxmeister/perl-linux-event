@@ -54,6 +54,18 @@ lexical state without changing the delivery path. One Process object owns the
 pidfd, configured stdio pipes, Loop registrations, queue state, decoded status,
 and application `data`.
 
+The complete cached `process_options()` policy is:
+
+| Option | Default | Contract |
+| --- | ---: | --- |
+| `read_size` | 65,536 | Positive maximum stdout/stderr callback bytes |
+| `max_reads_per_tick` | 64 | Positive per-output-pipe fairness limit |
+| `stdin_high_watermark` | 1,048,576 | Cooperative pending-stdin backpressure level |
+| `stdin_low_watermark` | 262,144 | Drain level; no greater than high watermark |
+| `max_pending_stdin` | 0 | Hard pending-stdin limit; zero is unbounded |
+
+`spawn()` accepts these same names as per-process overrides.
+
 ## Native spawning
 
 `spawn()` accepts an argument vector and never inserts a shell:

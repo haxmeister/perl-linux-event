@@ -73,6 +73,51 @@ subclass while preserving ordinary closure scope for a particular listener.
 The Listener's own C<on_accept> and listener-error policy remain named subclass
 methods because C<on_error> in the constructor belongs to accepted Streams.
 
+=head2 Listener acceptance tuning
+
+Listener tuning is constructor policy; it is distinct from the accepted
+class's C<stream_options> and C<socket_options>:
+
+=over 4
+
+=item * C<backlog> (default 4,096)
+
+Positive listen backlog requested from the kernel.
+
+=item * C<max_accept_per_tick> (default 256)
+
+Non-negative accept fairness limit. Zero drains until C<EAGAIN> and is required
+when C<edge_triggered> is enabled.
+
+=item * C<edge_triggered> (default 0)
+
+Boolean C<0> or C<1> selecting edge-triggered accept readiness.
+
+=item * C<reuseaddr> (default 1)
+
+Boolean C<0> or C<1> controlling C<SO_REUSEADDR> for a created listener.
+
+=item * C<reuseport> (default 0)
+
+Boolean C<0> or C<1> controlling C<SO_REUSEPORT> for a created listener.
+
+=item * C<v6only> (default unspecified)
+
+Optional boolean C<0> or C<1> controlling C<IPV6_V6ONLY> for a created IPv6
+listener.
+
+=item * C<bind_device> (default unspecified)
+
+Optional non-empty interface name used with C<SO_BINDTODEVICE> for a created
+Internet listener.
+
+=back
+
+Unix listener ownership controls are C<unlink> (default C<0>),
+C<unlink_on_close> (default C<1>), and optional C<permissions> from C<0> through
+C<07777>. C<owns_socket> controls ownership of an adopted C<fh> and is not a
+throughput-tuning option.
+
 =head1 CONSTRUCTION
 
 C<stream_class> is required and names the stream-socket subclass created for

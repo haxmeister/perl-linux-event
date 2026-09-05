@@ -100,6 +100,27 @@ The method name `stream_options()` is retained as the public ordered-byte
 tuning hook. It describes shared engine policy; it does not imply a public
 generic `Linux::Event::Stream` object.
 
+The complete cached option contract is:
+
+| Option | Default | Contract |
+| --- | ---: | --- |
+| `read_size` | 65,536 | Positive maximum bytes requested by one read |
+| `read_budget_bytes` | 0 | Bytes per readiness drain; zero drains to blocking |
+| `read_batch_bytes` | 0 | Raw `on_data` batching target; zero disables |
+| `message_batch_size` | 0 | Framed `on_messages` batch count; zero disables |
+| `max_buffer` | 8,388,608 | Positive retained-input and message-batch byte bound |
+| `high_watermark` | 1,048,576 | Cooperative output-backpressure level |
+| `low_watermark` | 262,144 | Drain level; no greater than high watermark |
+| `max_pending_bytes` | 0 | Hard output-queue limit; zero is unbounded |
+| `idle_timeout` | 0 | Seconds without read or write progress; zero disables |
+| `read_timeout` | 0 | Seconds without active read progress; zero disables |
+| `write_timeout` | 0 | Seconds without queued-write progress; zero disables |
+
+Byte settings are non-negative integers except positive `read_size` and
+`max_buffer`. Timeouts are finite non-negative seconds and may be fractional.
+`read_batch_bytes` is raw-only; `message_batch_size` is framed-only and
+requires `on_messages`.
+
 ## Read sink rules
 
 A write-only object does not need an input callback.

@@ -79,6 +79,75 @@ method-versus-closure branch.
 TLS does not apply to TTY; TLS transport policy is specific to
 L<Linux::Event::IO::Sock::Stream>.
 
+=head2 stream_options
+
+Return key/value pairs, or one hash reference. The complete option set is:
+
+=over 4
+
+=item * C<read_size> (default 65,536)
+
+Maximum bytes requested by one native read; a positive integer.
+
+=item * C<read_budget_bytes> (default 0)
+
+Maximum bytes read during one readiness drain. Zero drains until the input
+would block.
+
+=item * C<read_batch_bytes> (default 0)
+
+For an unframed class, combine successful reads before C<on_data> up to this
+non-negative byte target. A partial batch flushes when the current drain ends;
+zero preserves normal read callback boundaries. It is invalid on a framed
+class.
+
+=item * C<message_batch_size> (default 0)
+
+For a framed class, deliver arrays of at most this many messages to
+C<on_messages>. A partial batch flushes when the current drain ends; zero uses
+C<on_message>. A positive value requires C<on_messages> and is invalid on an
+unframed class.
+
+=item * C<max_buffer> (default 8,388,608)
+
+Positive hard byte bound for retained input, an incomplete frame, and the
+aggregate payload retained for one message batch.
+
+=item * C<high_watermark> (default 1,048,576)
+
+Non-negative pending-output byte level at which C<write> or C<send> begins
+returning false while still accepting the data.
+
+=item * C<low_watermark> (default 262,144)
+
+Non-negative pending-output byte level at or below which C<on_drain> fires
+after high-watermark backpressure. It must not exceed C<high_watermark>.
+
+=item * C<max_pending_bytes> (default 0)
+
+Hard non-negative pending-output byte limit. Zero means unbounded.
+
+=item * C<idle_timeout> (default 0 seconds)
+
+Maximum inactivity interval since successful input or output progress. Zero
+disables it.
+
+=item * C<read_timeout> (default 0 seconds)
+
+Maximum interval without inbound progress while reading is active. Pausing
+input suspends it; zero disables it.
+
+=item * C<write_timeout> (default 0 seconds)
+
+Maximum interval without output progress while data is queued. Zero disables
+it.
+
+=back
+
+Byte counts are integers. Timeout values are finite non-negative seconds and
+may be fractional. Constructor timeout values override class defaults for one
+TTY; the other values are class policy.
+
 =head1 CONSTRUCTION
 
 C<new> accepts a shared C<fh>, separate C<read_fh> and C<write_fh>, or either
@@ -131,11 +200,9 @@ is queued. It is terminal and does not call C<on_close>.
 
 =head1 CLASS POLICY
 
-C<stream_options> configures the common ordered-byte engine. The main controls
-are C<read_size>, C<read_budget_bytes>, raw-read or framed-message batching,
-input/output limits, watermarks, and established deadlines. Policy is cached
-per subclass so ordinary readiness does not perform option parsing or callback
-lookup.
+C<stream_options> configures the common ordered-byte engine. The complete
+option contract appears near the top of this document. Policy is cached per
+subclass so ordinary readiness does not parse options or look up callbacks.
 
 =head1 SEE ALSO
 

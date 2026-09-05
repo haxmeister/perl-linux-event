@@ -43,6 +43,23 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
 $loop->add($listener);
 ```
 
+The complete Listener tuning and socket-construction policy is:
+
+| Option | Default | Contract |
+| --- | ---: | --- |
+| `backlog` | 4,096 | Positive kernel listen backlog |
+| `max_accept_per_tick` | 256 | Non-negative fairness limit; zero drains to `EAGAIN` |
+| `edge_triggered` | 0 | Boolean; requires an unlimited per-tick drain |
+| `reuseaddr` | 1 | Boolean `SO_REUSEADDR` |
+| `reuseport` | 0 | Boolean `SO_REUSEPORT` |
+| `v6only` | unspecified | Optional boolean `IPV6_V6ONLY` |
+| `bind_device` | unspecified | Optional non-empty interface name |
+
+Unix listener policy additionally provides `unlink` (default false),
+`unlink_on_close` (default true), and optional permissions from `0` through
+`07777`. Accepted-connection tuning remains in the selected stream class's
+`stream_options()` and `socket_options()`.
+
 `stream_class` names the completed stream-socket subclass constructed for each
 accepted descriptor. The listener's `data` value is passed to each accepted
 object initially; `on_accept` can replace that connection's data if desired.

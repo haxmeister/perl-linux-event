@@ -165,6 +165,7 @@ t/35-loop-introspection-types.t
 t/36-configure-platform.t
 t/37-current-doc-taxonomy.t
 t/38-pod-synopsis.t
+t/40-tuning-pod.t
 t/39-example-syntax.t
 t/39-first-class-resource-callbacks.t
 t/architecture-00-private-layers.t
