@@ -1,6 +1,6 @@
 Revision history for Linux-Event
 
-0.112  Not yet released
+0.112  2026-09-05
     - Add first-class constructor callbacks for ordered-byte input and lifecycle
       events on Pipe, TTY, connected Stream, and accepted Stream objects.
       Constructor callbacks override same-named class methods for that instance.
