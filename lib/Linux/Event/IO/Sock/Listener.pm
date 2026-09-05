@@ -85,6 +85,25 @@ C<loop =E<gt> $loop> attaches immediately; otherwise add the detached object
 with C<< $loop->add($listener) >>. Listener C<data> is supplied to each accepted
 connection as its initial C<data> value.
 
+The Listener may also receive accepted-Stream callback templates directly:
+
+  my $database = ...;
+  my $listener = Listener->new(
+      stream_class => 'Linux::Event::IO::Sock::Stream',
+      host         => '0.0.0.0',
+      port         => 9999,
+      on_data      => sub ($stream, $bytes) {
+          persist($database, $stream, $bytes);
+      },
+  );
+
+Supported templates are C<on_data>, C<on_message>, C<on_messages>,
+C<on_ready>, C<on_transport_ready>, C<on_drain>, C<on_eof>, C<on_error>, and
+C<on_close>. These constructor options belong to each accepted Stream;
+C<on_error($listener, $error)> for the Listener itself remains a Listener
+subclass method. One template CV is retained by the Listener and passed to
+every accepted Stream. Linux::Event does not create a new closure per accept.
+
 TCP listener policy includes C<backlog>, C<reuseaddr>, C<reuseport>, optional
 C<v6only>, and C<bind_device>. Unix listeners support path ownership controls
 including C<unlink>, C<unlink_on_close>, and C<permissions>. Adopted handles
@@ -131,6 +150,7 @@ policy.
 =head1 SEE ALSO
 
 L<Linux::Event::IO::Sock::Stream>, L<Linux::Event::TLS>,
-F<docs/LISTENER-DESIGN.md>, F<docs/SOCKET-CONFIGURATION.md>.
+F<docs/LISTENER-DESIGN.md>, F<docs/SOCKET-CONFIGURATION.md>,
+F<docs/FIRST-CLASS-STREAM-CALLBACKS.md>.
 
 =cut

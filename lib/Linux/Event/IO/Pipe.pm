@@ -102,6 +102,11 @@ or C<on_messages($pipe, $messages)> when C<message_batch_size> is enabled.
 Optional lifecycle callbacks are C<on_eof>, C<on_drain>, C<on_error>, and
 C<on_close>.
 
+Each callback may instead be supplied as a coderef to C<new>. Constructor
+callbacks override class methods for that Pipe and retain ordinary Perl lexical
+scope. Input callbacks are cached in the same native ordered-byte state as
+method callbacks rather than looked up for each read or message.
+
 =head1 OUTPUT AND LIFECYCLE
 
 C<write($bytes)> queues raw bytes. C<send($payload)> applies the subclass's

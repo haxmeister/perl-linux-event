@@ -41,6 +41,26 @@ $loop->add($listener);
 accepted descriptor. The listener's `data` value is passed to each accepted
 object initially; `on_accept` can replace that connection's data if desired.
 
+The Listener constructor also accepts the ordered-byte callback names as
+templates for accepted Streams. For example:
+
+```perl
+my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop => $loop,
+    stream_class => 'Linux::Event::IO::Sock::Stream',
+    host => '127.0.0.1',
+    port => 9999,
+    on_data => sub ($stream, $bytes) {
+        $stream->write($bytes);
+    },
+);
+```
+
+One supplied CV is retained and reused for every accepted Stream. The Listener
+does not manufacture a new closure per connection. These constructor options
+configure accepted Streams; the Listener's own `on_accept` and `on_error`
+remain Listener subclass methods.
+
 ## Socket type and address family
 
 The listener always represents `SOCK_STREAM` in listening state. Its address
@@ -203,7 +223,8 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
 
 A server TLS declaration is validated before the listener begins accepting
 traffic. Each accepted connection receives fresh server-side OpenSSL state.
-There is no per-accept constructor callback layer.
+Accepted-Stream callback templates, when supplied to the Listener constructor,
+are passed directly into Stream construction and native-state seeding.
 
 Built-in accepted socket policy and the optional cached
 `configure_socket($class, $fh, 'accepted', $peer)` hook run before application

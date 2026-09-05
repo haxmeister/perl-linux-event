@@ -149,6 +149,11 @@ Plain detach transfers underlying handle ownership only when the concrete leaf
 allows it and pending output has drained. TLS connections cannot detach a bare
 socket while encrypted provider state remains attached.
 
+Constructor-supplied ordered-byte callbacks are retained for the object's
+active lifetime. Compatible callbacks survive `transition_to()`; terminal
+close and failed construction release them, while detach releases them without
+invoking `on_close`.
+
 See `ORDERED-BYTE-IO-DESIGN.md` for the shared native engine and
 `ORDERED-BYTE-DEADLINES.md` for established deadline ownership.
 

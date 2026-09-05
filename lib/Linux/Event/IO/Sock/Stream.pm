@@ -46,7 +46,8 @@ separate type hierarchy.
 The class combines the common ordered-byte engine with socket acquisition,
 addresses, socket policy, kernel half-close semantics, and optional TLS. A
 concrete protocol subclass supplies named callbacks and, when appropriate, a
-native framer.
+native framer. Constructor callbacks are an equally supported way to provide
+application behavior with normal Perl lexical scope.
 
 =head1 OUTBOUND CONNECTIONS
 
@@ -83,6 +84,21 @@ cannot infer client versus server role.
 
 =head1 CALLBACKS
 
+Callbacks may be methods, constructor coderefs, or a mixture:
+
+  my $database = ...;
+  my $stream = RawConnection->new(
+      fh      => $socket,
+      on_data => sub ($stream, $bytes) {
+          process_bytes($database, $stream, $bytes);
+      },
+  );
+
+A constructor callback overrides the corresponding class method for that
+object. Supported names are C<on_data>, C<on_message>, C<on_messages>,
+C<on_ready>, C<on_transport_ready>, C<on_drain>, C<on_eof>, C<on_error>, and
+C<on_close>. C<connect> accepts the same callback options as C<new>.
+
 C<on_ready($stream)> runs once when the connection is application-ready. For
 TLS that means after handshake and verification, not merely after TCP connect.
 
@@ -92,8 +108,11 @@ C<on_messages>.
 
 Optional lifecycle callbacks include C<on_drain>, C<on_eof>, C<on_error>,
 C<on_close>, and C<on_transport_ready> for transport-specific observation.
-Callback methods and class policy are resolved into an immutable descriptor so
-steady-state I/O does not perform method lookup.
+Method defaults are resolved into an immutable class descriptor. Constructor
+input callbacks are retained once in native Stream state, producing one
+effective cached CV with no event-time lookup or method-versus-coderef branch.
+Lifecycle callbacks are likewise resolved once during construction. Closing or
+detaching the Stream releases its retained constructor callbacks.
 
 =head1 FRAMING AND OUTPUT
 
@@ -162,6 +181,7 @@ only when no output is pending; encrypted transports cannot be detached safely.
 
 L<Linux::Event::IO::Sock::Listener>, L<Linux::Event::IO::Sock::Dgram>,
 L<Linux::Event::Framer>, L<Linux::Event::TLS>,
-F<docs/SOCKET-CONNECTIONS.md>, F<docs/ORDERED-BYTE-IO-DESIGN.md>.
+F<docs/SOCKET-CONNECTIONS.md>, F<docs/ORDERED-BYTE-IO-DESIGN.md>,
+F<docs/FIRST-CLASS-STREAM-CALLBACKS.md>.
 
 =cut

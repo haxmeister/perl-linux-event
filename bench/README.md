@@ -129,6 +129,35 @@ classes remain `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream`:
 These are implementation diagnostics. Do not copy private class names from a
 benchmark row into application code.
 
+## First-class callback regression
+
+The first-class callback harnesses preserve the production invariants established
+by the cached-closure experiment:
+
+- `run-first-class-framed-callback-bench.pl` compares a cached subclass method
+  with constructor coderefs and lexical closures through native framing.
+- `run-first-class-raw-callback-bench.pl` performs the equivalent raw-delivery
+  comparison with read batching disabled.
+- `run-first-class-callback-construction-bench.pl` compares accepted Stream
+  construction for a subclass method, one Listener-shared closure, and a
+  diagnostic fresh closure per accepted Stream.
+
+Use repeated paired runs. For the accepted-connection harness, parent process
+CPU per accept is more reliable than wall throughput because client scheduling
+affects the latter. The fresh-closure row is diagnostic; production Listener
+callbacks are shared.
+
+```bash
+perl -Mblib bench/run-first-class-callback-construction-bench.pl \
+  --clients=100 --connections=10000 --repeats=9 \
+  --json=bench/results/first-class-callback-construction.json
+```
+
+The raw and framed harnesses retain small-message dispatch diagnostics plus
+larger convergence rows. They are regression checks, not a request to reopen
+the already-answered question of whether lexical capture is intrinsically
+slow.
+
 ## Callback batching
 
 `run-callback-batching-microbench.pl` compares ordinary raw/framed callbacks

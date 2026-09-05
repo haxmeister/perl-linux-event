@@ -126,6 +126,31 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
 $loop->run;
 ```
 
+Callbacks may also be supplied directly. They are ordinary Perl closures, so
+application lexicals remain in scope without requiring a connection subclass
+just to carry callback state:
+
+```perl
+my $database = connect_database();
+
+my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop         => $loop,
+    stream_class => 'Linux::Event::IO::Sock::Stream',
+    host         => '127.0.0.1',
+    port         => 9999,
+    on_data      => sub ($stream, $bytes) {
+        store_bytes($database, $stream, $bytes);
+        $stream->write($bytes);
+    },
+);
+```
+
+Constructor callbacks override the corresponding subclass methods for that
+object. The effective `on_data`, `on_message`, or `on_messages` CV is retained
+once in native per-connection state and invoked directly; steady-state input
+does not perform callback lookup or method-versus-closure branching. A Listener
+retains one supplied callback and shares that CV with its accepted Streams.
+
 `Linux::Event::IO::Sock::Stream` represents the socket type, not its address
 family. TCP over IPv4 or IPv6 and Unix-domain `SOCK_STREAM` sockets share the
 same leaf. Address family is selected by construction options.
@@ -245,8 +270,8 @@ rule. Serialization and application codecs remain a separate layer above
 framing.
 
 Class-level `stream_options()` remains the tuning hook for ordered-byte
-behavior. The descriptor is resolved and cached once per subclass rather than
-rebuilding callback and tuning policy per connection.
+behavior. Tuning and method defaults are resolved once per subclass; optional
+constructor callbacks select an instance's effective cached CVs.
 
 ```perl
 sub stream_options ($class) {

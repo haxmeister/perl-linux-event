@@ -10,7 +10,7 @@ The same framing declaration can be used by subclasses of:
 ## Public model
 
 A framed type combines one concrete ordered-byte leaf, one declarative framer,
-and a named message callback:
+and either a named message method or a constructor callback:
 
 ```perl
 package MessageConnection;
@@ -33,6 +33,20 @@ The first construction of a concrete subclass resolves its declaration,
 callbacks, tuning policy, and native parser configuration into one cached
 private descriptor. Each object keeps only its changing parser, buffer, queue,
 and lifecycle state.
+
+An instance may replace the class callback without changing framing policy:
+
+```perl
+my $stream = MessageConnection->new(
+    fh => $fh,
+    on_message => sub ($stream, $message) {
+        handle_message($application_state, $stream, $message);
+    },
+);
+```
+
+The supplied closure becomes that object's effective native message CV. It is
+not looked up or selected again for each frame.
 
 ## Framing pipes and terminals
 
@@ -163,8 +177,8 @@ sub on_messages ($self, $messages) {
 ```
 
 `on_message` and `on_messages` are mutually exclusive. A positive
-`message_batch_size` requires `on_messages`, and defining `on_messages` without
-the option is rejected.
+`message_batch_size` requires an `on_messages` method or constructor callback,
+and defining or supplying `on_messages` without the option is rejected.
 
 XS flushes a partial message batch when the current read drain reaches EAGAIN,
 before EOF or framing error, and when the aggregate input guard requires a
@@ -253,8 +267,9 @@ Application callback exceptions propagate rather than being silently converted.
 
 ## Performance model
 
-Immutable parser configuration and named callback CVs are resolved once per
-concrete class. XS appends bytes directly to native per-object storage, finds
+Immutable parser configuration and method callback CVs are resolved once per
+concrete class. An optional constructor callback replaces the corresponding CV
+once in native per-object state. XS appends bytes directly to native storage, finds
 all complete built-in frames available, and crosses into Perl only for semantic
 messages or lifecycle errors. Optional message batching can amortize that
 semantic crossing across several messages.

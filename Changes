@@ -1,5 +1,18 @@
 Revision history for Linux-Event
 
+0.112  Not yet released
+    - Add first-class constructor callbacks for ordered-byte input and lifecycle
+      events on Pipe, TTY, connected Stream, and accepted Stream objects.
+      Constructor callbacks override same-named class methods for that instance.
+    - Cache the effective raw, framed, and batched input callback directly in
+      native stream state, preserving direct CV dispatch and compatible
+      instance callbacks across protocol transitions.
+    - Let Listener constructors provide one shared callback set for every
+      accepted Stream, without allocating per-connection wrapper closures.
+    - Add lifecycle, transition, teardown, Listener propagation, and callback
+      retention coverage plus permanent construction, raw-dispatch, and
+      framed-dispatch regression benchmarks.
+
 0.111  2026-09-04
     - Complete the coherent private-core refactor behind the IO/Kernel public
       API. Remove the retired top-level Stream, Socket, Listener, Datagram,

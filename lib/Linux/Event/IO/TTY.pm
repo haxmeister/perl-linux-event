@@ -86,6 +86,11 @@ because a framer is declared.
 Optional lifecycle callbacks are C<on_eof>, C<on_drain>, C<on_error>, and
 C<on_close>.
 
+The same callback names may be passed as coderefs to C<new>. A constructor
+callback overrides the corresponding class method for that TTY and can capture
+normal Perl lexical state. Linux::Event resolves the effective callback once;
+it does not select between a method and closure for each input event.
+
 =head1 OUTPUT AND LIFECYCLE
 
 C<write> submits raw bytes; C<send> applies the declared framer. Native output

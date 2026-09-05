@@ -155,7 +155,8 @@ The engine owns:
 One immutable descriptor is cached for each concrete subclass. It contains the
 resolved named callback CVs, tuning policy, framing definition, optional native
 consumer definition, and native descriptor object. Per-instance state contains
-only changing transport, fd, parser, queue, deadline, and lifecycle data.
+changing transport, fd, parser, queue, deadline, and lifecycle data plus any
+constructor-supplied effective callback CVs.
 
 This preserves the performance reason Linux::Event uses subclass-defined
 policy: constructor closures and repeated method/configuration lookup are not
@@ -191,9 +192,11 @@ Framing is an ordered-byte capability, not a socket capability. A delimiter,
 length-prefix, fixed-size, netstring, varint, or decimal-length parser is just as
 valid over a pipe or terminal input as over a stream socket.
 
-A raw descriptor caches `on_data`. A framed descriptor caches `on_message`, or
-`on_messages` when message batching is enabled. Native parsing crosses into
-Perl only at complete semantic delivery boundaries or errors.
+A raw native state caches one effective `on_data` CV. A framed state caches one
+effective `on_message` CV, or `on_messages` when message batching is enabled.
+The CV comes from the class descriptor or a constructor callback; dispatch does
+not branch on its origin. Native parsing crosses into Perl only at complete
+semantic delivery boundaries or errors.
 
 Serialization remains one layer above framing:
 

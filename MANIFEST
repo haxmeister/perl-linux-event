@@ -26,6 +26,9 @@ bench/run-connect-microbench.pl
 bench/run-datagram-microbench.pl
 bench/run-framer-send-bench.pl
 bench/run-framing-microbench.pl
+bench/run-first-class-callback-construction-bench.pl
+bench/run-first-class-framed-callback-bench.pl
+bench/run-first-class-raw-callback-bench.pl
 bench/run-listen-microbench.pl
 bench/run-native-framers-microbench.pl
 bench/run-performance-regression.pl
@@ -51,6 +54,7 @@ docs/CORE.md
 docs/DEVELOPMENT-HISTORY.md
 docs/DGRAM-DESIGN.md
 docs/EVENT-DESIGN.md
+docs/FIRST-CLASS-STREAM-CALLBACKS.md
 docs/FRAMING.md
 docs/INTROSPECTION.md
 docs/IO-KERNEL-ARCHITECTURE.md
@@ -171,6 +175,8 @@ t/listener-13-benchmark-smoke.t
 t/listener-14-ownership.t
 t/listener-15-unix.t
 t/listener-16-callbacks.t
+t/listener-17-first-class-stream-callbacks.t
+t/listener-18-first-class-callback-benchmark-smoke.t
 t/process-00-api.t
 t/process-10-spawn.t
 t/process-11-observe-signal.t
@@ -249,6 +255,9 @@ t/stream-61-teardown-exceptions.t
 t/stream-62-consumer-host-lifetime.t
 t/stream-63-construction-failure.t
 t/stream-64-transition-consumer-flush.t
+t/stream-65-first-class-callbacks.t
+t/stream-66-first-class-framed-callback-benchmark-smoke.t
+t/stream-67-first-class-raw-callback-benchmark-smoke.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t

@@ -35,6 +35,7 @@ for my $required (
     'docs/TIMER-DESIGN.md',
     'docs/SIGNAL-DESIGN.md',
     'docs/EVENT-DESIGN.md',
+    'docs/FIRST-CLASS-STREAM-CALLBACKS.md',
     'docs/SOCKET-CONFIGURATION.md',
     'docs/DGRAM-DESIGN.md',
     'docs/PROCESS-DESIGN.md',
@@ -62,6 +63,9 @@ for my $required (
     'bench/run-stream-transition-bench.pl',
     'bench/run-stream-watcher-state-bench.pl',
     'bench/run-framing-microbench.pl',
+    'bench/run-first-class-callback-construction-bench.pl',
+    'bench/run-first-class-framed-callback-bench.pl',
+    'bench/run-first-class-raw-callback-bench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
     'bench/run-timer-microbench.pl',
@@ -149,6 +153,7 @@ for my $live (
     'docs/TIMER-DESIGN.md',
     'docs/SIGNAL-DESIGN.md',
     'docs/EVENT-DESIGN.md',
+    'docs/FIRST-CLASS-STREAM-CALLBACKS.md',
     'docs/SOCKET-CONFIGURATION.md',
     'docs/DGRAM-DESIGN.md',
     'docs/PROCESS-DESIGN.md',
@@ -172,6 +177,9 @@ for my $live (
     'bench/run-stream-transition-bench.pl',
     'bench/run-stream-watcher-state-bench.pl',
     'bench/run-framing-microbench.pl',
+    'bench/run-first-class-callback-construction-bench.pl',
+    'bench/run-first-class-framed-callback-bench.pl',
+    'bench/run-first-class-raw-callback-bench.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
     'bench/run-timer-microbench.pl',
@@ -208,6 +216,9 @@ my %allowed = map { $_ => 1 } qw(
     run-stream-transition-bench.pl
     run-stream-watcher-state-bench.pl
     run-framing-microbench.pl
+    run-first-class-callback-construction-bench.pl
+    run-first-class-framed-callback-bench.pl
+    run-first-class-raw-callback-bench.pl
     run-framer-send-bench.pl
     run-native-framers-microbench.pl
     run-performance-regression.pl
