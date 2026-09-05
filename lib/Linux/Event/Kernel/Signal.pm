@@ -128,20 +128,25 @@ Linux::Event::Kernel::Signal - synchronous signalfd delivery on a Loop
 
 =head1 SYNOPSIS
 
-  package Shutdown;
-  use parent 'Linux::Event::Kernel::Signal';
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::Kernel::Signal;
   use POSIX qw(SIGINT SIGTERM);
 
+  package Shutdown;
+  use parent 'Linux::Event::Kernel::Signal';
+
   sub on_signal ($signal, $number, $count) {
-      $signal->data->{listener}->close;
       $signal->loop->stop;
   }
 
   package main;
-  my $signal = $loop->add(Shutdown->new(
+  my $loop = Linux::Event::Loop->new;
+  my $signal = Shutdown->new(
+      loop    => $loop,
       signals => [SIGINT, SIGTERM],
-      data    => { listener => $listener },
-  ));
+  );
+  $loop->run;
 
 =head1 DESCRIPTION
 

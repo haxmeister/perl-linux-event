@@ -108,18 +108,22 @@ Linux::Event::Kernel::Timer - monotonic one-shot and recurring Loop timers
 
 =head1 SYNOPSIS
 
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::Kernel::Timer;
+
   package Heartbeat;
   use parent 'Linux::Event::Kernel::Timer';
 
   sub on_timer ($timer) {
-      $timer->data->send('ping');
+      say 'timer fired';
+      $timer->loop->stop;
   }
 
   package main;
-  my $timer = $loop->add(Heartbeat->new(
-      every => 15,
-      data  => $connection,
-  ));
+  my $loop = Linux::Event::Loop->new;
+  my $timer = Heartbeat->new(loop => $loop, after => 1);
+  $loop->run;
 
 =head1 DESCRIPTION
 

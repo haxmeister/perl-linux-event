@@ -224,19 +224,28 @@ Linux::Event::Kernel::Event - eventfd-backed Loop notification
 
 =head1 SYNOPSIS
 
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::Kernel::Event;
+
   package ResultsReady;
   use parent 'Linux::Event::Kernel::Event';
 
   sub on_event ($event, $count) {
-      my $queue = $event->data;
-      process($queue->dequeue_nb) while $queue->pending;
+      $event->data->{notifications} += $count;
+      $event->loop->stop;
   }
 
   package main;
-  my $event = $loop->add(ResultsReady->new(data => $queue));
+  my $loop = Linux::Event::Loop->new;
+  my $event = ResultsReady->new(
+      loop => $loop,
+      data => { notifications => 0 },
+  );
 
   # From a worker thread, native extension, or forked child:
   $event->signal;
+  $loop->run;
 
 =head1 DESCRIPTION
 

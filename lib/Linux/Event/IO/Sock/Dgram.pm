@@ -17,6 +17,10 @@ Linux::Event::IO::Sock::Dgram - asynchronous Linux C<SOCK_DGRAM> I/O
 
 =head1 SYNOPSIS
 
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::IO::Sock::Dgram;
+
   package EchoDgram;
   use parent 'Linux::Event::IO::Sock::Dgram';
 
@@ -25,10 +29,13 @@ Linux::Event::IO::Sock::Dgram - asynchronous Linux C<SOCK_DGRAM> I/O
   }
 
   package main;
-  my $server = $loop->add(EchoDgram->new(
+  my $loop = Linux::Event::Loop->new;
+  my $server = EchoDgram->new(
+      loop => $loop,
       host => '127.0.0.1',
       port => 9999,
-  ));
+  );
+  $loop->run;
 
 =head1 DESCRIPTION
 

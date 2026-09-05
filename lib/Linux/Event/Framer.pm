@@ -115,7 +115,8 @@ callback may come from a class method or from the object's constructor.
 Constructor callbacks are validated during construction and override a
 same-named method for that object. Input dispatch then invokes one cached
 effective CV directly from native ordered-byte state; it does not choose
-between method and closure for every message.
+between method and closure for every message. The framer itself remains
+immutable class policy.
 
 =head1 NATIVE CONSUMERS
 

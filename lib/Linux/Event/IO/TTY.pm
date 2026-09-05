@@ -78,9 +78,11 @@ C<deadline> options use the common ordered-byte deadline model.
 
 =head1 CALLBACKS AND FRAMING
 
-A raw readable subclass defines C<on_data($tty, $bytes)>. A subclass that uses
-L<Linux::Event::Framer> defines C<on_message($tty, $message)> or, with explicit
-batching, C<on_messages($tty, $messages)>.
+A raw readable TTY requires C<on_data($tty, $bytes)> as a method or constructor
+callback. A class that uses L<Linux::Event::Framer> requires
+C<on_message($tty, $message)> or, with explicit batching,
+C<on_messages($tty, $messages)>; either may be supplied by the class or
+constructor.
 
 Delimiter framing is especially useful for line-oriented interactive input:
 

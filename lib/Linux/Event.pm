@@ -202,18 +202,36 @@ transition, and Listener-sharing contract.
 
 =head1 PUBLIC MODEL
 
-Applications use the concrete leaf that describes the resource being used.
-They may use that public leaf directly or subclass it when reusable class-level
-policy or method defaults are useful. For example, a framed protocol declares
-its wire framing once on a concrete stream-socket subclass:
+Applications use the concrete leaf that describes the resource. Raw
+ordered-byte leaves can be constructed directly with callback coderefs; a
+subclass holds reusable framing, tuning, socket/TLS policy, or method callbacks.
+For example:
 
   package Protocol;
   use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Delimiter', "\n";
 
-The callback can then be a method on C<Protocol> or a constructor callback. A
-listener names the class that owns the accepted connection's class-level
-policy:
+  sub on_message ($self, $message) {
+      $self->send($message);
+  }
+
+The same class method can be overridden for one object while retaining lexical
+state:
+
+  my $stream = Protocol->new(
+      fh         => $connected_socket,
+      on_message => sub ($stream, $message) {
+          store_message($database, $message);
+          $stream->send($message);
+      },
+  );
+
+Raw C<IO::Sock::Stream>, C<IO::Pipe>, and C<IO::TTY> objects similarly accept
+C<on_data>. Ordered-byte lifecycle callbacks can also be supplied to the
+constructor. See L<Linux::Event::IO::Sock::Stream> and
+F<docs/FIRST-CLASS-STREAM-CALLBACKS.md> for the complete callback matrix.
+
+A listener then names that completed stream-socket class:
 
   my $listener = Linux::Event::IO::Sock::Listener->new(
       loop         => $loop,

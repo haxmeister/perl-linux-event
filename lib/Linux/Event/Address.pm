@@ -70,9 +70,13 @@ Linux::Event::Address - lazy socket-address value
 
 =head1 SYNOPSIS
 
-  my $peer = $stream->peer;
-  if ($peer && $peer->family eq 'inet') {
-      say $peer->host . ':' . $peer->port;
+  use v5.36;
+
+  sub show_peer ($stream) {
+      my $peer = $stream->peer;
+      if ($peer && $peer->family eq 'inet') {
+          say $peer->host . ':' . $peer->port;
+      }
   }
 
 =head1 DESCRIPTION

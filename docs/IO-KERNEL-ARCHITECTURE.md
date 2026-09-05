@@ -135,6 +135,11 @@ the kernel:
 `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream` all use this behavior without
 claiming that one public facility is a subtype of another.
 
+Their effective application callbacks can come from cached subclass methods or
+constructor coderefs. Constructor callbacks replace the corresponding method
+once per object and use the same native dispatch slot; see
+`FIRST-CLASS-STREAM-CALLBACKS.md`.
+
 ### _Socket
 
 Shared behavior that exists because a descriptor is a socket:

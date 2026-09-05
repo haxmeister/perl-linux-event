@@ -66,6 +66,10 @@ Public resource objects may be attached during construction with
 C<loop =E<gt> $loop>, or constructed detached and passed to C<add>. C<add>
 invokes the object's attachment implementation and returns that same object.
 
+Ordered-byte resources may receive their application callbacks as subclass
+methods or constructor coderefs. This does not change Loop attachment or
+ownership; see F<docs/FIRST-CLASS-STREAM-CALLBACKS.md>.
+
 The public resource leaves are L<Linux::Event::IO::Pipe>,
 L<Linux::Event::IO::TTY>, L<Linux::Event::IO::Sock::Stream>,
 L<Linux::Event::IO::Sock::Listener>, L<Linux::Event::IO::Sock::Dgram>,

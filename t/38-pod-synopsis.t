@@ -29,7 +29,7 @@ for my $file (sort @pod_file) {
     my $synopsis = $1;
     $synopsis =~ s/^  //mg;
     $synopsis =~ s/\A\s+|\s+\z//g;
-    $synopsis .= "\n";
+    $synopsis = "use v5.36;\n$synopsis\n";
     $count++;
 
     my ($program, $path) = tempfile('linux-event-pod-XXXXXX',

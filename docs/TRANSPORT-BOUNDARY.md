@@ -16,7 +16,7 @@ non-plain transport for stream sockets.
 ## Why transport is private
 
 Transport is an implementation capability, not a public resource identity.
-Applications should subclass the completed Linux resource leaf:
+Applications select the completed Linux resource leaf:
 
 ```text
 IO::Pipe
@@ -24,7 +24,9 @@ IO::TTY
 IO::Sock::Stream
 ```
 
-rather than choose an internal transport class.
+rather than choose an internal transport class. A leaf may be used directly
+with constructor callbacks where no reusable class policy is needed, or
+subclassed for framing, tuning, TLS, and other immutable protocol policy.
 
 This keeps several concerns separate:
 
