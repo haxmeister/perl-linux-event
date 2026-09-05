@@ -81,7 +81,21 @@ L<Linux::Event::IO::Sock::Stream>.
 
 =head2 stream_options
 
-Return key/value pairs, or one hash reference. The complete option set is:
+Define C<stream_options> as a class method on the TTY subclass. It returns
+key/value pairs, or one hash reference:
+
+  package InteractiveTTY;
+  use parent 'Linux::Event::IO::TTY';
+
+  sub stream_options ($class) {
+      return (
+          read_size        => 16_384,
+          read_batch_bytes => 4_096,
+          max_buffer       => 1_048_576,
+      );
+  }
+
+The complete option set is:
 
 =over 4
 

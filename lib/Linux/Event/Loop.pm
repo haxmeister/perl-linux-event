@@ -290,6 +290,13 @@ recycling after dispatch. It defaults off and exposes an experimental native
 memory/throughput tradeoff. The measured defaults should normally remain
 unchanged unless application-specific benchmarks justify tuning them.
 
+Loop tuning uses instance methods rather than subclass policy:
+
+  my $loop = Linux::Event::Loop->new;
+  $loop->set_event_capacity(16_384);
+  $loop->set_callback_scope_limit(256);
+  $loop->enable_watcher_reclaim(1); # experimental
+
 =head1 INTERPRETER OWNERSHIP
 
 A Loop and every native object it owns belong to the Perl interpreter that

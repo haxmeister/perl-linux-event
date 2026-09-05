@@ -96,7 +96,21 @@ L<Linux::Event::IO::Sock::Stream>.
 
 =head2 stream_options
 
-Return key/value pairs, or one hash reference. The complete option set is:
+Define C<stream_options> as a class method on the Pipe subclass. It returns
+key/value pairs, or one hash reference:
+
+  package BulkPipe;
+  use parent 'Linux::Event::IO::Pipe';
+
+  sub stream_options ($class) {
+      return (
+          read_size         => 131_072,
+          read_budget_bytes => 524_288,
+          max_buffer        => 16_777_216,
+      );
+  }
+
+The complete option set is:
 
 =over 4
 

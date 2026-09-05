@@ -78,6 +78,18 @@ methods because C<on_error> in the constructor belongs to accepted Streams.
 Listener tuning is constructor policy; it is distinct from the accepted
 class's C<stream_options> and C<socket_options>:
 
+  my $listener = Linux::Event::IO::Sock::Listener->new(
+      loop                => $loop,
+      stream_class        => 'ServerConnection',
+      host                => '0.0.0.0',
+      port                => 9999,
+      backlog             => 8_192,
+      max_accept_per_tick => 512,
+  );
+
+These settings are passed directly to C<new>; Listener does not define a
+class-level tuning method. The complete set is:
+
 =over 4
 
 =item * C<backlog> (default 4,096)

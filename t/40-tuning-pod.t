@@ -29,6 +29,8 @@ for my $path (qw(
     lib/Linux/Event/IO/TTY.pm
 )) {
     my $section = pod_section($path, 'stream_options');
+    like $section, qr/^  sub stream_options \(\$class\) \{/m,
+        "$path demonstrates the stream_options class method";
     for my $option (@stream_options) {
         like $section, qr/=item \* C<\Q$option\E>/,
             "$path lists stream option $option";
@@ -38,6 +40,8 @@ for my $path (qw(
 {
     my $path = 'lib/Linux/Event/IO/Sock/Stream.pm';
     my $section = pod_section($path, 'socket_options');
+    like $section, qr/^  sub socket_options \(\$class\) \{/m,
+        "$path demonstrates the socket_options class method";
     for my $option (qw(
         tcp_nodelay keepalive keepalive_idle keepalive_interval keepalive_count
         tcp_user_timeout send_buffer receive_buffer
@@ -50,6 +54,8 @@ for my $path (qw(
 {
     my $path = 'lib/Linux/Event/IO/Sock/Dgram.pm';
     my $section = pod_section($path, 'datagram_options');
+    like $section, qr/^  sub datagram_options \(\$class\) \{/m,
+        "$path demonstrates the datagram_options class method";
     for my $option (qw(
         max_datagram_size max_datagrams_per_tick edge_triggered high_watermark
         low_watermark max_pending_bytes max_pending_datagrams reuseaddr
@@ -63,6 +69,8 @@ for my $path (qw(
 {
     my $path = 'lib/Linux/Event/Kernel/Process.pm';
     my $section = pod_section($path, 'process_options');
+    like $section, qr/^  sub process_options \(\$class\) \{/m,
+        "$path demonstrates the process_options class method";
     for my $option (qw(
         read_size max_reads_per_tick stdin_high_watermark stdin_low_watermark
         max_pending_stdin
@@ -75,6 +83,8 @@ for my $path (qw(
 {
     my $path = 'lib/Linux/Event/IO/Sock/Listener.pm';
     my $section = pod_section($path, 'Listener acceptance tuning');
+    like $section, qr/Linux::Event::IO::Sock::Listener->new\(/,
+        "$path demonstrates constructor tuning";
     for my $option (qw(
         backlog max_accept_per_tick edge_triggered reuseaddr reuseport v6only
         bind_device
@@ -101,6 +111,8 @@ for my $path (qw(
         'Loop POD records event capacity default';
     like $text, qr/temporary scope, default 128/,
         'Loop POD records callback scope default';
+    like $text, qr/\$loop->set_event_capacity\(16_384\)/,
+        'Loop POD demonstrates instance-method tuning';
 }
 
 done_testing;

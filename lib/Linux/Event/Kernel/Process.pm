@@ -813,10 +813,6 @@ reusable named behavior and a single place for Process I/O tuning:
   package BuildProcess;
   use parent 'Linux::Event::Kernel::Process';
 
-  sub process_options ($class) {
-      return read_size => 131_072, max_reads_per_tick => 32;
-  }
-
   sub on_stdout ($process, $bytes) { print "build: $bytes" }
   sub on_exit ($process) { report_status($process) }
 
@@ -828,8 +824,22 @@ event-time method lookup or callback-style branch is added.
 
 =head2 process_options
 
-Return key/value pairs, or one hash reference. C<spawn> accepts the same names
-as per-process overrides. The complete option set is:
+Define C<process_options> as a class method on the Process subclass. It returns
+key/value pairs, or one hash reference:
+
+  package BuildProcess;
+  use parent 'Linux::Event::Kernel::Process';
+
+  sub process_options ($class) {
+      return (
+          read_size            => 131_072,
+          max_reads_per_tick   => 32,
+          max_pending_stdin    => 8_388_608,
+      );
+  }
+
+C<spawn> accepts the same names as per-process overrides. The complete option
+set is:
 
 =over 4
 

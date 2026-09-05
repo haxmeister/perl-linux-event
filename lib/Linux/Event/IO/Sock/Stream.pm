@@ -94,8 +94,24 @@ state without adding event-time method lookup or callback-style selection.
 
 =head2 stream_options
 
-Return key/value pairs, or one hash reference. These options apply to Stream,
-Pipe, and TTY subclasses; the complete Stream option set is:
+Define C<stream_options> as a class method on the Stream subclass. It returns
+key/value pairs, or one hash reference:
+
+  package TunedConnection;
+  use parent 'Linux::Event::IO::Sock::Stream';
+
+  sub stream_options ($class) {
+      return (
+          read_size         => 131_072,
+          read_budget_bytes => 524_288,
+          high_watermark    => 2_097_152,
+          low_watermark     => 524_288,
+          idle_timeout      => 60,
+      );
+  }
+
+These options also apply to Pipe and TTY subclasses. The complete Stream option
+set is:
 
 =over 4
 
@@ -162,8 +178,18 @@ Stream; the other values are class policy.
 
 =head2 socket_options
 
-This hook also returns key/value pairs or one hash reference. Unspecified
-options retain kernel defaults. The complete set is:
+Define C<socket_options> as another class method on a Stream subclass. It also
+returns key/value pairs or one hash reference:
+
+  sub socket_options ($class) {
+      return (
+          tcp_nodelay      => 1,
+          keepalive        => 1,
+          tcp_user_timeout => 15,
+      );
+  }
+
+Unspecified options retain kernel defaults. The complete set is:
 
 =over 4
 
@@ -296,17 +322,9 @@ transition rules in F<docs/FRAMING.md>.
 
 =head1 SOCKET POLICY
 
-A subclass may define C<socket_options> for acquisition-time socket policy:
-
-  sub socket_options ($class) {
-      return (
-          tcp_nodelay      => 1,
-          keepalive        => 1,
-          tcp_user_timeout => 15,
-      );
-  }
-
-The complete option contract appears near the top of this document. See
+A subclass may define C<socket_options> for acquisition-time socket policy.
+The method shape and complete option contract appear near the top of this
+document. See
 F<docs/SOCKET-CONFIGURATION.md> for application order and failure behavior.
 
 =head1 ORDERED-BYTE POLICY AND DEADLINES

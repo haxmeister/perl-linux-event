@@ -47,7 +47,20 @@ C<new> and C<connect> accept C<on_datagram>, C<on_ready>, C<on_drain>,
 C<on_error>, and C<on_close> as constructor coderefs. Closures are convenient
 for one socket and can capture lexical application state.
 
-Subclassing remains valuable when sockets share packet policy and tuning:
+Subclassing remains valuable when sockets share packet policy, tuning, and
+named callbacks. C<datagram_options> centralizes packet limits, fairness, queue
+watermarks, and socket policy. C<configure_socket> is the cached subclass hook
+for uncommon Linux socket configuration. Constructor values and callbacks
+override class policy for one object. Linux::Event resolves all of this at
+construction rather than looking up methods during packet delivery.
+
+Datagrams already have kernel packet boundaries, so byte-stream framers and TLS
+policy do not apply to this class.
+
+=head2 datagram_options
+
+Define C<datagram_options> as a class method on the Dgram subclass. It returns
+key/value pairs, or one hash reference:
 
   package ServiceDgram;
   use parent 'Linux::Event::IO::Sock::Dgram';
@@ -62,19 +75,8 @@ Subclassing remains valuable when sockets share packet policy and tuning:
 
   sub on_datagram ($socket, $payload, $peer) { ... }
 
-C<datagram_options> centralizes packet limits, fairness, queue watermarks, and
-socket policy. C<configure_socket> is the cached subclass hook for uncommon
-Linux socket configuration. Constructor values and callbacks override class
-policy for one object. Linux::Event resolves all of this at construction rather
-than looking up methods during packet delivery.
-
-Datagrams already have kernel packet boundaries, so byte-stream framers and TLS
-policy do not apply to this class.
-
-=head2 datagram_options
-
-Return key/value pairs, or one hash reference. Constructor values override
-this cached class policy for one socket. The complete option set is:
+Constructor values override this cached class policy for one socket. The
+complete option set is:
 
 =over 4
 
