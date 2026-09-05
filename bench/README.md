@@ -85,16 +85,50 @@ The fairness contract keeps TCP loopback, connection setup, registration,
 warmup, payload size, request/reply behavior, correctness checks, teardown, and
 execution-order rotation comparable across systems.
 
-## Stream-socket competitor plan
+## Stream-socket competitor comparison
 
-`STREAM-COMPETITOR-PLAN.md` defines the high-level comparison contract for
-`Linux::Event::IO::Sock::Stream` against framework stream abstractions such as
-AnyEvent::Handle, IO::Async::Stream, Mojo stream facilities, Node.js
-`net.Socket`, and Python asyncio streams/protocols.
+`run-stream-competitor-comparison.pl` implements the high-level comparison
+contract in `STREAM-COMPETITOR-PLAN.md`. It compares
+`Linux::Event::IO::Sock::Stream` constructor closures with `AnyEvent::Handle`,
+`UV::TCP`, `IO::Async::Stream`, and `Mojo::IOLoop::Stream`. Every row uses the
+framework's normal buffered Stream write API. The common client workers verify
+the exact response bytes before the measured server loop stops.
 
-Raw and delimiter-framed rankings remain separate. Framework buffering and
+Check the optional modules and selected backends first:
+
+```bash
+perl bench/run-stream-competitor-comparison.pl --build --check-deps
+```
+
+Publish raw and delimiter-framed rankings as separate result sets:
+
+```bash
+ulimit -n 100000
+perl bench/run-stream-competitor-comparison.pl --build \
+  --workload raw --clients 100,500,1000,2500 \
+  --warmup 10 --messages 100 --bytes 64 \
+  --client-workers 4 --repeats 5 --timeout 90 \
+  --out bench/results/stream-competitor-raw.html \
+  --json bench/results/stream-competitor-raw.json
+
+perl bench/run-stream-competitor-comparison.pl \
+  --workload delimiter --clients 100,500,1000,2500 \
+  --warmup 10 --messages 100 --bytes 64 \
+  --client-workers 4 --repeats 5 --timeout 90 \
+  --out bench/results/stream-competitor-delimiter.html \
+  --json bench/results/stream-competitor-delimiter.json
+```
+
+Run on the same idle host and publish the companion JSON with each HTML report.
+The default five repeats rotate every system through every execution position.
+Do not combine raw and delimiter rows into one ranking. Framework buffering and
 backpressure are part of the measurement because they are part of what an
-application actually uses.
+application actually uses. The harness still writes diagnostic reports when a
+case fails, but exits nonzero and excludes that row from the ranking summary.
+
+For payload sensitivity, repeat both commands with `--bytes` set to 16, 4096,
+and 65536. Treat 200 KB as a dedicated longer run (more messages or repeats),
+not as one row in the ordinary short-message run.
 
 ## Ordered-byte payload sweep
 

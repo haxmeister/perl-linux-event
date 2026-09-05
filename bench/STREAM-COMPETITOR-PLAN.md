@@ -1,8 +1,10 @@
-# Stream-socket competitor benchmark plan
+# Stream-socket competitor benchmark contract
 
 The high-level stream-socket comparison must measure application stream
 abstractions, not merely their underlying poller. Linux::Event's reactor
 comparison remains a separate suite.
+
+This contract is implemented by `run-stream-competitor-comparison.pl`.
 
 ## Candidate systems
 
@@ -10,16 +12,19 @@ Perl stream layer:
 
 - `Linux::Event::IO::Sock::Stream`
 - `AnyEvent::Handle` on the EV backend
+- `UV::TCP` on libuv
 - `IO::Async::Stream` on `IO::Async::Loop::Epoll`
-- `Mojo::IOLoop::Stream` / low-level Mojo stream facilities
+- `Mojo::IOLoop::Stream` on `Mojo::Reactor::Epoll`
 
-Other runtimes:
+Potential cross-runtime extensions:
 
 - Node.js `net.Socket`
 - Python `asyncio` stream/protocol implementation
 
-Additional Perl/native bindings can be added only when the work performed maps
-cleanly to the same contract.
+Cross-runtime rows belong in a later contract revision because reusing the exact
+Perl client driver, process lifecycle, and CPU accounting is part of the current
+comparison. Additional bindings can be added only when their work maps cleanly
+to the same contract.
 
 ## Benchmark categories
 

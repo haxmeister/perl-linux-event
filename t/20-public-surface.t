@@ -47,6 +47,7 @@ for my $required (
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
+    'bench/run-stream-competitor-comparison.pl',
     'bench/run-resolver-microbench.pl',
     'bench/run-signal-microbench.pl',
     'bench/run-wakeup-microbench.pl',
@@ -165,6 +166,7 @@ for my $live (
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
     'bench/run-reactor-comparison.pl',
+    'bench/run-stream-competitor-comparison.pl',
     'bench/run-resolver-microbench.pl',
     'bench/run-signal-microbench.pl',
     'bench/run-wakeup-microbench.pl',
@@ -200,6 +202,7 @@ my %allowed = map { $_ => 1 } qw(
     run-connect-microbench.pl
     run-listen-microbench.pl
     run-reactor-comparison.pl
+    run-stream-competitor-comparison.pl
     run-resolver-microbench.pl
     run-signal-microbench.pl
     run-wakeup-microbench.pl
