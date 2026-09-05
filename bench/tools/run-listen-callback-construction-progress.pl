@@ -42,18 +42,38 @@ die "clients must be positive\n" if grep { $_ < 1 } @clients;
 die "clients must not exceed connections\n"
     if grep { $_ > $connections } @clients;
 
+my @legacy_styles = qw(subclass_method shared_closure fresh_closure);
+my @native_seed_styles = qw(
+    native_seed_method
+    native_seed_shared_closure
+    native_seed_fresh_closure
+);
 my @styles = $callback_spec eq 'all'
-    ? qw(subclass_method shared_closure fresh_closure)
-    : split /,/, $callback_spec;
-my %valid = map { $_ => 1 } qw(subclass_method shared_closure fresh_closure);
-die "accepted-callbacks must contain subclass_method, shared_closure, "
-    . "fresh_closure, or all\n"
+    ? @legacy_styles
+    : $callback_spec eq 'native_seed'
+        ? @native_seed_styles
+        : split /,/, $callback_spec;
+my %valid = map { $_ => 1 } (@legacy_styles, @native_seed_styles);
+die "accepted-callbacks must contain supported callback styles, all, or native_seed\n"
     if !@styles || grep { !$valid{$_} } @styles;
 my %seen;
 die "accepted-callbacks must not contain duplicates\n"
     if grep { $seen{$_}++ } @styles;
-die "accepted-callbacks must include subclass_method for paired deltas\n"
-    if !grep { $_ eq 'subclass_method' } @styles;
+
+my %baseline_for = (
+    subclass_method => 'subclass_method',
+    shared_closure => 'subclass_method',
+    fresh_closure => 'subclass_method',
+    native_seed_method => 'native_seed_method',
+    native_seed_shared_closure => 'native_seed_method',
+    native_seed_fresh_closure => 'native_seed_method',
+);
+my %selected = map { $_ => 1 } @styles;
+for my $style (@styles) {
+    my $baseline = $baseline_for{$style};
+    die "accepted-callbacks must include $baseline for paired deltas\n"
+        if !$selected{$baseline};
+}
 
 my $engine = "$Bin/run-listen-callback-construction-row.pl";
 die "benchmark row runner not found: $engine\n" if !-f $engine;
@@ -96,7 +116,7 @@ for my $client_count (@clients) {
                 $row->{accepts_per_second},
                 $row->{parent_cpu_us_per_accept};
             printf " fresh-closures=%d", $row->{fresh_closures_created}
-                if $style eq 'fresh_closure';
+                if $style =~ /fresh_closure\z/;
             say '';
 
             write_report('running', \@raw, [], $completed, $total_rows);
@@ -109,10 +129,10 @@ write_report('complete', \@raw, \@summary, $completed, $total_rows);
 
 say '';
 say 'Final paired summary';
-printf "%-20s %8s %14s %16s %10s %10s\n",
+printf "%-28s %8s %14s %16s %10s %10s\n",
     'callback', 'clients', 'accepts/s', 'parent cpu us', 'speed', 'cpu';
 for my $row (@summary) {
-    printf "%-20s %8d %14.1f %16.3f %9s %9s\n",
+    printf "%-28s %8d %14.1f %16.3f %9s %9s\n",
         $row->{callback_style},
         $row->{clients},
         $row->{median_accepts_per_second},
@@ -208,11 +228,6 @@ sub run_row ($style, $client_count, $repeat, $row_number, $total) {
 sub summarize ($raw) {
     my @summary;
     for my $client_count (@clients) {
-        my @baseline = grep {
-            $_->{callback_style} eq 'subclass_method'
-                && $_->{clients} == $client_count
-        } @$raw;
-
         for my $style (@styles) {
             my @rows = grep {
                 $_->{callback_style} eq $style
@@ -234,7 +249,12 @@ sub summarize ($raw) {
                 ),
             };
 
-            if ($style ne 'subclass_method' && @baseline) {
+            my $baseline_name = $baseline_for{$style};
+            if ($style ne $baseline_name) {
+                my @baseline = grep {
+                    $_->{callback_style} eq $baseline_name
+                        && $_->{clients} == $client_count
+                } @$raw;
                 my (@speed, @cpu);
                 for my $row (@rows) {
                     my ($paired) = grep {
@@ -286,6 +306,7 @@ sub write_report ($status, $raw, $summary, $done, $total) {
             parent_cpu_excludes_client_workers => 1,
             completion_event => 'listener_on_accept',
             clients_wait_for_server_close => 1,
+            native_seed_matrix => $callback_spec eq 'native_seed' ? 1 : 0,
             progress_driver => 1,
         },
         raw => $raw,
@@ -326,7 +347,11 @@ Usage: perl -Mblib bench/tools/run-listen-callback-construction-progress.pl [opt
   --connections=N           accepted connections per row (default: 10000)
   --repeats=N               paired repetitions (default: 9)
   --timeout=SECONDS         row timeout (default: 30)
-  --accepted-callbacks=LIST subclass_method,shared_closure,fresh_closure, or all
+  --accepted-callbacks=LIST callback styles, all, or native_seed
+                            all: subclass_method,shared_closure,fresh_closure
+                            native_seed: native_seed_method,
+                              native_seed_shared_closure,
+                              native_seed_fresh_closure
   --json=PATH               incrementally updated JSON report
   --heartbeat=SECONDS       still-running message interval (default: 5)
   --help
@@ -335,6 +360,12 @@ Each row uses a dedicated runner. Blocking clients remain connected until the
 server closes the accepted Stream. Completion is counted in Listener->on_accept,
 after accepted Stream construction, so rapid peer teardown cannot suppress the
 completion signal. Progress I/O remains outside the measured server interval.
+
+The native_seed matrix uses a framed Stream because constructor on_message is
+already passed into _ByteStream::State->_new_validated and retained there during
+native state creation. Its Listener directly supplies the shared or fresh
+closure to the accepted Stream constructor, avoiding the raw experiment's
+subclass new() wrapper and post-construction _set_instance_deliver_callback.
 USAGE
     exit $exit;
 }
