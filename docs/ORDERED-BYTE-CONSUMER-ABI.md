@@ -68,9 +68,9 @@ application async API in Linux::Event core.
 
 ## Canonical C contract
 
-The canonical ABI-v1 declarations remain in
-`xsstream/stream_consumer_abi.h`. The historical filename is a stable private
-native ABI identifier and does not define the public Perl resource taxonomy.
+The canonical ABI-v1 declarations live in
+`xsbytestream/stream_consumer_abi.h`. The C filename describes the ordered-byte
+engine contract and does not define the public Perl resource taxonomy.
 
 External XS distributions should vendor the canonical versioned header and
 retain the ABI version/size checks rather than including unrelated private

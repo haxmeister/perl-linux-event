@@ -290,8 +290,7 @@ C<cancel> is idempotent and terminal. It removes the Loop registration and
 releases owner-side state. Callback exceptions propagate through ordinary Loop
 dispatch and do not silently cancel the Event.
 
-The inherited C<on_wakeup> bridge is private implementation glue for the stable
-native eventfd extension; applications define and use only C<on_event>.
+The native eventfd extension dispatches C<on_event> directly.
 
 =head1 SEE ALSO
 

@@ -248,14 +248,9 @@ is handled.
 predicates can distinguish Internet versus Unix-domain sources without
 pretending address family is the socket type.
 
-## Private implementation host
+## Private implementation boundary
 
-The historical `Linux::Event::Listener` package and its XS accept engine remain
-the stable private implementation host beneath
-`Linux::Event::_Socket::Listener`. The supported public contract is
-`Linux::Event::IO::Sock::Listener`.
-
-The historical package is `no_index` and excluded from META `provides`.
-Retaining the proven native accept engine there avoids source churn or an extra
-dispatch boundary solely for naming. It is an implementation detail, not an
-alternate public listener API or an unfinished relocation.
+`Linux::Event::_Socket::Listener` is the private XS accept-engine boundary
+beneath the supported public contract `Linux::Event::IO::Sock::Listener`. It is
+`no_index`, excluded from META `provides`, and not an alternate public listener
+API.

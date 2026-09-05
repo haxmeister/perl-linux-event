@@ -898,9 +898,9 @@ sub transition_to ($self, $class, %opt) {
         if !defined($class) || ref($class) || $class eq '';
     croak "transition_to(): $class is already active"
         if ref($self) eq $class;
-    my $source_socket = $self->isa('Linux::Event::Socket') ? 1 : 0;
-    my $target_socket = $class->isa('Linux::Event::Socket') ? 1 : 0;
-    croak 'transition_to(): cannot cross the Stream/Socket transport boundary'
+    my $source_socket = $self->isa('Linux::Event::_Socket::Stream') ? 1 : 0;
+    my $target_socket = $class->isa('Linux::Event::_Socket::Stream') ? 1 : 0;
+    croak 'transition_to(): cannot cross the ordered-byte resource boundary'
         if $source_socket != $target_socket;
 
     my $input = delete $opt{input};

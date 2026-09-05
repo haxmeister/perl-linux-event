@@ -209,13 +209,8 @@ The Process-specific benchmark suite measures lifecycle, pipe draining, stdin
 queue behavior, and native helper costs separately from generic ordered-byte and
 reactor benchmarks.
 
-## Private implementation host
+## Native implementation boundary
 
-The historical `Linux::Event::Process` package and XS extension remain the
-stable private `no_index` implementation host for pidfd lifecycle, native spawn,
-and Process stdio. The supported public class is
-`Linux::Event::Kernel::Process`.
-
-Retaining those native package names preserves the proven pidfd and stdio hot
-paths without adding another Perl dispatch boundary. The historical package is
-excluded from META `provides` and is not an application subclassing contract.
+`Linux::Event::Kernel::Process` is both the supported public class and the XS
+host for pidfd lifecycle, native spawn, and Process stdio. Private helpers stay
+behind that class and do not add another Perl dispatch boundary.

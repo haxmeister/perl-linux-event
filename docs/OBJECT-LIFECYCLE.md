@@ -256,6 +256,6 @@ interpreter. Immutable native class descriptors are rebuilt there on first use
 where required. An object created before a thread boundary remains owned by its
 original interpreter.
 
-Historical package names that remain as private implementation or native ABI
-hosts do not alter these ownership rules. They are `no_index` implementation
-details, not application subclassing APIs.
+Private implementation and native ABI packages do not alter these ownership
+rules. They are `no_index` implementation details, not application subclassing
+APIs.

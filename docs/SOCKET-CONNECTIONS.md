@@ -160,8 +160,8 @@ after establishment.
 
 ## Internal acquisition engine
 
-`Linux::Event::Socket::_Connection` currently remains a private historical
-implementation package. It is not part of the public namespace contract.
+`Linux::Event::_Socket::Connection` is the private acquisition implementation
+package. It is not part of the public namespace contract.
 
 The acquisition engine owns candidate attempts and its connection deadline.
 On success it transfers the connected descriptor directly into the same

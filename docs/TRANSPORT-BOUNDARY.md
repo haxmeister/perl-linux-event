@@ -208,6 +208,6 @@ The native transport contract is versioned with the distribution. The
 ordered-byte state retains the provider object so its operations table and
 native context outlive every in-flight operation.
 
-Historical native headers and XS package names contain `Stream` because they
-are stable private ABI identifiers. They do not define the public resource
-taxonomy and are not evidence of a second public Stream API.
+Native headers retain `stream` terminology for the ordered-byte engine, while
+XS package names use the private `_ByteStream` taxonomy. Neither defines a
+second public Stream API.

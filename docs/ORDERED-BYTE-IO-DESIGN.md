@@ -249,11 +249,10 @@ transition. Existing queued output is not reframed.
 TCP, Unix-domain stream sockets, and socketpairs share this leaf because they
 share `SOCK_STREAM` semantics. Address family remains configuration.
 
-## Private implementation hosts
+## Private implementation boundaries
 
-The public API is `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream`. The historical
-`Linux::Event::Stream` and `Linux::Event::Socket` packages remain stable private
-implementation/ABI hosts beneath:
+The public API is `IO::Pipe`, `IO::TTY`, and `IO::Sock::Stream`. Their shared
+implementation and socket specialization live beneath:
 
 ```text
 Linux::Event::_ByteStream
@@ -262,12 +261,11 @@ Linux::Event::_Socket::Stream
 Linux::Event::_Socket::Descriptor
 ```
 
-Those historical/internal names are `no_index`, are excluded from META
+Those internal names are `no_index`, are excluded from META
 `provides`, and are not the public subclassing contract.
 
-Retaining their native names deliberately leaves the hot path intact. A native
-symbol rename is not a reason to add ABI churn, dynamic-loading boundaries, or
-Perl indirection.
+The coherent private names are used directly by the native hot path without
+adding dynamic-loading boundaries or Perl indirection.
 
 ## Native consumer ABI
 
