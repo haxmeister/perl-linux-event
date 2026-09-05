@@ -27,6 +27,11 @@ for base in (ROOT / 'lib', ROOT / 't', ROOT / 'bench', ROOT / 'xsbytestream'):
         text = p.read_text()
         for old, new in replacements:
             text = text.replace(old, new)
+        text = text.replace('{descriptor}{xs}', '{descriptor}{native}')
+        text = text.replace(
+            '{descriptor}{native}{read_mode}',
+            '{descriptor}{framer}{native}{read_mode}',
+        )
         # The coherent descriptor cache exposes its native wrapper under one
         # implementation-neutral key. The retired Stream implementation used
         # `xs`; construction and transition must not retain that second name.

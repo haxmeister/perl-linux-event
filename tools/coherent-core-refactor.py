@@ -62,6 +62,16 @@ text = transform_impl(
         ('Linux::Event::Timer', 'Linux::Event::Kernel::Timer'),
     ],
 )
+# The coherent native state exposes its owning Perl object through object().
+# The legacy Stream implementation called the same relationship stream().
+text = text.replace(
+    'my $self = $state->stream or return;',
+    'my $self = $state->object or return;',
+)
+text = text.replace(
+    'connect(): available only on Linux::Event::Socket subclasses',
+    'connect(): available only on Linux::Event::IO::Sock::Stream subclasses',
+)
 text = text.replace(
     'use strict;\nuse warnings;\n\n',
     "use strict;\nuse warnings;\n\nuse parent 'Linux::Event::_IO';\n",
@@ -170,6 +180,16 @@ for rel in (
     text = no_private_version(text)
     text = text.replace('Linux::Event::Stream', 'Linux::Event::_ByteStream')
     text = text.replace('Linux::Event::Socket', 'Linux::Event::_Socket::Stream')
+    text = text.replace(
+        "croak 'Linux::Event::_ByteStream is a private implementation base'",
+        "croak 'Linux::Event::_ByteStream is a private implementation base; "
+        "subclass a public ordered-byte leaf'",
+    )
+    text = text.replace(
+        "croak 'Linux::Event::_Socket::Stream is a private implementation base'",
+        "croak 'Linux::Event::_Socket::Stream is a private implementation base; "
+        "subclass Linux::Event::IO::Sock::Stream'",
+    )
     # Remove now-redundant compatibility clauses introduced by exact replacement.
     text = text.replace(
         "    my $is_ordered_byte = $class->isa('Linux::Event::_ByteStream')\n        || $class->isa('Linux::Event::_ByteStream');",
