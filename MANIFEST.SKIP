@@ -7,7 +7,7 @@
 ^MYMETA\.(?:json|yml)$
 ^(?:.*/)?pm_to_blib$
 ^xsloop/(?:Makefile$|MYMETA\.(?:json|yml)$|Loop\.(?:c|o|bs|xsc)$|blib(?:/|$))
-^xsbytestream/(?:Makefile$|MYMETA\.(?:json|yml)$|ByteStream\.(?:c|bs|xsc)$|[^/]+\.o$|blib(?:/|$))
+^xsbytestream/(?:Makefile$|MYMETA\.(?:json|yml)$|ByteByteStream\.(?:c|bs|xsc)$|[^/]+\.o$|blib(?:/|$))
 ^xstls/(?:Makefile$|MYMETA\.(?:json|yml)$|TLS\.(?:c|o|bs|xsc)$|blib(?:/|$)|check_openssl(?:\.o)?$)
 ^xsconnection/(?:Makefile$|MYMETA\.(?:json|yml)$|Connection\.(?:c|o|bs|xsc)$|_Connection\.bs$|blib(?:/|$))
 ^xslistener/(?:Makefile$|MYMETA\.(?:json|yml)$|Listener\.(?:c|o|bs|xsc)$|blib(?:/|$))
