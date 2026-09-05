@@ -35,6 +35,10 @@ use Linux::Event::TLS
     verify => 1,              # default
     alpn   => ['http/1.1'];   # optional
 
+sub on_data ($connection, $bytes) {
+    $connection->data->{input} .= $bytes;
+}
+
 package main;
 my $state = { requests => {} };
 my $connection = ClientConnection->connect(

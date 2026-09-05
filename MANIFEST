@@ -79,6 +79,7 @@ docs/TRANSPORT-BOUNDARY.md
 examples/line-echo-client.pl
 examples/line-echo-server.pl
 examples/process-capture.pl
+examples/first-class-line-echo-server.pl
 examples/udp-echo-client.pl
 examples/udp-echo-server.pl
 examples/wakeup-thread.pl
@@ -166,6 +167,7 @@ t/35-loop-introspection-types.t
 t/36-configure-platform.t
 t/37-current-doc-taxonomy.t
 t/38-pod-synopsis.t
+t/39-example-syntax.t
 t/architecture-00-private-layers.t
 t/architecture-10-public-leaves.t
 t/architecture-20-native-consumer.t

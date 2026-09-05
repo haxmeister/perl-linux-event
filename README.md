@@ -160,6 +160,9 @@ The ordered-byte constructor callback surface is `on_data`, `on_message`,
 or `on_messages` when `message_batch_size` is enabled. These modes are
 validated during construction.
 
+`examples/first-class-line-echo-server.pl` is a complete framed server whose
+Listener reuses one lexical `on_message` closure for every accepted Stream.
+
 `Linux::Event::IO::Sock::Stream` represents the socket type, not its address
 family. TCP over IPv4 or IPv6 and Unix-domain `SOCK_STREAM` sockets share the
 same leaf. Address family is selected by construction options.
@@ -483,6 +486,7 @@ Architecture and behavior are documented under `docs/`. In particular:
 
 - `docs/IO-KERNEL-ARCHITECTURE.md`
 - `docs/ARCHITECTURE.md`
+- `docs/FIRST-CLASS-STREAM-CALLBACKS.md`
 - `docs/FRAMING.md`
 - `docs/CHOOSING-A-FRAMER.md`
 - `docs/SOCKET-CONNECTIONS.md`

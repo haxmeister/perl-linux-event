@@ -28,6 +28,11 @@ callback.
 Names are case-sensitive exact package components below
 `Linux::Event::Framer`.
 
+The framer is class policy, but the matching `on_message` or `on_messages`
+sink may be either a method on that class or a constructor callback. This lets
+one framed class be reused with different lexical application state without
+changing its wire contract.
+
 A resource whose wire protocol changes after negotiation may transition between
 loaded subclasses with `transition_to()`. The underlying Linux resource does
 not change: a stream socket remains a stream socket, a pipe remains a pipe.

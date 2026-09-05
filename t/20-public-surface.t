@@ -140,6 +140,7 @@ for my $required (
     'examples/udp-echo-client.pl',
     'examples/wakeup-thread.pl',
     'examples/process-capture.pl',
+    'examples/first-class-line-echo-server.pl',
     't/architecture-20-native-consumer.t',
 ) {
     ok(-s File::Spec->catfile($root, split m{/}, $required), "$required is present");

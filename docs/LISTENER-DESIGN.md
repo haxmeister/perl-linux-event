@@ -210,6 +210,10 @@ sub stream_options ($class) {
 sub socket_options ($class) {
     return tcp_nodelay => 1;
 }
+
+sub on_data ($stream, $bytes) {
+    $stream->write($bytes);
+}
 ```
 
 The listener then names the completed class:
