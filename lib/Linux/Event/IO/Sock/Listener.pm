@@ -11,7 +11,7 @@ use Carp qw(croak);
 sub new ($class, %option) {
     if (exists $option{stream_class}) {
         my $stream_class = $option{stream_class};
-        croak 'new(): stream_class must name a Linux::Event::IO::Sock::Stream subclass'
+        croak 'new(): stream_class must name Linux::Event::IO::Sock::Stream or a subclass'
             if ref($stream_class)
             || !$stream_class->isa('Linux::Event::IO::Sock::Stream');
     }
@@ -28,32 +28,31 @@ Linux::Event::IO::Sock::Listener - asynchronous listening C<SOCK_STREAM> socket
 
 =head1 SYNOPSIS
 
-  package ServerConnection;
-  use parent 'Linux::Event::IO::Sock::Stream';
+A raw server can use the public Stream class directly and share one constructor
+closure across all accepted connections:
 
-  sub on_data ($stream, $bytes) {
-      $stream->write($bytes);
-  }
+  use Linux::Event::IO::Sock::Listener;
+  use Linux::Event::IO::Sock::Stream;
 
-  package ServerListener;
-  use parent 'Linux::Event::IO::Sock::Listener';
-
-  sub on_accept ($listener, $stream) {
-      $listener->data->{connections}{ $stream->fd } = $stream;
-  }
-
-  package main;
-  my $listener = $loop->add(ServerListener->new(
-      stream_class => 'ServerConnection',
+  my $listener = Linux::Event::IO::Sock::Listener->new(
+      loop         => $loop,
+      stream_class => 'Linux::Event::IO::Sock::Stream',
       host         => '0.0.0.0',
       port         => 9999,
-      data         => { connections => {} },
-  ));
+      on_data      => sub ($stream, $bytes) {
+          $stream->write($bytes);
+      },
+  );
+
+Use a Stream subclass when accepted connections need reusable class policy such
+as framing, tuning, socket options, TLS, native consumers, or method defaults.
+Use a Listener subclass when the listener itself needs C<on_accept> or custom
+Listener C<on_error> policy.
 
 =head1 DESCRIPTION
 
 C<Linux::Event::IO::Sock::Listener> owns a listening Linux C<SOCK_STREAM>
-socket and constructs the configured L<Linux::Event::IO::Sock::Stream>
+socket and constructs the configured L<Linux::Event::IO::Sock::Stream> class or
 subclass for every accepted connection. It is a separate public object because
 bind/listen/accept lifecycle is different from connected byte-stream I/O.
 
@@ -62,13 +61,19 @@ constructor options, not by subclass hierarchy.
 
 =head1 CONSTRUCTION
 
-C<stream_class> is required and names the stream-socket subclass created for
-each accepted connection. Exactly one listener source is selected:
+C<stream_class> is required and names C<Linux::Event::IO::Sock::Stream> itself
+or a subclass created for each accepted connection. Use the base class for raw
+byte delivery when no class-level policy is needed; use a subclass when framing,
+stream/socket tuning, TLS, native consumers, or reusable method defaults are
+part of the accepted connection type. Exactly one listener source is selected:
 
   Listener->new(
-      stream_class => 'ServerConnection',
+      stream_class => 'Linux::Event::IO::Sock::Stream',
       host         => '0.0.0.0',
       port         => 9999,
+      on_data      => sub ($stream, $bytes) {
+          consume_bytes($stream, $bytes);
+      },
   );
 
   Listener->new(
@@ -85,7 +90,7 @@ C<loop =E<gt> $loop> attaches immediately; otherwise add the detached object
 with C<< $loop->add($listener) >>. Listener C<data> is supplied to each accepted
 connection as its initial C<data> value.
 
-The Listener may also receive accepted-Stream callback templates directly:
+The Listener may receive accepted-Stream callback templates directly:
 
   my $database = ...;
   my $listener = Listener->new(
@@ -127,7 +132,7 @@ as a callback error; it does not silently kill the listener.
 =head1 TLS
 
 TLS policy belongs to the accepted stream-socket class, not the listener. A
-server class declares L<Linux::Event::TLS> with C<cert_file> and C<key_file>.
+server subclass declares L<Linux::Event::TLS> with C<cert_file> and C<key_file>.
 Listener validates that server policy during construction and creates fresh TLS
 state for every accepted connection.
 
