@@ -114,9 +114,10 @@ resolver, and deadline resources before its established socket registration is
 installed. The application holds the same connection object throughout.
 
 An `IO::Sock::Listener` owns its listening registration and creates one
-`IO::Sock::Stream` subclass instance per accepted descriptor. The connection is
-attached before listener `on_accept`; plain connection `on_ready` follows, while
-TLS `on_ready` waits for successful handshake/verification.
+`IO::Sock::Stream` instance per accepted descriptor, using the configured base
+class or subclass. The connection is attached before listener `on_accept`; plain
+connection `on_ready` follows, while TLS `on_ready` waits for successful
+handshake/verification.
 
 `Kernel::Timer` is also a logical scheduled object rather than a one-to-one
 timerfd wrapper. Timers on a Loop share one private timerfd and indexed native
@@ -159,10 +160,12 @@ See `ORDERED-BYTE-IO-DESIGN.md` for the shared native engine and
 
 ## Listener acceptance
 
-The listener's `stream_class` must name a supported
-`Linux::Event::IO::Sock::Stream` subclass. Listener data is initially passed to
-each accepted connection. `on_accept` can replace connection data, retain the
-object, or close it.
+The listener's `stream_class` must name `Linux::Event::IO::Sock::Stream` itself
+or a supported subclass. The base class is valid for raw accepted Streams whose
+behavior comes from Listener-supplied constructor callbacks; subclasses provide
+reusable class-level framing, tuning, socket, TLS, native-consumer, or method
+policy. Listener data is initially passed to each accepted connection.
+`on_accept` can replace connection data, retain the object, or close it.
 
 Accepted connections do not receive an intermediate public watcher or temporary
 socket object. The accepted descriptor is transferred directly into the
