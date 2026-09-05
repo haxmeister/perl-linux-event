@@ -2,8 +2,15 @@
 
 Ordered byte resources deliver bytes, not application messages. This includes
 stream sockets, pipes, FIFOs, terminals, and PTYs. Choose framing from the
-protocol's wire format, then declare that framing once in the concrete
+protocol's wire format, then declare that framing once in a concrete
 Linux::Event ordered-byte subclass.
+
+The subclass is required because framing is immutable class policy. It does not
+mean the application callback must also be a method. `on_message`,
+`on_messages`, and the lifecycle callbacks may be constructor closures with
+normal lexical scope. Raw resources that need no class-level policy may use the
+public Pipe, TTY, or Stream leaf directly with an `on_data` constructor
+callback.
 
 ## Quick selection table
 
@@ -36,11 +43,22 @@ package CRLFConnection;
 use parent 'Linux::Event::IO::Sock::Stream';
 use Linux::Event::Framer 'Delimiter', "\r\n",
     max_frame => 1_048_576;
-
-sub on_message ($self, $message) {
-    $self->send($message);
-}
 ```
+
+The class above declares only wire policy. Application behavior can be supplied
+when the object is constructed:
+
+```perl
+my $connection = CRLFConnection->new(
+    fh => $fh,
+    on_message => sub ($stream, $message) {
+        $stream->send($message);
+    },
+);
+```
+
+A class method `on_message($stream, $message)` remains an equivalent reusable
+default. A constructor callback overrides it for that object.
 
 The delimiter can contain arbitrary bytes and can cross kernel reads.
 `include_delimiter => 1` includes it in inbound messages. `send($payload)`
@@ -145,18 +163,28 @@ The separator must be one non-digit byte. The default wire form for `HELLO` is
 ## If no built-in matches
 
 Do not force an application protocol into the wrong framing family. Use raw
-ordered-byte delivery and retain parser state in `on_data`:
+ordered-byte delivery and retain parser state in `on_data`. If no class-level
+policy is needed, a raw public leaf can be used directly:
 
 ```perl
-package ProprietaryConnection;
-use parent 'Linux::Event::IO::Sock::Stream';
+my $buffer = '';
 
-sub on_data ($self, $bytes) {
-    my $state = $self->data;
-    $state->{buffer} .= $bytes;
-    # Parse every complete application record now available.
-}
+my $connection = Linux::Event::IO::Sock::Stream->new(
+    fh => $fh,
+    on_data => sub ($stream, $bytes) {
+        $buffer .= $bytes;
+
+        while (my $record = extract_record(\$buffer)) {
+            process_record($record);
+        }
+    },
+);
 ```
+
+The lexical buffer belongs to that one object. For a Listener that shares one
+`on_data` closure across many accepted connections, keep connection-specific
+parser state in each Stream's `data` and capture shared services or immutable
+configuration in the closure.
 
 This keeps application-specific parser policy in Perl without introducing a
 second general framer-object contract. If a framing rule is broadly useful and
@@ -166,14 +194,16 @@ benchmarks justify native support, add it as a complete Linux::Event built-in.
 
 Set `max_frame` for untrusted framed input. Ordered-byte classes also have a
 class-level `max_buffer` limit, defaulting to 8 MiB. Violations produce a
-`Linux::Event::Error` with type `framing`, invoke `on_error` when defined, and
-close through the normal resource lifecycle.
+`Linux::Event::Error` with type `framing`, invoke the effective `on_error`
+callback when defined, and close through the normal resource lifecycle.
 
 Any built-in framer can use explicit `message_batch_size` policy with
 `on_messages` when a pipelined workload benefits from fewer Perl callback
 crossings. Batching changes delivery shape, not the wire format, and partial
 batches flush at the end of the current native drain rather than waiting for
-future input.
+future input. `on_messages` may be a class method or a constructor callback.
 
 See [`FRAMING.md`](FRAMING.md) for the complete declaration, transition,
-batching, and native-extension contract.
+batching, and native-extension contract. See
+[`FIRST-CLASS-STREAM-CALLBACKS.md`](FIRST-CLASS-STREAM-CALLBACKS.md) for callback
+precedence, lexical scope, Listener sharing, and dispatch behavior.

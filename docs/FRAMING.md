@@ -7,10 +7,14 @@ The same framing declaration can be used by subclasses of:
 - `Linux::Event::IO::TTY`
 - `Linux::Event::IO::Sock::Stream`
 
+A framer is immutable class policy. Declaring a framer therefore still requires
+a concrete ordered-byte subclass, but the application callback that receives
+complete messages may be either a class method or a constructor closure.
+
 ## Public model
 
 A framed type combines one concrete ordered-byte leaf, one declarative framer,
-and either a named message method or a constructor callback:
+and one effective message callback (or a native consumer):
 
 ```perl
 package MessageConnection;
@@ -30,9 +34,10 @@ The declaration must appear after `use parent`. The import records immutable
 class metadata; it does not construct a per-connection framer object.
 
 The first construction of a concrete subclass resolves its declaration,
-callbacks, tuning policy, and native parser configuration into one cached
-private descriptor. Each object keeps only its changing parser, buffer, queue,
-and lifecycle state.
+method callback defaults, tuning policy, and native parser configuration into
+one cached private descriptor. Each object keeps only its changing parser,
+buffer, queue, lifecycle state, and any constructor-supplied callback
+overrides.
 
 An instance may replace the class callback without changing framing policy:
 
@@ -48,6 +53,10 @@ my $stream = MessageConnection->new(
 The supplied closure becomes that object's effective native message CV. It is
 not looked up or selected again for each frame.
 
+A framed class does not need an `on_message` method if construction supplies the
+required callback. This makes class policy and application callback scope
+independent without making framing per-instance.
+
 ## Framing pipes and terminals
 
 Nothing about a delimiter or length prefix requires a socket. For example, an
@@ -58,9 +67,14 @@ package Console;
 use parent 'Linux::Event::IO::TTY';
 use Linux::Event::Framer 'Delimiter', "\n";
 
-sub on_message ($self, $line) {
-    $self->write("You typed: $line\n");
-}
+package main;
+my $console = Console->new(
+    read_fh  => \*STDIN,
+    write_fh => \*STDOUT,
+    on_message => sub ($self, $line) {
+        $self->write("You typed: $line\n");
+    },
+);
 ```
 
 A child-process or application pipe can use the same delimiter or a binary
@@ -118,24 +132,30 @@ memory availability.
 
 ## Raw mode
 
-A readable ordered-byte subclass without a framer defines `on_data`:
+A readable ordered-byte object without a framer requires an effective
+`on_data($stream, $bytes)` callback. That callback may be a class method or a
+constructor coderef. For example, raw application-specific parsing can use the
+public Stream leaf directly:
 
 ```perl
-package RawConnection;
-use parent 'Linux::Event::IO::Sock::Stream';
+my $buffer = '';
 
-sub on_data ($self, $bytes) {
-    my $state = $self->data;
-    $state->{input} .= $bytes;
+my $stream = Linux::Event::IO::Sock::Stream->new(
+    fh => $fh,
+    on_data => sub ($stream, $bytes) {
+        $buffer .= $bytes;
 
-    while ($state->{input} =~ s/\A([^\n]*\n)//) {
-        push @{ $state->{records} }, $1;
-    }
-}
+        while ($buffer =~ s/\A([^\n]*\n)//) {
+            process_record($1);
+        }
+    },
+);
 ```
 
 Read callback chunks are not protocol boundaries. A raw parser must retain
-partial application state itself.
+partial application state itself. A lexical buffer such as the example above
+is suitable for one object; a Listener callback shared by many accepted Streams
+should normally keep per-connection parser state in each Stream's `data`.
 
 Arbitrary `next_frame` parser objects and the former native-backed Buffer view
 are not public APIs. Native built-ins avoid per-connection parser objects,
@@ -145,7 +165,7 @@ frame-boundary tuple.
 ## Inheritance
 
 A derived ordered-byte type inherits the nearest ancestor framer declaration
-through normal Perl MRO and may replace its named callbacks:
+through normal Perl MRO and may replace its method callback defaults:
 
 ```perl
 package AuditedConnection;
@@ -158,13 +178,14 @@ sub on_message ($self, $message) {
 ```
 
 Each concrete subclass gets its own cached descriptor while immutable parser
-configuration is still shared rather than copied per object. A class cannot
-declare two framers or combine framed delivery with `on_data`.
+configuration is still shared rather than copied per object. A constructor
+`on_message` callback overrides the inherited method for one object. A class
+cannot declare two framers or combine framed delivery with `on_data`.
 
 ## Explicit message batching
 
-Ordinary framed delivery calls `on_message` once per complete message. A
-pipelined protocol can explicitly select bounded array delivery:
+Ordinary framed delivery calls the effective `on_message` CV once per complete
+message. A pipelined protocol can explicitly select bounded array delivery:
 
 ```perl
 sub stream_options ($class) {
@@ -176,6 +197,7 @@ sub on_messages ($self, $messages) {
 }
 ```
 
+The `on_messages` sink may instead be supplied as a constructor callback.
 `on_message` and `on_messages` are mutually exclusive. A positive
 `message_batch_size` requires an `on_messages` method or constructor callback,
 and defining or supplying `on_messages` without the option is rejected.
@@ -192,8 +214,9 @@ specific message should use ordinary `on_message` delivery.
 ## Raw callback batching
 
 Raw mode can set `read_batch_bytes` in `stream_options()` to combine successful
-native reads before calling `on_data`. A partial raw batch also flushes when the
-current drain ends; it does not wait for a future readiness event.
+native reads before calling the effective `on_data` CV. A partial raw batch also
+flushes when the current drain ends; it does not wait for a future readiness
+event.
 
 Raw read batching and framed message batching are different policies and are
 validated accordingly.
@@ -223,6 +246,10 @@ the target framing rule.
 A transition changes application protocol policy, not the Linux resource. A
 connected stream socket remains a connected stream socket; a pipe remains a
 pipe.
+
+Constructor input callbacks and lifecycle overrides survive compatible
+transitions. Class-derived callbacks follow the target descriptor. The origin
+of the effective callback is still resolved outside steady-state delivery.
 
 ## Framing and serialization
 
@@ -261,18 +288,23 @@ families can be added to Linux::Event with native implementation and tests.
 ## Error behavior
 
 Malformed or oversized input produces a `Linux::Event::Error` with type
-`framing`. The object stores it as `last_error`, invokes its cached `on_error`
-callback when present, and closes through the normal ordered-byte lifecycle.
-Application callback exceptions propagate rather than being silently converted.
+`framing`. The object stores it as `last_error`, invokes its cached effective
+`on_error` callback when present, and closes through the normal ordered-byte
+lifecycle. Application callback exceptions propagate rather than being silently
+converted.
 
 ## Performance model
 
 Immutable parser configuration and method callback CVs are resolved once per
 concrete class. An optional constructor callback replaces the corresponding CV
-once in native per-object state. XS appends bytes directly to native storage, finds
-all complete built-in frames available, and crosses into Perl only for semantic
-messages or lifecycle errors. Optional message batching can amortize that
-semantic crossing across several messages.
+once in native per-object state. XS appends bytes directly to native storage,
+finds all complete built-in frames available, and crosses into Perl only for
+semantic messages or lifecycle errors. Optional message batching can amortize
+that semantic crossing across several messages.
+
+There is no per-message method lookup, callback-origin branch, or closure
+creation. See `FIRST-CLASS-STREAM-CALLBACKS.md` for the callback architecture
+and benchmark evidence.
 
 Measure framing changes with the framing microbenchmarks, native-framer
 benchmarks, callback-batching throughput/fairness tests, and the lifecycle

@@ -96,7 +96,7 @@ opaque native registrations rather than public watcher objects.
 
 ## Stream socket server
 
-A connected socket protocol subclasses the concrete stream-socket leaf:
+A connected socket protocol may define reusable behavior as subclass methods:
 
 ```perl
 use v5.36;
@@ -126,9 +126,9 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
 $loop->run;
 ```
 
-Callbacks may also be supplied directly. They are ordinary Perl closures, so
-application lexicals remain in scope without requiring a connection subclass
-just to carry callback state:
+Ordered-byte callbacks are also first-class constructor options. They are
+ordinary Perl closures, so application lexicals remain in scope without
+requiring a connection subclass just to carry callback state:
 
 ```perl
 my $database = connect_database();
@@ -149,13 +149,19 @@ Constructor callbacks override the corresponding subclass methods for that
 object. The effective `on_data`, `on_message`, or `on_messages` CV is retained
 once in native per-connection state and invoked directly; steady-state input
 does not perform callback lookup or method-versus-closure branching. A Listener
-retains one supplied callback and shares that CV with its accepted Streams.
+reuses each supplied callback CV for its accepted Streams instead of allocating
+wrapper closures per connection.
+
+Subclassing remains the class-policy mechanism for framing, `stream_options()`,
+socket policy, TLS, native consumers, and reusable method defaults. For example,
+a framed protocol still declares its framer on a class, while a Listener may
+supply `on_message` as a closure for every accepted instance of that class.
 
 `Linux::Event::IO::Sock::Stream` represents the socket type, not its address
 family. TCP over IPv4 or IPv6 and Unix-domain `SOCK_STREAM` sockets share the
 same leaf. Address family is selected by construction options.
 
-The same stream-socket subclass is used for outbound connections:
+The same stream-socket class is used for outbound connections:
 
 ```perl
 my $client = EchoConnection->connect(
@@ -182,10 +188,6 @@ use Linux::Event::IO::TTY;
     package Console;
     use parent 'Linux::Event::IO::TTY';
     use Linux::Event::Framer 'Delimiter', "\n";
-
-    sub on_message ($self, $line) {
-        $self->write("You typed: $line\n");
-    }
 }
 
 my $loop = Linux::Event::Loop->new;
@@ -193,10 +195,17 @@ my $console = Console->new(
     loop     => $loop,
     read_fh  => \*STDIN,
     write_fh => \*STDOUT,
+    on_message => sub ($tty, $line) {
+        $tty->write("You typed: $line\n");
+    },
 );
 
 $loop->run;
 ```
+
+The subclass above exists only to declare line framing; the application
+callback is an ordinary constructor closure. Raw TTY use can instantiate
+`Linux::Event::IO::TTY` directly with `on_data`.
 
 `IO::TTY` validates that every supplied handle is a terminal. If input is an
 anonymous pipe or FIFO, use `IO::Pipe` instead. Public leaf names are intended
@@ -205,23 +214,18 @@ buffer implementation.
 
 ## Pipes and FIFOs
 
-`Linux::Event::IO::Pipe` supports read-only, write-only, or paired pipe handles:
+`Linux::Event::IO::Pipe` supports read-only, write-only, or paired pipe handles.
+A raw Pipe does not need a protocol subclass:
 
 ```perl
-{
-    package PipeReader;
-    use parent 'Linux::Event::IO::Pipe';
-
-    sub on_data ($self, $bytes) {
-        print "received $bytes";
-    }
-}
-
 pipe(my $read_fh, my $write_fh) or die "pipe: $!";
 
-my $reader = PipeReader->new(
+my $reader = Linux::Event::IO::Pipe->new(
     loop    => $loop,
     read_fh => $read_fh,
+    on_data => sub ($pipe, $bytes) {
+        print "received $bytes";
+    },
 );
 
 syswrite($write_fh, "hello\n");
@@ -258,14 +262,17 @@ Example:
         bytes     => 4,
         endian    => 'big',
         max_frame => 16 * 1024 * 1024;
-
-    sub on_message ($self, $message) {
-        process_message($message);
-    }
 }
+
+my $messages = Messages->new(
+    fh => $socket,
+    on_message => sub ($stream, $message) {
+        process_message($message);
+    },
+);
 ```
 
-A framed type can call `$self->send($payload)` to apply its outbound framing
+A framed type can call `$stream->send($payload)` to apply its outbound framing
 rule. Serialization and application codecs remain a separate layer above
 framing.
 
@@ -307,11 +314,16 @@ TLS is transport policy on a stream-socket subclass:
     use Linux::Event::TLS
         verify => 1,
         alpn   => ['my-protocol/1'];
-
-    sub on_data ($self, $bytes) {
-        process_plaintext($bytes);
-    }
 }
+
+my $secure = SecureConnection->connect(
+    loop => $loop,
+    host => 'example.com',
+    port => 443,
+    on_data => sub ($stream, $bytes) {
+        process_plaintext($bytes);
+    },
+);
 ```
 
 Server-side TLS declarations also provide `cert_file` and `key_file`. Accepted
@@ -457,12 +469,20 @@ is designed not to require duplicate hot-path bookkeeping.
 Linux::Event keeps the readiness path small:
 
 - native epoll registration and dispatch
-- named subclass callback CVs resolved and cached outside per-instance state
+- class-method callback defaults resolved and cached once per concrete type
+- constructor callback CVs validated and retained once per ordered-byte object
 - native read draining, framing, and buffered write queues
-- direct semantic callbacks rather than constructor closures in the hot path
+- direct invocation of one effective cached input CV regardless of callback origin
+- no per-event method lookup, callback-origin branch, or closure creation
 - one native ordered-byte state shared by read and write directions
 - no public generic dispatch object inserted between the loop and completed
   resource leaf
+
+The first-class callback benchmarks compare subclass methods, shared constructor
+closures, Listener-propagated closures, and deliberately fresh per-connection
+closures. The design keeps the measured performance property: choose the
+application CV outside steady-state delivery, then call that CV directly from
+the native semantic boundary.
 
 The benchmark programs below `bench/` exercise reactor dispatch, stream I/O,
 framing, listeners, datagrams, timers, processes, callback batching, and
@@ -474,11 +494,13 @@ Architecture and behavior are documented under `docs/`. In particular:
 
 - `docs/IO-KERNEL-ARCHITECTURE.md`
 - `docs/ARCHITECTURE.md`
+- `docs/FIRST-CLASS-STREAM-CALLBACKS.md`
 - `docs/FRAMING.md`
 - `docs/CHOOSING-A-FRAMER.md`
 - `docs/SOCKET-CONNECTIONS.md`
 - `docs/SOCKET-CONFIGURATION.md`
 - `docs/LISTENER-DESIGN.md`
+- `docs/ORDERED-BYTE-IO-DESIGN.md`
 - `docs/PROCESS-DESIGN.md`
 - `docs/INTROSPECTION.md`
 

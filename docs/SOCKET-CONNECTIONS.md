@@ -8,6 +8,26 @@ state.
 
 ## Public API
 
+A raw connection can use the public Stream leaf directly and supply callbacks
+at construction:
+
+```perl
+my $connection = Linux::Event::IO::Sock::Stream->connect(
+    loop => $loop,
+    host => '127.0.0.1',
+    port => 9999,
+    on_data => sub ($stream, $bytes) {
+        consume_bytes($bytes);
+    },
+    on_error => sub ($stream, $error) {
+        warn "$error\n";
+    },
+);
+```
+
+A subclass remains the class-policy mechanism for TLS, framing, socket options,
+stream tuning, native consumers, or reusable method defaults:
+
 ```perl
 package ClientConnection;
 use parent 'Linux::Event::IO::Sock::Stream';
@@ -18,14 +38,17 @@ use Linux::Event::TLS
 package main;
 my $state = { requests => {} };
 my $connection = ClientConnection->connect(
-    loop       => $loop,            # optional: attach immediately
-    host       => 'example.com',    # remote address
-    port       => 443,
-    timeout    => 10,               # connection acquisition deadline
-    data       => $state,
-    local_host => '192.0.2.20',     # optional numeric source address
-    local_port => 0,                # optional source port
-    tcp_nodelay => 1,               # optional socket policy
+    loop        => $loop,            # optional: attach immediately
+    host        => 'example.com',    # remote address
+    port        => 443,
+    timeout     => 10,               # connection acquisition deadline
+    data        => $state,
+    local_host  => '192.0.2.20',     # optional numeric source address
+    local_port  => 0,                # optional source port
+    tcp_nodelay => 1,                # optional socket policy
+    on_data     => sub ($stream, $bytes) {
+        handle_plaintext($state, $bytes);
+    },
 );
 ```
 
@@ -34,12 +57,20 @@ The TLS declaration is policy on the completed stream-socket subclass.
 and hostname verification to `host`. Declare a distinct `server_name` only when
 the verified identity must differ from the connection host.
 
+Constructor callbacks are independent of that class policy. They override
+same-named methods for the object and retain normal Perl lexical scope. See
+`FIRST-CLASS-STREAM-CALLBACKS.md` for the complete ordered-byte callback
+surface and precedence rules.
+
 Detached construction is equivalent:
 
 ```perl
 my $connection = ClientConnection->connect(
     host => '127.0.0.1',
     port => 9999,
+    on_data => sub ($stream, $bytes) {
+        consume_bytes($bytes);
+    },
 );
 $loop->add($connection);
 ```
@@ -125,24 +156,36 @@ Closing while connecting cancels attempts, resolver delivery, and connection
 deadline state. A cancelled connection must not later report readiness or an
 operational error from stale acquisition work.
 
-## Readiness
+## Readiness and callback delivery
 
-`on_ready($connection)` runs once when application I/O is usable.
+`on_ready($connection)` runs once when application I/O is usable. It may be a
+class method or a constructor callback.
 
 For a plain stream socket this means connection establishment succeeded. For a
 TLS-declared type it means the socket connected and the TLS handshake,
 certificate validation, and hostname verification completed successfully.
 
-Connection failure is delivered through:
+Connection failure is delivered through the effective
+`on_error($connection, $error)` callback, followed by normal close lifecycle.
+For example:
 
 ```perl
-sub on_error ($connection, $error) {
-    ...
-}
+my $connection = ClientConnection->connect(
+    host => 'example.com',
+    port => 443,
+    on_ready => sub ($stream) {
+        start_request($stream);
+    },
+    on_error => sub ($stream, $error) {
+        report_failure($error);
+    },
+);
 ```
 
-followed by normal close lifecycle. `Linux::Event::Error` fields distinguish
-resolution, socket creation/configuration, connect, and timeout failures.
+`Linux::Event::Error` fields distinguish resolution, socket
+creation/configuration, connect, and timeout failures. Constructor callback
+CVs are retained once and released with the Stream lifecycle; they are not
+looked up during each readiness or input event.
 
 ## Pre-readiness output and backpressure
 
@@ -152,8 +195,9 @@ ready is retained in order.
 
 `pending_bytes` includes preconnection output. `is_write_blocked` and the
 return value from `write()` reflect the configured high watermark. If output
-crosses the watermark during acquisition, exactly one `on_drain` is delivered
-after readiness once pending output reaches the low watermark.
+crosses the watermark during acquisition, exactly one effective `on_drain`
+callback is delivered after readiness once pending output reaches the low
+watermark.
 
 A nonzero `max_pending_bytes` remains a hard limit during acquisition as well as
 after establishment.

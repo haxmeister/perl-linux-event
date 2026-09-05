@@ -15,6 +15,7 @@ my @current_docs = qw(
     docs/CORE.md
     docs/DGRAM-DESIGN.md
     docs/EVENT-DESIGN.md
+    docs/FIRST-CLASS-STREAM-CALLBACKS.md
     docs/FRAMING.md
     docs/INTROSPECTION.md
     docs/IO-KERNEL-ARCHITECTURE.md
@@ -47,6 +48,11 @@ my @stale_release_state = (
     qr/current release work is moving/i,
 );
 
+my @stale_callback_model = (
+    qr/direct semantic callbacks rather than constructor closures in the hot path/i,
+    qr/constructor closures and repeated method\/configuration lookup are not added to each readiness event/i,
+);
+
 my $retired_parent = qr{
     use\s+parent\s+['"]Linux::Event::
     (?:Stream|Socket|Listener|Datagram|Timer|Signal|Wakeup|Process)['"]
@@ -58,21 +64,38 @@ sub pod_text ($text) {
     return '';
 }
 
+my %current_text;
 for my $relative (@current_docs) {
     my $path = File::Spec->catfile($root, split m{/}, $relative);
     open my $fh, '<', $path or die "open $path: $!";
     local $/;
     my $text = <$fh>;
     close $fh;
+    $current_text{$relative} = $text;
 
     for my $pattern (@stale_release_state) {
         unlike($text, $pattern,
             "$relative does not describe the released architecture as an unfinished migration");
     }
 
+    for my $pattern (@stale_callback_model) {
+        unlike($text, $pattern,
+            "$relative does not teach the retired subclass-only callback performance model");
+    }
+
     unlike($text, $retired_parent,
         "$relative does not subclass a retired top-level resource class in current guidance");
 }
+
+like($current_text{'README.md'},
+    qr/docs\/FIRST-CLASS-STREAM-CALLBACKS\.md/,
+    'README links the first-class callback contract');
+like($current_text{'docs/FIRST-CLASS-STREAM-CALLBACKS.md'},
+    qr/(?:constructor callback|callback supplied at construction).*overrides/is,
+    'current callback contract documents constructor precedence');
+like($current_text{'docs/FIRST-CLASS-STREAM-CALLBACKS.md'},
+    qr/Framer.*class-level|class-level.*Framer/is,
+    'current callback contract distinguishes callback configuration from class policy');
 
 for my $relative (glob(File::Spec->catfile($root, 'examples', '*.pl'))) {
     open my $fh, '<', $relative or die "open $relative: $!";
@@ -127,6 +150,9 @@ for my $module (@public_modules) {
     my $pod = pod_text($text);
     unlike($pod, $retired_parent,
         "$module public POD does not teach retired top-level inheritance");
+    unlike($pod,
+        qr/Applications subclass the concrete leaf that describes the resource being used/i,
+        "$module public POD does not require subclassing merely to use a concrete IO leaf");
 }
 
 done_testing;

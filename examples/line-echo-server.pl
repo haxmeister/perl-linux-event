@@ -7,8 +7,6 @@ use warnings;
     package EchoSocket;
     use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
-
-    sub on_message ($stream, $line) { $stream->send($line) }
 }
 
 use Linux::Event::IO::Sock::Listener;
@@ -19,6 +17,9 @@ my $server = $loop->add(Linux::Event::IO::Sock::Listener->new(
     stream_class => 'EchoSocket',
     host => '0.0.0.0',
     port => $ARGV[0] // 9999,
+    on_message => sub ($stream, $line) {
+        $stream->send($line);
+    },
 ));
 say "echo server listening on port " . $server->port;
 $loop->run;

@@ -78,11 +78,11 @@ The ordinary plain path calls `read`, `write`, and `writev` directly. No
 reader/writer object pair, engine-generated closure, duplicate output queue,
 or extra Perl dispatch layer is introduced.
 
-## Cached class policy
+## Cached class policy and effective callbacks
 
 Each concrete subclass receives one immutable descriptor containing:
 
-- resolved named callback CVs;
+- resolved class-method callback CVs;
 - `stream_options()` values;
 - optional framer definition;
 - optional native consumer definition;
@@ -93,8 +93,9 @@ lifecycle data plus any constructor-supplied effective callback CVs.
 
 This is a performance-critical design choice. Method lookup and tuning-policy
 assembly occur at the class descriptor boundary. Constructor callbacks are
-validated and installed once per object, not selected for every readiness
-event or message.
+validated and installed once per object. Native input then invokes one cached
+effective CV; it does not select a method or constructor closure for every
+readiness event, raw delivery, or framed message.
 
 The method name `stream_options()` is retained as the public ordered-byte
 tuning hook. It describes shared engine policy; it does not imply a public
@@ -104,28 +105,42 @@ generic `Linux::Event::Stream` object.
 
 A write-only object does not need an input callback.
 
-A readable raw ordered-byte subclass defines:
+A readable raw object requires one effective input sink:
 
 ```perl
-sub on_data ($self, $bytes) {
+on_data => sub ($stream, $bytes) {
     ...
 }
 ```
 
-A readable framed subclass normally defines:
+That sink may instead be the class method `on_data($stream, $bytes)`.
+
+A readable framed object normally requires one effective message sink:
 
 ```perl
-sub on_message ($self, $message) {
+on_message => sub ($stream, $message) {
     ...
 }
 ```
 
-or, with explicit `message_batch_size`, `on_messages`. A framed class can also
-bind a supported native consumer. A constructor callback may supply the
-corresponding sink for a class that does not define the method.
+With a positive `message_batch_size`, the required sink becomes
+`on_messages($stream, $messages)`, where `$messages` is an array reference. A
+framed class can instead bind a supported native consumer.
 
-Class contradictions are rejected when the descriptor is built; instance
+Constructor callbacks override same-named class methods for one object. A
+constructor-only raw or framed sink is sufficient; a class does not need a
+dummy method merely to satisfy the old subclass-only validation rule.
+
+Class contradictions are rejected when the descriptor is built. Instance
 callback types and mode compatibility are validated during construction.
+
+Framers, `stream_options()`, stream-socket policy, TLS declarations, and native
+consumers remain class-level policy. Constructor callbacks configure the
+application behavior of one object rather than making those policies
+per-instance.
+
+See `FIRST-CLASS-STREAM-CALLBACKS.md` for the complete callback surface,
+precedence, lifetime, transition, and Listener propagation contract.
 
 ## Directional lifecycle
 
@@ -237,6 +252,11 @@ into a TTY.
 Unread native input is interpreted by the target framing policy after the
 transition. Existing queued output is not reframed.
 
+Constructor input callbacks and lifecycle overrides survive compatible
+transitions. Class-derived callbacks follow the target class descriptor. This
+lets one object keep explicit instance behavior while changing class-level
+protocol/framing policy.
+
 ## Socket specialization
 
 `IO::Sock::Stream` adds semantics that do not belong to generic ordered bytes:
@@ -288,10 +308,11 @@ existing implementation:
 
 - one native mutable state per logical ordered-byte object;
 - one cached immutable descriptor per concrete class;
-- direct cached CV callback invocation;
+- direct cached effective-CV callback invocation;
+- class methods and constructor closures converge on the same native input path;
+- no callback-origin lookup or closure creation during semantic delivery;
 - direct plain `read`/`write`/`writev` syscalls;
 - no per-message framer objects;
-- constructor closures and subclass methods share one native callback path;
 - no generic public dispatch layer;
 - one watcher for the common single-fd stream-socket path.
 

@@ -17,6 +17,8 @@ Linux::Event::IO::Sock::Stream - asynchronous Linux C<SOCK_STREAM> connections
 
 =head1 SYNOPSIS
 
+Method callbacks remain supported:
+
   package EchoConnection;
   use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Delimiter', "\n";
@@ -36,6 +38,17 @@ Linux::Event::IO::Sock::Stream - asynchronous Linux C<SOCK_STREAM> connections
       port => 9999,
   ));
 
+Callbacks may instead be supplied at construction:
+
+  my $stream = Linux::Event::IO::Sock::Stream->connect(
+      loop => $loop,
+      host => '127.0.0.1',
+      port => 9999,
+      on_data => sub ($stream, $bytes) {
+          process_bytes($bytes);
+      },
+  );
+
 =head1 DESCRIPTION
 
 C<Linux::Event::IO::Sock::Stream> is the public class for connected Linux
@@ -44,10 +57,11 @@ use the same class; address family is connection configuration rather than a
 separate type hierarchy.
 
 The class combines the common ordered-byte engine with socket acquisition,
-addresses, socket policy, kernel half-close semantics, and optional TLS. A
-concrete protocol subclass supplies named callbacks and, when appropriate, a
-native framer. Constructor callbacks are an equally supported way to provide
-application behavior with normal Perl lexical scope.
+addresses, socket policy, kernel half-close semantics, and optional TLS.
+Applications may use the public class directly for raw byte I/O or subclass it
+for reusable class policy such as framing, stream/socket options, TLS, or method
+callback defaults. Constructor callbacks are first-class and provide ordinary
+Perl lexical scope without requiring inheritance just for callback state.
 
 =head1 OUTBOUND CONNECTIONS
 
@@ -95,24 +109,87 @@ Callbacks may be methods, constructor coderefs, or a mixture:
   );
 
 A constructor callback overrides the corresponding class method for that
-object. Supported names are C<on_data>, C<on_message>, C<on_messages>,
-C<on_ready>, C<on_transport_ready>, C<on_drain>, C<on_eof>, C<on_error>, and
-C<on_close>. C<connect> accepts the same callback options as C<new>.
+object. C<connect> accepts the same callback options as C<new>.
 
-C<on_ready($stream)> runs once when the connection is application-ready. For
-TLS that means after handshake and verification, not merely after TCP connect.
+The callback surface and signatures are:
 
-A raw subclass defines C<on_data($stream, $bytes)>. A framed subclass uses
-L<Linux::Event::Framer> and defines C<on_message> or, with explicit batching,
-C<on_messages>.
+=over 4
 
-Optional lifecycle callbacks include C<on_drain>, C<on_eof>, C<on_error>,
-C<on_close>, and C<on_transport_ready> for transport-specific observation.
+=item * C<on_data($stream, $bytes)>
+
+Raw ordered-byte delivery.
+
+=item * C<on_message($stream, $message)>
+
+Ordinary framed delivery.
+
+=item * C<on_messages($stream, $messages)>
+
+Batched framed delivery when C<message_batch_size> is enabled. C<$messages> is
+an array reference.
+
+=item * C<on_ready($stream)>
+
+Runs once when the connection is application-ready. For TLS that means after
+handshake and verification, not merely after TCP connect.
+
+=item * C<on_transport_ready($stream)>
+
+Observes transport readiness before application readiness.
+
+=item * C<on_drain($stream)>
+
+Runs when queued output falls through the configured low watermark after
+backpressure.
+
+=item * C<on_eof($stream)>
+
+Runs when the readable direction reaches EOF.
+
+=item * C<on_error($stream, $error)>
+
+Receives a L<Linux::Event::Error> for Stream failures.
+
+=item * C<on_close($stream)>
+
+Runs once when the complete Stream closes normally through the callback-aware
+lifecycle. C<detach> does not invoke it.
+
+=back
+
+A readable raw object requires an effective C<on_data> callback. It may come
+from a class method or constructor option. A framed class declared with
+L<Linux::Event::Framer> instead requires C<on_message>, or C<on_messages> when
+explicit message batching is enabled. Constructor callbacks may provide those
+sinks even when the class has no same-named method.
+
 Method defaults are resolved into an immutable class descriptor. Constructor
 input callbacks are retained once in native Stream state, producing one
 effective cached CV with no event-time lookup or method-versus-coderef branch.
 Lifecycle callbacks are likewise resolved once during construction. Closing or
 detaching the Stream releases its retained constructor callbacks.
+
+=head1 CLASS POLICY VERSUS CALLBACKS
+
+Constructor callbacks configure application behavior for one object. Framing,
+C<stream_options>, C<socket_options>, C<configure_socket>, and TLS declarations
+remain class-level policy and therefore belong on a concrete subclass when they
+are needed.
+
+For example, a line protocol may use a class only to declare framing while
+supplying message handling as a closure:
+
+  package LineConnection;
+  use parent 'Linux::Event::IO::Sock::Stream';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  package main;
+  my $stream = LineConnection->new(
+      fh => $socket,
+      on_message => sub ($stream, $line) {
+          handle_line($line);
+      },
+  );
 
 =head1 FRAMING AND OUTPUT
 
