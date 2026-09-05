@@ -62,7 +62,7 @@ les_call_transport_event(pTHX_ les_xsstate_t *st, int status,
 void
 les_call_deliver(pTHX_ les_xsstate_t *st, SV *bytes)
 {
-    les_call_two(aTHX_ st->descriptor->deliver_cb, st->stream_sv, bytes);
+    les_call_two(aTHX_ st->deliver_cb, st->stream_sv, bytes);
     LES_STAT(st, delivery_calls)++;
 }
 

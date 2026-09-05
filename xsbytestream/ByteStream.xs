@@ -253,6 +253,8 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj, message_cb = &P
     st->descriptor = descriptor;
     st->descriptor_sv = newSVsv(descriptor_obj);
     st->stream_sv = newSVsv(object);
+    if (descriptor->deliver_cb)
+        st->deliver_cb = SvREFCNT_inc_simple_NN(descriptor->deliver_cb);
     st->has_instance_message_cb = message_cb && SvOK(message_cb);
     if (st->has_instance_message_cb)
         st->message_cb = les_store_optional_cb(message_cb,
@@ -265,6 +267,7 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj, message_cb = &P
         if (!st->read_buffer) {
             SvREFCNT_dec(st->descriptor_sv);
             SvREFCNT_dec(st->stream_sv);
+            if (st->deliver_cb) SvREFCNT_dec(st->deliver_cb);
             if (st->message_cb) SvREFCNT_dec(st->message_cb);
             free(st);
             croak("malloc ordered-byte read buffer failed");
@@ -274,6 +277,7 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj, message_cb = &P
         const char *consumer_name = descriptor->consumer_ops->name;
         SvREFCNT_dec(st->descriptor_sv);
         SvREFCNT_dec(st->stream_sv);
+        if (st->deliver_cb) SvREFCNT_dec(st->deliver_cb);
         if (st->message_cb) SvREFCNT_dec(st->message_cb);
         free(st->read_buffer);
         free(st);
@@ -306,6 +310,25 @@ object(state_obj)
     RETVAL = st->stream_sv ? newSVsv(st->stream_sv) : &PL_sv_undef;
   OUTPUT:
     RETVAL
+
+void
+_set_instance_deliver_callback(state_obj, callback)
+    SV *state_obj
+    SV *callback
+  PREINIT:
+    les_xsstate_t *st;
+    SV *next_cb;
+  CODE:
+    st = les_state_from_sv(state_obj);
+    if (st->closed)
+        croak("cannot install on_data callback on closed ordered-byte state");
+    if (st->descriptor->read_mode != LES_READ_DELIVER)
+        croak("on_data callback requires raw ordered-byte state");
+    next_cb = les_store_cb(callback, "on_data callback");
+    if (st->deliver_cb)
+        SvREFCNT_dec(st->deliver_cb);
+    st->deliver_cb = next_cb;
+    st->has_instance_deliver_cb = 1;
 
 void
 _read_ready(state_obj)
