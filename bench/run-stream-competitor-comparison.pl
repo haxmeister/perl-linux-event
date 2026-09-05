@@ -690,6 +690,9 @@ sub setup_anyevent_handle ($sockets, $c, $phase, $control_read) {
         if ($AnyEvent::MODEL // '') ne 'AnyEvent::Impl::EV';
     require EV;
 
+    my $write_message = sub ($handle, $message) {
+        $handle->push_write($message . $delimiter);
+    };
     my $input = sub ($handle) {
         if ($workload eq 'raw') {
             my $chunk = substr($handle->{rbuf}, 0, length($handle->{rbuf}), '');
@@ -702,7 +705,8 @@ sub setup_anyevent_handle ($sockets, $c, $phase, $control_read) {
         }
         consume_delimited_buffer(
             \$handle->{rbuf},
-            sub ($message) { $handle->push_write($message . $delimiter); },
+            $handle,
+            $write_message,
             $c,
         );
     };
@@ -775,6 +779,11 @@ sub setup_uv_tcp ($sockets, $c, $phase, $control_read) {
     my $write_done = sub ($error) {
         stream_error($c, $phase, "$error") if $error;
     };
+    # UV::Stream::write requires a completion callback. Reuse both CVs for the
+    # entire case so the adapter does not allocate a closure per response.
+    my $write_message = sub ($stream, $message) {
+        $stream->write($message . $delimiter, $write_done);
+    };
     my $input = sub ($stream, $error, $chunk) {
         if (defined($error) && $error) {
             stream_error($c, $phase, "$error");
@@ -795,9 +804,8 @@ sub setup_uv_tcp ($sockets, $c, $phase, $control_read) {
         $buffers{$key} .= $chunk;
         consume_delimited_buffer(
             \$buffers{$key},
-            sub ($message) {
-                $stream->write($message . $delimiter, $write_done);
-            },
+            $stream,
+            $write_message,
             $c,
         );
     };
@@ -862,6 +870,9 @@ sub setup_ioasync_stream ($sockets, $c, $phase, $control_read) {
     require IO::Async::Stream;
     my $loop = IO::Async::Loop::Epoll->new;
 
+    my $write_message = sub ($stream, $message) {
+        $stream->write($message . $delimiter);
+    };
     my $input = sub ($stream, $buffer, $eof) {
         if ($eof) {
             unexpected_stream_close($c, $phase);
@@ -879,7 +890,8 @@ sub setup_ioasync_stream ($sockets, $c, $phase, $control_read) {
         }
         consume_delimited_buffer(
             $buffer,
-            sub ($message) { $stream->write($message . $delimiter); },
+            $stream,
+            $write_message,
             $c,
         );
         return 0;
@@ -951,6 +963,9 @@ sub setup_mojo_stream ($sockets, $c, $phase, $control_read) {
     my $reactor = Mojo::Reactor::Epoll->new;
     my %buffers;
 
+    my $write_message = sub ($stream, $message) {
+        $stream->write($message . $delimiter);
+    };
     my $input = sub ($stream, $chunk) {
         if ($workload eq 'raw') {
             record_raw_input($c, $chunk);
@@ -963,7 +978,8 @@ sub setup_mojo_stream ($sockets, $c, $phase, $control_read) {
         $buffers{$key} .= $chunk;
         consume_delimited_buffer(
             \$buffers{$key},
-            sub ($message) { $stream->write($message . $delimiter); },
+            $stream,
+            $write_message,
             $c,
         );
     };
@@ -1041,14 +1057,14 @@ sub record_framed_input ($c, $message) {
     $c->{bytes_read} += length($message) + length($delimiter);
 }
 
-sub consume_delimited_buffer ($buffer, $writer, $c) {
+sub consume_delimited_buffer ($buffer, $stream, $writer, $c) {
     while (1) {
         my $at = index($$buffer, $delimiter);
         last if $at < 0;
         my $message = substr($$buffer, 0, $at, '');
         substr($$buffer, 0, length($delimiter), '');
         record_framed_input($c, $message);
-        $writer->($message);
+        $writer->($stream, $message);
         my $wire = length($message) + length($delimiter);
         $c->{bytes_queued} += $wire;
         $c->{echoed_bytes} += $wire;

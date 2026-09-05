@@ -8,52 +8,76 @@ use JSON::PP qw(decode_json);
 
 my $dir = tempdir(CLEANUP => 1);
 my $script = "$Bin/../bench/run-stream-competitor-comparison.pl";
+my @systems = ('linuxevent');
+my @optional = (
+    ['anyevent-handle', q{require AnyEvent; require AnyEvent::Handle; require EV; 1}],
+    ['uv-tcp', q{require UV; require UV::Loop; require UV::Poll; require UV::TCP; 1}],
+    ['ioasync-stream', q{require IO::Async::Loop::Epoll; require IO::Async::Stream; 1}],
+    ['mojo-stream', q{require Mojo::Reactor::Epoll; require Mojo::IOLoop::Stream; 1}],
+);
+for my $candidate (@optional) {
+    my ($system, $probe) = @$candidate;
+    if (eval $probe) {
+        push @systems, $system;
+    }
+    else {
+        note "$system optional smoke skipped: dependencies unavailable";
+    }
+}
 
-for my $workload (qw(raw delimiter)) {
-    my $json = "$dir/$workload.json";
-    my $html = "$dir/$workload.html";
+for my $system (@systems) {
+  for my $workload (qw(raw delimiter)) {
+    my $json = "$dir/$system-$workload.json";
+    my $html = "$dir/$system-$workload.html";
     my @cmd = (
         $^X, '-Mblib', $script,
-        '--systems=linuxevent', '--clients=4',
+        "--systems=$system", '--clients=4',
         '--warmup=1', '--messages=3', '--bytes=16',
         '--client-workers=2', '--repeats=1', '--timeout=10',
         "--workload=$workload", "--json=$json", "--out=$html",
     );
 
-    is(system(@cmd), 0, "$workload Stream comparison smoke run exits cleanly");
-    ok(-s $json, "$workload JSON report written");
-    ok(-s $html, "$workload HTML report written");
+    is(system(@cmd), 0,
+        "$system $workload Stream comparison smoke run exits cleanly");
+    ok(-s $json, "$system $workload JSON report written");
+    ok(-s $html, "$system $workload HTML report written");
 
     open my $fh, '<', $json or die "open $json: $!";
     my $report = decode_json(do { local $/; <$fh> });
     close $fh;
 
     is($report->{benchmark_contract_version}, 1,
-        "$workload benchmark contract version recorded");
+        "$system $workload benchmark contract version recorded");
     is($report->{fairness_contract}{workload}, $workload,
-        "$workload fairness contract recorded");
+        "$system $workload fairness contract recorded");
     ok($report->{fairness_contract}{stream_construction_outside_timing},
-        "$workload Stream construction is outside timing");
+        "$system $workload Stream construction is outside timing");
 
     my $row = $report->{results}[0];
-    ok($row->{ok}, "$workload Linux::Event row is rankable")
+    ok($row->{ok}, "$system $workload row is rankable")
         or diag($row->{failure_reason} // 'no failure reason');
-    is($row->{messages}, 12, "$workload measured message count exact");
+    is($row->{system_key}, $system, "$system adapter recorded");
+    is($row->{messages}, 12,
+        "$system $workload measured message count exact");
     is($row->{latency_samples}, 12,
-        "$workload records one latency sample per measured reply");
-    is($row->{payload_bytes}, 16, "$workload payload size recorded");
+        "$system $workload records one latency sample per measured reply");
+    is($row->{payload_bytes}, 16,
+        "$system $workload payload size recorded");
     is($row->{bytes_read}, 12 * $row->{wire_bytes_per_message},
-        "$workload received wire bytes exact");
+        "$system $workload received wire bytes exact");
     is($row->{bytes_queued}, 12 * $row->{wire_bytes_per_message},
-        "$workload queued wire bytes exact");
+        "$system $workload queued wire bytes exact");
     is($row->{callback_reuse}, 'one shared input CV per case',
-        "$workload uses the constructor closure under comparison");
-    like($row->{callback_api}, qr/^constructor on_(?:data|message) closure/,
-        "$workload records the first-class callback API");
+        "$system $workload reuses its input closure");
+    if ($system eq 'linuxevent') {
+        like($row->{callback_api}, qr/^constructor on_(?:data|message) closure/,
+            "$workload records the first-class callback API");
+    }
     is($row->{unexpected_closes}, 0,
-        "$workload has no close during measurement");
+        "$system $workload has no close during measurement");
     is($report->{summary}[0]{throughput_rank}, 1,
-        "$workload summary emits an explicit throughput rank");
+        "$system $workload summary emits an explicit throughput rank");
+  }
 }
 
 done_testing;
