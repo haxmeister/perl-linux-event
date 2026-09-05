@@ -14,6 +14,8 @@ Revision history for Linux-Event
       framed-dispatch regression benchmarks.
     - Add a high-level Stream comparison harness for raw and delimiter-framed
       Linux::Event, AnyEvent, UV, IO::Async, and Mojo adapters.
+      Keep this optional-dependency benchmark outside the CPAN distribution and
+      installation test suite.
     - Document callback signatures, mode validation, class-policy boundaries,
       Listener template reuse, and cached-CV dispatch throughout public POD and
       design documents. Compile every public POD SYNOPSIS and execute the Pipe

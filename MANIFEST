@@ -39,7 +39,6 @@ bench/run-process-pipe-drain-bench.pl
 bench/run-reactor-comparison.pl
 bench/run-resolver-microbench.pl
 bench/run-signal-microbench.pl
-bench/run-stream-competitor-comparison.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/run-stream-payload-sweep.pl
@@ -52,7 +51,6 @@ bench/runtime-line/line-asyncio.py
 bench/runtime-line/line-linuxevent.pl
 bench/runtime-line/line-node.js
 bench/runtime-line/line-ruby.rb
-bench/STREAM-COMPETITOR-PLAN.md
 Changes
 CONTRIBUTING.md
 docs/ARCHITECTURE.md
@@ -268,7 +266,6 @@ t/stream-64-transition-consumer-flush.t
 t/stream-65-first-class-callbacks.t
 t/stream-66-first-class-framed-callback-benchmark-smoke.t
 t/stream-67-first-class-raw-callback-benchmark-smoke.t
-t/stream-68-stream-competitor-comparison-smoke.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t

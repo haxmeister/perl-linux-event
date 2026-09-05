@@ -21,6 +21,9 @@
 ^bench/BENCHMARK-DECISIONS\.md$
 ^bench/decisions(?:/|$)
 ^bench/run-public-api-overhead\.pl$
+^bench/run-stream-competitor-comparison\.pl$
+^bench/STREAM-COMPETITOR-PLAN\.md$
+^t/stream-68-stream-competitor-comparison-smoke\.t$
 ^docs/(?:XS-ROADMAP|STREAM-REVIEW-FOLLOWUPS|xs-reduction-roadmap|POST-0\.110-AUDIT)\.md$
 ^\.prove$
 ~$

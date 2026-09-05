@@ -31,7 +31,6 @@ my @current_docs = qw(
     docs/TIMER-DESIGN.md
     docs/TRANSPORT-BOUNDARY.md
     bench/README.md
-    bench/STREAM-COMPETITOR-PLAN.md
 );
 
 my @stale_release_state = (
