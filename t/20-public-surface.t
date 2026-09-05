@@ -56,6 +56,7 @@ for my $required (
     'bench/run-callback-batching-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-cached-closure-dispatch-bench.pl',
+    'bench/run-cached-closure-raw-dispatch-bench.pl',
     'bench/run-callback-scope-microbench.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -169,6 +170,7 @@ for my $live (
     'bench/run-process-microbench.pl',
     'bench/run-callback-ceiling.pl',
     'bench/run-cached-closure-dispatch-bench.pl',
+    'bench/run-cached-closure-raw-dispatch-bench.pl',
     'bench/run-callback-scope-microbench.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
@@ -206,6 +208,7 @@ my %allowed = map { $_ => 1 } qw(
     run-callback-batching-microbench.pl
     run-callback-ceiling.pl
     run-cached-closure-dispatch-bench.pl
+    run-cached-closure-raw-dispatch-bench.pl
     run-callback-scope-microbench.pl
     run-stream-lifecycle-bench.pl
     run-stream-microbench.pl
