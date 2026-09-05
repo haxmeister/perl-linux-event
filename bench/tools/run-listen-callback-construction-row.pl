@@ -31,7 +31,7 @@ GetOptions(
 
 die "accepted-callbacks must be one callback style\n"
     if !defined($style)
-    || $style !~ /\A(?:subclass_method|shared_closure|fresh_closure)\z/;
+    || $style !~ /\A(?:subclass_method|shared_closure|fresh_closure|native_seed_method|native_seed_shared_closure|native_seed_fresh_closure)\z/;
 die "clients must be positive\n" if !defined($clients) || $clients < 1;
 die "connections must be positive\n"
     if !defined($connections) || $connections < 1;
@@ -88,6 +88,18 @@ die "json path is required\n" if !defined($json_path) || $json_path eq '';
 }
 
 {
+    package BenchAcceptedRowNativeSeedStream;
+    use parent 'Linux::Event::IO::Sock::Stream';
+    use Linux::Event::Framer 'Delimiter', "\n";
+
+    sub on_message ($stream, $message) { }
+
+    sub on_error ($stream, $error) {
+        die "accepted native-seed Stream failed: $error\n";
+    }
+}
+
+{
     package BenchAcceptedRowListener;
     use parent 'Linux::Event::IO::Sock::Listener';
 
@@ -104,10 +116,73 @@ die "json path is required\n" if !defined($json_path) || $json_path eq '';
     }
 }
 
+{
+    package BenchAcceptedRowNativeSeedListener;
+    use parent -norequire, 'BenchAcceptedRowListener';
+
+    our $CLOSURES_CREATED = 0;
+
+    my $shared_marker = 1;
+    my $shared_callback = sub ($stream, $message) {
+        $shared_marker += length($message) if $message eq '';
+        return;
+    };
+
+    sub _accept_client ($self, $fh, $peer) {
+        my $run = $self->data;
+        my $callback;
+        if ($run->{style} eq 'native_seed_shared_closure') {
+            $callback = $shared_callback;
+        } elsif ($run->{style} eq 'native_seed_fresh_closure') {
+            my $marker = ++$CLOSURES_CREATED;
+            $callback = sub ($stream, $message) {
+                $marker += length($message) if $message eq '';
+                return;
+            };
+        }
+
+        my $stream;
+        my $ok = eval {
+            my %callback_option = defined($callback)
+                ? (on_message => $callback) : ();
+            $stream = $self->stream_class->new(
+                fh        => $fh,
+                peer      => $peer,
+                data      => $self->data,
+                _accepted => 1,
+                %callback_option,
+            );
+            $stream->_attach_to_loop($self->loop);
+            1;
+        };
+        if (!$ok) {
+            my $error = $@ || 'native-seed accepted Stream setup failed';
+            eval { $stream->close; 1 } if $stream;
+            CORE::close($fh) if !$stream && defined fileno($fh);
+            die $error;
+        }
+
+        $self->on_accept($stream);
+        return;
+    }
+}
+
 sub stream_class ($name) {
     return 'BenchAcceptedRowSubclass' if $name eq 'subclass_method';
     return 'BenchAcceptedRowSharedClosure' if $name eq 'shared_closure';
-    return 'BenchAcceptedRowFreshClosure';
+    return 'BenchAcceptedRowFreshClosure' if $name eq 'fresh_closure';
+    return 'BenchAcceptedRowNativeSeedStream';
+}
+
+sub listener_class ($name) {
+    return $name =~ /\Anative_seed_/
+        ? 'BenchAcceptedRowNativeSeedListener'
+        : 'BenchAcceptedRowListener';
+}
+
+sub fresh_closure_count () {
+    return $BenchAcceptedRowFreshClosure::CLOSURES_CREATED
+        + $BenchAcceptedRowNativeSeedListener::CLOSURES_CREATED;
 }
 
 sub spawn_workers ($port, $worker_count, $total) {
@@ -204,9 +279,11 @@ my $run = {
     loop => $loop,
     accepted => 0,
     connections => $connections,
+    style => $style,
 };
 
-my $listener = BenchAcceptedRowListener->new(
+my $listener_class = listener_class($style);
+my $listener = $listener_class->new(
     stream_class => stream_class($style),
     loop => $loop,
     host => '127.0.0.1',
@@ -215,7 +292,7 @@ my $listener = BenchAcceptedRowListener->new(
     max_accept_per_tick => 0,
 );
 
-my $fresh_before = $BenchAcceptedRowFreshClosure::CLOSURES_CREATED;
+my $fresh_before = fresh_closure_count();
 my ($gate_write, $pids) = spawn_workers($listener->port, $clients, $connections);
 
 my $wall_start = clock_gettime(CLOCK_MONOTONIC);
@@ -246,9 +323,8 @@ $listener->close;
 die "accepted $run->{accepted} of $connections connections\n"
     if $run->{accepted} != $connections;
 
-my $fresh_created =
-    $BenchAcceptedRowFreshClosure::CLOSURES_CREATED - $fresh_before;
-if ($style eq 'fresh_closure') {
+my $fresh_created = fresh_closure_count() - $fresh_before;
+if ($style =~ /fresh_closure\z/) {
     die "fresh closure count is $fresh_created, expected $connections\n"
         if $fresh_created != $connections;
 } else {
@@ -282,6 +358,7 @@ my $report = {
         parent_cpu_excludes_client_workers => 1,
         completion_event => 'listener_on_accept',
         clients_wait_for_server_close => 1,
+        native_seed_at_state_construction => $style =~ /\Anative_seed_/ ? 1 : 0,
     },
     raw => [$row],
     summary => [],
