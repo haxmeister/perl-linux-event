@@ -81,11 +81,21 @@ close $not_tty_write;
 
 SKIP: {
     open my $ptmx, '+<', '/dev/ptmx'
-        or skip '/dev/ptmx is unavailable for TTY validation', 1;
-    skip '/dev/ptmx is not reported as a TTY on this system', 1 if !-t $ptmx;
+        or skip '/dev/ptmx is unavailable for TTY validation', 2;
+    skip '/dev/ptmx is not reported as a TTY on this system', 2 if !-t $ptmx;
     my $tty = T::ArchitectureTTY->new(fh => $ptmx);
     ok($tty->isa('Linux::Event::IO::TTY'), 'TTY leaf accepts a real pseudo-terminal handle');
     $tty->close;
+
+    open my $closure_ptmx, '+<', '/dev/ptmx'
+        or die "reopen /dev/ptmx: $!";
+    my $closure_tty = Linux::Event::IO::TTY->new(
+        fh => $closure_ptmx,
+        on_data => sub ($object, $bytes) { },
+    );
+    ok($closure_tty->isa('Linux::Event::IO::TTY'),
+        'public TTY leaf accepts a constructor callback');
+    $closure_tty->close;
 }
 
 socketpair(my $stream_fh, my $stream_peer, AF_UNIX, SOCK_STREAM, 0)

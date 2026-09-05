@@ -25,9 +25,16 @@ use Linux::Event::Kernel::Signal;
 }
 
 like(exception(sub { Linux::Event::Kernel::Signal->new(signals => SIGUSR1) }),
-    qr/abstract base class/, 'base Signal is abstract');
+    qr/must define on_signal|receive on_signal/,
+    'public Signal requires an effective callback');
 like(exception(sub { T::Signal::Missing->new(signals => SIGUSR1) }),
-    qr/must define on_signal/, 'concrete Signal requires on_signal');
+    qr/must define on_signal|receive on_signal/,
+    'methodless Signal subclass requires a constructor callback');
+like(exception(sub {
+    Linux::Event::Kernel::Signal->new(
+        signals => SIGUSR1, on_signal => 'invalid',
+    )
+}), qr/on_signal must be a coderef/, 'constructor Signal callback is validated');
 like(exception(sub { T::Signal::Basic->new }),
     qr/signals is required/, 'signals option is required');
 like(exception(sub { T::Signal::Basic->new(signals => []) }),

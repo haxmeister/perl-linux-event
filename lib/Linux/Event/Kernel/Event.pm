@@ -30,17 +30,25 @@ sub _decimal_greater_than ($value, $maximum) {
 
 sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Kernel::Event is an abstract base class'
-        if $class eq __PACKAGE__;
     croak "$class is not a Linux::Event::Kernel::Event subclass"
         if !$class->isa(__PACKAGE__);
     my $callback = $class->can('on_event')
-        // croak "$class must define on_event()";
+        // croak "$class must define on_event() or receive on_event => coderef";
     return $CLASS_DESCRIPTOR{$class} = { callback => $callback };
+}
+
+sub _effective_descriptor ($class, $option) {
+    croak "$class is not a Linux::Event::Kernel::Event subclass"
+        if !$class->isa(__PACKAGE__);
+    return _descriptor_for($class) if !exists $option->{on_event};
+    my $callback = delete $option->{on_event};
+    croak 'new(): on_event must be a coderef' if ref($callback) ne 'CODE';
+    return { callback => $callback };
 }
 
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
+    my $descriptor = _effective_descriptor($class, \%option);
     my $loop = delete $option{loop};
     croak 'new(): loop must be an object implementing add() and watch()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
@@ -61,7 +69,7 @@ sub new ($class, %option) {
     $LIVE_HANDLE{$id} = $self;
     weaken($LIVE_HANDLE{$id});
     $OWNER_STATE{$id} = bless {
-        descriptor => _descriptor_for($class),
+        descriptor => $descriptor,
         loop       => undef,
         watcher    => undef,
         data       => $data,
@@ -228,19 +236,14 @@ Linux::Event::Kernel::Event - eventfd-backed Loop notification
   use Linux::Event::Loop;
   use Linux::Event::Kernel::Event;
 
-  package ResultsReady;
-  use parent 'Linux::Event::Kernel::Event';
-
-  sub on_event ($event, $count) {
-      $event->data->{notifications} += $count;
-      $event->loop->stop;
-  }
-
-  package main;
   my $loop = Linux::Event::Loop->new;
-  my $event = ResultsReady->new(
+  my $notifications = 0;
+  my $event = Linux::Event::Kernel::Event->new(
       loop => $loop,
-      data => { notifications => 0 },
+      on_event => sub ($event, $count) {
+          $notifications += $count;
+          $event->loop->stop;
+      },
   );
 
   # From a worker thread, native extension, or forked child:
@@ -257,9 +260,30 @@ The eventfd carries a 64-bit counter. Application payloads belong in an
 appropriate queue, shared native structure, pipe, socket, or other IPC channel.
 Publish the payload first, then call C<signal>.
 
+=head1 CALLBACKS AND SUBCLASS POLICY
+
+C<on_event =E<gt> sub ($event, $count) { ... }> may be passed directly to
+C<new>. This closure form is usually best for one object because it can capture
+lexical application state. A constructor callback overrides a same-named
+subclass method for that object.
+
+A subclass method remains useful when many Event objects share named,
+testable behavior:
+
+  package ResultsReady;
+  use parent 'Linux::Event::Kernel::Event';
+
+  sub on_event ($event, $count) {
+      drain_results($event->data, $count);
+  }
+
+Linux::Event resolves the method once per subclass or retains the constructor
+closure once per object. Delivery uses the resulting cached CV; it does not
+perform a method lookup or choose between the two forms for every event.
+
 =head1 CONSTRUCTION AND CALLBACK
 
-A subclass must define:
+A subclass may define, or C<new> may receive:
 
   sub on_event ($event, $count) { ... }
 

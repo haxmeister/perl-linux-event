@@ -62,6 +62,20 @@ Implementation packages beginning with `_`, plus the historical internal
 `Stream`, `Socket`, `Listener`, `Datagram`, `Timer`, `Signal`, `Wakeup`, and
 `Process` package names, are not the public application API.
 
+## Constructor callbacks and subclass policy
+
+Public Event, Timer, Signal, Process, Datagram, Pipe, TTY, and connected Stream
+objects accept application callbacks as constructor coderefs. Closures retain
+ordinary lexical scope and override same-named subclass methods for that one
+object. Linux::Event resolves the effective callback during construction; it
+does not add method lookup or a method-versus-closure decision to delivery.
+
+Subclassing remains a prominent Linux::Event feature. A reusable subclass can
+declare native framing, TLS, socket policy, and Stream, Datagram, or Process
+tuning once. That class policy and its named callbacks are validated and cached
+once per subclass. A common design is therefore class-level protocol and tuning
+plus constructor closures for per-instance application state.
+
 ## Installation
 
 ```sh
@@ -159,6 +173,12 @@ The ordered-byte constructor callback surface is `on_data`, `on_message`,
 `on_transport_ready`. Raw mode uses `on_data`; framed mode uses `on_message`,
 or `on_messages` when `message_batch_size` is enabled. These modes are
 validated during construction.
+
+Kernel resources use the same complementary model: Event accepts `on_event`,
+Timer accepts `on_timer`, Signal accepts `on_signal`, and Process accepts
+`on_exit`, `on_error`, and, for spawned children, its optional stdio callbacks.
+Datagram accepts `on_datagram`, `on_ready`, `on_drain`, `on_error`, and
+`on_close`.
 
 `examples/first-class-line-echo-server.pl` is a complete framed server whose
 Listener reuses one lexical `on_message` closure for every accepted Stream.

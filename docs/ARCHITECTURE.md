@@ -316,8 +316,10 @@ scheduled timer is attached. Active timers share an indexed native minimum
 heap ordered by monotonic deadline.
 
 Each concrete `Kernel::Timer` subclass contributes one cached callback
-descriptor. Instances contain mutable schedule, heap position, application
-data, lifecycle, and expiration count.
+descriptor. A constructor `on_timer` closure creates one effective per-object
+descriptor and overrides the class method without changing dispatch. Instances
+contain mutable schedule, heap position, application data, lifecycle, and
+expiration count.
 
 Equal deadlines preserve schedule order. Fixed-rate repeating timers advance
 from their prior deadline and coalesce missed intervals. Dispatch uses a bound
@@ -386,7 +388,8 @@ The architecture is intentionally constrained by measured performance:
 
 - no public generic dispatcher in the readiness hot path;
 - no constructor closure required for each semantic callback;
-- named subclass CVs are cached once per concrete type;
+- named subclass CVs are cached once per concrete type and optional constructor
+  CVs once per object;
 - no fd-to-Perl-hash lookup after `epoll_wait()`;
 - framing and queue work stays native until semantic delivery;
 - the plain transport uses direct syscalls;

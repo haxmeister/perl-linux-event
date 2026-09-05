@@ -26,9 +26,14 @@ use Linux::Event::Kernel::Timer;
 }
 
 like(exception(sub { Linux::Event::Kernel::Timer->new(after => 1) }),
-    qr/abstract base class/, 'base Timer is abstract');
+    qr/must define on_timer|receive on_timer/,
+    'public Timer requires an effective callback');
 like(exception(sub { T::Timer::Missing->new(after => 1) }),
-    qr/must define on_timer/, 'concrete Timer requires on_timer');
+    qr/must define on_timer|receive on_timer/,
+    'methodless Timer subclass requires a constructor callback');
+like(exception(sub {
+    Linux::Event::Kernel::Timer->new(after => 1, on_timer => 'invalid')
+}), qr/on_timer must be a coderef/, 'constructor Timer callback is validated');
 like(exception(sub { T::Timer::Basic->new }),
     qr/one of after, at, or every is required/, 'schedule is required');
 like(exception(sub { T::Timer::Basic->new(after => 1, at => 2) }),

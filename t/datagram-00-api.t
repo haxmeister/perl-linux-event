@@ -13,15 +13,22 @@ sub exception ($code) {
     return eval { $code->(); 1 } ? '' : "$@";
 }
 
-like(exception(sub { Linux::Event::IO::Sock::Dgram->new }), qr/must define on_datagram/,
-    'public Dgram subclassing base requires on_datagram');
+like(exception(sub { Linux::Event::IO::Sock::Dgram->new }),
+    qr/on_datagram callback is required/,
+    'public Dgram requires an effective datagram callback');
 
 {
     package T::Datagram::Missing;
     use parent 'Linux::Event::IO::Sock::Dgram';
 }
 like(exception(sub { T::Datagram::Missing->new(host => '127.0.0.1', port => 0) }),
-    qr/must define on_datagram/, 'on_datagram is required');
+    qr/on_datagram callback is required/, 'on_datagram is required');
+like(exception(sub {
+    Linux::Event::IO::Sock::Dgram->new(
+        host => '127.0.0.1', port => 0, on_datagram => 'invalid',
+    )
+}), qr/on_datagram must be a coderef/,
+    'constructor Datagram callback is validated');
 
 {
     package T::Datagram::Basic;

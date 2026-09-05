@@ -7,7 +7,21 @@ needs the owning interpreter to notice new work.
 
 ## Public shape
 
-An application defines one named callback:
+An application may pass a lexical callback directly:
+
+```perl
+my $event = Linux::Event::Kernel::Event->new(
+    loop => $loop,
+    data => $results,
+    on_event => sub ($event, $count) {
+        drain_results($event->data, $count);
+        $event->loop->stop;
+    },
+);
+```
+
+When many Event objects share reusable behavior, an application may instead
+define one named subclass callback:
 
 ```perl
 package ResultReady;
@@ -30,10 +44,11 @@ my $event = $loop->add(ResultReady->new(
 ));
 ```
 
-The `on_event` CV is resolved from the subclass. `signal($increment)` performs
-an eventfd counter write and returns the Event. It never runs `on_event`
-inline. `cancel()` is terminal and idempotent according to the current eventfd
-implementation contract.
+The `on_event` CV is resolved once from the subclass or retained once from the
+constructor. A constructor callback overrides a same-named method for that
+object. `signal($increment)` performs an eventfd counter write and returns the
+Event. It never runs `on_event` inline. `cancel()` is terminal and idempotent
+according to the current eventfd implementation contract.
 
 ## Notification is not payload transport
 

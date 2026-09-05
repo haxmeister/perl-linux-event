@@ -18,6 +18,10 @@ require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
 
 my %CLASS_DESCRIPTOR;
+my @CALLBACK = qw(
+    on_exit on_stdout on_stderr on_stdout_eof on_stderr_eof
+    on_stdin_drain on_error
+);
 # Private control retained only for the paired pipe-drain benchmark.
 our $_PIPE_DRAIN_ENGINE = 'native';
 
@@ -37,15 +41,9 @@ sub _integer ($target, $name, $value, $minimum, $maximum = 2_147_483_647) {
 
 sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Kernel::Process is an abstract base class'
-        if $class eq __PACKAGE__;
     croak "$class is not a Linux::Event::Kernel::Process subclass"
         if !$class->isa(__PACKAGE__);
-    my %callback = map { $_ => scalar $class->can($_) } qw(
-        on_exit on_stdout on_stderr on_stdout_eof on_stderr_eof
-        on_stdin_drain on_error
-    );
-    croak "$class must define on_exit()" if !$callback{on_exit};
+    my %callback = map { $_ => scalar $class->can($_) } @CALLBACK;
     my %option = (
         read_size            => 65_536,
         max_reads_per_tick   => 64,
@@ -83,9 +81,26 @@ sub _descriptor_for ($class) {
     };
 }
 
+sub _effective_descriptor ($class, $method, $option) {
+    my $descriptor = _descriptor_for($class);
+    my %override;
+    for my $name (@CALLBACK) {
+        next if !exists $option->{$name};
+        my $callback = delete $option->{$name};
+        croak "$method(): $name must be a coderef"
+            if ref($callback) ne 'CODE';
+        $override{$name} = $callback;
+    }
+    my %callback = (%{ $descriptor->{callbacks} }, %override);
+    croak "$method(): on_exit callback is required"
+        if !$callback{on_exit};
+    return $descriptor if !%override;
+    return { %$descriptor, callbacks => \%callback };
+}
+
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
-    my $descriptor = _descriptor_for($class);
+    my $descriptor = _effective_descriptor($class, 'new', \%option);
     my $loop = delete $option{loop};
     croak 'new(): loop must be an object implementing add() and watch()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
@@ -97,6 +112,13 @@ sub new ($class, %option) {
     my $reap = exists($option{reap}) ? delete($option{reap}) : 1;
     croak 'new(): reap must be zero or one'
         if !defined($reap) || ref($reap) || $reap !~ /\A[01]\z/;
+    my $callback = $descriptor->{callbacks};
+    for my $name (qw(
+        on_stdout on_stderr on_stdout_eof on_stderr_eof on_stdin_drain
+    )) {
+        croak "new(): $name is unavailable when observing an existing process"
+            if $callback->{$name};
+    }
     croak 'new(): unknown options: ' . join(', ', sort keys %option)
         if %option;
     my $self = $class->_new_object(
@@ -108,7 +130,7 @@ sub new ($class, %option) {
 
 sub spawn ($class, %option) {
     croak 'spawn(): must be called as a class method' if ref $class;
-    my $descriptor = _descriptor_for($class);
+    my $descriptor = _effective_descriptor($class, 'spawn', \%option);
     my $loop = delete $option{loop};
     croak 'spawn(): loop must be an object implementing add() and watch()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
@@ -642,6 +664,8 @@ sub _pid_ready ($self) {
     my $callback = $self->{descriptor}{callbacks}{on_exit};
     my $called = eval { $callback->($self); 1 };
     $failure //= $@ if !$called;
+    undef $callback;
+    $self->{descriptor} = undef;
     $self->{loop} = undef;
     die $failure if defined $failure;
     return;
@@ -664,6 +688,7 @@ sub _runtime_fail ($self, $error) {
     $self->_release_handles;
     my $reported = eval { $self->_report($error); 1 };
     my $failure = $@;
+    $self->{descriptor} = undef;
     $self->{loop} = undef;
     die $failure if !$reported;
     return;
@@ -751,25 +776,19 @@ Linux::Event::Kernel::Process - pidfd process lifecycle and asynchronous stdio
   use Linux::Event::Loop;
   use Linux::Event::Kernel::Process;
 
-  package Worker;
-  use parent 'Linux::Event::Kernel::Process';
-
-  sub on_stdout ($process, $bytes) {
-      print $bytes;
-  }
-
-  sub on_exit ($process) {
-      say 'exit code: ' . $process->exit_code
-          if defined $process->exit_code;
-      $process->loop->stop;
-  }
-
-  package main;
   my $loop = Linux::Event::Loop->new;
-  my $worker = Worker->spawn(
+  my $worker = Linux::Event::Kernel::Process->spawn(
       loop    => $loop,
-      command => ['/usr/bin/printf', "hello\n"],
+      command => [$^X, '-e', 'print "hello\\n"'],
       stdout  => 'pipe',
+      on_stdout => sub ($process, $bytes) {
+          print $bytes;
+      },
+      on_exit => sub ($process) {
+          say 'exit code: ' . $process->exit_code
+              if defined $process->exit_code;
+          $process->loop->stop;
+      },
   );
   $loop->run;
 
@@ -784,11 +803,34 @@ Linux::Event uses C<posix_spawnp> for spawned children and never runs Perl code
 in a post-fork child. pidfd operations avoid directing signals or lifecycle
 state at an unrelated process after numeric PID reuse.
 
+=head1 CALLBACKS, SUBCLASSING, AND TUNING
+
+C<new> accepts C<on_exit> and C<on_error> as constructor coderefs. C<spawn>
+also accepts the stdout, stderr, EOF, and stdin-drain callbacks listed below.
+Closures are convenient for per-process lexical state; subclasses provide
+reusable named behavior and a single place for Process I/O tuning:
+
+  package BuildProcess;
+  use parent 'Linux::Event::Kernel::Process';
+
+  sub process_options ($class) {
+      return read_size => 131_072, max_reads_per_tick => 32;
+  }
+
+  sub on_stdout ($process, $bytes) { print "build: $bytes" }
+  sub on_exit ($process) { report_status($process) }
+
+C<process_options> also configures stdin high/low watermarks and the maximum
+pending stdin bound. Linux::Event validates and caches this policy and the
+class callbacks once per subclass. Constructor callbacks override same-named
+methods for one object and are retained once in its effective descriptor; no
+event-time method lookup or callback-style branch is added.
+
 =head1 SPAWNING
 
 C<spawn> accepts a command argument vector and does not insert a shell:
 
-  my $process = Worker->spawn(
+  my $process = Linux::Event::Kernel::Process->spawn(
       loop    => $loop,                       # optional
       command => ['/usr/bin/make', '-j4'],    # required
       cwd     => '/srv/project',              # optional
@@ -797,6 +839,8 @@ C<spawn> accepts a command argument vector and does not insert a shell:
       stdout  => 'pipe',                      # optional
       stderr  => 'pipe',                      # optional
       data    => $state,                      # optional
+      on_stdout => sub ($process, $bytes) { print $bytes },
+      on_exit   => sub ($process) { $process->loop->stop },
   );
 
 Construction is side-effect free while detached. The child is created when the
@@ -833,9 +877,10 @@ then closes the child's input pipe to deliver EOF.
 
 An existing PID may be observed instead of spawned:
 
-  my $process = Worker->new(
+  my $process = Linux::Event::Kernel::Process->new(
       pid  => $pid,
       reap => 1,
+      on_exit => sub ($process) { ... },
   );
   $loop->add($process);
 
@@ -845,7 +890,8 @@ leaves decoded wait-status fields undefined.
 
 =head1 EXIT CALLBACK AND STATUS
 
-A concrete subclass defines C<on_exit($process)>. When a reaped child exits,
+A subclass defines C<on_exit($process)>, or construction supplies
+C<on_exit =E<gt> sub ($process) { ... }>. When a reaped child exits,
 Linux::Event records either C<exit_code> or C<term_signal>, plus the core-dump
 flag and conventional raw wait status. Remaining available stdout/stderr bytes
 are drained before C<on_exit>.

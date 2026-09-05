@@ -6,7 +6,20 @@ callback executes in the kernel's asynchronous signal-handler context.
 
 ## Public shape
 
-A concrete Signal type defines one named callback:
+A Signal can be constructed directly with a lexical callback:
+
+```perl
+my $shutdown = Linux::Event::Kernel::Signal->new(
+    loop => $loop,
+    signals => [SIGINT, SIGTERM],
+    on_signal => sub ($signal, $number, $count) {
+        $listener->close;
+        $signal->loop->stop;
+    },
+);
+```
+
+A concrete Signal subclass remains useful for reusable named policy:
 
 ```perl
 package ShutdownSignal;
@@ -36,7 +49,7 @@ service and one nonblocking close-on-exec signalfd. The service owns:
 
 - subscriber lists by signal number;
 - reference counts used to build the shared signalfd mask;
-- cached subclass callback descriptors;
+- cached subclass or per-object callback descriptors;
 - original mask ownership state for exact restoration;
 - delivery and active-subscription counters.
 
@@ -114,8 +127,8 @@ application data, and clears ownership references.
 
 One signalfd serves all Signal subscriptions on a Loop. One readiness entry
 can drain and aggregate several native records before entering Perl. Named
-`on_signal` callbacks are cached by concrete subclass rather than looked up for
-every record.
+`on_signal` callbacks are cached by concrete subclass; constructor callbacks
+are retained once per object. Neither form is looked up for every record.
 
 This keeps Signal semantics out of asynchronous kernel handler context without
 turning every subscription into a separate fd or Perl watcher object.

@@ -21,4 +21,7 @@ concrete leaf such as L<Linux::Event::Kernel::Timer>,
 L<Linux::Event::Kernel::Signal>, L<Linux::Event::Kernel::Event>, or
 L<Linux::Event::Kernel::Process>.
 
+Each leaf accepts its application callbacks as constructor coderefs or cached
+subclass methods. Process subclasses may also centralize cached pipe-I/O tuning.
+
 =cut

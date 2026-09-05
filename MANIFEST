@@ -166,6 +166,7 @@ t/36-configure-platform.t
 t/37-current-doc-taxonomy.t
 t/38-pod-synopsis.t
 t/39-example-syntax.t
+t/39-first-class-resource-callbacks.t
 t/architecture-00-private-layers.t
 t/architecture-10-public-leaves.t
 t/architecture-20-native-consumer.t

@@ -28,6 +28,9 @@ require XSLoader;
 XSLoader::load(__PACKAGE__);
 
 my %CLASS_DESCRIPTOR;
+my @APPLICATION_CALLBACK = qw(
+    on_datagram on_drain on_ready on_error on_close
+);
 my $MAX_INTEGER = $Config::Config{ivsize} >= 8
     ? '9223372036854775807' : '2147483647';
 
@@ -61,8 +64,6 @@ sub _descriptor_for ($class) {
     my %callback = map { $_ => scalar $class->can($_) } qw(
         on_datagram on_drain on_ready on_error on_close configure_socket
     );
-    croak "$class must define on_datagram()" if !$callback{on_datagram};
-
     my %option = (
         max_datagram_size      => 65_535,
         max_datagrams_per_tick => 256,
@@ -123,6 +124,23 @@ sub _descriptor_for ($class) {
     };
 }
 
+sub _effective_descriptor ($class, $method, $option) {
+    my $descriptor = _descriptor_for($class);
+    my %override;
+    for my $name (@APPLICATION_CALLBACK) {
+        next if !exists $option->{$name};
+        my $callback = delete $option->{$name};
+        croak "$method(): $name must be a coderef"
+            if ref($callback) ne 'CODE';
+        $override{$name} = $callback;
+    }
+    my %callback = (%{ $descriptor->{callbacks} }, %override);
+    croak "$method(): on_datagram callback is required"
+        if !$callback{on_datagram};
+    return $descriptor if !%override;
+    return { %$descriptor, callbacks => \%callback };
+}
+
 sub new ($class, %option) {
     return $class->_construct(0, %option);
 }
@@ -135,6 +153,7 @@ sub _construct ($class, $connect, %option) {
     croak(($connect ? 'connect' : 'new') .
         '(): must be called as a class method') if ref $class;
     my $method = $connect ? 'connect' : 'new';
+    my $descriptor = _effective_descriptor($class, $method, \%option);
     my %known = map { $_ => 1 } qw(
         loop data bind_device
         max_datagram_size max_datagrams_per_tick edge_triggered
@@ -147,7 +166,6 @@ sub _construct ($class, $connect, %option) {
     my @unknown = sort grep { !$known{$_} } keys %option;
     croak "$method(): unknown options: " . join(', ', @unknown) if @unknown;
     my %supplied = map { $_ => 1 } keys %option;
-    my $descriptor = _descriptor_for($class);
     my $loop = delete $option{loop};
     croak "$method(): loop must be an object implementing add() and watch()"
         if defined($loop) && (!ref($loop) || !$loop->can('add')
@@ -943,6 +961,7 @@ sub _fail ($self, $error) {
     $self->_shutdown('failed', 0, 1);
     my $reported = eval { $self->_report($error); 1 };
     my $failure = $@;
+    $self->{descriptor} = undef;
     $self->{loop} = undef;
     die $failure if !$reported;
     return;
@@ -1129,6 +1148,7 @@ sub _shutdown ($self, $state, $fire_close = 1, $retain_loop = 0) {
         $called = eval { $callback->($self); 1 };
         $failure = $@;
     }
+    $self->{descriptor} = undef if !$retain_loop;
     $self->{loop} = undef if !$retain_loop;
     die $failure if !$called;
     return;

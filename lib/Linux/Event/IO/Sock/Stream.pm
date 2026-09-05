@@ -50,9 +50,34 @@ separate type hierarchy.
 
 The class combines the common ordered-byte engine with socket acquisition,
 addresses, socket policy, kernel half-close semantics, and optional TLS. A
-concrete protocol subclass supplies named callbacks and, when appropriate, a
-native framer. Constructor callbacks are an equally supported way to provide
-application behavior with normal Perl lexical scope.
+concrete protocol subclass can supply named callbacks and declare class policy;
+constructor callbacks are an equally supported way to provide application
+behavior with normal Perl lexical scope.
+
+=head1 CALLBACKS, SUBCLASSING, AND TUNING
+
+Constructor callbacks make the public Stream leaf directly useful and preserve
+ordinary lexical scope. Subclassing remains one of Linux::Event's important
+distinguishing features because a protocol class can declare, once:
+
+=over 4
+
+=item * a native L<Linux::Event::Framer> and its wire format;
+
+=item * L<Linux::Event::TLS> identity, verification, ALPN, and role policy;
+
+=item * C<stream_options> tuning for reads, fairness, batching, buffers,
+watermarks, limits, and established deadlines; and
+
+=item * socket policy and named, reusable callbacks.
+
+=back
+
+Class policy and method callbacks are validated and cached once per subclass.
+A constructor callback overrides a same-named method for one connection and is
+retained once in that object's effective descriptor. This makes it natural to
+combine reusable high-performance protocol policy with per-connection lexical
+state without adding event-time method lookup or callback-style selection.
 
 =head1 OUTBOUND CONNECTIONS
 

@@ -56,6 +56,23 @@ bind/listen/accept lifecycle is different from connected byte-stream I/O.
 TCP and Unix-domain listeners share this class. Socket family is selected by
 constructor options, not by subclass hierarchy.
 
+=head1 ACCEPTED STREAM SUBCLASS POLICY AND TUNING
+
+C<stream_class> is a prominent part of the Listener design. The selected
+L<Linux::Event::IO::Sock::Stream> subclass gives every accepted connection the
+same native framer, TLS server identity and verification policy, socket policy,
+and C<stream_options> tuning for fairness, batching, limits, watermarks, and
+deadlines. Linux::Event validates and caches that policy once per stream class.
+
+Listener constructor callbacks are complementary: C<on_data>, C<on_message>,
+and the other accepted-Stream callback templates can capture lexical server
+state, override same-named stream methods, and are shared rather than rebuilt
+for every accept. This keeps reusable protocol and tuning policy in the Stream
+subclass while preserving ordinary closure scope for a particular listener.
+
+The Listener's own C<on_accept> and listener-error policy remain named subclass
+methods because C<on_error> in the constructor belongs to accepted Streams.
+
 =head1 CONSTRUCTION
 
 C<stream_class> is required and names the stream-socket subclass created for

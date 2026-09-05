@@ -8,6 +8,12 @@ The listener remains a distinct public leaf because its API is accept-oriented.
 A listening `SOCK_STREAM` socket is not exposed as though it were an established
 ordered-byte connection.
 
+The selected Stream subclass is deliberately prominent policy: it declares the
+native framer, TLS server identity and verification behavior, socket policy,
+and `stream_options` tuning shared by every accepted connection. Listener
+constructor callback templates complement that reusable class policy with
+lexical state and are retained once rather than recreated per accept.
+
 ## Public API
 
 ```perl

@@ -6,7 +6,20 @@ PID-reuse races and never runs Perl code in a post-fork child setup path.
 
 ## Public type model
 
-A concrete subclass defines `on_exit` and whichever stdio callbacks it needs:
+Process accepts `on_exit` and `on_error` directly. `spawn()` additionally
+accepts its optional stdio callbacks:
+
+```perl
+my $process = Linux::Event::Kernel::Process->spawn(
+    loop => $loop,
+    command => ['/usr/bin/make', '-j4'],
+    stdout => 'pipe',
+    on_stdout => sub ($process, $bytes) { print "build: $bytes" },
+    on_exit => sub ($process) { $process->loop->stop },
+);
+```
+
+A concrete subclass remains useful for reusable behavior and I/O tuning:
 
 ```perl
 package BuildProcess;
@@ -29,9 +42,15 @@ sub on_exit ($process) {
     }
     $process->loop->stop;
 }
+
+sub process_options ($class) {
+    return read_size => 131_072, max_reads_per_tick => 32;
+}
 ```
 
-Callbacks are cached once per concrete subclass. One Process object owns the
+Callbacks and `process_options` are cached once per concrete subclass.
+Constructor callbacks override same-named methods for one Process and retain
+lexical state without changing the delivery path. One Process object owns the
 pidfd, configured stdio pipes, Loop registrations, queue state, decoded status,
 and application `data`.
 
@@ -171,7 +190,8 @@ numeric-PID signal path merely because later setup failed.
 
 Asynchronous stdio errors use the Process I/O error type; pidfd/wait lifecycle
 errors use the Process lifecycle error type. `last_error` retains the most
-recent structured error and an `on_error` subclass hook can handle it.
+recent structured error and an `on_error` subclass method or constructor
+closure can handle it.
 
 ## Ownership and Loop destruction
 

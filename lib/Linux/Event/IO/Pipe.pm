@@ -77,6 +77,23 @@ A Pipe may be read-only, write-only, or duplex. Duplex operation may use two
 different descriptors, which is useful for child stdin/stdout pairs and other
 one-way pipe combinations.
 
+=head1 CALLBACKS, SUBCLASSING, AND TUNING
+
+Constructor callbacks let one Pipe capture lexical application state. A
+subclass becomes more valuable when many pipes share protocol policy: it can
+declare a native L<Linux::Event::Framer>, centralize C<stream_options> tuning,
+and provide named callbacks. For example, the Synopsis deliberately combines a
+delimiter-framing subclass with a lexical C<on_message> closure.
+
+C<stream_options> controls read size and fairness, callback batching, buffer
+and output limits, watermarks, and established deadlines. Framer and tuning
+policy are validated and cached once per subclass. Constructor callbacks
+override same-named methods for one Pipe and are cached once per object, so the
+hot input path does not perform method lookup or callback-style selection.
+
+TLS does not apply to Pipe; TLS transport policy is specific to
+L<Linux::Event::IO::Sock::Stream>.
+
 =head1 CONSTRUCTION
 
 C<new> accepts exactly one of these handle shapes:
@@ -101,11 +118,11 @@ F<docs/ORDERED-BYTE-DEADLINES.md>.
 
 =head1 INPUT CALLBACKS
 
-A readable unframed subclass defines:
+A readable unframed Pipe requires, as a subclass method or constructor option:
 
   sub on_data ($pipe, $bytes) { ... }
 
-With L<Linux::Event::Framer>, a framed subclass normally defines:
+With L<Linux::Event::Framer>, a framed Pipe similarly requires:
 
   sub on_message ($pipe, $message) { ... }
 

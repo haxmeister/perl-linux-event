@@ -9,7 +9,21 @@ per-packet destinations, truncation, and peer addresses must be preserved.
 
 ## Public type model
 
-A concrete subclass defines `on_datagram` once:
+A Datagram can be constructed directly with a lexical callback:
+
+```perl
+my $socket = Linux::Event::IO::Sock::Dgram->new(
+    loop => $loop,
+    host => '127.0.0.1',
+    port => 9999,
+    on_datagram => sub ($socket, $payload, $peer) {
+        $socket->send("echo:$payload", to => $peer);
+    },
+);
+```
+
+A concrete subclass remains useful for reusable packet behavior, socket policy,
+and tuning:
 
 ```perl
 package EchoDgram;
@@ -24,11 +38,17 @@ sub on_datagram ($socket, $payload, $peer) {
 sub on_error ($socket, $error) {
     warn "$error\n";
 }
+
+sub datagram_options ($class) {
+    return max_datagrams_per_tick => 128,
+        receive_buffer => 1_048_576;
+}
 ```
 
-Callbacks and immutable class policy are cached per subclass. Each instance
-owns its socket, packet queue, backpressure state, addresses, and application
-`data`.
+Callbacks and immutable class policy are cached per subclass. Constructor
+callbacks override same-named methods for one object and are retained once in
+its effective descriptor. Each instance owns its socket, packet queue,
+backpressure state, addresses, and application `data`.
 
 ## Socket type versus family
 
@@ -202,8 +222,8 @@ can be reported without automatically closing a still-valid packet socket.
 Resolver/acquisition failure before activation is terminal.
 
 `last_error` retains the most recent structured error. A subclass can define
-`on_error`; otherwise the implementation's documented default reporting policy
-applies.
+`on_error`, or construction can supply an `on_error` closure for one socket;
+otherwise the implementation's documented default reporting policy applies.
 
 ## Private implementation boundary
 

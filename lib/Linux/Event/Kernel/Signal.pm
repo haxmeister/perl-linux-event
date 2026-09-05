@@ -19,14 +19,21 @@ fieldhash my %ENGINE_FOR_LOOP;
 
 sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Kernel::Signal is an abstract base class'
-        if $class eq __PACKAGE__;
     croak "$class is not a Linux::Event::Kernel::Signal subclass"
         if !$class->isa(__PACKAGE__);
     my $callback = $class->can('on_signal')
-        // croak "$class must define on_signal()";
+        // croak "$class must define on_signal() or receive on_signal => coderef";
     return $CLASS_DESCRIPTOR{$class}
         = Linux::Event::Kernel::Signal::_Descriptor->new($callback);
+}
+
+sub _effective_descriptor ($class, $option) {
+    croak "$class is not a Linux::Event::Kernel::Signal subclass"
+        if !$class->isa(__PACKAGE__);
+    return _descriptor_for($class) if !exists $option->{on_signal};
+    my $callback = delete $option->{on_signal};
+    croak 'new(): on_signal must be a coderef' if ref($callback) ne 'CODE';
+    return Linux::Event::Kernel::Signal::_Descriptor->new($callback);
 }
 
 sub _numbers ($value) {
@@ -53,6 +60,7 @@ sub _numbers ($value) {
 
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
+    my $descriptor = _effective_descriptor($class, \%option);
     my $loop = delete $option{loop};
     croak 'new(): loop must be an object implementing add() and watch()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
@@ -62,7 +70,7 @@ sub new ($class, %option) {
     my $numbers = _numbers(delete $option{signals});
     croak 'new(): unknown options: ' . join(', ', sort keys %option) if %option;
     my $signal = $class->_new_native(
-        _descriptor_for($class), $numbers, $data,
+        $descriptor, $numbers, $data,
     );
     $loop->add($signal) if defined $loop;
     return $signal;
@@ -133,18 +141,13 @@ Linux::Event::Kernel::Signal - synchronous signalfd delivery on a Loop
   use Linux::Event::Kernel::Signal;
   use POSIX qw(SIGINT SIGTERM);
 
-  package Shutdown;
-  use parent 'Linux::Event::Kernel::Signal';
-
-  sub on_signal ($signal, $number, $count) {
-      $signal->loop->stop;
-  }
-
-  package main;
   my $loop = Linux::Event::Loop->new;
-  my $signal = Shutdown->new(
+  my $signal = Linux::Event::Kernel::Signal->new(
       loop    => $loop,
       signals => [SIGINT, SIGTERM],
+      on_signal => sub ($signal, $number, $count) {
+          $signal->loop->stop;
+      },
   );
   $loop->run;
 
@@ -159,6 +162,24 @@ One object may subscribe to several signal numbers, and several Signal objects
 on the same Loop may subscribe to the same number. The Loop uses one shared
 nonblocking signalfd plus a native fan-out registry.
 
+=head1 CALLBACKS AND SUBCLASS POLICY
+
+Pass C<on_signal =E<gt> sub ($signal, $number, $count) { ... }> to C<new>
+when a subscription should capture lexical application state. A named subclass
+method is useful when several subscriptions share reusable signal policy:
+
+  package Shutdown;
+  use parent 'Linux::Event::Kernel::Signal';
+
+  sub on_signal ($signal, $number, $count) {
+      $signal->data->{listener}->close;
+      $signal->loop->stop;
+  }
+
+A constructor callback overrides the same-named method for one object. The
+effective CV is cached during construction, so signal fan-out does not perform
+method lookup or callback-style selection during delivery.
+
 =head1 CONSTRUCTION
 
 C<signals> is required and contains the numeric signals to subscribe to.
@@ -167,7 +188,7 @@ immediately; otherwise add the detached object with C<< $loop->add($signal) >>.
 
 =head1 CALLBACK
 
-A concrete subclass defines:
+A subclass may define, or C<new> may receive:
 
   sub on_signal ($signal, $number, $count) { ... }
 

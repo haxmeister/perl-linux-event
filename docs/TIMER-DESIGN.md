@@ -1,13 +1,25 @@
 # Kernel Timer design
 
 `Linux::Event::Kernel::Timer` is the scheduled-work leaf for
-`Linux::Event::Loop`. Applications define behavior in a concrete subclass,
-keep instance context in `data`, and attach through either `loop => $loop` or
-`$loop->add($timer)`.
+`Linux::Event::Loop`. Applications provide `on_timer` as a constructor closure
+or reusable subclass method, keep optional instance context in `data`, and
+attach through either `loop => $loop` or `$loop->add($timer)`.
 
 ## Public API
 
-A concrete Timer type implements one named callback:
+A Timer can be constructed directly with lexical callback state:
+
+```perl
+my $timer = Linux::Event::Kernel::Timer->new(
+    loop => $loop,
+    every => 15,
+    on_timer => sub ($timer) {
+        $connection->write("ping\n");
+    },
+);
+```
+
+A concrete Timer subclass remains useful for reusable named behavior:
 
 ```perl
 package Heartbeat;
@@ -45,6 +57,10 @@ my $timer = $loop->add(Heartbeat->new(
     data  => $connection,
 ));
 ```
+
+The method CV is cached once per subclass. A constructor callback overrides it
+for one object and is retained once in that Timer's native descriptor. Timer
+delivery performs no repeated method lookup or callback-style selection.
 
 ## Native scheduler
 

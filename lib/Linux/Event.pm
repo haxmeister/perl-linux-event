@@ -66,6 +66,25 @@ resource may instead be constructed unattached and passed to
 C<< $loop->add($object) >>. Low-level descriptor readiness remains available
 directly from L<Linux::Event::Loop>.
 
+=head1 CALLBACKS, SUBCLASSING, AND TUNING
+
+Public resources accept constructor callback coderefs, so an application can
+use the concrete leaf directly and capture ordinary lexical state. A
+constructor callback is resolved once per object and overrides a same-named
+subclass method.
+
+Subclassing is a complementary performance and organization feature, not a
+requirement imposed merely to obtain a callback. A protocol subclass can
+declare native L<Linux::Event::Framer> policy, L<Linux::Event::TLS> policy,
+socket configuration, and C<stream_options>, C<datagram_options>, or
+C<process_options> tuning once for every instance. Named callbacks and class
+policy are validated and cached once per subclass rather than rediscovered on
+each readiness event.
+
+The common pattern is therefore to put reusable protocol, transport, and
+tuning policy in a subclass while supplying closures for per-instance lexical
+state. Raw resources with no reusable class policy can be constructed directly.
+
 =head1 I/O MODULES
 
 =over 4
@@ -106,11 +125,11 @@ and Unix-domain datagrams.
 
 =item * L<Linux::Event::Kernel::Timer>
 
-Subclass-defined one-shot and recurring monotonic timer behavior.
+One-shot and recurring monotonic timers with constructor or subclass callbacks.
 
 =item * L<Linux::Event::Kernel::Signal>
 
-Subclass-defined signalfd subscriptions with native fan-out.
+Signalfd subscriptions with constructor or subclass callbacks and native fan-out.
 
 =item * L<Linux::Event::Kernel::Event>
 

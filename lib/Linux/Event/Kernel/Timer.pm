@@ -15,14 +15,21 @@ my %CLASS_DESCRIPTOR;
 
 sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Kernel::Timer is an abstract base class'
-        if $class eq __PACKAGE__;
     croak "$class is not a Linux::Event::Kernel::Timer subclass"
         if !$class->isa(__PACKAGE__);
     my $callback = $class->can('on_timer')
-        // croak "$class must define on_timer()";
+        // croak "$class must define on_timer() or receive on_timer => coderef";
     return $CLASS_DESCRIPTOR{$class}
         = Linux::Event::Kernel::Timer::_Descriptor->new($callback);
+}
+
+sub _effective_descriptor ($class, $option) {
+    croak "$class is not a Linux::Event::Kernel::Timer subclass"
+        if !$class->isa(__PACKAGE__);
+    return _descriptor_for($class) if !exists $option->{on_timer};
+    my $callback = delete $option->{on_timer};
+    croak 'new(): on_timer must be a coderef' if ref($callback) ne 'CODE';
+    return Linux::Event::Kernel::Timer::_Descriptor->new($callback);
 }
 
 sub _seconds ($method, $name, $value, $positive) {
@@ -70,13 +77,14 @@ sub _schedule ($method, $option) {
 
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
+    my $descriptor = _effective_descriptor($class, \%option);
     my $loop = delete $option{loop};
     croak 'new(): loop must be an object implementing add()'
         if defined($loop) && (!ref($loop) || !$loop->can('add'));
     my $data = delete $option{data};
     my ($absolute, $first, $every) = _schedule('new', \%option);
     my $timer = $class->_new_native(
-        _descriptor_for($class), $absolute, $first, $every, $data,
+        $descriptor, $absolute, $first, $every, $data,
     );
     $loop->add($timer) if defined $loop;
     return $timer;
@@ -112,25 +120,39 @@ Linux::Event::Kernel::Timer - monotonic one-shot and recurring Loop timers
   use Linux::Event::Loop;
   use Linux::Event::Kernel::Timer;
 
-  package Heartbeat;
-  use parent 'Linux::Event::Kernel::Timer';
-
-  sub on_timer ($timer) {
-      say 'timer fired';
-      $timer->loop->stop;
-  }
-
-  package main;
   my $loop = Linux::Event::Loop->new;
-  my $timer = Heartbeat->new(loop => $loop, after => 1);
+  my $timer = Linux::Event::Kernel::Timer->new(
+      loop     => $loop,
+      after    => 1,
+      on_timer => sub ($timer) {
+          say 'timer fired';
+          $timer->loop->stop;
+      },
+  );
   $loop->run;
 
 =head1 DESCRIPTION
 
-C<Linux::Event::Kernel::Timer> is the public timer leaf. Applications create a
-subclass with one named C<on_timer> callback. All active timers on a Loop share
-the Loop's timerfd-backed native scheduler and indexed minimum heap; one Timer
-object does not mean one kernel timer descriptor.
+C<Linux::Event::Kernel::Timer> is the public timer leaf. All active timers on a
+Loop share the Loop's timerfd-backed native scheduler and indexed minimum heap;
+one Timer object does not mean one kernel timer descriptor.
+
+=head1 CALLBACKS AND SUBCLASS POLICY
+
+Pass C<on_timer =E<gt> sub ($timer) { ... }> to C<new> when a timer should
+capture lexical application state. Subclassing remains useful for a reusable
+timer type with named, testable behavior:
+
+  package Heartbeat;
+  use parent 'Linux::Event::Kernel::Timer';
+
+  sub on_timer ($timer) {
+      $timer->data->write("ping\n");
+  }
+
+A constructor callback overrides the subclass method for that object. The
+effective CV is resolved once at construction; recurring delivery does not
+repeat method lookup or branch between callback styles.
 
 =head1 SCHEDULES
 
@@ -160,14 +182,19 @@ reentrantly from construction.
 
 =head1 CALLBACK AND RECURRENCE
 
-  sub on_timer ($timer) { ... }
+  sub on_timer ($timer) { ... } # subclass form
+
+or:
+
+  on_timer => sub ($timer) { ... } # constructor form
 
 Recurring timers advance from the previous scheduled deadline rather than from
 callback completion. If the Loop is late, missed intervals are coalesced into
 one callback; C<expirations> reports how many ticks that callback represents.
 
-The callback is cached per subclass. C<data> holds arbitrary application state
-and C<loop> returns the owning Loop while attached.
+Method callbacks are cached per subclass and constructor callbacks per object.
+C<data> holds arbitrary application state and C<loop> returns the owning Loop
+while attached.
 
 =head1 RESCHEDULING AND CANCELLATION
 

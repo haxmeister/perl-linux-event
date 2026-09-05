@@ -38,16 +38,15 @@ Linux::Event::IO::TTY - asynchronous ordered-byte I/O for terminals and PTYs
   use parent 'Linux::Event::IO::TTY';
   use Linux::Event::Framer 'Delimiter', "\n";
 
-  sub on_message ($tty, $line) {
-      $tty->write("You typed: $line\n");
-  }
-
   package main;
   my $loop = Linux::Event::Loop->new;
   my $console = Console->new(
       loop     => $loop,
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
+      on_message => sub ($tty, $line) {
+          $tty->write("You typed: $line\n");
+      },
   );
   $loop->run;
 
@@ -61,6 +60,24 @@ Linux::Event's native buffering and readiness machinery.
 TTY owns asynchronous byte movement; it does not configure terminal modes,
 echo, canonical input, baud rates, or other termios policy. Applications that
 need those settings configure the terminal separately.
+
+=head1 CALLBACKS, SUBCLASSING, AND TUNING
+
+Constructor callbacks give each TTY ordinary lexical scope. A subclass is the
+right place for reusable terminal protocol policy: it can declare a native
+L<Linux::Event::Framer>, define named callbacks, and centralize
+C<stream_options> tuning. The Synopsis combines a delimiter-framing subclass
+with a per-object C<on_message> closure.
+
+C<stream_options> controls read size and fairness, callback batching, buffer
+and output limits, watermarks, and established deadlines. Linux::Event
+validates and caches framer, tuning, and method policy once per subclass.
+Constructor callbacks override same-named methods for one TTY and are retained
+once per object; input delivery adds no repeated method lookup or
+method-versus-closure branch.
+
+TLS does not apply to TTY; TLS transport policy is specific to
+L<Linux::Event::IO::Sock::Stream>.
 
 =head1 CONSTRUCTION
 

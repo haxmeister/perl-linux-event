@@ -13,14 +13,24 @@ sub exception ($code) {
 }
 
 like(exception(sub { Linux::Event::Kernel::Process->new(pid => $$) }),
-    qr/abstract base class/, 'base Process class is abstract');
+    qr/on_exit callback is required/,
+    'public Process requires an effective exit callback');
 
 {
     package T::Process::Missing;
     use parent 'Linux::Event::Kernel::Process';
 }
 like(exception(sub { T::Process::Missing->new(pid => $$) }),
-    qr/must define on_exit/, 'on_exit is required');
+    qr/on_exit callback is required/, 'on_exit is required');
+like(exception(sub {
+    Linux::Event::Kernel::Process->new(pid => $$, on_exit => 'invalid')
+}), qr/on_exit must be a coderef/, 'constructor Process callback is validated');
+like(exception(sub {
+    Linux::Event::Kernel::Process->new(
+        pid => $$, on_exit => sub { }, on_stdout => sub { },
+    )
+}), qr/on_stdout is unavailable when observing/,
+    'observed Process rejects impossible stdio callbacks');
 
 {
     package T::Process::Basic;

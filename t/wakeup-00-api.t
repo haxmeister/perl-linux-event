@@ -27,15 +27,19 @@ is($interpreter_id, 0,
     sub on_event ($self, $count) { push @{ $self->data }, $count }
 }
 
-like(exception(sub { Linux::Event::Kernel::Event->new }), qr/abstract base class/,
-    'base class is abstract');
+like(exception(sub { Linux::Event::Kernel::Event->new }),
+    qr/must define on_event|receive on_event/,
+    'public Event requires an effective callback');
 
 {
     package T::Wakeup::Missing;
     use parent 'Linux::Event::Kernel::Event';
 }
 like(exception(sub { T::Wakeup::Missing->new }), qr/must define on_event/,
-    'subclass callback is required');
+    'methodless Event subclass requires a constructor callback');
+like(exception(sub {
+    Linux::Event::Kernel::Event->new(on_event => 'invalid')
+}), qr/on_event must be a coderef/, 'constructor Event callback is validated');
 
 my $loop = Linux::Event::Loop->new;
 my $seen = [];

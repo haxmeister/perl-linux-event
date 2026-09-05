@@ -1,6 +1,14 @@
 Revision history for Linux-Event
 
 0.112  2026-09-05
+    - Extend first-class cached constructor callbacks to Kernel::Event,
+      Kernel::Timer, Kernel::Signal, Kernel::Process, and IO::Sock::Dgram.
+      Public leaves can now be used directly while subclass methods retain the
+      cached fast path and may be overridden per object.
+    - Document subclassing prominently as the declarative home for native
+      framers, TLS, socket policy, and Stream, Datagram, and Process tuning.
+      Add live delivery, override, lexical-retention, validation, and terminal
+      callback-release tests for the expanded constructor API.
     - Add first-class constructor callbacks for ordered-byte input and lifecycle
       events on Pipe, TTY, connected Stream, and accepted Stream objects.
       Constructor callbacks override same-named class methods for that instance.
