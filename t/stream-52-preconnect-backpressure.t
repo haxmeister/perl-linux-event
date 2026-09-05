@@ -3,14 +3,14 @@ use strict;
 use warnings;
 use Test::More;
 
-use Linux::Event::Listener;
+use Linux::Event::IO::Sock::Listener;
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::PreconnectSink;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) {
         $stream->data->{received} .= $bytes;
     }
@@ -18,7 +18,7 @@ use Linux::Event::Socket;
 
 {
     package T::PreconnectClient;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) {
         return high_watermark => 8, low_watermark => 4;
     }
@@ -32,7 +32,7 @@ use Linux::Event::Socket;
 
 my $loop = Linux::Event::Loop->new;
 my $state = { received => '', ready => 0, drain => 0, error => '' };
-my $listener = Linux::Event::Listener->new(
+my $listener = Linux::Event::IO::Sock::Listener->new(
     loop => $loop,
     stream_class => 'T::PreconnectSink',
     host => '127.0.0.1', port => 0, data => $state,

@@ -4,7 +4,7 @@ les_xsstate_t *
 les_state_from_sv(SV *sv)
 {
     if (!sv_isobject(sv) || !SvROK(sv))
-        croak("not a Linux::Event::Stream::XSState object");
+        croak("not a Linux::Event::_ByteStream::State object");
     return INT2PTR(les_xsstate_t *, SvIV((SV *)SvRV(sv)));
 }
 
@@ -12,7 +12,7 @@ les_descriptor_t *
 les_descriptor_from_sv(SV *sv)
 {
     if (!sv_isobject(sv) || !SvROK(sv))
-        croak("not a Linux::Event::Stream::XSDescriptor object");
+        croak("not a Linux::Event::_ByteStream::Descriptor::Native object");
     return INT2PTR(les_descriptor_t *, SvIV((SV *)SvRV(sv)));
 }
 

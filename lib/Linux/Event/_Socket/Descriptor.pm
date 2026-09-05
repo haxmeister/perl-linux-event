@@ -3,7 +3,6 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.105';
 
 use Carp qw(croak);
 use mro ();
@@ -33,13 +32,10 @@ sub _tls_for ($class) {
 
 sub for_class ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::Socket is a private implementation base; construct a public IO::Sock::Stream subclass'
-        if $class eq 'Linux::Event::Socket';
-
-    my $is_stream_socket = $class->isa('Linux::Event::_Socket::Stream')
-        || $class->isa('Linux::Event::Socket');
+    croak 'Linux::Event::_Socket::Stream is a private implementation base; subclass Linux::Event::IO::Sock::Stream'
+        if $class eq 'Linux::Event::_Socket::Stream';
     croak "$class is not a Linux::Event stream-socket class"
-        if !$is_stream_socket;
+        if !$class->isa('Linux::Event::_Socket::Stream');
 
     my %option = map { $_ => undef } Linux::Event::_SocketConfig::names();
     if (my $configure = $class->can('socket_options')) {

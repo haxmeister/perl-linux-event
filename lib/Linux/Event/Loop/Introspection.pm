@@ -8,8 +8,8 @@ my @CENSUS_TYPES = qw(pipe tty stream listener dgram timer signal event process)
 
 sub _type_of ($object) {
     return 'unknown'
-        if $object->isa('Linux::Event::Stream::_Deadline')
-        || $object->isa('Linux::Event::Datagram::_ReadyTimer');
+        if $object->isa('Linux::Event::_ByteStream::_Deadline')
+        || $object->isa('Linux::Event::_Socket::Dgram::_ReadyTimer');
     return 'pipe'     if $object->isa('Linux::Event::IO::Pipe');
     return 'tty'      if $object->isa('Linux::Event::IO::TTY');
     return 'stream'   if $object->isa('Linux::Event::IO::Sock::Stream');
@@ -33,10 +33,10 @@ sub _is_current ($self, $object) {
 
 sub _object_snapshot ($self) {
     my @candidate = @{ $self->_object_candidates_native };
-    push @candidate, @{ Linux::Event::Signal->_objects_for_loop($self) }
-        if Linux::Event::Signal->can('_objects_for_loop');
-    push @candidate, @{ Linux::Event::Wakeup->_objects_for_loop($self) }
-        if Linux::Event::Wakeup->can('_objects_for_loop');
+    push @candidate, @{ Linux::Event::Kernel::Signal->_objects_for_loop($self) }
+        if Linux::Event::Kernel::Signal->can('_objects_for_loop');
+    push @candidate, @{ Linux::Event::Kernel::Event->_objects_for_loop($self) }
+        if Linux::Event::Kernel::Event->can('_objects_for_loop');
     push @candidate, @{ Linux::Event::_Resolver->_objects_for_loop($self) }
         if Linux::Event::_Resolver->can('_objects_for_loop');
 
@@ -77,9 +77,9 @@ sub _owner_of ($candidate) {
     return undef if !ref($candidate);
     if (blessed($candidate)) {
         return $candidate if _type_of($candidate) ne 'unknown';
-        return _owner_of(eval { $candidate->stream })
-            if $candidate->isa('Linux::Event::Stream::XSState');
-        return _owner_of(eval { $candidate->_introspection_owner })
+        return _owner_of(scalar eval { $candidate->object })
+            if $candidate->isa('Linux::Event::_ByteStream::State');
+        return _owner_of(scalar eval { $candidate->_introspection_owner })
             if $candidate->can('_introspection_owner');
         return undef;
     }

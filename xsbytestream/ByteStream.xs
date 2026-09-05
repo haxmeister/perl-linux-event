@@ -1,97 +1,4 @@
-/*
- * Linux::Event::Stream XS binding boundary
- * ========================================
- *
- * One immutable descriptor is built for each Perl Stream subclass. It owns
- * resolved callback CVs, transport policy, and native framer configuration.
- * Per-connection state references that descriptor and owns only mutable I/O,
- * parser, queue, instrumentation, and lifetime state.
- *
- * Public Perl remains responsible for policy and semantic state such as
- * end(), close(), outbound framing, and watcher ownership. Native code owns
- * for repetitive transport work:
- *
- *     EPOLLIN
- *       -> XSState::_read_ready()
- *       -> native transport read until retry
- *       -> reusable native read buffer
- *       -> Perl only when bytes are available
- *
- *     Stream->write($bytes)
- *       -> XSState::_write()
- *       -> immediate native transport write when the queue is empty
- *       -> native segmented queue on partial write/EAGAIN
- *
- *     EPOLLOUT
- *       -> XSState::_write_ready()
- *       -> native transport vector writes until retry or empty
- *       -> Perl only for drain/error/queue-empty semantic transitions
- *
- * Why a segmented queue?
- * ----------------------
- * The reference Perl Stream used one large scalar plus an offset.  Appending
- * to that scalar and periodically deleting its consumed prefix creates copy
- * and compaction work in Perl.  The native queue instead stores independent
- * byte segments and advances offsets.  writev() can flush several segments in
- * one syscall without concatenating them first.
- *
- * Queued segments own an independent SV copy. That gives
- * write() ordinary value semantics: callers may modify or release their input
- * scalar immediately after write() returns.  A later benchmark may test COW or
- * retained immutable SVs as a separate zero-copy optimization; it is not
- * mixed into this write-path measurement.
- *
- * Transport boundary
- * ------------------
- * Connection state selects a native byte-transport operations table. The
- * current plain provider maps it to read/write/writev/shutdown. Its identity
- * is specialized before each operation so ordinary Streams retain direct
- * syscalls rather than paying an indirect provider call. Parser, queue, and
- * lifecycle code consume transport results and distinguish WANT_READ from
- * WANT_WRITE for a future adjacent TLS provider.
- *
- * Backpressure contract
- * ---------------------
- * The native state tracks pending bytes and high/low watermarks.  _write()
- * returns an internal bitmask to Perl:
- *
- *     LES_WRITE_FLOW_OK  producer may continue
- *     LES_WRITE_QUEUED   EPOLLOUT interest must be enabled
- *
- * Crossing above high_watermark makes write() false.  Once draining reaches
- * low_watermark or below, write_blocked is cleared before on_drain is invoked.
- * The callback may therefore call write() reentrantly and start a new blocked
- * interval safely.
- *
- * A nonzero max_pending_bytes is an independent hard queue bound. Before an
- * unsent remainder is copied into a segment, XS checks the resulting pending
- * count. Overflow enters Perl for one typed error/close transition and the
- * remainder is never queued. The ordinary false return therefore continues to
- * mean accepted cooperative backpressure, never rejection.
- *
- * Callback and lifetime safety
- * ----------------------------
- * The Perl Stream owns this XSState object. XSState holds strong references to
- * the Stream and its shared class descriptor. close()/detach() mark native state
- * closed and clear queued SVs before the reactor watcher is cancelled.  User
- * callbacks may pause, close, end, or write reentrantly; native loops re-check
- * state after every Perl callback before continuing.
- *
- * Source organization
- * -------------------
- * This file contains the XSUB boundary. Focused stream_*.c translation units
- * own state, transport, callbacks, input, delivery, read, write, and protocol
- * transition mechanics. Each built-in parser lives in its matching
- * framer_*.c file. stream_internal.h is their only shared private contract.
- *
- * Separation from Linux::Event internals
- * --------------------------------------
- * This file intentionally does not include Linux::Event private C headers.
- * The reactor passes watcher data directly to these XSUBs through the private
- * callback-data hook established by the prior Stream milestone.  That keeps
- * the core a generic readiness engine while allowing Stream to be developed
- * and benchmarked independently.
- */
+/* Linux::Event private ordered-byte XS boundary. */
 
 #include "stream_internal.h"
 
@@ -102,7 +9,7 @@ les_descriptor_spec_sv(pTHX_ HV *spec, const char *key)
     SV **slot = hv_fetch(spec, key, key_len, 0);
 
     if (!slot)
-        croak("missing Stream descriptor field '%s'", key);
+        croak("missing ordered-byte descriptor field '%s'", key);
     return *slot;
 }
 
@@ -120,7 +27,7 @@ les_descriptor_spec_int(pTHX_ HV *spec, const char *key)
     return SvOK(value) ? (int)SvIV(value) : 0;
 }
 
-MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSDescriptor
+MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream::Descriptor::Native
 PROTOTYPES: DISABLE
 
 SV *
@@ -143,10 +50,10 @@ _new_validated(CLASS, spec_rv)
     SV *framing_error_cb, *delimiter_sv, *max_frame_sv, *consumer_provider;
   CODE:
     if (!spec_rv || !SvROK(spec_rv) || SvTYPE(SvRV(spec_rv)) != SVt_PVHV)
-        croak("XSDescriptor::_new_validated requires a hash reference");
+        croak("native descriptor requires a hash reference");
     spec = (HV *)SvRV(spec_rv);
     if (HvUSEDKEYS(spec) != 29)
-        croak("XSDescriptor::_new_validated requires a complete validated specification");
+        croak("native descriptor requires a complete validated specification");
 
     read_size = les_descriptor_spec_uv(aTHX_ spec, "read_size");
     read_budget_bytes = les_descriptor_spec_uv(aTHX_ spec,
@@ -195,7 +102,7 @@ _new_validated(CLASS, spec_rv)
         croak("read_batch_bytes exceeds native size_t");
     if (read_mode != LES_READ_DELIVER
         && (read_mode < LES_READ_DELIMITER || read_mode > LES_READ_DECIMAL))
-        croak("invalid Stream native read mode");
+        croak("invalid ordered-byte native read mode");
     if (read_mode == LES_READ_FIXED && fixed_size == 0)
         croak("fixed_size must be > 0 for native fixed framing");
     if (read_mode == LES_READ_LENGTH
@@ -242,7 +149,7 @@ _new_validated(CLASS, spec_rv)
     }
 
     descriptor = (les_descriptor_t *)calloc(1, sizeof(*descriptor));
-    if (!descriptor) croak("calloc XSDescriptor failed");
+    if (!descriptor) croak("calloc native descriptor failed");
 
     descriptor->read_size = (size_t)read_size;
     descriptor->read_budget_bytes = read_budget_bytes;
@@ -316,13 +223,13 @@ DESTROY(descriptor_obj)
         sv_setiv(SvRV(descriptor_obj), 0);
     }
 
-MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream::XSState
+MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream::State
 PROTOTYPES: DISABLE
 
 SV *
-_new_validated(CLASS, stream, read_fd, write_fd, descriptor_obj)
+_new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
     const char *CLASS
-    SV *stream
+    SV *object
     int read_fd
     int write_fd
     SV *descriptor_obj
@@ -331,11 +238,11 @@ _new_validated(CLASS, stream, read_fd, write_fd, descriptor_obj)
     les_descriptor_t *descriptor;
   CODE:
     if (read_fd < 0 && write_fd < 0)
-        croak("Stream requires a read or write fd");
+        croak("ordered-byte state requires a read or write fd");
     descriptor = les_descriptor_from_sv(descriptor_obj);
-    if (!descriptor) croak("Stream descriptor is closed");
+    if (!descriptor) croak("ordered-byte descriptor is closed");
     st = (les_xsstate_t *)calloc(1, sizeof(*st));
-    if (!st) croak("calloc XSState failed");
+    if (!st) croak("calloc ordered-byte state failed");
     st->read_fd = read_fd;
     st->write_fd = write_fd;
     st->plain_transport.read_fd = read_fd;
@@ -344,7 +251,7 @@ _new_validated(CLASS, stream, read_fd, write_fd, descriptor_obj)
     st->transport_context = &st->plain_transport;
     st->descriptor = descriptor;
     st->descriptor_sv = newSVsv(descriptor_obj);
-    st->stream_sv = newSVsv(stream);
+    st->stream_sv = newSVsv(object);
 
     if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER) {
         st->read_buffer = (char *)malloc(descriptor->read_size);
@@ -352,7 +259,7 @@ _new_validated(CLASS, stream, read_fd, write_fd, descriptor_obj)
             SvREFCNT_dec(st->descriptor_sv);
             SvREFCNT_dec(st->stream_sv);
             free(st);
-            croak("malloc XSState read buffer failed");
+            croak("malloc ordered-byte read buffer failed");
         }
     }
     if (!les_consumer_create(aTHX_ st)) {
@@ -361,8 +268,7 @@ _new_validated(CLASS, stream, read_fd, write_fd, descriptor_obj)
         SvREFCNT_dec(st->stream_sv);
         free(st->read_buffer);
         free(st);
-        croak("native Stream consumer '%s' failed to create per-Stream context",
-            consumer_name);
+        croak("native consumer '%s' failed to create context", consumer_name);
     }
 
     RETVAL = sv_setref_pv(newSV(0), CLASS, (void *)st);
@@ -384,7 +290,7 @@ DESTROY(state_obj)
     }
 
 SV *
-stream(state_obj)
+object(state_obj)
     SV *state_obj
   CODE:
     les_xsstate_t *st = les_state_from_sv(state_obj);
@@ -434,9 +340,9 @@ _attach_transport(state_obj, provider, abi_version, ops_address, context_address
     const les_transport_ops_t *ops;
   CODE:
     st = les_state_from_sv(state_obj);
-    if (st->closed) croak("cannot attach a transport to a closed Stream");
+    if (st->closed) croak("cannot attach a transport to closed ordered-byte state");
     if (st->transport_ops != &les_plain_transport_ops)
-        croak("Stream already has a non-plain transport");
+        croak("ordered-byte state already has a non-plain transport");
     if (abi_version != LES_TRANSPORT_ABI_VERSION)
         croak("transport ABI version mismatch: got %llu, need %u",
             (unsigned long long)abi_version, LES_TRANSPORT_ABI_VERSION);
@@ -532,7 +438,7 @@ _activity_snapshot(state_obj)
   PPCODE:
     st = les_state_from_sv(state_obj);
     if (!st->activity_tracking)
-        croak("Stream activity tracking is not enabled");
+        croak("ordered-byte activity tracking is not enabled");
     EXTEND(SP, 2);
     PUSHs(sv_2mortal(newSVnv((NV)st->last_read_ns / 1000000000.0)));
     PUSHs(sv_2mortal(newSVnv((NV)st->last_write_ns / 1000000000.0)));
@@ -750,7 +656,7 @@ _test_consumer_trace(state_obj)
   OUTPUT:
     RETVAL
 
-MODULE = Linux::Event::Stream    PACKAGE = Linux::Event::Stream
+MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream
 PROTOTYPES: DISABLE
 
 UV
@@ -761,6 +667,9 @@ _native_consumer_abi_version(CLASS)
     RETVAL = LES_CONSUMER_ABI_VERSION;
   OUTPUT:
     RETVAL
+
+MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream::TestSupport
+PROTOTYPES: DISABLE
 
 SV *
 _test_consumer_definition(CLASS, variant = "valid")
@@ -782,10 +691,10 @@ _test_consumer_destroy_count(CLASS)
     RETVAL
 
 int
-_test_consumer_external_arm(stream, callback)
-    SV *stream
+_test_consumer_external_arm(object, callback)
+    SV *object
     SV *callback
   CODE:
-    RETVAL = les_test_consumer_external_arm(aTHX_ stream, callback);
+    RETVAL = les_test_consumer_external_arm(aTHX_ object, callback);
   OUTPUT:
     RETVAL

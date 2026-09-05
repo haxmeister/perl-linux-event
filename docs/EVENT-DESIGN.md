@@ -120,15 +120,8 @@ kernel failure synchronously.
 Application callback exceptions propagate from Loop dispatch; they are not
 silently converted into cancellation.
 
-## Private implementation host
+## Native implementation boundary
 
-The historical `Linux::Event::Wakeup` package and native extension remain the
-stable private implementation host for the eventfd engine. Public
-`Linux::Event::Kernel::Event` objects use that engine and expose `on_event` as
-the application callback.
-
-The historical package is `no_index`, is excluded from META `provides`, and is
-not an application subclassing contract. Its retained name is an implementation
-and native-ABI choice, not a second public API. Keeping that host stable avoids
-needless native churn and does not add a Perl wrapper to the eventfd delivery
-path.
+`Linux::Event::Kernel::Event` is both the supported public class and the native
+eventfd host. It exposes `on_event` as the application callback without an
+intermediate historical-package bridge.

@@ -12,9 +12,9 @@ use Socket qw(
 );
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
-use Linux::Event::Stream;
-use Linux::Event::Socket;
-use Linux::Event::Listener;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Listener;
 use Linux::Event::Loop;
 
 my @modes = qw(manual add loop);
@@ -47,7 +47,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchAutomaticStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
 
     sub on_data ($stream, $bytes) { }
 
@@ -62,7 +62,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchAutomaticListener;
-    use parent 'Linux::Event::Listener';
+    use parent 'Linux::Event::IO::Sock::Listener';
 
     sub on_error ($listener, $error) {
         die "benchmark listener failed: $error\n";
@@ -71,7 +71,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchListenClient;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
 
     sub on_data ($stream, $bytes) { }
 
@@ -204,7 +204,7 @@ sub median (@values) {
 }
 
 say 'Median loopback TCP Listener lifecycle benchmark';
-say "Linux::Event version $Linux::Event::Listener::VERSION";
+say "Linux::Event version $Linux::Event::IO::Sock::Listener::VERSION";
 printf "%-8s %8s %14s %14s\n",
     qw(mode clients accepts/s cpu_us/accept);
 for my $client_count (@clients) {

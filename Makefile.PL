@@ -59,7 +59,7 @@ WriteMakefile(
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
-    DIR              => [qw(xsloop xsstream xstls xsconnection xsresolver xssignal xslistener xswakeup xsdatagram xsprocess)],
+    DIR              => [qw(xsloop xsbytestream xstls xsconnection xsresolver xssignal xslistener xsevent xsdatagram xsprocess)],
     CONFIGURE_REQUIRES => {
         'ExtUtils::CBuilder'  => 0,
         'ExtUtils::MakeMaker' => 0,
@@ -86,30 +86,21 @@ WriteMakefile(
                 Linux::Event::_Socket::Stream
                 Linux::Event::_Socket::Listener
                 Linux::Event::_Socket::Dgram
-                Linux::Event::Datagram
-                Linux::Event::Listener
-                Linux::Event::Process
-                Linux::Event::Signal
-                Linux::Event::Socket
-                Linux::Event::Stream
-                Linux::Event::Timer
-                Linux::Event::Wakeup
+                Linux::Event::_Socket::Connection
+                Linux::Event::_ByteStream::_Deadline
+                Linux::Event::_ByteStream::Descriptor::Native
+                Linux::Event::_ByteStream::State
+                Linux::Event::_ByteStream::TestSupport
+                Linux::Event::_Socket::Dgram::_ReadyTimer
+                Linux::Event::Kernel::Signal::_Descriptor
+                Linux::Event::Kernel::Signal::_Engine
+                Linux::Event::Kernel::Signal::_Service
+                Linux::Event::Kernel::Event::_OwnerState
+                Linux::Event::Kernel::Timer::_Descriptor
                 Linux::Event::Loop::Introspection
                 Linux::Event::_Resolver
                 Linux::Event::_Resolver::_Native
                 Linux::Event::_SocketConfig
-                Linux::Event::Datagram::_ReadyTimer
-                Linux::Event::Signal::_Descriptor
-                Linux::Event::Signal::_Engine
-                Linux::Event::Signal::_Service
-                Linux::Event::Socket::_Descriptor
-                Linux::Event::Socket::_Connection
-                Linux::Event::Stream::_Deadline
-                Linux::Event::Stream::_Descriptor
-                Linux::Event::Stream::XSDescriptor
-                Linux::Event::Stream::XSState
-                Linux::Event::Timer::_Descriptor
-                Linux::Event::Wakeup::_OwnerState
             )],
         },
         provides => \%provides,

@@ -13,13 +13,13 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC SOL_SOCKET SO_RCVBUF SO_SNDBUF);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::Loop;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
 
 our $READ_SIZE = 262_144;
 
 {
     package Linux::Event::Bench::PayloadSweep::Base;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
 
     sub stream_options ($class) {
         return read_size => $main::READ_SIZE,

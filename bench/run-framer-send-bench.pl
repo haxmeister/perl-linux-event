@@ -12,19 +12,21 @@ use Sys::Hostname qw(hostname);
 use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package Linux::Event::Bench::SendLength;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'LengthPrefix', bytes => 4, endian => 'big';
+    sub on_message ($stream, $message) { }
     sub on_error ($stream, $error) { die "Stream error: $error\n" }
 }
 
 {
     package Linux::Event::Bench::SendVarint;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Varint';
+    sub on_message ($stream, $message) { }
     sub on_error ($stream, $error) { die "Stream error: $error\n" }
 }
 
@@ -152,7 +154,7 @@ sub run_once ($framer, $payload_size, $messages) {
     set_nonblocking($peer);
     my $loop = Linux::Event::Loop->new;
     my $class = $class_for{$framer};
-    my $stream = $class->new(loop => $loop, write_fh => $producer);
+    my $stream = $class->new(loop => $loop, fh => $producer);
     my $payload = 'x' x $payload_size;
     my $prefix_bytes = $framer eq 'length' ? 4 : varint_width($payload_size);
     my $wire_bytes = $messages * ($payload_size + $prefix_bytes);
@@ -197,7 +199,7 @@ sub run_once ($framer, $payload_size, $messages) {
     my $payload_bytes = $messages * $payload_size;
     my $stats = $stream->{xs_state}->stats;
     my $options = $stream->{descriptor}{options};
-    my $native = $stream->{descriptor}{native};
+    my $native = $stream->{descriptor}{framer}{native};
     my $sample = {
         framer => $framer,
         payload_bytes => $payload_size,

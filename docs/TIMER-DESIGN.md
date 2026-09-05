@@ -118,12 +118,8 @@ rescheduling, and equal-deadline expiration at multiple active Timer counts.
 Loop statistics expose timerfd creation/rearm, scheduling, cancellation,
 callback delivery, coalescing, and maximum heap size.
 
-## Private implementation host
+## Native implementation boundary
 
-The historical `Linux::Event::Timer` package remains the stable private
-`no_index` implementation host for the timerfd scheduler. The supported public
-class is `Linux::Event::Kernel::Timer`.
-
-Retaining the historical package name avoids needless native package churn and
-does not add a Perl dispatch layer to timer delivery. It is excluded from META
-`provides` and is not an application subclassing contract.
+`Linux::Event::Kernel::Timer` is both the supported public class and the native
+timerfd scheduler host. Private descriptor state remains behind that class and
+does not add a Perl dispatch layer to timer delivery.

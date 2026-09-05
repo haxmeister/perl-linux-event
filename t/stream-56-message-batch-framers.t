@@ -5,12 +5,12 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::BatchFramer::Fixed;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Fixed', size => 2;
     sub stream_options ($class) { return message_batch_size => 4 }
     sub on_messages ($stream, $messages) {
@@ -19,7 +19,7 @@ use Linux::Event::Socket;
 }
 {
     package T::BatchFramer::Length;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'LengthPrefix', bytes => 1;
     sub stream_options ($class) { return message_batch_size => 4 }
     sub on_messages ($stream, $messages) {
@@ -28,7 +28,7 @@ use Linux::Event::Socket;
 }
 {
     package T::BatchFramer::U32BE;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'U32BE';
     sub stream_options ($class) { return message_batch_size => 4 }
     sub on_messages ($stream, $messages) {
@@ -37,7 +37,7 @@ use Linux::Event::Socket;
 }
 {
     package T::BatchFramer::Netstring;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Netstring';
     sub stream_options ($class) { return message_batch_size => 4 }
     sub on_messages ($stream, $messages) {
@@ -46,7 +46,7 @@ use Linux::Event::Socket;
 }
 {
     package T::BatchFramer::Varint;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Varint';
     sub stream_options ($class) { return message_batch_size => 4 }
     sub on_messages ($stream, $messages) {
@@ -55,7 +55,7 @@ use Linux::Event::Socket;
 }
 {
     package T::BatchFramer::Decimal;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'DecimalLength', separator => ' ';
     sub stream_options ($class) { return message_batch_size => 4 }
     sub on_messages ($stream, $messages) {

@@ -5,14 +5,14 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
+use Linux::Event::_ByteStream;
 
 {
     package T::HostLifetimeBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
-            __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
+        Linux::Event::_ByteStream->_declare_consumer(
+            __PACKAGE__, Linux::Event::_ByteStream::TestSupport->_test_consumer_definition,
         );
     }
 }
@@ -33,10 +33,11 @@ socketpair(my $stream_fh, my $peer_fh,
     AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 my $loop = Linux::Event::Loop->new;
 my $stream = T::HostLifetimeLine->new(loop => $loop, fh => $stream_fh);
-my $destroyed_before = Linux::Event::Stream->_test_consumer_destroy_count;
+my $destroyed_before = Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
 
 $stream->transition_to('T::HostLifetimeFixed', input => 'abc');
-my $continued = $stream->_test_consumer_external_arm(
+my $continued = Linux::Event::_ByteStream::TestSupport::_test_consumer_external_arm(
+    $stream,
     sub { $stream->close },
 );
 
@@ -47,7 +48,7 @@ ok(!defined($stream->{xs_state}), 'Stream releases its XSState ownership');
 ok(!defined(fileno($stream_fh)), 'reentrant close releases the descriptor');
 is($loop->resources->{registered_fds}, 0,
     'reentrant close releases the watcher registration');
-cmp_ok(Linux::Event::Stream->_test_consumer_destroy_count, '>',
+cmp_ok(Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count, '>',
     $destroyed_before,
     'provider context destruction is deferred until host release');
 

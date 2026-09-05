@@ -3,9 +3,9 @@
 ## Status
 
 This document describes the public architecture introduced in Linux::Event
-0.110. The IO and Kernel namespaces are the supported application model. Older
-top-level resource packages may remain as private implementation or ABI hosts,
-but they are not the public subclassing or construction surface.
+0.110. The IO and Kernel namespaces are the supported application model. The
+private implementation and native ABI names now follow that same taxonomy and
+are not application subclassing or construction surfaces.
 
 ## Public namespace model
 
@@ -148,17 +148,13 @@ Shared behavior that exists because a descriptor is a socket:
 Connection acquisition, listen/accept, stream-byte processing, and datagram
 processing stay in their specialized private layers.
 
-## Stable private implementation hosts
+## Private implementation boundaries
 
-Some historical package names and native extension names remain in the source
-tree because they are established implementation and ABI boundaries. They are
-`no_index`, are excluded from META `provides`, and must not be used as the
-application API.
-
-Keeping those private hosts stable avoids needless native ABI churn and avoids
-adding Perl dispatch layers to hot paths. The public contract is defined by the
-IO and Kernel leaves above, not by the names of the private XS packages that
-implement them.
+Private packages use leading-underscore names such as `_ByteStream` and
+`_Socket`; kernel implementations live under their public `Kernel::*` class.
+They are `no_index`, are excluded from META `provides`, and must not be used as
+the application API. The public contract is defined by the IO and Kernel leaves
+above, not by private XS package names.
 
 ## Architecture invariants
 
@@ -170,7 +166,6 @@ Changes to this architecture must preserve these rules:
    base objects.
 4. Public examples, POD, design documents, benchmarks, and diagnostics use the
    IO/Kernel taxonomy.
-5. Historical implementation names may remain only where they are genuinely
-   private implementation or ABI details.
+5. Private implementation and native ABI names follow the coherent taxonomy.
 6. API changes that can affect hot paths require the full test matrix,
    distribution checks, and performance-regression suite.

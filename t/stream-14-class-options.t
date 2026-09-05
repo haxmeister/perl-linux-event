@@ -9,7 +9,7 @@ use Linux::Event::Loop;
 
 {
     package T::OptionsHash;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     our $CALLS = 0;
     sub stream_options ($class) {
         $CALLS++;
@@ -23,21 +23,21 @@ use Linux::Event::Loop;
 
 {
     package T::OptionsOdd;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return 'read_size' }
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::OptionsUnknown;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return imaginary => 1 }
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::OptionsWatermark;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) {
         return high_watermark => 1, low_watermark => 2;
     }
@@ -46,14 +46,14 @@ use Linux::Event::Loop;
 
 {
     package T::OptionsZeroRead;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return read_size => 0 }
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::OptionsNegativeBudget;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return read_budget_bytes => -1 }
     sub on_data ($stream, $bytes) { }
 }

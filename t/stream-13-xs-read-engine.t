@@ -5,12 +5,12 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::SmallReadStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return read_size => 4 }
     sub on_data ($stream, $bytes) {
         my $state = $stream->data;
@@ -31,8 +31,8 @@ my $stream = T::SmallReadStream->new(
     data => $state,
 );
 
-isa_ok($stream->{xs_state}, 'Linux::Event::Stream::XSState');
-isa_ok($stream->{descriptor}{xs}, 'Linux::Event::Stream::XSDescriptor');
+isa_ok($stream->{xs_state}, 'Linux::Event::_ByteStream::State');
+isa_ok($stream->{descriptor}{native}, 'Linux::Event::_ByteStream::Descriptor::Native');
 
 is(syswrite($b, 'abcdefghij'), 10, 'peer wrote test bytes');
 $loop->run;

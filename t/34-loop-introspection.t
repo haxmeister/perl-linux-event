@@ -74,7 +74,7 @@ is($inspection->{interval}, 0, 'Timer inspection has interval');
 is($inspection->{expirations}, 0, 'Timer inspection has expirations');
 
 # Private helper used only to verify that backing timers are not public objects.
-my $internal = Linux::Event::Datagram::_ReadyTimer->new(after => 60);
+my $internal = Linux::Event::_Socket::Dgram::_ReadyTimer->new(after => 60);
 $loop->add($internal);
 is($loop->count, 1, 'internal Timer is excluded from managed objects');
 

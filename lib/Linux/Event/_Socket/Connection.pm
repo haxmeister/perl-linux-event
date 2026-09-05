@@ -1,9 +1,8 @@
-package Linux::Event::Socket::_Connection;
+package Linux::Event::_Socket::Connection;
 use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.105';
 
 use Carp qw(croak);
 use Errno ();
@@ -24,7 +23,7 @@ use Linux::Event::Address;
 use Linux::Event::_SocketConfig ();
 
 require XSLoader;
-XSLoader::load(__PACKAGE__, $VERSION);
+XSLoader::load(__PACKAGE__);
 
 sub _introspection_owner ($self) { $self->{stream} }
 
@@ -73,8 +72,8 @@ sub new ($class, %opt) {
         if defined($loop) && (!ref($loop) || !$loop->can('add')
             || !$loop->can('watch') || !$loop->can('watch_fd'));
     my $stream = delete $opt{stream};
-    croak 'new(): stream must be a Linux::Event::Stream object'
-        if !ref($stream) || !$stream->isa('Linux::Event::Stream');
+    croak 'new(): stream must be a Linux::Event::_ByteStream object'
+        if !ref($stream) || !$stream->isa('Linux::Event::_ByteStream');
     my $timeout = _timeout(delete $opt{timeout});
     my $socket_policy = delete $opt{socket_policy};
     croak 'new(): internal socket_policy must be a hash reference'

@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <sys/eventfd.h>
 
-MODULE = Linux::Event::Wakeup    PACKAGE = Linux::Event::Wakeup
+MODULE = Linux::Event::Kernel::Event    PACKAGE = Linux::Event::Kernel::Event
 
 PROTOTYPES: DISABLE
 

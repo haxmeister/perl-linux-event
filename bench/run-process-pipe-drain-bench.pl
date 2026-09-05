@@ -11,8 +11,8 @@ use Time::HiRes qw(
 
 use Linux::Event;
 use Linux::Event::Loop;
-use Linux::Event::Process;
-use Linux::Event::Timer;
+use Linux::Event::Kernel::Process;
+use Linux::Event::Kernel::Timer;
 
 my @engines = qw(perl native);
 my @streams = qw(stdout stderr both);
@@ -99,7 +99,7 @@ CHILD
 
 {
     package BenchPipeHeartbeat;
-    use parent 'Linux::Event::Timer';
+    use parent 'Linux::Event::Kernel::Timer';
 
     sub on_timer ($timer) {
         my $run = $timer->data;
@@ -115,7 +115,7 @@ CHILD
 
 {
     package BenchPipeProcess;
-    use parent 'Linux::Event::Process';
+    use parent 'Linux::Event::Kernel::Process';
 
     sub on_stdout ($process, $bytes) {
         my $run = $process->data;
@@ -158,7 +158,7 @@ sub median (@values) {
 }
 
 sub run_once ($engine, $stream, $workers, $read_size, $measured) {
-    local $Linux::Event::Process::_PIPE_DRAIN_ENGINE = $engine;
+    local $Linux::Event::Kernel::Process::_PIPE_DRAIN_ENGINE = $engine;
     my $loop = Linux::Event::Loop->new;
     my $run = {
         loop => $loop,

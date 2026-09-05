@@ -143,25 +143,6 @@ jobs:
             --fail-on-regression \
             --json bench/results/performance-candidate.json
 
-      - name: Compare old implementation classes with new public leaves
-        working-directory: candidate
-        run: |
-          perl -Mblib bench/run-public-api-overhead.pl \
-            --payload-sizes=64,4096,65536 \
-            --threshold-percent 10 \
-            --fail-on-regression \
-            --json bench/results/public-api-overhead.json
-
-      - name: Compare 200 KB public stream surface
-        working-directory: candidate
-        run: |
-          perl -Mblib bench/run-public-api-overhead.pl \
-            --repeats=7 \
-            --payload-sizes=200000 \
-            --target-bytes=1073741824 \
-            --threshold-percent 10 \
-            --fail-on-regression \
-            --json bench/results/public-api-overhead-200k.json
 
       - name: Preserve benchmark reports
         if: always()
@@ -171,8 +152,6 @@ jobs:
           path: |
             baseline/bench/results/performance-baseline.json
             candidate/bench/results/performance-candidate.json
-            candidate/bench/results/public-api-overhead.json
-            candidate/bench/results/public-api-overhead-200k.json
           if-no-files-found: warn
 
   distribution:

@@ -5,15 +5,15 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
+use Linux::Event::_ByteStream;
 
 {
     package T::TransitionConsumerBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition(
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
                 'transition-trace'
             ),
         );

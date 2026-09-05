@@ -205,14 +205,9 @@ Resolver/acquisition failure before activation is terminal.
 `on_error`; otherwise the implementation's documented default reporting policy
 applies.
 
-## Private implementation host
+## Private implementation boundary
 
-The historical `Linux::Event::Datagram` Perl/XS package remains the stable
-private `no_index` packet-engine host beneath
-`Linux::Event::_Socket::Dgram`. The supported application class is
-`Linux::Event::IO::Sock::Dgram`.
-
-The historical package is excluded from META `provides` and is not an
-application construction or subclassing surface. Keeping the proven native
-packet engine in that package is an implementation choice, not an unfinished
-namespace transition.
+`Linux::Event::_Socket::Dgram` is the private `no_index` packet-engine boundary
+beneath the supported application class `Linux::Event::IO::Sock::Dgram`. It is
+excluded from META `provides` and is not an application construction or
+subclassing surface.

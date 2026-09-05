@@ -9,12 +9,12 @@ use POSIX qw(mkfifo);
 use Socket qw(AF_UNIX SOCK_DGRAM);
 
 use Linux::Event::Loop;
-use Linux::Event::Socket;
-use Linux::Event::Stream;
+use Linux::Event::_ByteStream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::GenericReader;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     sub on_data ($self, $bytes) { $self->data->{bytes} .= $bytes }
     sub on_eof ($self) {
         $self->data->{eof}++;
@@ -24,12 +24,12 @@ use Linux::Event::Stream;
 
 {
     package T::GenericWriter;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
 }
 
 {
     package T::QueuedWriter;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     sub stream_options ($class) {
         return high_watermark => 4096, low_watermark => 1024;
     }
@@ -39,7 +39,7 @@ use Linux::Event::Stream;
 
 {
     package T::GenericDuplex;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($self, $line) {
         $self->write("reply:$line\n");
@@ -53,7 +53,7 @@ use Linux::Event::Stream;
 
 {
     package T::Console;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($self, $line) { $self->write("You typed: $line\n") }
     sub on_eof ($self) { $self->end; $self->data->{loop}->stop }
@@ -61,7 +61,7 @@ use Linux::Event::Stream;
 
 {
     package T::SocketProbe;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($self, $bytes) { }
 }
 
@@ -338,7 +338,7 @@ SKIP: {
         'generic Stream requires at least one direction');
     $error = eval { T::GenericWriter->connect(host => '127.0.0.1'); 1 }
         ? '' : "$@";
-    like($error, qr/only on Linux::Event::Socket subclasses/,
+    like($error, qr/only on Linux::Event::IO::Sock::Stream subclasses/,
         'generic Stream does not expose socket connection acquisition');
     close $read;
     close $write;

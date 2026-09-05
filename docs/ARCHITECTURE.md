@@ -61,14 +61,9 @@ Linux::Event::_Socket::Descriptor
 These are implementation boundaries only. Applications must not construct or
 subclass them.
 
-Several historical package names remain stable hosts for proven implementation
-and XS ABI surfaces. They are not advertised as public modules. This includes
-the implementation packages named `Stream`, `Socket`, `Listener`, `Datagram`,
-`Timer`, `Signal`, `Wakeup`, and `Process`.
-
-Keeping those XS package names stable avoids combining the public semantic API
-with unnecessary native ABI churn. The native hot path can therefore remain
-stable while applications use the IO and Kernel public taxonomy.
+Private implementation and XS ABI surfaces use the same coherent taxonomy:
+leading-underscore packages for shared IO/socket mechanics and `Kernel::*` for
+kernel resources. They are not advertised as public modules.
 
 ## Reactor hot path
 
@@ -187,8 +182,8 @@ framer_*.c
 These files link into one XS extension. Splitting source files does not create
 additional dynamic-loading or Perl dispatch boundaries.
 
-The XS package names under `Linux::Event::Stream::*` are stable private native
-ABI details. They do not define the public class hierarchy.
+The XS packages under `Linux::Event::_ByteStream::*` are private native ABI
+details. They do not define the public class hierarchy.
 
 ## Framing
 
@@ -352,8 +347,7 @@ threads, forked children, or native code can signal the eventfd, while payloads
 remain in an explicit thread-safe queue or IPC mechanism owned by the
 application.
 
-The historical `Wakeup` package is the stable private implementation host for
-this eventfd machinery and is not the public semantic class.
+`Linux::Event::Kernel::Event` directly hosts this eventfd machinery.
 
 ## Process layer
 

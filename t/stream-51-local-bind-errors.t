@@ -9,14 +9,14 @@ use Socket qw(
 use Test::More;
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 our @ERRORS;
 
 {
     package T::LocalBindClient;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($self, $bytes) { }
     sub on_error ($self, $error) {
         push @main::ERRORS, $error;
