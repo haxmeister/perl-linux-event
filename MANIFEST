@@ -16,6 +16,7 @@ bench/archive/run-async-comparison.pl
 bench/archive/run-external.pl
 bench/archive/run-phase18.pl
 bench/archive/run-watcher-reuse-bench.pl
+bench/LINE-RUNTIME-COMPARISON.md
 bench/README.md
 bench/results/.gitkeep
 bench/run-async-consumer-lifetime-bench.pl
@@ -29,6 +30,7 @@ bench/run-framing-microbench.pl
 bench/run-first-class-callback-construction-bench.pl
 bench/run-first-class-framed-callback-bench.pl
 bench/run-first-class-raw-callback-bench.pl
+bench/run-line-runtime-comparison.pl
 bench/run-listen-microbench.pl
 bench/run-native-framers-microbench.pl
 bench/run-performance-regression.pl
@@ -46,6 +48,10 @@ bench/run-stream-watcher-state-bench.pl
 bench/run-timer-microbench.pl
 bench/run-tls-microbench.pl
 bench/run-wakeup-microbench.pl
+bench/runtime-line/line-asyncio.py
+bench/runtime-line/line-linuxevent.pl
+bench/runtime-line/line-node.js
+bench/runtime-line/line-ruby.rb
 bench/STREAM-COMPETITOR-PLAN.md
 Changes
 CONTRIBUTING.md
