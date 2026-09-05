@@ -43,6 +43,7 @@ for my $required (
     'docs/FRAMING.md',
     'docs/INTROSPECTION.md',
     'bench/README.md',
+    'bench/LINE-RUNTIME-COMPARISON.md',
     'bench/run-async-consumer-lifetime-bench.pl',
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
@@ -67,6 +68,11 @@ for my $required (
     'bench/run-first-class-callback-construction-bench.pl',
     'bench/run-first-class-framed-callback-bench.pl',
     'bench/run-first-class-raw-callback-bench.pl',
+    'bench/run-line-runtime-comparison.pl',
+    'bench/runtime-line/line-asyncio.py',
+    'bench/runtime-line/line-linuxevent.pl',
+    'bench/runtime-line/line-node.js',
+    'bench/runtime-line/line-ruby.rb',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
     'bench/run-timer-microbench.pl',
@@ -162,6 +168,7 @@ for my $live (
     'docs/FRAMING.md',
     'docs/INTROSPECTION.md',
     'bench/README.md',
+    'bench/LINE-RUNTIME-COMPARISON.md',
     'bench/run-async-consumer-lifetime-bench.pl',
     'bench/run-connect-microbench.pl',
     'bench/run-listen-microbench.pl',
@@ -182,6 +189,7 @@ for my $live (
     'bench/run-first-class-callback-construction-bench.pl',
     'bench/run-first-class-framed-callback-bench.pl',
     'bench/run-first-class-raw-callback-bench.pl',
+    'bench/run-line-runtime-comparison.pl',
     'bench/run-native-framers-microbench.pl',
     'bench/run-performance-regression.pl',
     'bench/run-timer-microbench.pl',
@@ -196,11 +204,13 @@ my @bench_root = sort map { s{^.*/}{}r }
     glob(File::Spec->catfile($root, 'bench', '*'));
 my %allowed = map { $_ => 1 } qw(
     BENCHMARK-DECISIONS.md
+    LINE-RUNTIME-COMPARISON.md
     README.md
     STREAM-COMPETITOR-PLAN.md
     run-async-consumer-lifetime-bench.pl
     run-connect-microbench.pl
     run-listen-microbench.pl
+    run-line-runtime-comparison.pl
     run-reactor-comparison.pl
     run-stream-competitor-comparison.pl
     run-resolver-microbench.pl
@@ -289,6 +299,17 @@ my @root_tests = sort map { File::Spec->abs2rel($_, $root) }
     grep { -f $_ }
     glob(File::Spec->catfile($root, 't', '*.t'));
 for my $path (@root_tests) {
+    ok($manifest_entry{$path}, "$path is included in MANIFEST");
+}
+
+for my $path (qw(
+    bench/LINE-RUNTIME-COMPARISON.md
+    bench/run-line-runtime-comparison.pl
+    bench/runtime-line/line-asyncio.py
+    bench/runtime-line/line-linuxevent.pl
+    bench/runtime-line/line-node.js
+    bench/runtime-line/line-ruby.rb
+)) {
     ok($manifest_entry{$path}, "$path is included in MANIFEST");
 }
 
