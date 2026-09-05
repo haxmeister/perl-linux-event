@@ -5,12 +5,12 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::CallbackStateStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return read_size => 4 }
     sub on_data ($stream, $bytes) {
         my $state = $stream->data;

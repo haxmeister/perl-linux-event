@@ -36,7 +36,7 @@ for my $bytes (1, 2, 4) {
 
 {
     package T::LengthBEStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'LengthPrefix', bytes => 2, endian => 'big';
     sub stream_options ($class) { return read_size => 2 }
     sub on_message ($stream, $message) {
@@ -48,14 +48,14 @@ for my $bytes (1, 2, 4) {
 
 {
     package T::LengthLEStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'LengthPrefix', bytes => 2, endian => 'little';
     sub on_message ($stream, $message) { }
 }
 
 {
     package T::LengthLimitedStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'LengthPrefix', bytes => 2, max_frame => 3;
     sub on_message ($stream, $message) {
         Test::More::fail('oversized length frame must not emit');

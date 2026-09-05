@@ -3,7 +3,6 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.111';
 
 use Carp qw(croak);
 use mro ();
@@ -164,7 +163,7 @@ sub _stream_options_for ($class) {
 sub for_class ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
 
-    croak 'Linux::Event::_ByteStream is a private implementation base'
+    croak 'Linux::Event::_ByteStream is a private implementation base; subclass a public ordered-byte leaf'
         if $class eq 'Linux::Event::_ByteStream';
     croak "$class is not a Linux::Event ordered-byte class"
         if !$class->isa('Linux::Event::_ByteStream');

@@ -5,10 +5,121 @@ use warnings;
 
 our $VERSION = '0.111';
 
-use parent 'Linux::Event::Signal';
+use Carp qw(croak);
+use Hash::Util::FieldHash qw(fieldhash);
+use POSIX qw(SIGKILL SIGRTMAX SIGSTOP);
+use Scalar::Util qw(weaken);
+
+require Linux::Event::Loop;
+require XSLoader;
+XSLoader::load(__PACKAGE__, $VERSION);
+
+my %CLASS_DESCRIPTOR;
+fieldhash my %ENGINE_FOR_LOOP;
+
+sub _descriptor_for ($class) {
+    return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
+    croak 'Linux::Event::Kernel::Signal is an abstract base class'
+        if $class eq __PACKAGE__;
+    croak "$class is not a Linux::Event::Kernel::Signal subclass"
+        if !$class->isa(__PACKAGE__);
+    my $callback = $class->can('on_signal')
+        // croak "$class must define on_signal()";
+    return $CLASS_DESCRIPTOR{$class}
+        = Linux::Event::Kernel::Signal::_Descriptor->new($callback);
+}
+
+sub _numbers ($value) {
+    my @number = ref($value) eq 'ARRAY' ? @$value : ($value);
+    croak 'new(): signals must contain at least one signal number' if !@number;
+    my (%seen, @unique);
+    for my $number (@number) {
+        croak 'new(): every signal must be a positive integer'
+            if !defined($number) || ref($number) || $number !~ /\A\d+\z/
+            || $number == 0;
+        my $digits = "$number";
+        $digits =~ s/\A0+//;
+        my $maximum = '' . SIGRTMAX;
+        croak "signal number $number cannot be used with signalfd"
+            if length($digits) > length($maximum)
+            || (length($digits) == length($maximum)
+                && $digits gt $maximum)
+            || $number == SIGKILL || $number == SIGSTOP;
+        $number = 0 + $number;
+        push @unique, $number if !$seen{$number}++;
+    }
+    return \@unique;
+}
+
+sub new ($class, %option) {
+    croak 'new(): must be called as a class method' if ref $class;
+    my $loop = delete $option{loop};
+    croak 'new(): loop must be an object implementing add() and watch()'
+        if defined($loop) && (!ref($loop) || !$loop->can('add')
+            || !$loop->can('watch'));
+    my $data = delete $option{data};
+    croak 'new(): signals is required' if !exists $option{signals};
+    my $numbers = _numbers(delete $option{signals});
+    croak 'new(): unknown options: ' . join(', ', sort keys %option) if %option;
+    my $signal = $class->_new_native(
+        _descriptor_for($class), $numbers, $data,
+    );
+    $loop->add($signal) if defined $loop;
+    return $signal;
+}
+
+sub _attach_to_loop ($self, $loop) {
+    my $engine = $ENGINE_FOR_LOOP{$loop}
+        //= Linux::Event::Kernel::Signal::_Engine->_new($loop);
+    return $self->_attach_native($loop, $engine->{native});
+}
+
+sub _objects_for_loop ($class, $loop) {
+    my $engine = $ENGINE_FOR_LOOP{$loop};
+    return $engine ? $engine->{native}->objects : [];
+}
+
+sub CLONE ($class) {
+    %CLASS_DESCRIPTOR = ();
+    %ENGINE_FOR_LOOP = ();
+    return;
+}
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Kernel::Signal::_Descriptor;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Kernel::Signal::_Service;
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Kernel::Signal::_Engine;
+use v5.36;
+use strict;
+use warnings;
+
+sub CLONE_SKIP ($class) { 1 }
+
+sub _new ($class, $loop) {
+    my $self = bless {
+        loop   => $loop,
+        native => Linux::Event::Kernel::Signal::_Service->new,
+    }, $class;
+    Scalar::Util::weaken($self->{loop});
+    my $ready = sub { $self->{native}->dispatch };
+    my $failed = sub { die "Linux::Event Signal event source failed\n" };
+    $loop->watch(
+        fd      => $self->{native}->fd,
+        _internal => 1,
+        read    => $ready,
+        error   => $failed,
+        no_args => 1,
+        lean    => 1,
+    );
+    return $self;
+}
 
 1;
-
 __END__
 
 =head1 NAME

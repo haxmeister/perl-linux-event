@@ -6,12 +6,12 @@ use Socket qw(AF_UNIX);
 
 use Linux::Event::Error;
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::ConnectProbeStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) { }
 }
 

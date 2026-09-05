@@ -31,7 +31,7 @@ extern char **environ;
 # ifdef __NR_pidfd_open
 #  define SYS_pidfd_open __NR_pidfd_open
 # else
-#  error "Linux::Event::Process requires Linux headers with pidfd_open"
+#  error "Linux::Event::Kernel::Process requires Linux headers with pidfd_open"
 # endif
 #endif
 
@@ -39,7 +39,7 @@ extern char **environ;
 # ifdef __NR_pidfd_send_signal
 #  define SYS_pidfd_send_signal __NR_pidfd_send_signal
 # else
-#  error "Linux::Event::Process requires Linux headers with pidfd_send_signal"
+#  error "Linux::Event::Kernel::Process requires Linux headers with pidfd_send_signal"
 # endif
 #endif
 
@@ -161,7 +161,7 @@ lep_duplicate_source(int source)
     return duplicate;
 }
 
-MODULE = Linux::Event::Process    PACKAGE = Linux::Event::Process
+MODULE = Linux::Event::Kernel::Process    PACKAGE = Linux::Event::Kernel::Process
 
 PROTOTYPES: DISABLE
 

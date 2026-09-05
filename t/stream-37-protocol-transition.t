@@ -6,12 +6,12 @@ use Scalar::Util qw(refaddr);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::Transition::Handshake;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) {
         my $state = $stream->data;
         $state->{input} .= $bytes;
@@ -23,7 +23,7 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::Line;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -34,7 +34,7 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::Control;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -45,7 +45,7 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::Fixed;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Fixed', size => 3;
     sub on_message ($stream, $message) {
         my $state = $stream->data;
@@ -56,7 +56,7 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::FramedToRaw;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub on_message ($stream, $message) {
         $stream->data->{framed} = $message;
@@ -66,7 +66,7 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::RawTail;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) {
         $stream->data->{raw} .= $bytes;
         $stream->data->{loop}->stop;
@@ -75,13 +75,13 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::OtherRaw;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) { return }
 }
 
 {
     package T::Transition::Small;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub stream_options ($class) { return max_buffer => 4 }
     sub on_message ($stream, $message) { return }
@@ -89,7 +89,7 @@ use Linux::Event::Socket;
 
 {
     package T::Transition::SourceBase;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_message ($stream, $message) {
         $stream->data->{framed} = $message;
         $stream->transition_to('T::Transition::RawTail');
@@ -234,13 +234,13 @@ for my $case (
 
 {
     package T::Transition::NoMessageSink;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
 }
 
 {
     package T::Transition::NoDataSink;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
 }
 
 {

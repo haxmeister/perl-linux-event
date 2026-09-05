@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME             => 'Linux::Event::_Socket::Connection',
-    VERSION_FROM     => '../lib/Linux/Event/_Socket/Connection.pm',
+    VERSION_FROM     => '../lib/Linux/Event.pm',
     ABSTRACT         => 'Internal nonblocking socket connection support',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',

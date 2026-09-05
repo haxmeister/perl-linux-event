@@ -20,10 +20,7 @@ sub import ($class, @arg) {
     require Linux::Event::_Socket::Descriptor;
 
     my $base = $target->isa('Linux::Event::IO::Sock::Stream')
-        ? 'Linux::Event::IO::Sock::Stream'
-        : $target->isa('Linux::Event::Socket')
-            ? 'Linux::Event::Socket'
-            : undef;
+        ? 'Linux::Event::IO::Sock::Stream' : undef;
 
     return if $target eq 'main' && !defined($base) && !@arg;
     croak "$target must be a Linux::Event IO stream-socket subclass before declaring TLS"

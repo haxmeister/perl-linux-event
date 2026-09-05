@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME             => 'Linux::Event::_Socket::Dgram',
-    VERSION_FROM     => '../lib/Linux/Event/_Socket/Dgram.pm',
+    VERSION_FROM     => '../lib/Linux/Event.pm',
     ABSTRACT         => 'Packet-preserving datagram engine for Linux::Event',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',

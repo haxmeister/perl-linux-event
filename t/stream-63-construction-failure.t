@@ -6,8 +6,8 @@ use Scalar::Util qw(weaken);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Socket;
-use Linux::Event::Stream;
+use Linux::Event::_ByteStream;
+use Linux::Event::_ByteStream;
 
 {
     package T::FailingRegistrationLoop;
@@ -19,7 +19,7 @@ use Linux::Event::Stream;
 
 {
     package T::RegistrationFailure;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     our $constructed;
 
     sub on_data ($stream, $bytes) { return }
@@ -34,13 +34,13 @@ use Linux::Event::Stream;
 
 {
     package T::ConsumerCreateFailure;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     use Linux::Event::Framer 'Delimiter', "\n";
     our $constructing;
 
-    Linux::Event::Stream->_declare_consumer(
+    Linux::Event::_ByteStream->_declare_consumer(
         __PACKAGE__,
-        Linux::Event::Stream->_test_consumer_definition('create-failure'),
+        Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('create-failure'),
     );
 
     sub _prepare_handles ($self) {
@@ -53,7 +53,7 @@ use Linux::Event::Stream;
 
 {
     package T::SocketRegistrationFailure;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::_ByteStream';
     our $constructing;
 
     sub on_data ($stream, $bytes) { return }
@@ -89,7 +89,7 @@ $ok = eval {
     1;
 };
 ok(!$ok, 'constructor reports native consumer context creation failure');
-like($@, qr/failed to create per-Stream context/,
+like($@, qr/failed to create context/,
     'consumer creation failure preserves its diagnostic');
 ok(!defined($T::ConsumerCreateFailure::constructing),
     'consumer creation failure leaves no partial Stream/XSState cycle');

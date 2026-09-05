@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.111';
+use parent 'Linux::Event::_Socket';
 
 use Carp qw(croak);
 use Errno ();
@@ -23,13 +23,13 @@ use Linux::Event::_Socket::Stream ();
 use Linux::Event::_SocketConfig ();
 
 require XSLoader;
-XSLoader::load(__PACKAGE__, $VERSION);
+XSLoader::load(__PACKAGE__);
 
 my %CLASS_DESCRIPTOR;
 
 sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak "$class is not a Linux::Event listener class"
+    croak "$class is not a Linux::Event::_Socket::Listener subclass"
         if !$class->isa(__PACKAGE__);
 
     my $accept_client = $class->can('_accept_client');
@@ -254,7 +254,7 @@ sub new ($class, %opt) {
             || !$loop->can('watch'));
     my $stream_class = delete $opt{stream_class}
         // croak 'new(): missing stream_class';
-    croak 'new(): stream_class must name a Linux::Event IO::Sock::Stream subclass'
+    croak 'new(): stream_class must name a Linux::Event::_Socket::Stream subclass'
         if ref($stream_class) || !$stream_class->isa('Linux::Event::_Socket::Stream');
     $stream_class->_validate_accepted_configuration;
 
@@ -418,7 +418,7 @@ sub _accept_client ($self, $fh, $peer) {
             : Linux::Event::Error->new(
                 type      => 'setup',
                 operation => 'accepted_socket',
-                message   => "$failure" || 'accepted stream-socket setup failed',
+                message   => "$failure" || 'accepted Socket setup failed',
                 fatal     => 0,
                 host      => $self->host,
                 port      => $self->port,
@@ -458,11 +458,6 @@ sub on_error ($self, $error) {
     die "listener failed: $error\n";
 }
 
-sub CLONE ($class) {
-    %CLASS_DESCRIPTOR = ();
-    return;
-}
-
 sub CLONE_SKIP ($class) { 1 }
 
 sub _attach_to_loop ($self, $loop) {
@@ -480,7 +475,7 @@ sub _attach_to_loop ($self, $loop) {
         );
     };
     if (!$watcher) {
-        my $failure = $@ || 'could not register listener socket';
+        my $failure = $@ || 'could not register Listener socket';
         die $failure if blessed($failure)
             && $failure->isa('Linux::Event::Error');
         die Linux::Event::Error->new(

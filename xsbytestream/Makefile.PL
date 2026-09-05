@@ -4,15 +4,15 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME             => 'Linux::Event::_ByteStream',
-    VERSION_FROM     => '../lib/Linux/Event/_ByteStream.pm',
+    VERSION_FROM     => '../lib/Linux/Event.pm',
     ABSTRACT         => 'Native ordered-byte I/O engine for Linux::Event',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
     PM               => {},
-    XS               => { 'Stream.xs' => 'Stream.c' },
+    XS               => { 'ByteStream.xs' => 'ByteStream.c' },
     OBJECT           => join(' ', map { "$_\$(OBJ_EXT)" } qw(
-        Stream
+        ByteStream
         stream_state
         stream_transport
         stream_callbacks
@@ -33,5 +33,5 @@ WriteMakefile(
     depend           => {
         '$(OBJECT)' => 'stream_internal.h stream_transport_abi.h stream_consumer_abi.h',
     },
-    clean            => { FILES => 'Stream.c' },
+    clean            => { FILES => 'ByteStream.c' },
 );

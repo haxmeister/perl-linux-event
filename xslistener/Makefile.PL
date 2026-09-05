@@ -4,7 +4,7 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     NAME             => 'Linux::Event::_Socket::Listener',
-    VERSION_FROM     => '../lib/Linux/Event/_Socket/Listener.pm',
+    VERSION_FROM     => '../lib/Linux/Event.pm',
     ABSTRACT         => 'Native accepting engine for Linux::Event',
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',

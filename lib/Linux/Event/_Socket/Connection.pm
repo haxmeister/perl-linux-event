@@ -3,7 +3,6 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.111';
 
 use Carp qw(croak);
 use Errno ();
@@ -24,9 +23,9 @@ use Linux::Event::Address;
 use Linux::Event::_SocketConfig ();
 
 require XSLoader;
-XSLoader::load(__PACKAGE__, $VERSION);
+XSLoader::load(__PACKAGE__);
 
-sub _introspection_owner ($self) { $self->{object} }
+sub _introspection_owner ($self) { $self->{stream} }
 
 sub _timeout ($value) {
     $value = 10 if !defined $value;
@@ -44,10 +43,10 @@ sub _timeout ($value) {
 
 sub _target_error_fields ($self) {
     return (
-        host     => $self->{host},
-        port     => $self->{port},
-        path     => $self->{unix},
-        family   => $self->{family},
+        host   => $self->{host},
+        port   => $self->{port},
+        path   => $self->{unix},
+        family => $self->{family},
         attempts => $self->{attempt_count},
     );
 }
@@ -66,15 +65,15 @@ sub _system_message ($errno) {
 
 sub new ($class, %opt) {
     croak 'new(): must be called as a class method' if ref $class;
-    croak 'new(): internal connection must use its concrete implementation class'
+    croak 'new(): internal connection must be created for a Stream'
         if $class ne __PACKAGE__;
     my $loop = delete $opt{loop};
     croak 'new(): loop must be an object implementing add(), watch(), and watch_fd()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
             || !$loop->can('watch') || !$loop->can('watch_fd'));
-    my $object = delete $opt{object};
-    croak 'new(): object must be a Linux::Event stream-socket object'
-        if !ref($object) || !$object->isa('Linux::Event::_Socket::Stream');
+    my $stream = delete $opt{stream};
+    croak 'new(): stream must be a Linux::Event::_ByteStream object'
+        if !ref($stream) || !$stream->isa('Linux::Event::_ByteStream');
     my $timeout = _timeout(delete $opt{timeout});
     my $socket_policy = delete $opt{socket_policy};
     croak 'new(): internal socket_policy must be a hash reference'
@@ -158,7 +157,7 @@ sub new ($class, %opt) {
 
     my $self = bless {
         loop          => undef,
-        object        => $object,
+        stream        => $stream,
         timeout       => $timeout,
         host          => $host,
         port          => $port,
@@ -214,7 +213,7 @@ sub is_done    ($self) {
 sub is_terminal ($self) { $self->is_done }
 
 sub _attach_to_loop ($self, $loop) {
-    croak 'add(): socket connection is not detached'
+    croak 'add(): Stream connection is not detached'
         if $self->{state} ne 'detached' || $self->{loop};
     $self->{loop} = $loop;
     $self->{state} = 'pending';
@@ -431,7 +430,7 @@ sub _attempt_next ($self) {
             Linux::Event::_SocketConfig::bind_device(
                 $fh, $self->{bind_device},
             ) if defined $self->{bind_device};
-            $self->{object}->_configure_socket(
+            $self->{stream}->_configure_socket(
                 $fh, 'connect',
                 Linux::Event::Address->new($candidate->{sockaddr}),
             );
@@ -720,10 +719,13 @@ sub _finish_success ($self, $attempt) {
     delete $self->{attempts}{ $attempt->{id} };
     $attempt->{request} = undef;
 
-    my $object = $self->{object};
-    my $ok = eval { $object->_connect_succeeded($fh); 1 };
+    my $stream = $self->{stream};
+    my $ok = eval { $stream->_connect_succeeded($fh); 1 };
     my $callback_error = $@;
 
+    # If the callback registered Stream or another watcher for this fd, the
+    # old handle is already inactive and cancel() is harmless. Otherwise this
+    # removes connection's now-unused writable registration.
     $watcher->cancel if $watcher;
     die $callback_error if !$ok;
     return;
@@ -737,7 +739,7 @@ sub _finish_error ($self, $error) {
     $self->_cancel_resolution;
     $self->_close_attempts;
     $self->_close_timer;
-    $self->{object}->_connect_failed($error);
+    $self->{stream}->_connect_failed($error);
     return;
 }
 

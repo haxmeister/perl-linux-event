@@ -17,8 +17,8 @@ use Socket qw(
 );
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
 
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 use Linux::Event::Loop;
 
 my @modes = qw(manual add loop);
@@ -53,7 +53,7 @@ die "modes must not contain duplicates\n"
 
 {
     package BenchConnectStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
 
     sub on_data ($stream, $bytes) { }
 
@@ -222,7 +222,7 @@ sub median (@values) {
 }
 
 say 'Median loopback TCP Stream connection lifecycle benchmark';
-say "Linux::Event version $Linux::Event::Stream::VERSION";
+say "Linux::Event version $Linux::Event::IO::Sock::Stream::VERSION";
 printf "%-8s %8s %14s %14s\n",
     qw(mode clients connects/s cpu_us/connect);
 my @records;
@@ -270,7 +270,7 @@ if (defined $json_path) {
         benchmark_contract_version => 1,
         generated_at => strftime('%Y-%m-%dT%H:%M:%SZ', gmtime),
         environment => {
-            linux_event_version => $Linux::Event::Stream::VERSION,
+            linux_event_version => $Linux::Event::IO::Sock::Stream::VERSION,
             perl => "$^V",
             uname => \@uname,
             git_commit => git_commit(),

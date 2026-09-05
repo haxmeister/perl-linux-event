@@ -5,15 +5,15 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
+use Linux::Event::_ByteStream;
 
 {
     package T::EventCroakBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('event-croak'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('event-croak'),
         );
     }
     sub on_close ($stream) { $stream->data->{close_calls}++ }
@@ -27,11 +27,11 @@ use Linux::Event::Stream;
 
 {
     package T::FlushErrorBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('flush-error'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('flush-error'),
         );
     }
     sub on_close ($stream) { $stream->data->{close_calls}++ }
@@ -45,7 +45,7 @@ use Linux::Event::Stream;
 
 {
     package T::CloseCroak;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     sub on_data ($stream, $bytes) { return }
     sub on_close ($stream) {
         $stream->data->{close_calls}++;

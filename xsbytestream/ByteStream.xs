@@ -668,6 +668,9 @@ _native_consumer_abi_version(CLASS)
   OUTPUT:
     RETVAL
 
+MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream::TestSupport
+PROTOTYPES: DISABLE
+
 SV *
 _test_consumer_definition(CLASS, variant = "valid")
     const char *CLASS

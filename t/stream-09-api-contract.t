@@ -5,29 +5,29 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::API::Raw;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::API::Missing;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
 }
 
 {
     package T::API::FramedMissing;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
 }
 
 {
     package T::API::FramedMixed;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_data ($stream, $bytes) { }
     sub on_message ($stream, $message) { }
@@ -35,14 +35,14 @@ use Linux::Event::Socket;
 
 {
     package T::API::GenericSocketOptions;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::IO::Pipe';
     sub socket_options ($class) { return keepalive => 1 }
     sub on_data ($stream, $bytes) { }
 }
 
 {
     package T::API::GenericSocketHook;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::IO::Pipe';
     sub configure_socket ($stream, $fh, $role, $peer) { }
     sub on_data ($stream, $bytes) { }
 }
@@ -79,13 +79,13 @@ sub construction_error ($class, @extra) {
     return ($made, $error);
 }
 
-my ($made, $error) = construction_error('Linux::Event::Stream');
-ok(!$made, 'historical Stream implementation base cannot be constructed');
+my ($made, $error) = construction_error('Linux::Event::_ByteStream');
+ok(!$made, 'private ordered-byte implementation base cannot be constructed');
 like($error, qr/private implementation base.*public ordered-byte leaf/,
     'private Stream implementation-base error points to the public model');
 
-($made, $error) = construction_error('Linux::Event::Socket');
-ok(!$made, 'historical Socket implementation base cannot be constructed');
+($made, $error) = construction_error('Linux::Event::_Socket::Stream');
+ok(!$made, 'private stream-socket implementation base cannot be constructed');
 like($error, qr/private implementation base.*IO::Sock::Stream/,
     'private Socket implementation-base error points to the public leaf');
 

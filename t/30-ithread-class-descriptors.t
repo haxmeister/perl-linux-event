@@ -13,22 +13,22 @@ require threads;
 use POSIX qw(SIGUSR1);
 use Socket qw(AF_UNIX SOCK_STREAM);
 
-use Linux::Event::Signal;
-use Linux::Event::Stream;
-use Linux::Event::Timer;
+use Linux::Event::Kernel::Signal;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::Kernel::Timer;
 
 {
     package T::ThreadDescriptor::Stream;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($self, $bytes) { return }
 }
 
 {
     package T::ThreadDescriptor::ConsumerBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::IO::Sock::Stream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
-            __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
+        Linux::Event::IO::Sock::Stream->_declare_consumer(
+            __PACKAGE__, Linux::Event::_ByteStream::TestSupport->_test_consumer_definition,
         );
     }
 }
@@ -41,13 +41,13 @@ use Linux::Event::Timer;
 
 {
     package T::ThreadDescriptor::Timer;
-    use parent 'Linux::Event::Timer';
+    use parent 'Linux::Event::Kernel::Timer';
     sub on_timer ($self) { return }
 }
 
 {
     package T::ThreadDescriptor::Signal;
-    use parent 'Linux::Event::Signal';
+    use parent 'Linux::Event::Kernel::Signal';
     sub on_signal ($self, $number, $count) { return }
 }
 

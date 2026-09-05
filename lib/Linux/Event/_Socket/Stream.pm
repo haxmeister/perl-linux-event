@@ -3,9 +3,8 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.111';
 
-use parent 'Linux::Event::_ByteStream';
+use parent qw(Linux::Event::_Socket Linux::Event::_ByteStream);
 use Carp qw(croak);
 use Scalar::Util qw(blessed);
 use Socket qw(SOL_SOCKET SO_ERROR SO_TYPE SOCK_STREAM SHUT_RD SHUT_WR);
@@ -57,15 +56,14 @@ sub new ($class, %opt) {
         if defined($loop) && (!ref($loop) || !$loop->can('add')
             || !$loop->can('watch_fd'));
     my $fh = delete $opt{fh};
-    croak 'new(): stream socket requires fh'
-        if !defined($fh) || !defined(fileno($fh));
-    croak 'new(): stream socket does not accept read_fh or write_fh'
+    croak 'new(): Socket requires fh' if !defined($fh) || !defined(fileno($fh));
+    croak 'new(): Socket does not accept read_fh or write_fh'
         if exists($opt{read_fh}) || exists($opt{write_fh});
     my $accepted = delete($opt{_accepted}) // 0;
     my $peer = delete $opt{peer};
     my $tls_role = delete $opt{tls_role};
     my $transport = delete $opt{transport};
-    croak 'new(): transport must implement _stream_transport_bind()'
+    croak 'new(): transport must be an object implementing _stream_transport_bind()'
         if defined($transport)
         && (!blessed($transport) || !$transport->can('_stream_transport_bind'));
     croak 'new(): tls_role cannot be combined with accepted mode'
@@ -76,7 +74,7 @@ sub new ($class, %opt) {
         $fh, $socket_descriptor, $override, $peer,
     );
     if (my $tls = $socket_descriptor->{tls}) {
-        croak 'new(): transport cannot be supplied for a TLS-declared stream socket'
+        croak 'new(): transport cannot be supplied for a TLS-declared Socket'
             if defined $transport;
         require Linux::Event::TLS;
         my $role = $accepted ? 'server' : $tls_role;
@@ -88,7 +86,7 @@ sub new ($class, %opt) {
             ? Linux::Event::TLS->_server_from_declaration($tls)
             : Linux::Event::TLS->_client_from_declaration($tls);
     } elsif (defined $tls_role) {
-        croak 'new(): tls_role requires a stream-socket subclass declaring TLS';
+        croak 'new(): tls_role requires a Socket subclass declaring TLS';
     }
     my $self = $class->SUPER::new(fh => $fh, _transport => $transport, %opt);
     $self->{socket_descriptor} = $socket_descriptor;
@@ -112,11 +110,11 @@ sub new ($class, %opt) {
 
 sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
-    my %ordered_byte;
+    my %stream;
     for my $name (qw(loop data transport idle_timeout read_timeout write_timeout deadline)) {
-        $ordered_byte{$name} = delete $opt{$name} if exists $opt{$name};
+        $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
-    my $loop = delete $ordered_byte{loop};
+    my $loop = delete $stream{loop};
     croak 'connect(): loop must be an object implementing add() and watch_fd()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
             || !$loop->can('watch_fd'));
@@ -126,12 +124,12 @@ sub connect ($class, %opt) {
         $_ => exists($override->{$_}) ? $override->{$_}
             : $socket_descriptor->{options}{$_}
     } Linux::Event::_SocketConfig::names();
-    my $transport = delete $ordered_byte{transport};
-    croak 'connect(): transport must implement _stream_transport_bind()'
+    my $transport = delete $stream{transport};
+    croak 'connect(): transport must be an object implementing _stream_transport_bind()'
         if defined($transport)
         && (!blessed($transport) || !$transport->can('_stream_transport_bind'));
     if (my $tls = $socket_descriptor->{tls}) {
-        croak 'connect(): transport cannot be supplied for a TLS-declared stream socket'
+        croak 'connect(): transport cannot be supplied for a TLS-declared Socket'
             if defined $transport;
         require Linux::Event::TLS;
         $transport = Linux::Event::TLS->_client_from_declaration(
@@ -139,7 +137,7 @@ sub connect ($class, %opt) {
         );
     }
     my $self = $class->SUPER::new(
-        %ordered_byte, _pending => 1, _transport => $transport,
+        %stream, _pending => 1, _transport => $transport,
     );
     $self->{socket_descriptor} = $socket_descriptor;
     $self->{socket_policy} = \%policy;
@@ -150,7 +148,7 @@ sub connect ($class, %opt) {
     $self->{write_ended} = 0;
     $self->{read_closed} = 0;
     $self->{connection} = Linux::Event::_Socket::Connection->new(
-        %opt, object => $self, socket_policy => \%policy,
+        %opt, stream => $self, socket_policy => \%policy,
     );
     $self->_attach_to_loop($loop) if $loop;
     return $self;
@@ -252,7 +250,7 @@ sub _finish_transport_write ($self) {
             return 0;
         }
     }
-    my ($status, $errno, $message) = $self->{native_state}->_shutdown_write;
+    my ($status, $errno, $message) = $self->{xs_state}->_shutdown_write;
     if ($status == 2) { $self->{read_watcher}->enable_read; return 0 }
     if ($status == 3) { $self->{write_watcher}->enable_write; return 0 }
     if ($status == 5) {
@@ -303,8 +301,7 @@ sub peer ($self) { $self->{peer} }
 sub fd ($self) { $self->read_fd }
 
 sub _socket_option ($self, $name, @argument) {
-    croak "$name(): stream socket is not established"
-        if $self->{closed} || !$self->fh;
+    croak "$name(): Socket is not established" if $self->{closed} || !$self->fh;
     croak "$name(): expected zero or one argument" if @argument > 1;
     my $family = $self->{local}->family_number;
     Linux::Event::_SocketConfig::set_option(
@@ -322,36 +319,12 @@ sub tcp_user_timeout ($self, @arg) { $self->_socket_option('tcp_user_timeout', @
 sub send_buffer ($self, @arg) { $self->_socket_option('send_buffer', @arg) }
 sub receive_buffer ($self, @arg) { $self->_socket_option('receive_buffer', @arg) }
 
-sub selected_alpn ($self) {
-    my $transport = $self->{transport};
-    return $transport && $transport->can('selected_alpn')
-        ? $transport->selected_alpn : undef;
-}
+sub selected_alpn ($self) { my $t = $self->{transport}; $t && $t->can('selected_alpn') ? $t->selected_alpn : undef }
+sub tls_protocol ($self) { my $t = $self->{transport}; $t && $t->can('protocol') ? $t->protocol : undef }
+sub tls_cipher ($self) { my $t = $self->{transport}; $t && $t->can('cipher') ? $t->cipher : undef }
+sub tls_stats ($self) { my $t = $self->{transport}; $t && $t->can('stats') ? $t->stats : undef }
 
-sub tls_protocol ($self) {
-    my $transport = $self->{transport};
-    return $transport && $transport->can('protocol')
-        ? $transport->protocol : undef;
-}
-
-sub tls_cipher ($self) {
-    my $transport = $self->{transport};
-    return $transport && $transport->can('cipher')
-        ? $transport->cipher : undef;
-}
-
-sub tls_stats ($self) {
-    my $transport = $self->{transport};
-    return $transport && $transport->can('stats')
-        ? $transport->stats : undef;
-}
-
-sub CLONE ($class) {
-    Linux::Event::_Socket::Descriptor::clear_cache();
-    Linux::Event::_ByteStream::Descriptor::clear_cache();
-    return;
-}
-
+sub CLONE ($class) { Linux::Event::_Socket::Descriptor::clear_cache(); return }
 sub CLONE_SKIP ($class) { 1 }
 
 1;

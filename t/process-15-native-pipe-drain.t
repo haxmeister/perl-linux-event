@@ -5,11 +5,11 @@ use warnings;
 use Test::More;
 
 use Linux::Event::Loop;
-use Linux::Event::Process;
+use Linux::Event::Kernel::Process;
 
 {
     package T::NativePipeDrain;
-    use parent 'Linux::Event::Process';
+    use parent 'Linux::Event::Kernel::Process';
 
     sub on_stdout ($process, $bytes) {
         my $state = $process->data;
@@ -42,7 +42,7 @@ use Linux::Event::Process;
 }
 
 sub run_engine ($engine) {
-    local $Linux::Event::Process::_PIPE_DRAIN_ENGINE = $engine;
+    local $Linux::Event::Kernel::Process::_PIPE_DRAIN_ENGINE = $engine;
     my $state = {
         stdout => '', stderr => '', stdout_chunks => [], stderr_chunks => [],
         events => [], errors => [],

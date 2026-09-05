@@ -5,21 +5,217 @@ use warnings;
 
 our $VERSION = '0.111';
 
-use parent 'Linux::Event::Wakeup';
 use Carp qw(croak);
+use Config ();
+use Scalar::Util qw(refaddr weaken);
+
+require Linux::Event::Loop;
+require XSLoader;
+XSLoader::load(__PACKAGE__, $VERSION);
+
+my %CLASS_DESCRIPTOR;
+my %OWNER_STATE;
+my %LIVE_HANDLE;
+my $NEXT_ID = 1;
+my $MAX_INCREMENT = $Config::Config{uvsize} >= 8
+    ? '18446744073709551614' : '4294967295';
+
+sub _decimal_greater_than ($value, $maximum) {
+    $value =~ s/\A0+//;
+    $value = '0' if $value eq '';
+    return 1 if length($value) > length($maximum);
+    return 0 if length($value) < length($maximum);
+    return $value gt $maximum;
+}
+
+sub _descriptor_for ($class) {
+    return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
+    croak 'Linux::Event::Kernel::Event is an abstract base class'
+        if $class eq __PACKAGE__;
+    croak "$class is not a Linux::Event::Kernel::Event subclass"
+        if !$class->isa(__PACKAGE__);
+    my $callback = $class->can('on_event')
+        // croak "$class must define on_event()";
+    return $CLASS_DESCRIPTOR{$class} = { callback => $callback };
+}
 
 sub new ($class, %option) {
     croak 'new(): must be called as a class method' if ref $class;
-    croak "$class must define on_event()" if !$class->can('on_event');
-    return $class->SUPER::new(%option);
+    my $loop = delete $option{loop};
+    croak 'new(): loop must be an object implementing add() and watch()'
+        if defined($loop) && (!ref($loop) || !$loop->can('add')
+            || !$loop->can('watch'));
+    my $data = delete $option{data};
+    croak 'new(): unknown options: ' . join(', ', sort keys %option)
+        if %option;
+    my $id = $NEXT_ID++;
+    my $self = bless {
+        id              => $id,
+        fd              => _new_fd(),
+        terminal        => 0,
+        owner_pid       => $$,
+        owner_interpreter => _interpreter_id(),
+        handle_interpreter => _interpreter_id(),
+        cloned_signal_handle => 0,
+    }, $class;
+    $LIVE_HANDLE{$id} = $self;
+    weaken($LIVE_HANDLE{$id});
+    $OWNER_STATE{$id} = bless {
+        descriptor => _descriptor_for($class),
+        loop       => undef,
+        watcher    => undef,
+        data       => $data,
+        state      => 'unattached',
+    }, 'Linux::Event::Kernel::Event::_OwnerState';
+    $loop->add($self) if defined $loop;
+    return $self;
 }
 
-sub on_wakeup ($self, $count) {
-    return $self->on_event($count);
+sub _assert_owner ($self, $method) {
+    croak "$method(): Event may be managed only by its creating interpreter"
+        if $self->{cloned_signal_handle}
+        || $self->{owner_pid} != $$
+        || $self->{owner_interpreter} != _interpreter_id();
+    return;
 }
+
+sub _owner_state ($self, $method) {
+    $self->_assert_owner($method);
+    return $OWNER_STATE{ $self->{id} }
+        // croak "$method(): Event owner state is unavailable";
+}
+
+sub _attach_to_loop ($self, $loop) {
+    croak 'add(): Event is not unattached' if $self->{terminal};
+    my $state = $self->_owner_state('add');
+    croak 'add(): Event is not unattached'
+        if $state->{state} ne 'unattached' || $state->{loop};
+    my $watcher = $loop->watch(
+        fd      => $self->{fd},
+        _internal => 1,
+        read    => sub { $self->_dispatch },
+        error   => sub { die "Linux::Event Event event source failed\n" },
+        no_args => 1,
+        lean    => 1,
+    );
+    $state->{loop} = $loop;
+    $state->{state} = 'active';
+    $state->{watcher} = $watcher;
+    return $self;
+}
+
+sub _dispatch ($self) {
+    my $state = $self->_owner_state('dispatch');
+    return if $state->{state} ne 'active';
+    my $count = _drain_fd($self->{fd});
+    return if !$count;
+    $state->{descriptor}{callback}->($self, $count);
+    return;
+}
+
+sub signal ($self, $increment = 1) {
+    croak 'signal(): Event is cancelled' if $self->{terminal};
+    croak 'signal(): cloned Event handle belongs to another interpreter'
+        if $self->{handle_interpreter} != _interpreter_id();
+    croak 'signal(): increment must be a positive integer'
+        if !defined($increment) || ref($increment)
+        || $increment !~ /\A\d+\z/ || $increment == 0;
+    croak 'signal(): increment exceeds the supported eventfd range'
+        if _decimal_greater_than("$increment", $MAX_INCREMENT);
+    _signal_fd($self->{fd}, 0 + $increment);
+    return $self;
+}
+
+sub cancel ($self) {
+    return $self if $self->{terminal};
+    my $state = $self->_owner_state('cancel');
+    $state->{watcher}->cancel if $state->{watcher};
+    $state->{watcher} = undef;
+    _close_fd(delete $self->{fd}) if defined $self->{fd};
+    delete $LIVE_HANDLE{ $self->{id} };
+    $state->{loop} = undef;
+    $state->{data} = undef;
+    $state->{state} = 'cancelled';
+    delete $OWNER_STATE{ $self->{id} };
+    $self->{terminal} = 1;
+    return $self;
+}
+
+sub loop ($self) {
+    return undef if $self->{terminal};
+    return $self->_owner_state('loop')->{loop};
+}
+sub state ($self) {
+    return 'cancelled' if $self->{terminal};
+    return $self->_owner_state('state')->{state};
+}
+sub is_active ($self) { $self->state eq 'active' }
+sub is_terminal ($self) { !!$self->{terminal} }
+
+sub data ($self, @argument) {
+    croak 'data(): Event is cancelled' if $self->{terminal};
+    my $state = $self->_owner_state('data');
+    $state->{data} = $argument[0] if @argument;
+    return $state->{data};
+}
+
+sub _objects_for_loop ($class, $loop) {
+    my @object;
+    for my $id (keys %LIVE_HANDLE) {
+        my $object = $LIVE_HANDLE{$id} // next;
+        next if $object->{terminal};
+        my $state = $OWNER_STATE{$id} // next;
+        next if !$state->{loop}
+            || refaddr($state->{loop}) != refaddr($loop);
+        push @object, $object;
+    }
+    return \@object;
+}
+
+sub CLONE ($class) {
+    for my $id (keys %LIVE_HANDLE) {
+        my $self = $LIVE_HANDLE{$id};
+        if (!$self) {
+            delete $LIVE_HANDLE{$id};
+            next;
+        }
+        next if $self->{terminal} || !defined $self->{fd};
+        $self->{fd} = _dup_fd($self->{fd});
+        $self->{handle_interpreter} = _interpreter_id();
+        $self->{cloned_signal_handle} = 1;
+    }
+    return;
+}
+
+sub DESTROY ($self) {
+    my $interpreter = eval { _interpreter_id() };
+    my $is_owner = !$self->{cloned_signal_handle}
+        && defined($interpreter)
+        && $self->{owner_pid} == $$
+        && $self->{owner_interpreter} == $interpreter;
+    if ($is_owner) {
+        my $state = delete $OWNER_STATE{ $self->{id} };
+        eval { $state->{watcher}->cancel if $state && $state->{watcher}; 1 };
+    }
+    my $live = $LIVE_HANDLE{ $self->{id} };
+    delete $LIVE_HANDLE{ $self->{id} }
+        if !$live || refaddr($live) == refaddr($self);
+    return if !defined($interpreter)
+        || $self->{handle_interpreter} != $interpreter;
+    eval { _close_fd(delete $self->{fd}); 1 } if defined $self->{fd};
+    return;
+}
+
+package Linux::Event::Kernel::Event::_OwnerState;
+use v5.36;
+use strict;
+use warnings;
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Kernel::Event;
 
 1;
-
 __END__
 
 =head1 NAME

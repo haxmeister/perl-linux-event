@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.111';
+use parent 'Linux::Event::_Socket';
 
 use Carp qw(croak);
 use Config ();
@@ -25,7 +25,7 @@ use Linux::Event::_SocketConfig ();
 use Linux::Event::_Resolver ();
 require Linux::Event::Kernel::Timer;
 require XSLoader;
-XSLoader::load(__PACKAGE__, $VERSION);
+XSLoader::load(__PACKAGE__);
 
 my %CLASS_DESCRIPTOR;
 my $MAX_INTEGER = $Config::Config{ivsize} >= 8
@@ -54,9 +54,9 @@ sub _boolean ($target, $name, $value) {
 
 sub _descriptor_for ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
-    croak 'Linux::Event::_Socket::Dgram is a private implementation base'
+    croak 'Linux::Event::_Socket::Dgram is an abstract base class'
         if $class eq __PACKAGE__;
-    croak "$class is not a Linux::Event datagram class"
+    croak "$class is not a Linux::Event::_Socket::Dgram subclass"
         if !$class->isa(__PACKAGE__);
     my %callback = map { $_ => scalar $class->can($_) } qw(
         on_datagram on_drain on_ready on_error on_close configure_socket
@@ -613,7 +613,7 @@ sub _configure_socket ($self, $fh, $role, $address) {
 }
 
 sub _attach_to_loop ($self, $loop) {
-    croak 'add(): Dgram is not unattached'
+    croak 'add(): Datagram is not unattached'
         if $self->{state} ne 'unattached' || $self->{loop};
     $self->{loop} = $loop;
     if ($self->{fh}) {
@@ -624,7 +624,7 @@ sub _attach_to_loop ($self, $loop) {
             1;
         };
         if (!$registered) {
-            my $failure = $@ || 'could not register datagram socket';
+            my $failure = $@ || 'could not register Datagram socket';
             if (my $timer = delete $self->{ready_timer}) {
                 $timer->cancel if !$timer->is_terminal;
             }
@@ -875,7 +875,7 @@ sub _finish_activation ($self, $fh, $family) {
     };
     return if $activated;
 
-    my $failure = $@ || 'could not register datagram socket';
+    my $failure = $@ || 'could not register Datagram socket';
     if (my $timer = delete $self->{ready_timer}) {
         $timer->cancel if $timer->is_active;
     }
@@ -911,7 +911,7 @@ sub _register ($self) {
 
 sub _schedule_ready ($self) {
     return if $self->{ready_fired} || !$self->{loop};
-    my $timer = Linux::Event::_Socket::Dgram::ReadyTimer->new(
+    my $timer = Linux::Event::_Socket::Dgram::_ReadyTimer->new(
         after => 0, data => $self,
     );
     $self->{ready_timer} = $timer;
@@ -950,7 +950,7 @@ sub _fail ($self, $error) {
 
 sub _read_ready ($self) {
     return if $self->{state} ne 'active' || $self->{read_paused};
-    my $batch = __PACKAGE__->_recv_batch(
+    my $batch = Linux::Event::_Socket::Dgram::_recv_batch(
         fileno($self->{fh}), $self->{options}{max_datagram_size},
         $self->{options}{max_datagrams_per_tick},
     );
@@ -982,7 +982,7 @@ sub _read_ready ($self) {
 }
 
 sub send ($self, $payload, %option) {
-    croak 'send(): Dgram is terminal' if $self->is_terminal;
+    croak 'send(): Datagram is terminal' if $self->is_terminal;
     croak 'send(): payload must be a defined scalar'
         if !defined($payload) || ref($payload);
     $payload = "$payload";
@@ -994,7 +994,7 @@ sub send ($self, $payload, %option) {
     croak 'send(): unknown options: ' . join(', ', sort keys %option)
         if %option;
     if ($self->{connected}) {
-        croak 'send(): to is not valid for a connected Dgram'
+        croak 'send(): to is not valid for a connected Datagram'
             if defined $to;
     } else {
         croak 'send(): to requires a Linux::Event::Address'
@@ -1005,7 +1005,7 @@ sub send ($self, $payload, %option) {
         if defined($to) && (!defined($address) || ref($address));
     return $self->_queue_packet($payload, $address)
         if !$self->{fh} || @{ $self->{queue} };
-    my ($sent, $errno) = __PACKAGE__->_send_packet(
+    my ($sent, $errno) = Linux::Event::_Socket::Dgram::_send_packet(
         fileno($self->{fh}), $payload,
         defined($address) ? $address : undef,
     );
@@ -1059,7 +1059,7 @@ sub _flush_output ($self) {
     return if !$self->{fh};
     while (my $packet = $self->{queue}[0]) {
         my ($payload, $address) = @$packet;
-        my ($sent, $errno) = __PACKAGE__->_send_packet(
+        my ($sent, $errno) = Linux::Event::_Socket::Dgram::_send_packet(
             fileno($self->{fh}), $payload,
             defined($address) ? $address : undef,
         );
@@ -1140,7 +1140,7 @@ sub close ($self) {
 }
 
 sub detach ($self) {
-    croak 'detach(): Dgram has no active socket' if !$self->{fh};
+    croak 'detach(): Datagram has no active socket' if !$self->{fh};
     my $fh = $self->{fh};
     $self->{owns_socket} = 0;
     $self->{unlink_on_close} = 0;
@@ -1163,7 +1163,7 @@ sub resume_read ($self) {
 }
 
 sub _buffer_option ($self, $name, @argument) {
-    croak "$name(): Dgram has no active socket" if !$self->{fh};
+    croak "$name(): Datagram has no active socket" if !$self->{fh};
     croak "$name(): expected zero or one argument" if @argument > 1;
     Linux::Event::_SocketConfig::set_option(
         $self->{fh}, $self->{family_number}, $name, $argument[0],
@@ -1181,7 +1181,7 @@ sub receive_buffer ($self, @argument) {
 }
 
 sub broadcast ($self, @argument) {
-    croak 'broadcast(): Dgram has no active socket' if !$self->{fh};
+    croak 'broadcast(): Datagram has no active socket' if !$self->{fh};
     croak 'broadcast(): expected zero or one argument' if @argument > 1;
     _socket_option_error(
         'broadcast', 0, 'broadcast is valid only for IPv4 sockets',
@@ -1226,11 +1226,6 @@ sub data ($self, @argument) {
     return $self->{data};
 }
 
-sub CLONE ($class) {
-    %CLASS_DESCRIPTOR = ();
-    return;
-}
-
 sub CLONE_SKIP ($class) { 1 }
 
 sub DESTROY ($self) {
@@ -1238,15 +1233,15 @@ sub DESTROY ($self) {
     return;
 }
 
-package Linux::Event::_Socket::Dgram::ReadyTimer;
+package Linux::Event::_Socket::Dgram::_ReadyTimer;
 use v5.36;
 use strict;
 use warnings;
 use parent -norequire, 'Linux::Event::Kernel::Timer';
 
 sub on_timer ($timer) {
-    my $dgram = $timer->data;
-    $dgram->_fire_ready if $dgram;
+    my $datagram = $timer->data;
+    $datagram->_fire_ready if $datagram;
     return;
 }
 

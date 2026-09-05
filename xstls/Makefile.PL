@@ -30,7 +30,7 @@ WriteMakefile(
     PM               => {},
     XS               => { 'TLS.xs' => 'TLS.c' },
     OBJECT           => 'TLS$(OBJ_EXT)',
-    INC              => '-I../xsstream',
+    INC              => '-I../xsbytestream',
     LIBS             => ['-lssl -lcrypto'],
     clean            => { FILES => 'TLS.c' },
 );

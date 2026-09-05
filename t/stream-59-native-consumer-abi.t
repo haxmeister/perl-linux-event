@@ -7,19 +7,19 @@ use Scalar::Util qw(refaddr);
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::_ByteStream ();
+use Linux::Event::IO::Sock::Stream;
 use Linux::Event::TLS;
 
-is(Linux::Event::Stream->_native_consumer_abi_version, 1,
+is(Linux::Event::_ByteStream->_native_consumer_abi_version, 1,
     'native consumer ABI v1 is discoverable');
 
 {
     package T::ConsumerBase;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
-            __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
+        Linux::Event::_ByteStream->_declare_consumer(
+            __PACKAGE__, Linux::Event::_ByteStream::TestSupport->_test_consumer_definition,
         );
     }
     sub on_error ($stream, $error) { $stream->data->{error} = $error }
@@ -34,10 +34,10 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::GenericConsumerBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
-            __PACKAGE__, Linux::Event::Stream->_test_consumer_definition,
+        Linux::Event::_ByteStream->_declare_consumer(
+            __PACKAGE__, Linux::Event::_ByteStream::TestSupport->_test_consumer_definition,
         );
     }
 }
@@ -50,11 +50,11 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::OriginalV1Base;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('original-v1'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('original-v1'),
         );
     }
 }
@@ -67,11 +67,11 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::FlushContinueBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('flush-continue'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('flush-continue'),
         );
     }
 }
@@ -84,11 +84,11 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::CroakingConsumerBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('message-croak'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('message-croak'),
         );
     }
 }
@@ -101,11 +101,11 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::MessageContinueBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('message-continue'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('message-continue'),
         );
     }
 }
@@ -118,11 +118,11 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::MessageInvalidBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('message-invalid'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('message-invalid'),
         );
     }
 }
@@ -135,11 +135,11 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::FlushCloseBase;
-    use parent 'Linux::Event::Stream';
+    use parent 'Linux::Event::_ByteStream';
     BEGIN {
-        Linux::Event::Stream->_declare_consumer(
+        Linux::Event::_ByteStream->_declare_consumer(
             __PACKAGE__,
-            Linux::Event::Stream->_test_consumer_definition('flush-close'),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition('flush-close'),
         );
     }
 }
@@ -194,7 +194,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::CallbackLine;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
     sub on_message ($stream, $message) { return }
 }
@@ -208,7 +208,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::BudgetRaw;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) {
         return read_size => 4, read_budget_bytes => 4;
     }
@@ -221,7 +221,7 @@ is(Linux::Event::Stream->_native_consumer_abi_version, 1,
 
 {
     package T::ConsumerTLSSender;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_transport_ready ($stream) { $stream->write("secure\n") }
     sub on_data ($stream, $bytes) { return }
     sub on_error ($stream, $error) {
@@ -358,14 +358,14 @@ sub take ($stream) {
     my $stream = T::GenericConsumerLine->new(
         loop => $loop, read_fh => $read,
     );
-    my $before = Linux::Event::Stream->_test_consumer_destroy_count;
+    my $before = Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
     $stream->{xs_state}->_test_consumer_arm(sub {
         $stream->close;
-        is(Linux::Event::Stream->_test_consumer_destroy_count, $before,
+        is(Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count, $before,
             'reentrant close cannot destroy XSState inside close_read XSUB');
     });
     $stream->close_read;
-    cmp_ok(Linux::Event::Stream->_test_consumer_destroy_count, '>', $before,
+    cmp_ok(Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count, '>', $before,
         'guarded XSState is destroyed after close_read returns');
     close $write;
 }
@@ -574,7 +574,7 @@ for my $case (
 }
 
 {
-    my $before = Linux::Event::Stream->_test_consumer_destroy_count;
+    my $before = Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
     my ($loop, $stream, $peer, $xs) = pair('T::ConsumerLine');
     arm($stream);
     $stream->close;
@@ -582,7 +582,7 @@ for my $case (
         'explicit close reaches native consumer');
     undef $stream;
     undef $xs;
-    cmp_ok(Linux::Event::Stream->_test_consumer_destroy_count, '>', $before,
+    cmp_ok(Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count, '>', $before,
         'provider-owned context is destroyed with native Stream state');
     close $peer;
 }
@@ -681,18 +681,18 @@ for my $case (
     ['missing-flush', qr/requests flush without a flush function/],
     ['unknown-flags', qr/unsupported flags/],
     ['incomplete', qr/operations table is incomplete/],
-    ['create-failure', qr/failed to create per-Stream context/],
+    ['create-failure', qr/failed to create context/],
 ) {
     my ($variant, $error) = @$case;
     my $base = "T::InvalidConsumer::$variant";
     my $class = "${base}::Line";
     no strict 'refs';
-    @{"${base}::ISA"} = ('Linux::Event::Stream');
-    Linux::Event::Stream->_declare_consumer(
-        $base, Linux::Event::Stream->_test_consumer_definition($variant),
+    @{"${base}::ISA"} = ('Linux::Event::IO::Sock::Stream');
+    Linux::Event::_ByteStream->_declare_consumer(
+        $base, Linux::Event::_ByteStream::TestSupport->_test_consumer_definition($variant),
     );
     @{"${class}::ISA"} = ($base);
-    Linux::Event::Stream->_declare_framer(
+    Linux::Event::IO::Sock::Stream->_declare_framer(
         $class, {
             native => {
                 read_mode => 2,

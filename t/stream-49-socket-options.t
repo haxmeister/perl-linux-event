@@ -6,8 +6,8 @@ use Socket qw(AF_UNIX SOCK_STREAM);
 use Test::More;
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 sub exception ($code) {
     local $@;
@@ -16,7 +16,7 @@ sub exception ($code) {
 
 {
     package T::BufferSocketStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub socket_options ($class) {
         return send_buffer => 32_768, receive_buffer => 32_768;
     }
@@ -40,7 +40,7 @@ close $right;
 
 {
     package T::InvalidUnixTCPStream;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub socket_options ($class) { return tcp_nodelay => 1 }
     sub on_data ($self, $bytes) { }
 }
@@ -54,7 +54,7 @@ close $tcp_right;
 
 {
     package T::InvalidSocketOption;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub socket_options ($class) { return keepalive => 2 }
     sub on_data ($self, $bytes) { }
 }
@@ -64,7 +64,7 @@ like(exception(sub { T::InvalidSocketOption->_validate_accepted_configuration })
 
 {
     package T::FailingSocketConfiguration;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($self, $bytes) { }
     sub configure_socket ($self, $fh, $role, $peer) { die "synthetic failure\n" }
 }

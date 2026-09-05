@@ -5,12 +5,12 @@ use Test::More;
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
-use Linux::Event::Stream;
-use Linux::Event::Socket;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::Sock::Stream;
 
 {
     package T::Batch::Raw;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) {
         return read_size => 4, read_batch_bytes => 10;
     }
@@ -24,7 +24,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::RawPause;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) {
         return read_size => 4, read_batch_bytes => 8;
     }
@@ -36,7 +36,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::Messages;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 3 }
     sub on_messages ($stream, $messages) {
@@ -48,7 +48,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::MessagesByteGuard;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) {
         return message_batch_size => 10, max_buffer => 5;
@@ -60,7 +60,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::MessagesOne;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 1 }
     sub on_messages ($stream, $messages) {
@@ -70,7 +70,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::MessagesPause;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 2 }
     sub on_messages ($stream, $messages) {
@@ -81,7 +81,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::MessagesClose;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 2 }
     sub on_messages ($stream, $messages) {
@@ -92,7 +92,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::MessagesError;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|', max_frame => 4;
     sub stream_options ($class) { return message_batch_size => 8 }
     sub on_messages ($stream, $messages) {
@@ -105,7 +105,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::MessagesDie;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 2 }
     sub on_messages ($stream, $messages) { die "batch callback failed\n" }
@@ -113,7 +113,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::TransitionSource;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 2 }
     sub on_messages ($stream, $messages) {
@@ -125,7 +125,7 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::TransitionTarget;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Fixed', size => 3;
     sub on_message ($stream, $message) {
         push @{ $stream->data->{target} }, $message;
@@ -134,13 +134,13 @@ use Linux::Event::Socket;
 
 {
     package T::Batch::TransitionRawSource;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) { return }
 }
 
 {
     package T::Batch::TransitionRawTarget;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return read_batch_bytes => 4 }
     sub on_data ($stream, $bytes) {
         push @{ $stream->data->{chunks} }, $bytes;
@@ -361,32 +361,32 @@ sub descriptor_error ($class) {
 
 {
     package T::Batch::InvalidRawMessageBatch;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return message_batch_size => 2 }
     sub on_data ($stream, $bytes) { return }
 }
 {
     package T::Batch::InvalidRawMessages;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub on_data ($stream, $bytes) { return }
     sub on_messages ($stream, $messages) { return }
 }
 {
     package T::Batch::InvalidFramedReadBatch;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return read_batch_bytes => 64 }
     sub on_message ($stream, $message) { return }
 }
 {
     package T::Batch::InvalidMissingMessages;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 2 }
 }
 {
     package T::Batch::InvalidBothMessageCallbacks;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => 2 }
     sub on_message ($stream, $message) { return }
@@ -394,19 +394,19 @@ sub descriptor_error ($class) {
 }
 {
     package T::Batch::InvalidUnconfiguredMessages;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub on_messages ($stream, $messages) { return }
 }
 {
     package T::Batch::InvalidNegativeReadBatch;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     sub stream_options ($class) { return read_batch_bytes => -1 }
     sub on_data ($stream, $bytes) { return }
 }
 {
     package T::Batch::InvalidNegativeMessageBatch;
-    use parent 'Linux::Event::Socket';
+    use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', '|';
     sub stream_options ($class) { return message_batch_size => -1 }
     sub on_message ($stream, $message) { return }
