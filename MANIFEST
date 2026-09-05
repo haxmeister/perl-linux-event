@@ -264,11 +264,6 @@ t/wakeup-10-fork.t
 t/wakeup-11-thread.t
 t/wakeup-12-lifecycle.t
 t/wakeup-13-benchmark-smoke.t
-tools/coherent-core-contract-fixup.py
-tools/coherent-core-native-names-fixup.py
-tools/coherent-core-refactor-fixup.py
-tools/coherent-core-refactor.py
-tools/coherent-core-test-fixup.py
 xsbytestream/ByteStream.xs
 xsbytestream/framer_decimal.c
 xsbytestream/framer_delimiter.c
