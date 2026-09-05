@@ -162,6 +162,26 @@ perl -Mblib bench/run-callback-batching-fairness.pl \
 This is a deliberate saturation/fairness diagnostic rather than ordinary
 network latency.
 
+## Cached closure dispatch experiment
+
+`run-cached-closure-dispatch-bench.pl` compares the cached subclass method CV
+with constructor-supplied non-capturing, one-lexical, and four-lexical
+callbacks through the same native delimiter-framing path:
+
+```bash
+perl -Mblib bench/run-cached-closure-dispatch-bench.pl \
+  --payload-sizes=16,4096,65536 --idle-connections=0,63 \
+  --target-mib=16 --minimum-messages=512 \
+  --warmup=1 --repeats=7 \
+  --json=bench/results/cached-closure-dispatch.json
+```
+
+The receiver and its callback run in the measured process while a forked
+blocking writer supplies frames. Case order rotates, every callback validates
+the payload, and native counters validate both frame and callback counts.
+Current RSS after connection setup is reported as a coarse retention proxy;
+it is not a Perl allocation count.
+
 ## Framing
 
 `run-framing-microbench.pl` and `run-native-framers-microbench.pl` measure the
