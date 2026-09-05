@@ -423,8 +423,8 @@ subtest 'batching policies reject ambiguous class contracts' => sub {
         qr/read_batch_bytes is available only to raw ordered-byte classes/,
         'framed ordered-byte class rejects raw batching policy');
     like(descriptor_error('T::Batch::InvalidMissingMessages'),
-        qr/does not define on_messages/,
-        'batch policy requires batch callback');
+        qr/requires on_message or a native consumer/,
+        'batch policy requires a class or constructor batch callback');
     like(descriptor_error('T::Batch::InvalidBothMessageCallbacks'),
         qr/cannot define both on_message.*on_messages/,
         'batch mode rejects ambiguous callbacks');

@@ -15,6 +15,10 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     les_descriptor_t *next_descriptor;
     SV *next_descriptor_sv;
     SV *old_descriptor_sv;
+    SV *next_input_cb = NULL;
+    SV *old_input_cb;
+    SV *next_drain_cb = NULL;
+    SV *old_drain_cb;
     const char *injected = NULL;
     STRLEN injected_len = 0;
     size_t total_input;
@@ -57,6 +61,19 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
 
     next_descriptor_sv = newSVsv(descriptor_obj);
     old_descriptor_sv = st->descriptor_sv;
+    old_input_cb = st->input_cb;
+    if (st->instance_input_kind == les_descriptor_input_kind(next_descriptor)) {
+        next_input_cb = st->instance_input_cb;
+    } else {
+        SV *descriptor_cb = les_descriptor_input_cb(next_descriptor);
+        if (descriptor_cb)
+            next_input_cb = SvREFCNT_inc_simple_NN(descriptor_cb);
+    }
+    old_drain_cb = st->drain_cb;
+    next_drain_cb = st->has_instance_drain_cb
+        ? old_drain_cb
+        : next_descriptor->drain_cb
+            ? SvREFCNT_inc_simple_NN(next_descriptor->drain_cb) : NULL;
 
     if (injected_len) {
         free(st->input_buffer);
@@ -73,10 +90,16 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     st->read_buffer = next_read_buffer;
     st->descriptor = next_descriptor;
     st->descriptor_sv = next_descriptor_sv;
+    st->input_cb = next_input_cb;
+    st->drain_cb = next_drain_cb;
     st->delimiter_scan = 0;
     st->write_blocked = st->pending_bytes > next_descriptor->high_watermark;
     LES_STAT(st, transition_count)++;
 
     if (old_descriptor_sv)
         SvREFCNT_dec(old_descriptor_sv);
+    if (old_input_cb && old_input_cb != st->instance_input_cb)
+        SvREFCNT_dec(old_input_cb);
+    if (!st->has_instance_drain_cb && old_drain_cb)
+        SvREFCNT_dec(old_drain_cb);
 }

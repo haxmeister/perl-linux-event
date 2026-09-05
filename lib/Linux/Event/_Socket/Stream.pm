@@ -111,7 +111,8 @@ sub new ($class, %opt) {
 sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
     my %stream;
-    for my $name (qw(loop data transport idle_timeout read_timeout write_timeout deadline)) {
+    for my $name (qw(loop data transport idle_timeout read_timeout write_timeout deadline),
+        Linux::Event::_ByteStream::_callback_names()) {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     my $loop = delete $stream{loop};

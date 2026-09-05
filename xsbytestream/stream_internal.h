@@ -30,6 +30,11 @@
 #define LES_READ_VARINT    6
 #define LES_READ_DECIMAL   7
 
+#define LES_CALLBACK_NONE      0
+#define LES_CALLBACK_DATA      1
+#define LES_CALLBACK_MESSAGE   2
+#define LES_CALLBACK_MESSAGES  3
+
 typedef struct les_plain_transport_s {
     int read_fd;
     int write_fd;
@@ -130,6 +135,11 @@ typedef struct les_xsstate_s {
     void *transport_context;
     les_descriptor_t *descriptor;
     SV *descriptor_sv;
+    SV *input_cb;
+    SV *instance_input_cb;
+    SV *drain_cb;
+    int instance_input_kind;
+    int has_instance_drain_cb;
     SV *transport_provider_sv;
 
     /* Read engine. */
@@ -201,6 +211,8 @@ SV *les_state_stats_snapshot(pTHX_ les_xsstate_t *st);
 void les_state_destroy(pTHX_ les_xsstate_t *st);
 SV *les_store_cb(SV *cb, const char *name);
 SV *les_store_optional_cb(SV *cb, const char *name);
+int les_descriptor_input_kind(const les_descriptor_t *descriptor);
+SV *les_descriptor_input_cb(const les_descriptor_t *descriptor);
 
 unsigned long long les_activity_now_ns(pTHX);
 void les_note_read_activity(pTHX_ les_xsstate_t *st);

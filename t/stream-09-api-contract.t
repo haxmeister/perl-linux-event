@@ -104,9 +104,9 @@ like($error, qr/cannot define on_data/, 'mixed-mode error is clear');
 ($made, $error) = construction_error(
     'T::API::Raw', on_data => sub { }, read_size => 1,
 );
-ok(!$made, 'old per-object callback and transport options are rejected');
-like($error, qr/unknown options: on_data, read_size/,
-    'constructor identifies removed object-configured options');
+ok(!$made, 'per-object stream tuning remains rejected');
+like($error, qr/unknown options: read_size/,
+    'constructor recognizes on_data but keeps tuning class-scoped');
 
 for my $case (
     ['T::API::GenericSocketOptions', qr/defines socket_options.*stream-socket class/],

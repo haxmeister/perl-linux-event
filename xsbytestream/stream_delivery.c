@@ -24,7 +24,7 @@ les_flush_message_batch(pTHX_ les_xsstate_t *st)
 
     batch = st->message_batch;
     count = st->message_batch_count;
-    callback = st->descriptor->message_batch_cb;
+    callback = st->input_cb;
     st->message_batch = NULL;
     st->message_batch_count = 0;
     st->message_batch_bytes = 0;
@@ -48,7 +48,7 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
     }
     if (!st->descriptor->message_batch_size) {
         LES_STAT(st, message_callback_calls)++;
-        les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
+        les_call_two(aTHX_ st->input_cb, st->stream_sv, message);
         return;
     }
 

@@ -18,6 +18,62 @@ use Linux::Event::Error;
 require XSLoader;
 XSLoader::load(__PACKAGE__);
 
+my @INPUT_CALLBACK = qw(on_data on_message on_messages);
+my @LIFECYCLE_CALLBACK = qw(
+    on_drain on_eof on_error on_close on_ready on_transport_ready
+);
+my @APPLICATION_CALLBACK = (@INPUT_CALLBACK, @LIFECYCLE_CALLBACK);
+
+sub _callback_names () { @APPLICATION_CALLBACK }
+
+sub _take_callbacks ($method, $option) {
+    my %callback;
+    for my $name (@APPLICATION_CALLBACK) {
+        next if !exists $option->{$name};
+        my $value = delete $option->{$name};
+        croak "$method(): $name must be a coderef" if ref($value) ne 'CODE';
+        $callback{$name} = $value;
+    }
+    return \%callback;
+}
+
+sub _validate_callback_modes ($method, $descriptor, $callback) {
+    if (!$descriptor->{framer}) {
+        croak "$method(): on_message requires a framed ordered-byte class"
+            if $callback->{on_message};
+        croak "$method(): on_messages requires a framed ordered-byte class"
+            if $callback->{on_messages};
+        return;
+    }
+
+    croak "$method(): on_data requires a raw ordered-byte class"
+        if $callback->{on_data};
+    if ($descriptor->{consumer}) {
+        croak "$method(): on_message cannot be combined with a native consumer"
+            if $callback->{on_message};
+        croak "$method(): on_messages cannot be combined with a native consumer"
+            if $callback->{on_messages};
+        return;
+    }
+    if ($descriptor->{options}{message_batch_size}) {
+        croak "$method(): on_message cannot be combined with message_batch_size"
+            if $callback->{on_message};
+    } else {
+        croak "$method(): on_messages requires message_batch_size"
+            if $callback->{on_messages};
+    }
+    return;
+}
+
+sub _effective_lifecycle_callbacks ($descriptor, $override) {
+    return {
+        map {
+            $_ => exists($override->{$_})
+                ? $override->{$_} : $descriptor->{callbacks}{$_}
+        } @LIFECYCLE_CALLBACK
+    };
+}
+
 sub _declare_framer ($base, $target, $definition) {
     return Linux::Event::_ByteStream::Descriptor::declare_framer(
         $base, $target, $definition,
@@ -116,7 +172,7 @@ sub _xs_drain ($self) {
     }
     delete $self->{preconnect_write_blocked};
     delete $self->{preconnect_drain_reached};
-    my $callback = $self->{descriptor}{callbacks}{on_drain};
+    my $callback = $self->{callbacks}{on_drain};
     $callback->($self) if $callback;
     return;
 }
@@ -175,7 +231,7 @@ sub _xs_transport_event ($self, $status, $operation, $message) {
             && $self->{read_watcher}) {
             $self->{read_watcher}->disable_read;
         }
-        if (my $callback = $self->{descriptor}{callbacks}{on_transport_ready}) {
+        if (my $callback = $self->{callbacks}{on_transport_ready}) {
             $callback->($self);
         }
         $self->_fire_ready;
@@ -202,16 +258,24 @@ sub _watch_write_terminal_xs_cb ($state) {
     $self->_on_write_terminal_ready;
 }
 
-sub _require_read_sink ($descriptor, $readable, $raw_error, $framed_error) {
+sub _require_read_sink ($descriptor, $instance, $readable, $raw_error,
+    $framed_error) {
     return if !$readable;
     if (!$descriptor->{framer}) {
-        croak $raw_error if !$descriptor->{callbacks}{on_data};
+        croak $raw_error
+            if !$instance->{on_data} && !$descriptor->{callbacks}{on_data};
         return;
     }
-    croak $framed_error
-        if !$descriptor->{consumer}
-        && !$descriptor->{options}{message_batch_size}
-        && !$descriptor->{callbacks}{on_message};
+    return if $descriptor->{consumer};
+    if ($descriptor->{options}{message_batch_size}) {
+        croak $framed_error
+            if !$instance->{on_messages}
+            && !$descriptor->{callbacks}{on_messages};
+    } else {
+        croak $framed_error
+            if !$instance->{on_message}
+            && !$descriptor->{callbacks}{on_message};
+    }
     return;
 }
 
@@ -227,6 +291,7 @@ sub new ($class, %opt) {
     my $pending = delete($opt{_pending}) // 0;
     my $data = delete $opt{data};
     my $transport = delete $opt{_transport};
+    my $callback = _take_callbacks('new', \%opt);
     my %timeout_override;
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
         $timeout_override{$name} = _timeout_value('new():', $name,
@@ -254,6 +319,13 @@ sub new ($class, %opt) {
         && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = Linux::Event::_ByteStream::Descriptor::for_class($class);
+    _validate_callback_modes('new', $descriptor, $callback);
+    my %lifecycle_override = map {
+        exists($callback->{$_}) ? ($_ => $callback->{$_}) : ()
+    } @LIFECYCLE_CALLBACK;
+    my %input_callback = map {
+        exists($callback->{$_}) ? ($_ => $callback->{$_}) : ()
+    } @INPUT_CALLBACK;
     my %timeout = map {
         $_ => exists($timeout_override{$_})
             ? $timeout_override{$_} : $descriptor->{options}{$_}
@@ -268,6 +340,14 @@ sub new ($class, %opt) {
         read_watcher => undef,
         write_watcher => undef,
         data        => $data,
+        callbacks   => _effective_lifecycle_callbacks(
+            $descriptor, \%lifecycle_override,
+        ),
+        callback_overrides => \%lifecycle_override,
+        _input_callbacks => \%input_callback,
+        _input_callback_overrides => {
+            map { $_ => 1 } keys %input_callback
+        },
         transport   => $transport,
         xs_state    => undef,
         read_paused => 0,
@@ -333,6 +413,7 @@ sub _prepare_handles ($self) {
     my $write_fd = defined($write_fh) ? fileno($write_fh) : -1;
     _require_read_sink(
         $descriptor,
+        $self->{_input_callback_overrides},
         $read_fd >= 0,
         'readable raw Stream requires on_data callback',
         'readable framed Stream requires on_message or a native consumer',
@@ -345,8 +426,14 @@ sub _prepare_handles ($self) {
         $read_fd,
         $write_fd,
         $descriptor->{native},
+        $self->{_input_callbacks}{on_data}
+            // $self->{_input_callbacks}{on_message}
+            // $self->{_input_callbacks}{on_messages},
+        $self->{callback_overrides}{on_drain}
+            ? \&Linux::Event::_ByteStream::_xs_drain : undef,
     );
     $self->{xs_state} = $xs_state;
+    delete $self->{_input_callbacks};
 
     my $initial_interest = 0x01;
     my $transport = $self->{transport};
@@ -474,6 +561,10 @@ sub _abort_failed_construction ($self) {
     }
     _teardown_step(\$ignored, sub { $self->_cancel_io_watchers });
     _teardown_step(\$ignored, sub { $self->_close_handles });
+    delete @$self{qw(
+        callbacks callback_overrides _input_callbacks
+        _input_callback_overrides
+    )};
     return;
 }
 
@@ -485,7 +576,7 @@ sub DESTROY ($self) {
 sub _fire_ready ($self) {
     return if $self->{closed} || ($self->{transport_ready_fired} & 0x02);
     $self->{transport_ready_fired} |= 0x02;
-    if (my $callback = $self->{descriptor}{callbacks}{on_ready}) {
+    if (my $callback = $self->{callbacks}{on_ready}) {
         $callback->($self);
     }
     return if $self->{closed};
@@ -927,6 +1018,7 @@ sub transition_to ($self, $class, %opt) {
         if $source_ops != $target_ops;
     _require_read_sink(
         $descriptor,
+        $self->{_input_callback_overrides},
         $self->{read_capable} && !$self->{read_closed} && !$self->{read_eof},
         'transition_to(): target readable raw Stream has no on_data callback',
         'transition_to(): target readable framed Stream has no message sink',
@@ -945,8 +1037,12 @@ sub transition_to ($self, $class, %opt) {
     # XS validates and swaps the immutable descriptor without invoking a
     # callback. Update the Perl object's type before buffered input is allowed
     # to enter the new callback set.
+    my $callbacks = _effective_lifecycle_callbacks(
+        $descriptor, $self->{callback_overrides},
+    );
     $xs_state->_transition_validated($descriptor->{native}, $input);
     $self->{descriptor} = $descriptor;
+    $self->{callbacks} = $callbacks;
     bless $self, $class;
     $self->_apply_transition_timeouts($descriptor);
     $xs_state->_transition_ready;
@@ -1044,6 +1140,10 @@ sub detach ($self) {
     }
     _teardown_step(\$failure, sub { $self->_cancel_io_watchers });
     $self->{closed} = 1;
+    delete @$self{qw(
+        callbacks callback_overrides _input_callbacks
+        _input_callback_overrides
+    )};
     $self->{detached} = 1;
     if (defined $failure) {
         _teardown_step(\$failure, sub { $self->_close_handles });
@@ -1151,7 +1251,7 @@ sub _mark_eof ($self) {
     $self->_rearm_stream_deadline
         if $self->{deadline_started} && $self->{timeout}{read_timeout} > 0;
 
-    if (my $callback = $self->{descriptor}{callbacks}{on_eof}) {
+    if (my $callback = $self->{callbacks}{on_eof}) {
         $callback->($self);
     }
     $self->_close_now(1) if $self->{write_ended};
@@ -1181,7 +1281,7 @@ sub _fail ($self, $error) {
     return if $self->{closed};
     $self->{last_error} = $error;
     my $failure;
-    if (my $callback = $self->{descriptor}{callbacks}{on_error}) {
+    if (my $callback = $self->{callbacks}{on_error}) {
         my $reported = eval { $callback->($self, $error); 1 };
         $failure = $@ if !$reported;
     }
@@ -1210,10 +1310,14 @@ sub _close_now ($self, $close_fh) {
     _teardown_step(\$failure, sub { $self->_close_handles }) if $close_fh;
 
     if (!$self->{detached} && !$self->{close_fired}++) {
-        if (my $callback = $self->{descriptor}{callbacks}{on_close}) {
+        if (my $callback = $self->{callbacks}{on_close}) {
             _teardown_step(\$failure, sub { $callback->($self) });
         }
     }
+    delete @$self{qw(
+        callbacks callback_overrides _input_callbacks
+        _input_callback_overrides
+    )};
     die $failure if defined $failure;
     return;
 }

@@ -20,6 +20,7 @@ use Socket qw(
 use Linux::Event::Error;
 use Linux::Event::Address;
 use Linux::Event::_Socket::Stream ();
+use Linux::Event::_ByteStream::Descriptor ();
 use Linux::Event::_SocketConfig ();
 
 require XSLoader;
@@ -259,6 +260,21 @@ sub new ($class, %opt) {
     $stream_class->_validate_accepted_configuration;
 
     my $descriptor = _descriptor_for($class);
+    my $stream_callbacks = Linux::Event::_ByteStream::_take_callbacks(
+        'new', \%opt,
+    );
+    my $stream_descriptor
+        = Linux::Event::_ByteStream::Descriptor::for_class($stream_class);
+    Linux::Event::_ByteStream::_validate_callback_modes(
+        'new', $stream_descriptor, $stream_callbacks,
+    );
+    Linux::Event::_ByteStream::_require_read_sink(
+        $stream_descriptor,
+        $stream_callbacks,
+        1,
+        'new(): accepted raw Stream requires on_data callback',
+        'new(): accepted framed Stream requires on_message, on_messages, or a native consumer',
+    );
     my %known = map { $_ => 1 } qw(
         loop data backlog max_accept_per_tick edge_triggered
         reuseaddr reuseport v6only unlink unlink_on_close permissions
@@ -387,6 +403,7 @@ sub new ($class, %opt) {
         watcher             => undef,
         accepted            => 0,
         last_error          => undef,
+        stream_callbacks    => $stream_callbacks,
     }, $class;
 
     $self->_attach_to_loop($loop) if $loop;
@@ -404,6 +421,7 @@ sub _accept_client ($self, $fh, $peer) {
             peer      => $peer,
             data      => $self->data,
             _accepted => 1,
+            %{ $self->{stream_callbacks} },
         );
         $stream->_attach_to_loop($self->loop);
         1;
@@ -643,6 +661,7 @@ sub _shutdown ($self, $state, $retain_loop = 0) {
     if (defined($self->{unix}) && $self->{unlink_on_close}) {
         unlink $self->{unix} if -S $self->{unix};
     }
+    delete $self->{stream_callbacks};
     $self->{loop} = undef if !$retain_loop;
     return;
 }

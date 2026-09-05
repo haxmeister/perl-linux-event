@@ -196,8 +196,6 @@ sub for_class ($class) {
             croak "$class native consumer cannot be combined with on_messages()"
                 if $callback{on_messages};
         } elsif ($option->{message_batch_size}) {
-            croak "$class enables message_batch_size but does not define on_messages()"
-                if !$callback{on_messages};
             croak "$class cannot define both on_message() and on_messages()"
                 if $callback{on_message};
         } else {

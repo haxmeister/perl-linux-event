@@ -35,6 +35,30 @@ les_store_optional_cb(SV *cb, const char *name)
     return les_store_cb(cb, name);
 }
 
+int
+les_descriptor_input_kind(const les_descriptor_t *descriptor)
+{
+    if (!descriptor)
+        return LES_CALLBACK_NONE;
+    if (descriptor->read_mode == LES_READ_DELIVER)
+        return LES_CALLBACK_DATA;
+    return descriptor->message_batch_size
+        ? LES_CALLBACK_MESSAGES : LES_CALLBACK_MESSAGE;
+}
+
+SV *
+les_descriptor_input_cb(const les_descriptor_t *descriptor)
+{
+    int kind = les_descriptor_input_kind(descriptor);
+    if (kind == LES_CALLBACK_DATA)
+        return descriptor->deliver_cb;
+    if (kind == LES_CALLBACK_MESSAGES)
+        return descriptor->message_batch_cb;
+    if (kind == LES_CALLBACK_MESSAGE)
+        return descriptor->message_cb;
+    return NULL;
+}
+
 SV *
 les_state_stats_snapshot(pTHX_ les_xsstate_t *st)
 {
@@ -106,6 +130,10 @@ les_state_destroy(pTHX_ les_xsstate_t *st)
     les_consumer_destroy(aTHX_ st);
     if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
     if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
+    if (st->input_cb && st->input_cb != st->instance_input_cb)
+        SvREFCNT_dec(st->input_cb);
+    if (st->instance_input_cb) SvREFCNT_dec(st->instance_input_cb);
+    if (st->drain_cb) SvREFCNT_dec(st->drain_cb);
     if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
     free(st->read_buffer);
     free(st->input_buffer);

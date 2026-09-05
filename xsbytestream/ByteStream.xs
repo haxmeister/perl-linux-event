@@ -227,12 +227,14 @@ MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream::State
 PROTOTYPES: DISABLE
 
 SV *
-_new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
+_new_validated(CLASS, object, read_fd, write_fd, descriptor_obj, input_cb = &PL_sv_undef, drain_cb = &PL_sv_undef)
     const char *CLASS
     SV *object
     int read_fd
     int write_fd
     SV *descriptor_obj
+    SV *input_cb
+    SV *drain_cb
   PREINIT:
     les_xsstate_t *st;
     les_descriptor_t *descriptor;
@@ -252,12 +254,32 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
     st->descriptor = descriptor;
     st->descriptor_sv = newSVsv(descriptor_obj);
     st->stream_sv = newSVsv(object);
+    st->instance_input_kind = input_cb && SvOK(input_cb)
+        ? les_descriptor_input_kind(descriptor) : LES_CALLBACK_NONE;
+    st->has_instance_drain_cb = drain_cb && SvOK(drain_cb);
+    if (st->instance_input_kind) {
+        st->instance_input_cb = les_store_cb(input_cb,
+            "ordered-byte input callback");
+        st->input_cb = st->instance_input_cb;
+    } else {
+        SV *descriptor_cb = les_descriptor_input_cb(descriptor);
+        if (descriptor_cb)
+            st->input_cb = SvREFCNT_inc_simple_NN(descriptor_cb);
+    }
+    st->drain_cb = st->has_instance_drain_cb
+        ? les_store_cb(drain_cb, "on_drain callback")
+        : descriptor->drain_cb
+            ? SvREFCNT_inc_simple_NN(descriptor->drain_cb) : NULL;
 
     if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER) {
         st->read_buffer = (char *)malloc(descriptor->read_size);
         if (!st->read_buffer) {
             SvREFCNT_dec(st->descriptor_sv);
             SvREFCNT_dec(st->stream_sv);
+            if (st->input_cb && st->input_cb != st->instance_input_cb)
+                SvREFCNT_dec(st->input_cb);
+            if (st->instance_input_cb) SvREFCNT_dec(st->instance_input_cb);
+            if (st->drain_cb) SvREFCNT_dec(st->drain_cb);
             free(st);
             croak("malloc ordered-byte read buffer failed");
         }
@@ -266,6 +288,10 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
         const char *consumer_name = descriptor->consumer_ops->name;
         SvREFCNT_dec(st->descriptor_sv);
         SvREFCNT_dec(st->stream_sv);
+        if (st->input_cb && st->input_cb != st->instance_input_cb)
+            SvREFCNT_dec(st->input_cb);
+        if (st->instance_input_cb) SvREFCNT_dec(st->instance_input_cb);
+        if (st->drain_cb) SvREFCNT_dec(st->drain_cb);
         free(st->read_buffer);
         free(st);
         croak("native consumer '%s' failed to create context", consumer_name);
