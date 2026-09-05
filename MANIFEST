@@ -22,6 +22,9 @@ bench/run-async-consumer-lifetime-bench.pl
 bench/run-callback-batching-fairness.pl
 bench/run-callback-batching-microbench.pl
 bench/run-callback-ceiling.pl
+bench/run-cached-closure-dispatch-bench.pl
+bench/run-cached-closure-raw-dispatch-bench.pl
+bench/run-callback-scope-microbench.pl
 bench/run-connect-microbench.pl
 bench/run-datagram-microbench.pl
 bench/run-framer-send-bench.pl
@@ -46,6 +49,8 @@ bench/STREAM-COMPETITOR-PLAN.md
 Changes
 CONTRIBUTING.md
 docs/ARCHITECTURE.md
+docs/CACHED-CLOSURE-DISPATCH-EXPERIMENT.md
+docs/CACHED-CLOSURE-RAW-DISPATCH-EXPERIMENT.md
 docs/CHOOSING-A-FRAMER.md
 docs/CORE.md
 docs/DEVELOPMENT-HISTORY.md
@@ -249,6 +254,10 @@ t/stream-61-teardown-exceptions.t
 t/stream-62-consumer-host-lifetime.t
 t/stream-63-construction-failure.t
 t/stream-64-transition-consumer-flush.t
+t/stream-65-cached-closure-dispatch.t
+t/stream-66-cached-closure-benchmark-smoke.t
+t/stream-67-cached-closure-raw-dispatch.t
+t/stream-68-cached-closure-raw-benchmark-smoke.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t

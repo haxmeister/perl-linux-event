@@ -202,7 +202,8 @@ sub _watch_write_terminal_xs_cb ($state) {
     $self->_on_write_terminal_ready;
 }
 
-sub _require_read_sink ($descriptor, $readable, $raw_error, $framed_error) {
+sub _require_read_sink ($descriptor, $instance_message_cb, $readable,
+    $raw_error, $framed_error) {
     return if !$readable;
     if (!$descriptor->{framer}) {
         croak $raw_error if !$descriptor->{callbacks}{on_data};
@@ -211,6 +212,7 @@ sub _require_read_sink ($descriptor, $readable, $raw_error, $framed_error) {
     croak $framed_error
         if !$descriptor->{consumer}
         && !$descriptor->{options}{message_batch_size}
+        && !$instance_message_cb
         && !$descriptor->{callbacks}{on_message};
     return;
 }
@@ -227,6 +229,9 @@ sub new ($class, %opt) {
     my $pending = delete($opt{_pending}) // 0;
     my $data = delete $opt{data};
     my $transport = delete $opt{_transport};
+    my $message_cb = delete $opt{on_message};
+    croak 'new(): on_message must be a coderef'
+        if defined($message_cb) && ref($message_cb) ne 'CODE';
     my %timeout_override;
     for my $name (qw(idle_timeout read_timeout write_timeout)) {
         $timeout_override{$name} = _timeout_value('new():', $name,
@@ -254,6 +259,12 @@ sub new ($class, %opt) {
         && (!ref($transport) || !$transport->can('_stream_transport_bind'));
 
     my $descriptor = Linux::Event::_ByteStream::Descriptor::for_class($class);
+    croak 'new(): on_message requires a framed ordered-byte class'
+        if $message_cb && !$descriptor->{framer};
+    croak 'new(): on_message cannot be combined with a native consumer'
+        if $message_cb && $descriptor->{consumer};
+    croak 'new(): on_message cannot be combined with message_batch_size'
+        if $message_cb && $descriptor->{options}{message_batch_size};
     my %timeout = map {
         $_ => exists($timeout_override{$_})
             ? $timeout_override{$_} : $descriptor->{options}{$_}
@@ -268,6 +279,7 @@ sub new ($class, %opt) {
         read_watcher => undef,
         write_watcher => undef,
         data        => $data,
+        _instance_message_cb => $message_cb,
         transport   => $transport,
         xs_state    => undef,
         read_paused => 0,
@@ -333,6 +345,7 @@ sub _prepare_handles ($self) {
     my $write_fd = defined($write_fh) ? fileno($write_fh) : -1;
     _require_read_sink(
         $descriptor,
+        $self->{_instance_message_cb},
         $read_fd >= 0,
         'readable raw Stream requires on_data callback',
         'readable framed Stream requires on_message or a native consumer',
@@ -345,8 +358,12 @@ sub _prepare_handles ($self) {
         $read_fd,
         $write_fd,
         $descriptor->{native},
+        $self->{_instance_message_cb},
     );
     $self->{xs_state} = $xs_state;
+    $self->{_has_instance_message_cb} = 1
+        if $self->{_instance_message_cb};
+    delete $self->{_instance_message_cb};
 
     my $initial_interest = 0x01;
     my $transport = $self->{transport};
@@ -927,6 +944,7 @@ sub transition_to ($self, $class, %opt) {
         if $source_ops != $target_ops;
     _require_read_sink(
         $descriptor,
+        $self->{_has_instance_message_cb},
         $self->{read_capable} && !$self->{read_closed} && !$self->{read_eof},
         'transition_to(): target readable raw Stream has no on_data callback',
         'transition_to(): target readable framed Stream has no message sink',
@@ -1194,6 +1212,7 @@ sub _fail ($self, $error) {
 sub _close_now ($self, $close_fh) {
     return if $self->{closed};
     $self->{closed} = 1;
+    delete $self->{_instance_message_cb};
     my $failure;
     _teardown_step(\$failure, sub { $self->_cancel_pending });
     $self->{preconnect_output} = [];

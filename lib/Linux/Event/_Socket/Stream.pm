@@ -49,6 +49,17 @@ sub _socket_setup ($fh, $descriptor, $override, $peer) {
     return ($local, $peer, \%policy);
 }
 
+sub _raw_instance_callback ($class, $method, $callback) {
+    return undef if !defined $callback;
+    croak "$method(): on_data must be a coderef" if ref($callback) ne 'CODE';
+    my $descriptor = Linux::Event::_ByteStream::Descriptor::for_class($class);
+    croak "$method(): on_data requires a raw ordered-byte class"
+        if $descriptor->{framer};
+    croak "$method(): on_data experiment requires a class on_data method"
+        if !$descriptor->{callbacks}{on_data};
+    return $callback;
+}
+
 sub new ($class, %opt) {
     croak 'new(): must be called as a class method' if ref $class;
     my $loop = delete $opt{loop};
@@ -63,6 +74,9 @@ sub new ($class, %opt) {
     my $peer = delete $opt{peer};
     my $tls_role = delete $opt{tls_role};
     my $transport = delete $opt{transport};
+    my $data_cb = _raw_instance_callback(
+        $class, 'new', delete $opt{on_data},
+    );
     croak 'new(): transport must be an object implementing _stream_transport_bind()'
         if defined($transport)
         && (!blessed($transport) || !$transport->can('_stream_transport_bind'));
@@ -89,6 +103,7 @@ sub new ($class, %opt) {
         croak 'new(): tls_role requires a Socket subclass declaring TLS';
     }
     my $self = $class->SUPER::new(fh => $fh, _transport => $transport, %opt);
+    $self->{xs_state}->_set_instance_deliver_callback($data_cb) if $data_cb;
     $self->{socket_descriptor} = $socket_descriptor;
     $self->{socket_policy} = $policy;
     $self->{local} = $local;
@@ -111,13 +126,16 @@ sub new ($class, %opt) {
 sub connect ($class, %opt) {
     croak 'connect(): must be called as a class method' if ref $class;
     my %stream;
-    for my $name (qw(loop data transport idle_timeout read_timeout write_timeout deadline)) {
+    for my $name (qw(loop data transport on_data on_message idle_timeout read_timeout write_timeout deadline)) {
         $stream{$name} = delete $opt{$name} if exists $opt{$name};
     }
     my $loop = delete $stream{loop};
     croak 'connect(): loop must be an object implementing add() and watch_fd()'
         if defined($loop) && (!ref($loop) || !$loop->can('add')
             || !$loop->can('watch_fd'));
+    my $data_cb = _raw_instance_callback(
+        $class, 'connect', delete $stream{on_data},
+    );
     my $override = Linux::Event::_SocketConfig::extract('connect', \%opt);
     my $socket_descriptor = Linux::Event::_Socket::Descriptor::for_class($class);
     my %policy = map {
@@ -139,6 +157,7 @@ sub connect ($class, %opt) {
     my $self = $class->SUPER::new(
         %stream, _pending => 1, _transport => $transport,
     );
+    $self->{_instance_data_cb} = $data_cb if $data_cb;
     $self->{socket_descriptor} = $socket_descriptor;
     $self->{socket_policy} = \%policy;
     $self->{preconnect_output} = [];
@@ -181,6 +200,7 @@ sub _attach_pending ($self, $loop) {
 }
 
 sub _cancel_pending ($self) {
+    delete $self->{_instance_data_cb};
     if (my $connection = delete $self->{connection}) { $connection->cancel }
     return;
 }
@@ -195,7 +215,14 @@ sub _connect_succeeded ($self, $fh) {
         if defined $packed_peer;
     $self->{read_fh} = $fh;
     $self->{write_fh} = $fh;
-    my $prepared = eval { $self->_prepare_handles; $self->_register_handles; 1 };
+    my $prepared = eval {
+        $self->_prepare_handles;
+        if (my $data_cb = delete $self->{_instance_data_cb}) {
+            $self->{xs_state}->_set_instance_deliver_callback($data_cb);
+        }
+        $self->_register_handles;
+        1;
+    };
     if (!$prepared) {
         $self->_fail(Linux::Event::Error->new(
             type => 'connect', operation => 'attach', message => $@,

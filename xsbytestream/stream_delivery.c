@@ -48,7 +48,7 @@ les_emit_message(pTHX_ les_xsstate_t *st, SV *message)
     }
     if (!st->descriptor->message_batch_size) {
         LES_STAT(st, message_callback_calls)++;
-        les_call_two(aTHX_ st->descriptor->message_cb, st->stream_sv, message);
+        les_call_two(aTHX_ st->message_cb, st->stream_sv, message);
         return;
     }
 
