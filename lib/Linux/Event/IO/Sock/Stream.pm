@@ -18,28 +18,41 @@ Linux::Event::IO::Sock::Stream - asynchronous Linux C<SOCK_STREAM> connections
 =head1 SYNOPSIS
 
   use v5.36;
-  use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
   use Linux::Event::Loop;
+  use Linux::Event::IO::Sock::Listener;
   use Linux::Event::IO::Sock::Stream;
 
-  socketpair(my $stream_fh, my $peer_fh,
-      AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
-
   my $loop = Linux::Event::Loop->new;
-  my $prefix = 'received';
-  my $stream = Linux::Event::IO::Sock::Stream->new(
-      loop    => $loop,
-      fh      => $stream_fh,
-      on_data => sub ($stream, $bytes) {
-          say "$prefix: $bytes";
-          $stream->close;
-          $loop->stop;
+  my $server = Linux::Event::IO::Sock::Listener->new(
+      loop         => $loop,
+      stream_class => 'Linux::Event::IO::Sock::Stream',
+      host         => '127.0.0.1',
+      port         => 0,
+      on_data      => sub ($stream, $bytes) {
+          $stream->write($bytes);
       },
   );
 
-  syswrite($peer_fh, 'hello') == 5 or die "syswrite: $!";
+  my $prefix = 'received';
+  my $client = Linux::Event::IO::Sock::Stream->connect(
+      loop    => $loop,
+      host    => '127.0.0.1',
+      port    => $server->port,
+      on_ready => sub ($stream) {
+          $stream->write('hello');
+      },
+      on_data => sub ($stream, $bytes) {
+          say "$prefix: $bytes";
+          $stream->close;
+          $server->close;
+          $loop->stop;
+      },
+      on_error => sub ($stream, $error) {
+          die "connection failed: $error\n";
+      },
+  );
+
   $loop->run;
-  close $peer_fh;
 
 =head1 DESCRIPTION
 
