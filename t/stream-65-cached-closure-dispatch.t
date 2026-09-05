@@ -40,6 +40,12 @@ use Linux::Event::IO::Sock::Stream;
     sub on_data ($stream, $bytes) { return }
 }
 
+{
+    package T::CachedClosure::PendingPipe;
+    use parent 'Linux::Event::IO::Pipe';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
 sub socket_pair () {
     socketpair(my $stream_fh, my $peer_fh,
         AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
@@ -126,5 +132,20 @@ like($error, qr/on_message must be a coderef/,
 ok(!$made, 'raw ordered-byte class rejects on_message override');
 like($error, qr/on_message requires a framed ordered-byte class/,
     'raw callback-mode mismatch has a clear diagnostic');
+
+my $pending_capture = 'pending lexical';
+my $pending_callback = sub { return $pending_capture };
+my $weak_pending_callback = $pending_callback;
+weaken($weak_pending_callback);
+my $pending = T::CachedClosure::PendingPipe->new(
+    _pending   => 1,
+    on_message => $pending_callback,
+);
+undef $pending_callback;
+ok(defined($weak_pending_callback),
+    'pending object retains callback until native state exists');
+$pending->close;
+ok(!defined($weak_pending_callback),
+    'closing pending object releases not-yet-native callback');
 
 done_testing;

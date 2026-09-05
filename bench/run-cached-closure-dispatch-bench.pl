@@ -409,7 +409,7 @@ sub write_all ($fh, $bytes) {
 sub current_rss_kib () {
     open my $status, '<', '/proc/self/status' or return 0;
     while (my $line = <$status>) {
-        if ($line =~ /\AVmRSS:\s+(\d+)\s+kB\z/) {
+        if ($line =~ /\AVmRSS:\s+(\d+)\s+kB\s*\z/) {
             close $status;
             return 0 + $1;
         }

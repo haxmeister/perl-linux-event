@@ -1212,6 +1212,7 @@ sub _fail ($self, $error) {
 sub _close_now ($self, $close_fh) {
     return if $self->{closed};
     $self->{closed} = 1;
+    delete $self->{_instance_message_cb};
     my $failure;
     _teardown_step(\$failure, sub { $self->_cancel_pending });
     $self->{preconnect_output} = [];
