@@ -76,11 +76,16 @@ Linux::Event::Framer - native framing for ordered-byte I/O
 
 =head1 SYNOPSIS
 
+  use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
+
   package LineSocket;
   use parent 'Linux::Event::IO::Sock::Stream';
   use Linux::Event::Framer 'Delimiter', "\n";
 
   package main;
+  socketpair(my $socket, my $peer, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+      or die "socketpair: $!";
+
   my $stream = LineSocket->new(
       fh => $socket,
       on_message => sub ($stream, $message) {

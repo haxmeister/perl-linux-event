@@ -59,6 +59,9 @@ required `on_data` callback is supplied to the constructor. A subclass remains
 necessary when declaring a framer, native consumer, TLS, `stream_options()`, or
 `socket_options()` because those are cached class policy.
 
+Framer selection, tuning, transport, and socket behavior remain class-level
+policy even when the effective application callback is constructor-supplied.
+
 Raw, framed, batched, and native-consumer modes remain explicit. `on_data`
 cannot be used on a framed class; `on_message` and `on_messages` cannot be used
 on a raw class; `on_messages` requires `message_batch_size`; and Perl message
