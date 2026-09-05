@@ -39,30 +39,32 @@ Linux::Event::IO::Pipe - asynchronous ordered-byte I/O for pipes and FIFOs
 
 =head1 SYNOPSIS
 
-Raw Pipe callbacks do not require a subclass:
-
-  pipe(my $read, my $write) or die "pipe: $!";
-
-  my $pipe = $loop->add(Linux::Event::IO::Pipe->new(
-      read_fh => $read,
-      on_data => sub ($pipe, $bytes) {
-          say "received: $bytes";
-      },
-  ));
-
-A subclass remains useful for reusable framing or other class policy:
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::IO::Pipe;
 
   package LinePipe;
   use parent 'Linux::Event::IO::Pipe';
   use Linux::Event::Framer 'Delimiter', "\n";
 
   package main;
-  my $lines = LinePipe->new(
-      read_fh => $read,
+  pipe(my $read, my $write) or die "pipe: $!";
+
+  my $loop = Linux::Event::Loop->new;
+  my $prefix = 'received';
+  my $pipe = LinePipe->new(
+      loop       => $loop,
+      read_fh    => $read,
       on_message => sub ($pipe, $line) {
-          say "line: $line";
+          say "$prefix: $line";
+          $pipe->close;
+          $loop->stop;
       },
   );
+
+  syswrite($write, "hello\n") == 6 or die "syswrite: $!";
+  $loop->run;
+  close $write;
 
 =head1 DESCRIPTION
 
@@ -97,28 +99,24 @@ Ordered-byte deadline overrides C<idle_timeout>, C<read_timeout>, and
 C<write_timeout>, plus an explicit C<deadline>, are also accepted. See
 F<docs/ORDERED-BYTE-DEADLINES.md>.
 
-=head1 CALLBACKS
+=head1 INPUT CALLBACKS
 
-A readable raw Pipe requires an effective C<on_data($pipe, $bytes)> callback.
-It may be supplied as a class method or as C<on_data =E<gt> sub { ... }> to
-C<new>.
+A readable unframed subclass defines:
 
-With L<Linux::Event::Framer>, a framed Pipe instead requires an effective
-C<on_message($pipe, $message)> callback, or
-C<on_messages($pipe, $messages)> when C<message_batch_size> is enabled.
-C<$messages> is an array reference. Constructor callbacks may provide either
-sink even when the class has no same-named method.
+  sub on_data ($pipe, $bytes) { ... }
 
-Lifecycle constructor callbacks use the same first-class model. Supported
-names include C<on_ready>, C<on_transport_ready>, C<on_drain>, C<on_eof>,
-C<on_error>, and C<on_close>. C<on_error> receives
-C<($pipe, $error)>; the others receive the Pipe object.
+With L<Linux::Event::Framer>, a framed subclass normally defines:
 
-A constructor callback overrides the corresponding class method for that Pipe
-and retains ordinary Perl lexical scope. Input callbacks are cached in the same
-native ordered-byte state as method callbacks rather than looked up for each
-read or message. Lifecycle callbacks are also resolved once during
-construction.
+  sub on_message ($pipe, $message) { ... }
+
+or C<on_messages($pipe, $messages)> when C<message_batch_size> is enabled.
+Optional lifecycle callbacks are C<on_drain($pipe)>, C<on_eof($pipe)>,
+C<on_error($pipe, $error)>, and C<on_close($pipe)>.
+
+Each callback may instead be supplied as a coderef to C<new>. Constructor
+callbacks override class methods for that Pipe and retain ordinary Perl lexical
+scope. Input callbacks are cached in the same native ordered-byte state as
+method callbacks rather than looked up for each read or message.
 
 =head1 OUTPUT AND LIFECYCLE
 
@@ -144,14 +142,11 @@ values. These are cached once per concrete subclass rather than parsed for each
 instance.
 
 Framing is valid for pipes because framing describes ordered application bytes,
-not sockets. Framing and C<stream_options> remain class-level policy; constructor
-callbacks select application behavior for an individual Pipe. See
-L<Linux::Event::Framer> and F<docs/FRAMING.md>.
+not sockets. See L<Linux::Event::Framer> and F<docs/FRAMING.md>.
 
 =head1 SEE ALSO
 
 L<Linux::Event::IO::TTY>, L<Linux::Event::IO::Sock::Stream>,
-L<Linux::Event::Loop>, F<docs/ORDERED-BYTE-IO-DESIGN.md>,
-F<docs/FIRST-CLASS-STREAM-CALLBACKS.md>.
+L<Linux::Event::Loop>, F<docs/ORDERED-BYTE-IO-DESIGN.md>.
 
 =cut

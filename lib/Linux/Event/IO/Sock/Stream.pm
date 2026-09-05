@@ -17,37 +17,29 @@ Linux::Event::IO::Sock::Stream - asynchronous Linux C<SOCK_STREAM> connections
 
 =head1 SYNOPSIS
 
-Method callbacks remain supported:
+  use v5.36;
+  use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
+  use Linux::Event::Loop;
+  use Linux::Event::IO::Sock::Stream;
 
-  package EchoConnection;
-  use parent 'Linux::Event::IO::Sock::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
+  socketpair(my $stream_fh, my $peer_fh,
+      AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
 
-  sub on_ready ($stream) {
-      $stream->send('hello');
-  }
-
-  sub on_message ($stream, $message) {
-      say $message;
-      $stream->close;
-  }
-
-  package main;
-  my $connection = $loop->add(EchoConnection->connect(
-      host => '127.0.0.1',
-      port => 9999,
-  ));
-
-Callbacks may instead be supplied at construction:
-
-  my $stream = Linux::Event::IO::Sock::Stream->connect(
-      loop => $loop,
-      host => '127.0.0.1',
-      port => 9999,
+  my $loop = Linux::Event::Loop->new;
+  my $prefix = 'received';
+  my $stream = Linux::Event::IO::Sock::Stream->new(
+      loop    => $loop,
+      fh      => $stream_fh,
       on_data => sub ($stream, $bytes) {
-          process_bytes($bytes);
+          say "$prefix: $bytes";
+          $stream->close;
+          $loop->stop;
       },
   );
+
+  syswrite($peer_fh, 'hello') == 5 or die "syswrite: $!";
+  $loop->run;
+  close $peer_fh;
 
 =head1 DESCRIPTION
 
@@ -57,11 +49,10 @@ use the same class; address family is connection configuration rather than a
 separate type hierarchy.
 
 The class combines the common ordered-byte engine with socket acquisition,
-addresses, socket policy, kernel half-close semantics, and optional TLS.
-Applications may use the public class directly for raw byte I/O or subclass it
-for reusable class policy such as framing, stream/socket options, TLS, or method
-callback defaults. Constructor callbacks are first-class and provide ordinary
-Perl lexical scope without requiring inheritance just for callback state.
+addresses, socket policy, kernel half-close semantics, and optional TLS. A
+concrete protocol subclass supplies named callbacks and, when appropriate, a
+native framer. Constructor callbacks are an equally supported way to provide
+application behavior with normal Perl lexical scope.
 
 =head1 OUTBOUND CONNECTIONS
 
@@ -109,87 +100,34 @@ Callbacks may be methods, constructor coderefs, or a mixture:
   );
 
 A constructor callback overrides the corresponding class method for that
-object. C<connect> accepts the same callback options as C<new>.
+object. Supported names and signatures are C<on_data($stream, $bytes)>,
+C<on_message($stream, $message)>, C<on_messages($stream, $messages)>,
+C<on_ready($stream)>, C<on_transport_ready($stream)>, C<on_drain($stream)>,
+C<on_eof($stream)>, C<on_error($stream, $error)>, and C<on_close($stream)>.
+C<connect> accepts the same callback options as C<new>.
 
-The callback surface and signatures are:
+C<on_ready($stream)> runs once when an outbound or accepted connection becomes
+application-ready. For TLS that means after handshake and verification, not
+merely after TCP connect. C<new(fh =E<gt> ...)> adopts a connection that is
+already ready and does not emit a later readiness callback.
 
-=over 4
+C<on_transport_ready($stream)> is the lower transport notification used by TLS
+or another native transport and runs immediately before C<on_ready>. Plain
+connections have no separate transport phase.
 
-=item * C<on_data($stream, $bytes)>
+A raw object requires C<on_data($stream, $bytes)> as a method or constructor
+callback. The public Stream leaf can therefore be constructed directly for raw
+I/O. A framed class uses L<Linux::Event::Framer> and requires C<on_message> or,
+with explicit batching, C<on_messages>; either may be supplied by the class or
+constructor.
 
-Raw ordered-byte delivery.
-
-=item * C<on_message($stream, $message)>
-
-Ordinary framed delivery.
-
-=item * C<on_messages($stream, $messages)>
-
-Batched framed delivery when C<message_batch_size> is enabled. C<$messages> is
-an array reference.
-
-=item * C<on_ready($stream)>
-
-Runs once when the connection is application-ready. For TLS that means after
-handshake and verification, not merely after TCP connect.
-
-=item * C<on_transport_ready($stream)>
-
-Observes transport readiness before application readiness.
-
-=item * C<on_drain($stream)>
-
-Runs when queued output falls through the configured low watermark after
-backpressure.
-
-=item * C<on_eof($stream)>
-
-Runs when the readable direction reaches EOF.
-
-=item * C<on_error($stream, $error)>
-
-Receives a L<Linux::Event::Error> for Stream failures.
-
-=item * C<on_close($stream)>
-
-Runs once when the complete Stream closes normally through the callback-aware
-lifecycle. C<detach> does not invoke it.
-
-=back
-
-A readable raw object requires an effective C<on_data> callback. It may come
-from a class method or constructor option. A framed class declared with
-L<Linux::Event::Framer> instead requires C<on_message>, or C<on_messages> when
-explicit message batching is enabled. Constructor callbacks may provide those
-sinks even when the class has no same-named method.
-
+Optional lifecycle callbacks include C<on_drain>, C<on_eof>, C<on_error>,
+C<on_close>, and C<on_transport_ready> for transport-specific observation.
 Method defaults are resolved into an immutable class descriptor. Constructor
 input callbacks are retained once in native Stream state, producing one
 effective cached CV with no event-time lookup or method-versus-coderef branch.
 Lifecycle callbacks are likewise resolved once during construction. Closing or
 detaching the Stream releases its retained constructor callbacks.
-
-=head1 CLASS POLICY VERSUS CALLBACKS
-
-Constructor callbacks configure application behavior for one object. Framing,
-C<stream_options>, C<socket_options>, C<configure_socket>, and TLS declarations
-remain class-level policy and therefore belong on a concrete subclass when they
-are needed.
-
-For example, a line protocol may use a class only to declare framing while
-supplying message handling as a closure:
-
-  package LineConnection;
-  use parent 'Linux::Event::IO::Sock::Stream';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  package main;
-  my $stream = LineConnection->new(
-      fh => $socket,
-      on_message => sub ($stream, $line) {
-          handle_line($line);
-      },
-  );
 
 =head1 FRAMING AND OUTPUT
 

@@ -12,6 +12,12 @@ Revision history for Linux-Event
     - Add lifecycle, transition, teardown, Listener propagation, and callback
       retention coverage plus permanent construction, raw-dispatch, and
       framed-dispatch regression benchmarks.
+    - Add a high-level Stream comparison harness for raw and delimiter-framed
+      Linux::Event, AnyEvent, UV, IO::Async, and Mojo adapters.
+    - Document callback signatures, mode validation, class-policy boundaries,
+      Listener template reuse, and cached-CV dispatch throughout public POD and
+      design documents. Compile every public POD SYNOPSIS and execute the Pipe
+      and connected-Stream callback examples during testing.
 
 0.111  2026-09-04
     - Complete the coherent private-core refactor behind the IO/Kernel public

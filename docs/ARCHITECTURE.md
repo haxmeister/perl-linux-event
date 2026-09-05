@@ -153,23 +153,15 @@ The engine owns:
 - in-place protocol transitions.
 
 One immutable descriptor is cached for each concrete subclass. It contains the
-resolved class-method callback CVs, tuning policy, framing definition, optional
-native consumer definition, and native descriptor object. Per-instance state
-contains changing transport, fd, parser, queue, deadline, and lifecycle data
-plus any constructor-supplied effective callback CVs.
+resolved named callback CVs, tuning policy, framing definition, optional native
+consumer definition, and native descriptor object. Per-instance state contains
+changing transport, fd, parser, queue, deadline, and lifecycle data plus any
+constructor-supplied effective callback CVs.
 
-Class policy remains shared and resolved once. Constructor callbacks are
-validated and installed once per object. Neither callback-origin selection nor
-method lookup is added to each readiness event or semantic input delivery.
-
-Subclassing is therefore a mechanism for reusable class policy and method
-defaults, not a requirement for callback lexical scope. Raw ordered-byte public
-leaves may be used directly with constructor callbacks. Framing,
-`stream_options()`, stream-socket policy, TLS declarations, and native consumers
-remain class-level policy where applicable.
-
-See `FIRST-CLASS-STREAM-CALLBACKS.md` for the public callback model and
-`ORDERED-BYTE-IO-DESIGN.md` for the complete shared-engine contract.
+This preserves the performance reason Linux::Event uses class-defined policy:
+repeated method/configuration lookup is not added to each readiness event. A
+constructor closure replaces the corresponding class CV once in per-object
+state and then uses the same direct native invocation path.
 
 ### Native implementation
 
@@ -225,9 +217,6 @@ The native transition validates the new descriptor before callbacks are
 allowed to continue. Buffered unread input is then interpreted using the new
 parser. The transition cannot change the underlying resource category or
 native consumer provider.
-
-Constructor input callbacks and lifecycle overrides survive compatible
-transitions. Class-derived callbacks follow the target class descriptor.
 
 A connected stream socket therefore remains a connected stream socket across a
 protocol transition; only its application protocol/framing class changes.
@@ -292,11 +281,6 @@ The listener owns:
 Accepted descriptors are created with `SOCK_NONBLOCK | SOCK_CLOEXEC`. The
 listener constructs the configured `IO::Sock::Stream` subclass directly; it
 does not create a temporary accepted-socket watcher first.
-
-Ordered-byte constructor callbacks supplied to the Listener are templates for
-accepted Streams. The Listener reuses the same callback CVs when constructing
-those Streams; it does not create wrapper closures per accepted connection.
-Listener `on_accept` and Listener error policy remain Listener subclass methods.
 
 TLS server policy is validated before accepting traffic and each accepted
 connection receives independent OpenSSL connection state.
@@ -401,10 +385,8 @@ resource types even though they share the ordered-byte engine.
 The architecture is intentionally constrained by measured performance:
 
 - no public generic dispatcher in the readiness hot path;
-- no callback destination lookup at each semantic delivery boundary;
-- class-method callback defaults are resolved and cached once per concrete type;
-- constructor callback CVs are validated and retained once per object;
-- no closure allocation or method-versus-coderef branch in steady-state input;
+- no constructor closure required for each semantic callback;
+- named subclass CVs are cached once per concrete type;
 - no fd-to-Perl-hash lookup after `epoll_wait()`;
 - framing and queue work stays native until semantic delivery;
 - the plain transport uses direct syscalls;

@@ -30,31 +30,26 @@ Linux::Event::IO::TTY - asynchronous ordered-byte I/O for terminals and PTYs
 
 =head1 SYNOPSIS
 
-A raw terminal callback can be supplied directly:
-
-  my $console = $loop->add(Linux::Event::IO::TTY->new(
-      read_fh  => \*STDIN,
-      write_fh => \*STDOUT,
-      on_data  => sub ($tty, $bytes) {
-          $tty->write("You typed: $bytes");
-      },
-  ));
-
-For framed line input, use a subclass to declare the framing policy while the
-callback itself may still be a closure:
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::IO::TTY;
 
   package Console;
   use parent 'Linux::Event::IO::TTY';
   use Linux::Event::Framer 'Delimiter', "\n";
 
+  sub on_message ($tty, $line) {
+      $tty->write("You typed: $line\n");
+  }
+
   package main;
+  my $loop = Linux::Event::Loop->new;
   my $console = Console->new(
+      loop     => $loop,
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
-      on_message => sub ($tty, $line) {
-          $tty->write("You typed: $line\n");
-      },
   );
+  $loop->run;
 
 =head1 DESCRIPTION
 
@@ -83,12 +78,9 @@ C<deadline> options use the common ordered-byte deadline model.
 
 =head1 CALLBACKS AND FRAMING
 
-A readable raw TTY requires an effective C<on_data($tty, $bytes)> callback.
-It may be a class method or a constructor coderef. A TTY subclass that declares
-L<Linux::Event::Framer> instead requires an effective
-C<on_message($tty, $message)> callback, or
-C<on_messages($tty, $messages)> with explicit message batching. Constructor
-callbacks may provide those sinks even when the class has no same-named method.
+A raw readable subclass defines C<on_data($tty, $bytes)>. A subclass that uses
+L<Linux::Event::Framer> defines C<on_message($tty, $message)> or, with explicit
+batching, C<on_messages($tty, $messages)>.
 
 Delimiter framing is especially useful for line-oriented interactive input:
 
@@ -98,15 +90,13 @@ Framing operates on the bytes Linux supplies after the terminal's own line
 discipline. Linux::Event does not change canonical/raw terminal mode merely
 because a framer is declared.
 
-Lifecycle constructor callbacks use C<on_ready>, C<on_transport_ready>,
-C<on_drain>, C<on_eof>, C<on_error>, and C<on_close>. C<on_error> receives
-C<($tty, $error)>; the others receive the TTY object.
+Optional lifecycle callbacks are C<on_drain($tty)>, C<on_eof($tty)>,
+C<on_error($tty, $error)>, and C<on_close($tty)>.
 
-A constructor callback overrides the corresponding class method for that TTY
-and can capture normal Perl lexical state. Linux::Event resolves the effective
-callback once; it does not select between a method and closure for each input
-event. Framing and C<stream_options> remain class policy rather than becoming
-per-instance configuration.
+The same callback names may be passed as coderefs to C<new>. A constructor
+callback overrides the corresponding class method for that TTY and can capture
+normal Perl lexical state. Linux::Event resolves the effective callback once;
+it does not select between a method and closure for each input event.
 
 =head1 OUTPUT AND LIFECYCLE
 
@@ -131,7 +121,6 @@ lookup.
 =head1 SEE ALSO
 
 L<Linux::Event::IO::Pipe>, L<Linux::Event::IO::Sock::Stream>,
-L<Linux::Event::Framer>, F<docs/ORDERED-BYTE-IO-DESIGN.md>,
-F<docs/FIRST-CLASS-STREAM-CALLBACKS.md>.
+L<Linux::Event::Framer>, F<docs/ORDERED-BYTE-IO-DESIGN.md>.
 
 =cut

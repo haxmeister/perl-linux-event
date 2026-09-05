@@ -1,7 +1,7 @@
 # Stream socket listener design
 
 `Linux::Event::IO::Sock::Listener` owns a listening Linux `SOCK_STREAM`
-socket and constructs one configured `Linux::Event::IO::Sock::Stream` class or
+socket and constructs one configured `Linux::Event::IO::Sock::Stream`
 subclass for every accepted connection.
 
 The listener remains a distinct public leaf because its API is accept-oriented.
@@ -10,30 +10,22 @@ ordered-byte connection.
 
 ## Public API
 
-A raw server that needs no class-level Stream policy can use the public Stream
-class directly and provide accepted-Stream callbacks to the Listener:
-
 ```perl
 my $server_state = { connections => {} };
 
 my $listener = Linux::Event::IO::Sock::Listener->new(
     loop                => $loop,
-    stream_class        => 'Linux::Event::IO::Sock::Stream',
+    stream_class        => 'ServerConnection',
     host                => '0.0.0.0',
     port                => 9999,
     backlog             => 4096,
     max_accept_per_tick => 256,
     edge_triggered      => 0,
     data                => $server_state,
-    on_data             => sub ($stream, $bytes) {
-        $stream->write($bytes);
-    },
 );
 ```
 
-Use an application Stream subclass when accepted connections need reusable
-class-level policy such as framing, tuning, socket options, TLS, native
-consumers, or method defaults:
+Detached construction is equivalent:
 
 ```perl
 my $listener = Linux::Event::IO::Sock::Listener->new(
@@ -45,16 +37,32 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
 $loop->add($listener);
 ```
 
-`stream_class` names the completed stream-socket class constructed for each
-accepted descriptor. It may be `Linux::Event::IO::Sock::Stream` itself or a
-subclass. The listener's `data` value is passed to each accepted object
-initially; `on_accept` can replace that connection's data if desired.
+`stream_class` names the completed stream-socket subclass constructed for each
+accepted descriptor. The listener's `data` value is passed to each accepted
+object initially; `on_accept` can replace that connection's data if desired.
 
-The Listener constructor accepts the ordered-byte callback names as templates
-for accepted Streams. One supplied CV is retained and reused for every accepted
-Stream. The Listener does not manufacture a new closure per connection. These
-constructor options configure accepted Streams; the Listener's own `on_accept`
-and `on_error` remain Listener subclass methods.
+The Listener constructor also accepts the ordered-byte callback names as
+templates for accepted Streams. For example:
+
+```perl
+my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop => $loop,
+    stream_class => 'Linux::Event::IO::Sock::Stream',
+    host => '127.0.0.1',
+    port => 9999,
+    on_data => sub ($stream, $bytes) {
+        $stream->write($bytes);
+    },
+);
+```
+
+The template names are `on_data`, `on_message`, `on_messages`, `on_ready`,
+`on_transport_ready`, `on_drain`, `on_eof`, `on_error`, and `on_close`, with
+the signatures documented in `FIRST-CLASS-STREAM-CALLBACKS.md`. One supplied
+CV is retained and reused for every accepted Stream. The Listener does not
+manufacture a new closure per connection. These constructor options configure
+accepted Streams; the Listener's own `on_accept` and `on_error` remain Listener
+subclass methods.
 
 ## Socket type and address family
 
@@ -140,7 +148,7 @@ turn. Zero means drain until EAGAIN and is required with
 `edge_triggered => 1`.
 
 Each accepted descriptor is used immediately to construct the configured
-`IO::Sock::Stream` class and attach that object to the same Loop. Linux::Event
+`IO::Sock::Stream` subclass and attach that object to the same Loop. Linux::Event
 does not create a temporary accepted-descriptor registration first.
 
 ## on_accept
@@ -178,9 +186,8 @@ Applications that never inspect `peer()` avoid textual address conversion.
 
 ## Accepted connection policy
 
-Constructor callbacks configure accepted-Stream application behavior. Buffering,
-framing, backpressure, and established deadline policy remain class-level policy
-on `stream_class` through `stream_options()`. Socket-specific established policy
+Buffering, framing, backpressure, and established deadline policy belong to the
+`stream_class` through `stream_options()`. Socket-specific established policy
 belongs to that same class through `socket_options()`.
 
 Example TLS server connection:
@@ -205,8 +212,7 @@ sub socket_options ($class) {
 }
 ```
 
-The listener then names the completed class and may independently supply the
-accepted connection's callbacks:
+The listener then names the completed class:
 
 ```perl
 my $listener = Linux::Event::IO::Sock::Listener->new(
@@ -215,9 +221,6 @@ my $listener = Linux::Event::IO::Sock::Listener->new(
     host         => '0.0.0.0',
     port         => 9443,
     data         => $server_state,
-    on_data      => sub ($stream, $bytes) {
-        handle_plaintext($server_state, $stream, $bytes);
-    },
 );
 ```
 

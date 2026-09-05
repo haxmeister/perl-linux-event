@@ -747,6 +747,10 @@ Linux::Event::Kernel::Process - pidfd process lifecycle and asynchronous stdio
 
 =head1 SYNOPSIS
 
+  use v5.36;
+  use Linux::Event::Loop;
+  use Linux::Event::Kernel::Process;
+
   package Worker;
   use parent 'Linux::Event::Kernel::Process';
 
@@ -761,11 +765,13 @@ Linux::Event::Kernel::Process - pidfd process lifecycle and asynchronous stdio
   }
 
   package main;
-  my $worker = $loop->add(Worker->spawn(
-      command => ['/usr/bin/example', '--once'],
+  my $loop = Linux::Event::Loop->new;
+  my $worker = Worker->spawn(
+      loop    => $loop,
+      command => ['/usr/bin/printf', "hello\n"],
       stdout  => 'pipe',
-      stderr  => 'pipe',
-  ));
+  );
+  $loop->run;
 
 =head1 DESCRIPTION
 
