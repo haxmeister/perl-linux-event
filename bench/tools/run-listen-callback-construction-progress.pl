@@ -52,12 +52,11 @@ die "accepted-callbacks must contain subclass_method, shared_closure, "
 my %seen;
 die "accepted-callbacks must not contain duplicates\n"
     if grep { $seen{$_}++ } @styles;
-
 die "accepted-callbacks must include subclass_method for paired deltas\n"
-    if !$valid{subclass_method} || !grep { $_ eq 'subclass_method' } @styles;
+    if !grep { $_ eq 'subclass_method' } @styles;
 
-my $engine = "$Bin/../run-listen-microbench.pl";
-die "benchmark engine not found: $engine\n" if !-f $engine;
+my $engine = "$Bin/run-listen-callback-construction-row.pl";
+die "benchmark row runner not found: $engine\n" if !-f $engine;
 
 my $total_rows = @clients * $repeats * @styles;
 my $completed = 0;
@@ -79,12 +78,13 @@ for my $client_count (@clients) {
             @styles[$offset .. $#styles],
             @styles[0 .. $offset - 1],
         );
+
         for my $style (@order) {
             my $row_number = $completed + 1;
             printf "[%d/%d] START clients=%d repeat=%d callback=%s\n",
                 $row_number, $total_rows, $client_count, $repeat, $style;
 
-            my $row = run_engine_row(
+            my $row = run_row(
                 $style, $client_count, $repeat, $row_number, $total_rows,
             );
             push @raw, $row;
@@ -124,7 +124,7 @@ for my $row (@summary) {
 }
 say "Final JSON: $json_path";
 
-sub run_engine_row ($style, $client_count, $repeat, $row_number, $total) {
+sub run_row ($style, $client_count, $repeat, $row_number, $total) {
     my $dir = tempdir(CLEANUP => 1);
     my $row_json = "$dir/row.json";
     my $stdout_path = "$dir/stdout.txt";
@@ -146,13 +146,14 @@ sub run_engine_row ($style, $client_count, $repeat, $row_number, $total) {
         open STDOUT, '>', $stdout_path or die "open child stdout: $!\n";
         open STDERR, '>', $stderr_path or die "open child stderr: $!\n";
         exec @cmd;
-        die "exec benchmark engine: $!\n";
+        die "exec benchmark row runner: $!\n";
     }
 
     my $started = time;
     my $next_heartbeat = $started + $heartbeat;
     my $hard_limit = $timeout + 20;
     my $status;
+
     while (1) {
         my $waited = waitpid($pid, WNOHANG);
         if ($waited == $pid) {
@@ -169,13 +170,17 @@ sub run_engine_row ($style, $client_count, $repeat, $row_number, $total) {
                 $now - $started;
             $next_heartbeat = $now + $heartbeat;
         }
+
         if ($now - $started > $hard_limit) {
             kill 'TERM', $pid;
             sleep 0.2;
             kill 'KILL', $pid if waitpid($pid, WNOHANG) == 0;
             waitpid($pid, 0);
+            my $stdout = slurp_if_exists($stdout_path);
+            my $stderr = slurp_if_exists($stderr_path);
             die "benchmark row exceeded hard limit of ${hard_limit}s: "
-                . "clients=$client_count repeat=$repeat callback=$style\n";
+                . "clients=$client_count repeat=$repeat callback=$style\n"
+                . $stdout . $stderr;
         }
         sleep 0.1;
     }
@@ -193,8 +198,7 @@ sub run_engine_row ($style, $client_count, $repeat, $row_number, $total) {
     die "unexpected benchmark contract in row JSON\n"
         if ($report->{benchmark} // '')
             ne 'linux-event-accepted-stream-callback-construction';
-    die "expected one raw row, got " . scalar(@{ $report->{raw} // [] }) . "\n"
-        if @{ $report->{raw} // [] } != 1;
+    die "expected one raw row\n" if @{ $report->{raw} // [] } != 1;
 
     my $row = { %{ $report->{raw}[0] } };
     $row->{repeat} = $repeat;
@@ -208,12 +212,14 @@ sub summarize ($raw) {
             $_->{callback_style} eq 'subclass_method'
                 && $_->{clients} == $client_count
         } @$raw;
+
         for my $style (@styles) {
             my @rows = grep {
                 $_->{callback_style} eq $style
                     && $_->{clients} == $client_count
             } @$raw;
             next if !@rows;
+
             my $summary = {
                 callback_style => $style,
                 clients => $client_count,
@@ -227,26 +233,27 @@ sub summarize ($raw) {
                     map { $_->{fresh_closures_created} } @rows,
                 ),
             };
+
             if ($style ne 'subclass_method' && @baseline) {
-                my (@throughput_delta, @cpu_delta);
+                my (@speed, @cpu);
                 for my $row (@rows) {
                     my ($paired) = grep {
                         $_->{repeat} == $row->{repeat}
                     } @baseline;
                     next if !$paired;
-                    push @throughput_delta, 100 * (
+                    push @speed, 100 * (
                         $row->{accepts_per_second}
                             / $paired->{accepts_per_second} - 1
                     );
-                    push @cpu_delta, 100 * (
+                    push @cpu, 100 * (
                         $row->{parent_cpu_us_per_accept}
                             / $paired->{parent_cpu_us_per_accept} - 1
                     );
                 }
-                $summary->{throughput_delta_percent} = median(@throughput_delta)
-                    if @throughput_delta;
-                $summary->{parent_cpu_delta_percent} = median(@cpu_delta)
-                    if @cpu_delta;
+                $summary->{throughput_delta_percent} = median(@speed)
+                    if @speed;
+                $summary->{parent_cpu_delta_percent} = median(@cpu)
+                    if @cpu;
             }
             push @summary, $summary;
         }
@@ -277,6 +284,8 @@ sub write_report ($status, $raw, $summary, $done, $total) {
             timeout => 0 + $timeout,
             client_processes => 1,
             parent_cpu_excludes_client_workers => 1,
+            completion_event => 'listener_on_accept',
+            clients_wait_for_server_close => 1,
             progress_driver => 1,
         },
         raw => $raw,
@@ -316,18 +325,16 @@ Usage: perl -Mblib bench/tools/run-listen-callback-construction-progress.pl [opt
   --clients=LIST            concurrent client workers (default: 1,10,100)
   --connections=N           accepted connections per row (default: 10000)
   --repeats=N               paired repetitions (default: 9)
-  --timeout=SECONDS         engine timeout per row (default: 30)
+  --timeout=SECONDS         row timeout (default: 30)
   --accepted-callbacks=LIST subclass_method,shared_closure,fresh_closure, or all
   --json=PATH               incrementally updated JSON report
-  --heartbeat=SECONDS       print a still-running line this often (default: 5)
+  --heartbeat=SECONDS       still-running message interval (default: 5)
   --help
 
-This progress driver runs one callback-construction measurement row at a time
-through bench/run-listen-microbench.pl. It prints START/DONE lines immediately,
-prints a heartbeat while a row is still running, and atomically updates the
-JSON report after every completed row. The underlying row timing remains inside
-the original benchmark engine, so progress I/O is outside the measured server
-lifecycle interval.
+Each row uses a dedicated runner. Blocking clients remain connected until the
+server closes the accepted Stream. Completion is counted in Listener->on_accept,
+after accepted Stream construction, so rapid peer teardown cannot suppress the
+completion signal. Progress I/O remains outside the measured server interval.
 USAGE
     exit $exit;
 }
