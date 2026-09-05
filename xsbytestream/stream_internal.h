@@ -130,6 +130,8 @@ typedef struct les_xsstate_s {
     void *transport_context;
     les_descriptor_t *descriptor;
     SV *descriptor_sv;
+    SV *message_cb;
+    int has_instance_message_cb;
     SV *transport_provider_sv;
 
     /* Read engine. */

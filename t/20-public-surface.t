@@ -55,6 +55,7 @@ for my $required (
     'bench/run-callback-batching-fairness.pl',
     'bench/run-callback-batching-microbench.pl',
     'bench/run-callback-ceiling.pl',
+    'bench/run-callback-scope-microbench.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
     'bench/run-stream-payload-sweep.pl',
@@ -166,6 +167,7 @@ for my $live (
     'bench/run-datagram-microbench.pl',
     'bench/run-process-microbench.pl',
     'bench/run-callback-ceiling.pl',
+    'bench/run-callback-scope-microbench.pl',
     'bench/run-stream-lifecycle-bench.pl',
     'bench/run-stream-microbench.pl',
     'bench/run-tls-microbench.pl',
@@ -201,6 +203,7 @@ my %allowed = map { $_ => 1 } qw(
     run-callback-batching-fairness.pl
     run-callback-batching-microbench.pl
     run-callback-ceiling.pl
+    run-callback-scope-microbench.pl
     run-stream-lifecycle-bench.pl
     run-stream-microbench.pl
     run-stream-payload-sweep.pl

@@ -15,6 +15,8 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     les_descriptor_t *next_descriptor;
     SV *next_descriptor_sv;
     SV *old_descriptor_sv;
+    SV *next_message_cb = NULL;
+    SV *old_message_cb;
     const char *injected = NULL;
     STRLEN injected_len = 0;
     size_t total_input;
@@ -57,6 +59,12 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
 
     next_descriptor_sv = newSVsv(descriptor_obj);
     old_descriptor_sv = st->descriptor_sv;
+    old_message_cb = st->message_cb;
+    if (st->has_instance_message_cb) {
+        next_message_cb = old_message_cb;
+    } else if (next_descriptor->message_cb) {
+        next_message_cb = SvREFCNT_inc_simple_NN(next_descriptor->message_cb);
+    }
 
     if (injected_len) {
         free(st->input_buffer);
@@ -73,10 +81,13 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     st->read_buffer = next_read_buffer;
     st->descriptor = next_descriptor;
     st->descriptor_sv = next_descriptor_sv;
+    st->message_cb = next_message_cb;
     st->delimiter_scan = 0;
     st->write_blocked = st->pending_bytes > next_descriptor->high_watermark;
     LES_STAT(st, transition_count)++;
 
     if (old_descriptor_sv)
         SvREFCNT_dec(old_descriptor_sv);
+    if (!st->has_instance_message_cb && old_message_cb)
+        SvREFCNT_dec(old_message_cb);
 }

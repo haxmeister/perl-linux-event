@@ -227,12 +227,13 @@ MODULE = Linux::Event::_ByteStream    PACKAGE = Linux::Event::_ByteStream::State
 PROTOTYPES: DISABLE
 
 SV *
-_new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
+_new_validated(CLASS, object, read_fd, write_fd, descriptor_obj, message_cb = &PL_sv_undef)
     const char *CLASS
     SV *object
     int read_fd
     int write_fd
     SV *descriptor_obj
+    SV *message_cb
   PREINIT:
     les_xsstate_t *st;
     les_descriptor_t *descriptor;
@@ -252,12 +253,19 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
     st->descriptor = descriptor;
     st->descriptor_sv = newSVsv(descriptor_obj);
     st->stream_sv = newSVsv(object);
+    st->has_instance_message_cb = message_cb && SvOK(message_cb);
+    if (st->has_instance_message_cb)
+        st->message_cb = les_store_optional_cb(message_cb,
+            "on_message callback");
+    else if (descriptor->message_cb)
+        st->message_cb = SvREFCNT_inc_simple_NN(descriptor->message_cb);
 
     if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER) {
         st->read_buffer = (char *)malloc(descriptor->read_size);
         if (!st->read_buffer) {
             SvREFCNT_dec(st->descriptor_sv);
             SvREFCNT_dec(st->stream_sv);
+            if (st->message_cb) SvREFCNT_dec(st->message_cb);
             free(st);
             croak("malloc ordered-byte read buffer failed");
         }
@@ -266,6 +274,7 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj)
         const char *consumer_name = descriptor->consumer_ops->name;
         SvREFCNT_dec(st->descriptor_sv);
         SvREFCNT_dec(st->stream_sv);
+        if (st->message_cb) SvREFCNT_dec(st->message_cb);
         free(st->read_buffer);
         free(st);
         croak("native consumer '%s' failed to create context", consumer_name);
