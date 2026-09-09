@@ -24,12 +24,13 @@ Linux::Event::IO::Sock::Stream - asynchronous Linux C<SOCK_STREAM> connections
 
   my $loop = Linux::Event::Loop->new;
   my $server = Linux::Event::IO::Sock::Listener->new(
-      loop         => $loop,
-      stream_class => 'Linux::Event::IO::Sock::Stream',
-      host         => '127.0.0.1',
-      port         => 0,
-      on_data      => sub ($stream, $bytes) {
-          $stream->write($bytes);
+      loop => $loop,
+      host => '127.0.0.1',
+      port => 0,
+      stream => {
+          on_data => sub ($stream, $bytes) {
+              $stream->write($bytes);
+          },
       },
   );
 
