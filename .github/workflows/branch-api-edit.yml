@@ -1,0 +1,110 @@
+name: Branch live tuning callback fix
+
+on:
+  push:
+    branches:
+      - feature/listener-stream-recipe-runtime-tuning-tls
+
+permissions:
+  contents: write
+
+jobs:
+  edit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feature/listener-stream-recipe-runtime-tuning-tls
+
+      - name: Make live tuning callback replacement optional
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('xsbytestream/stream_transition.c')
+          text = p.read_text()
+          old = '''    SV *input_cb_sv = les_tuning_value(aTHX_ tuning, "input_cb");
+    SV *next_input_cb = NULL;
+'''
+          new = '''    SV **input_cb_slot = hv_fetch(tuning, "input_cb", 8, 0);
+    SV *input_cb_sv = input_cb_slot ? *input_cb_slot : NULL;
+    int replace_input_cb = input_cb_slot ? 1 : 0;
+    SV *next_input_cb = NULL;
+'''
+          if old not in text:
+              raise SystemExit('input_cb declaration block not found')
+          text = text.replace(old, new, 1)
+          old = '''    if (descriptor->consumer_ops && input_cb_sv && SvOK(input_cb_sv))
+        croak("tune(): native consumer cannot use a Perl input callback");
+    if (st->read_fd >= 0 && !descriptor->consumer_ops
+        && (!input_cb_sv || !SvOK(input_cb_sv)))
+        croak("tune(): readable Stream requires an effective input callback");
+'''
+          new = '''    if (descriptor->consumer_ops && replace_input_cb
+        && input_cb_sv && SvOK(input_cb_sv))
+        croak("tune(): native consumer cannot use a Perl input callback");
+    if (replace_input_cb && st->read_fd >= 0 && !descriptor->consumer_ops
+        && (!input_cb_sv || !SvOK(input_cb_sv)))
+        croak("tune(): readable Stream requires an effective input callback");
+'''
+          if old not in text:
+              raise SystemExit('input callback validation block not found')
+          text = text.replace(old, new, 1)
+          old = '''    next_input_cb = les_store_optional_cb(input_cb_sv,
+        "tune() input callback");
+
+    if (next_read_buffer) {
+'''
+          new = '''    if (replace_input_cb)
+        next_input_cb = les_store_optional_cb(input_cb_sv,
+            "tune() input callback");
+
+    if (next_read_buffer) {
+'''
+          if old not in text:
+              raise SystemExit('input callback storage block not found')
+          text = text.replace(old, new, 1)
+          old = '''    old_input_cb = st->input_cb;
+    old_instance_input_cb = st->instance_input_cb;
+    st->input_cb = next_input_cb;
+    st->instance_input_cb = NULL;
+    st->instance_input_kind = LES_CALLBACK_NONE;
+    if (old_input_cb && old_input_cb != old_instance_input_cb)
+        SvREFCNT_dec(old_input_cb);
+    if (old_instance_input_cb)
+        SvREFCNT_dec(old_instance_input_cb);
+
+    was_blocked = st->write_blocked;
+'''
+          new = '''    if (replace_input_cb) {
+        old_input_cb = st->input_cb;
+        old_instance_input_cb = st->instance_input_cb;
+        st->input_cb = next_input_cb;
+        st->instance_input_cb = NULL;
+        st->instance_input_kind = LES_CALLBACK_NONE;
+        if (old_input_cb && old_input_cb != old_instance_input_cb)
+            SvREFCNT_dec(old_input_cb);
+        if (old_instance_input_cb)
+            SvREFCNT_dec(old_instance_input_cb);
+    }
+
+    was_blocked = st->write_blocked;
+'''
+          if old not in text:
+              raise SystemExit('input callback replacement block not found')
+          p.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+
+      - name: Commit live tuning callback fix
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'Joshua S. Day'
+          git config user.email 'hax@cpan.org'
+          git add xsbytestream/stream_transition.c
+          git commit -m 'Preserve input callback for ordinary live tuning'
+          git push origin HEAD:feature/listener-stream-recipe-runtime-tuning-tls
