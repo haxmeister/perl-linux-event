@@ -264,9 +264,10 @@ sub _stream_recipe ($recipe) {
     croak 'new(): stream tuning must be a hash reference'
         if ref($tuning) ne 'HASH';
     my $data = delete $stream{data};
+    my $tls_enabled = exists $stream{tls};
     my $tls = delete $stream{tls};
     croak 'new(): stream tls must be a hash reference'
-        if defined($tls) && ref($tls) ne 'HASH';
+        if $tls_enabled && ref($tls) ne 'HASH';
 
     my %callback;
     for my $name (@STREAM_CALLBACK) {
@@ -310,14 +311,22 @@ sub _stream_recipe ($recipe) {
         }
     }
 
+    my $tls_template;
+    if ($tls_enabled) {
+        require Linux::Event::TLS;
+        $tls_template = Linux::Event::TLS->_prepare_listener_server(
+            $stream_class, $tls,
+        );
+    }
+
     return {
-        class                => $stream_class,
-        descriptor           => $prepared,
-        data                 => $data,
-        tuning               => $prepared->{options},
-        callbacks            => \%callback,
+        class                 => $stream_class,
+        descriptor            => $prepared,
+        data                  => $data,
+        tuning                => $prepared->{options},
+        callbacks             => \%callback,
         constructor_callbacks => \%constructor_callback,
-        tls                  => $tls,
+        tls_template          => $tls_template,
     };
 }
 
@@ -483,6 +492,13 @@ sub _accept_client ($self, $fh, $peer) {
     my $stream_class = $recipe->{class};
     my $stream;
     my $prepared = eval {
+        my $transport;
+        if (defined $recipe->{tls_template}) {
+            require Linux::Event::TLS;
+            $transport = Linux::Event::TLS->_listener_server_connection(
+                $recipe->{tls_template},
+            );
+        }
         $stream = Linux::Event::_ByteStream::Descriptor::with_prepared(
             $stream_class,
             $recipe->{descriptor},
@@ -491,6 +507,7 @@ sub _accept_client ($self, $fh, $peer) {
             peer      => $peer,
             data      => $recipe->{data},
             _accepted => 1,
+            transport => $transport,
             %{ $recipe->{constructor_callbacks} },
         );
         $stream->{_effective_tuning} = $recipe->{tuning};
