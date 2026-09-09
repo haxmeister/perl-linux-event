@@ -28,11 +28,13 @@ les_apply_tuning(pTHX_ les_xsstate_t *st, HV *tuning)
     UV low_watermark = les_tuning_uv(aTHX_ tuning, "low_watermark");
     UV max_pending_bytes = les_tuning_uv(aTHX_ tuning, "max_pending_bytes");
     UV max_buffer = les_tuning_uv(aTHX_ tuning, "max_buffer");
-    SV *input_cb_sv = les_tuning_value(aTHX_ tuning, "input_cb");
+    SV **input_slot = hv_fetch(tuning, "input_cb", 8, 0);
+    SV *input_cb_sv = input_slot ? *input_slot : NULL;
     SV *next_input_cb = NULL;
     SV *old_input_cb;
     SV *old_instance_input_cb;
     char *next_read_buffer = NULL;
+    int replace_input_cb = input_slot ? 1 : 0;
     int fire_drain = 0;
     int was_blocked;
 
@@ -52,9 +54,14 @@ les_apply_tuning(pTHX_ les_xsstate_t *st, HV *tuning)
         croak("tune(): read_batch_bytes requires a raw Stream");
     if (descriptor->consumer_ops && message_batch_size)
         croak("tune(): native consumer cannot use message_batch_size");
-    if (descriptor->consumer_ops && input_cb_sv && SvOK(input_cb_sv))
+    if (descriptor->consumer_ops && replace_input_cb
+        && input_cb_sv && SvOK(input_cb_sv))
         croak("tune(): native consumer cannot use a Perl input callback");
-    if (st->read_fd >= 0 && !descriptor->consumer_ops
+    if (message_batch_size != st->message_batch_size
+        && descriptor->read_mode != LES_READ_DELIVER
+        && !descriptor->consumer_ops && !replace_input_cb)
+        croak("tune(): changing message_batch_size requires an effective input callback");
+    if (replace_input_cb && st->read_fd >= 0 && !descriptor->consumer_ops
         && (!input_cb_sv || !SvOK(input_cb_sv)))
         croak("tune(): readable Stream requires an effective input callback");
 
@@ -85,23 +92,26 @@ les_apply_tuning(pTHX_ les_xsstate_t *st, HV *tuning)
             croak("tune(): malloc raw read buffer failed");
     }
 
-    next_input_cb = les_store_optional_cb(input_cb_sv,
-        "tune() input callback");
+    if (replace_input_cb)
+        next_input_cb = les_store_optional_cb(input_cb_sv,
+            "tune() input callback");
 
     if (next_read_buffer) {
         free(st->read_buffer);
         st->read_buffer = next_read_buffer;
     }
 
-    old_input_cb = st->input_cb;
-    old_instance_input_cb = st->instance_input_cb;
-    st->input_cb = next_input_cb;
-    st->instance_input_cb = NULL;
-    st->instance_input_kind = LES_CALLBACK_NONE;
-    if (old_input_cb && old_input_cb != old_instance_input_cb)
-        SvREFCNT_dec(old_input_cb);
-    if (old_instance_input_cb)
-        SvREFCNT_dec(old_instance_input_cb);
+    if (replace_input_cb) {
+        old_input_cb = st->input_cb;
+        old_instance_input_cb = st->instance_input_cb;
+        st->input_cb = next_input_cb;
+        st->instance_input_cb = NULL;
+        st->instance_input_kind = LES_CALLBACK_NONE;
+        if (old_input_cb && old_input_cb != old_instance_input_cb)
+            SvREFCNT_dec(old_input_cb);
+        if (old_instance_input_cb)
+            SvREFCNT_dec(old_instance_input_cb);
+    }
 
     was_blocked = st->write_blocked;
     st->read_size = (size_t)read_size;
