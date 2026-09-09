@@ -63,7 +63,7 @@ use Linux::Event::Framer ();
 {
     package T::CloseOnDrain;
     use parent 'Linux::Event::IO::Sock::Stream';
-    sub stream_options ($class) {
+    sub stream_tuning ($class) {
         return high_watermark => 4096, low_watermark => 1024;
     }
     sub on_data ($stream, $bytes) { return }

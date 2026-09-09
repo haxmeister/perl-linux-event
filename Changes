@@ -247,7 +247,7 @@ Revision history for Linux-Event
     - Load and validate accepted TLS certificate and key policy during Listener
       construction and create fresh native server state for every connection.
     - Pass Listener data automatically to each accepted Stream and remove the
-      cumbersome accepted_stream_options hook from the public design.
+      cumbersome accepted_stream_tuning hook from the public design.
     - Expose negotiated ALPN, protocol, cipher, and native TLS statistics
       directly on Stream without requiring access to its internal provider.
     - Add declaration validation, inheritance, role, callback-order, metadata,
@@ -534,7 +534,7 @@ Revision history for Linux-Event
     - Remove the arbitrary custom-framer object contract and
       Linux::Event::Stream::Framer::Buffer. Application-specific protocols now
       parse raw on_data bytes; generally useful families remain native built-ins.
-    - Add cached class-level stream_options for read size, watermarks, and
+    - Add cached class-level stream_tuning for read size, watermarks, and
       framed-buffer limits.
     - Rewrite Stream/framer tests, benchmarks, POD, guides, architecture notes,
       metadata, and examples for the canonical subclass-descriptor model.

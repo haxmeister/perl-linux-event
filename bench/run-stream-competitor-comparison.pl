@@ -597,12 +597,12 @@ sub setup_linuxevent_stream ($sockets, $c, $phase, $control_read) {
     else {
         require Linux::Event::Framer;
         $class = 'Linux::Event::Bench::CompetitorDelimitedStream';
-        if (!$class->can('stream_options')) {
+        if (!$class->can('stream_tuning')) {
             my $ok = eval q{
                 package Linux::Event::Bench::CompetitorDelimitedStream;
                 use parent -norequire, 'Linux::Event::IO::Sock::Stream';
                 use Linux::Event::Framer 'Delimiter', "\x00\xffLE\x7f";
-                sub stream_options ($class) { return read_size => 65_536; }
+                sub stream_tuning ($class) { return read_size => 65_536; }
                 1;
             };
             die $@ if !$ok;

@@ -11,7 +11,7 @@ use Linux::Event::IO::Sock::Listener;
     package T::LineEchoStream;
     use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
-    sub stream_options ($class) { return idle_timeout => 60 }
+    sub stream_tuning ($class) { return idle_timeout => 60 }
     sub on_message ($self, $message) {
         $self->data->{stream} = $self;
         $self->send($message);

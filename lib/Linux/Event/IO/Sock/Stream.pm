@@ -79,7 +79,7 @@ distinguishing features because a protocol class can declare, once:
 
 =item * L<Linux::Event::TLS> identity, verification, ALPN, and role policy;
 
-=item * C<stream_options> tuning for reads, fairness, batching, buffers,
+=item * C<stream_tuning> tuning for reads, fairness, batching, buffers,
 watermarks, limits, and established deadlines; and
 
 =item * socket policy and named, reusable callbacks.
@@ -92,15 +92,15 @@ retained once in that object's effective descriptor. This makes it natural to
 combine reusable high-performance protocol policy with per-connection lexical
 state without adding event-time method lookup or callback-style selection.
 
-=head2 stream_options
+=head2 stream_tuning
 
-Define C<stream_options> as a class method on the Stream subclass. It returns
+Define C<stream_tuning> as a class method on the Stream subclass. It returns
 key/value pairs, or one hash reference:
 
   package TunedConnection;
   use parent 'Linux::Event::IO::Sock::Stream';
 
-  sub stream_options ($class) {
+  sub stream_tuning ($class) {
       return (
           read_size         => 131_072,
           read_budget_bytes => 524_288,
@@ -329,7 +329,7 @@ F<docs/SOCKET-CONFIGURATION.md> for application order and failure behavior.
 
 =head1 ORDERED-BYTE POLICY AND DEADLINES
 
-C<stream_options> has the complete option contract listed near the top of this
+C<stream_tuning> has the complete option contract listed near the top of this
 document. One explicit operation C<deadline> may also be set or changed at
 runtime. Established timeout policy begins when the application transport is
 usable; DNS, connect, TLS handshake, and TLS shutdown retain separate lifecycle

@@ -19,7 +19,7 @@ use Linux::Event::IO::Sock::Stream;
 {
     package T::PreconnectClient;
     use parent 'Linux::Event::IO::Sock::Stream';
-    sub stream_options ($class) {
+    sub stream_tuning ($class) {
         return high_watermark => 8, low_watermark => 4;
     }
     sub on_data ($stream, $bytes) { return }

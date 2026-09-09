@@ -20,7 +20,7 @@ my $port = shift // 0;
     use parent 'Linux::Event::IO::Sock::Stream';
     use Linux::Event::Framer 'Delimiter', "\n";
 
-    sub stream_options ($class) {
+    sub stream_tuning ($class) {
         return read_size => 65_536;
     }
 }

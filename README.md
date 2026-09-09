@@ -301,12 +301,12 @@ A framed type can call `$self->send($payload)` to apply its outbound framing
 rule. Serialization and application codecs remain a separate layer above
 framing.
 
-Class-level `stream_options()` remains the tuning hook for ordered-byte
+Class-level `stream_tuning()` remains the tuning hook for ordered-byte
 behavior. Tuning and method defaults are resolved once per subclass; optional
 constructor callbacks select an instance's effective cached CVs.
 
 ```perl
-sub stream_options ($class) {
+sub stream_tuning ($class) {
     return (
         read_size          => 65_536,
         read_budget_bytes  => 0,

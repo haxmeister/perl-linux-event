@@ -56,7 +56,7 @@ behavior is unchanged.
 
 The public `IO::Sock::Stream` leaf may be used directly for raw I/O when its
 required `on_data` callback is supplied to the constructor. A subclass remains
-necessary when declaring a framer, native consumer, TLS, `stream_options()`, or
+necessary when declaring a framer, native consumer, TLS, `stream_tuning()`, or
 `socket_options()` because those are cached class policy.
 
 Framer selection, tuning, transport, and socket behavior remain class-level

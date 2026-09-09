@@ -10,7 +10,7 @@ ordered-byte connection.
 
 The selected Stream subclass is deliberately prominent policy: it declares the
 native framer, TLS server identity and verification behavior, socket policy,
-and `stream_options` tuning shared by every accepted connection. Listener
+and `stream_tuning` tuning shared by every accepted connection. Listener
 constructor callback templates complement that reusable class policy with
 lexical state and are retained once rather than recreated per accept.
 
@@ -58,7 +58,7 @@ The complete Listener tuning and socket-construction policy is:
 Unix listener policy additionally provides `unlink` (default false),
 `unlink_on_close` (default true), and optional permissions from `0` through
 `07777`. Accepted-connection tuning remains in the selected stream class's
-`stream_options()` and `socket_options()`.
+`stream_tuning()` and `socket_options()`.
 
 `stream_class` names the completed stream-socket subclass constructed for each
 accepted descriptor. The listener's `data` value is passed to each accepted
@@ -210,7 +210,7 @@ Applications that never inspect `peer()` avoid textual address conversion.
 ## Accepted connection policy
 
 Buffering, framing, backpressure, and established deadline policy belong to the
-`stream_class` through `stream_options()`. Socket-specific established policy
+`stream_class` through `stream_tuning()`. Socket-specific established policy
 belongs to that same class through `socket_options()`.
 
 Example TLS server connection:
@@ -223,7 +223,7 @@ use Linux::Event::TLS
     key_file  => '/etc/myapp/server-key.pem',
     alpn      => ['my-protocol/1'];
 
-sub stream_options ($class) {
+sub stream_tuning ($class) {
     return (
         idle_timeout => 60,
         max_buffer   => 8 * 1024 * 1024,
