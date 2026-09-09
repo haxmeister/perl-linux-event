@@ -61,7 +61,7 @@ the reusable policy mechanism for a framer, native consumer, `stream_tuning()`,
 selected independently by the Listener recipe and is not part of Stream class
 identity.
 
-Framer selection and socket defaults remain class policy. Listener recipe
+Framer selection and socket defaults remain class-level policy. Listener recipe
 tuning can override class `stream_tuning()` for generated connections and a
 live Stream can subsequently change mutable ordered-byte policy with `tune()`.
 
