@@ -16,6 +16,10 @@ my @TUNING_NAME = qw(
     idle_timeout read_timeout write_timeout
 );
 my %TUNING_NAME = map { $_ => 1 } @TUNING_NAME;
+my @NATIVE_TUNING_NAME = qw(
+    read_size read_budget_bytes read_batch_bytes message_batch_size
+    high_watermark low_watermark max_pending_bytes max_buffer
+);
 
 my @NATIVE_SPEC_FIELD = qw(
     read_size read_budget_bytes read_batch_bytes message_batch_size
@@ -29,6 +33,7 @@ my @NATIVE_SPEC_FIELD = qw(
 my %NATIVE_SPEC_FIELD = map { $_ => 1 } @NATIVE_SPEC_FIELD;
 
 sub tuning_names () { @TUNING_NAME }
+sub native_tuning_names () { @NATIVE_TUNING_NAME }
 
 sub _validate_native_spec ($spec) {
     croak 'native descriptor requires a hash reference'
@@ -210,6 +215,56 @@ sub validate_modes ($target, $descriptor, $tuning, $callbacks) {
     return;
 }
 
+sub effective_input_callback ($descriptor, $tuning, $callbacks = {}) {
+    return undef if $descriptor->{consumer};
+    if (!$descriptor->{framer}) {
+        return exists($callbacks->{on_data})
+            ? $callbacks->{on_data} : $descriptor->{callbacks}{on_data};
+    }
+    my $name = $tuning->{message_batch_size} ? 'on_messages' : 'on_message';
+    return exists($callbacks->{$name})
+        ? $callbacks->{$name} : $descriptor->{callbacks}{$name};
+}
+
+sub _native_for ($option, $callback, $framing, $consumer) {
+    return Linux::Event::_ByteStream::Descriptor::Native->new({
+        read_size          => $option->{read_size},
+        read_budget_bytes  => $option->{read_budget_bytes},
+        read_batch_bytes   => $option->{read_batch_bytes},
+        message_batch_size => $option->{message_batch_size},
+        high_watermark     => $option->{high_watermark},
+        low_watermark      => $option->{low_watermark},
+        max_pending_bytes  => $option->{max_pending_bytes},
+        max_buffer         => $option->{max_buffer},
+        read_mode          => $framing->{read_mode},
+
+        deliver_cb       => $callback->{on_data},
+        message_cb       => $callback->{on_message},
+        message_batch_cb => $callback->{on_messages},
+        drain_cb         => $callback->{on_drain}
+            ? \&Linux::Event::_ByteStream::_xs_drain : undef,
+        eof_cb           => \&Linux::Event::_ByteStream::_xs_read_eof,
+        read_error_cb    => \&Linux::Event::_ByteStream::_xs_read_error,
+        write_error_cb   => \&Linux::Event::_ByteStream::_xs_write_error,
+        output_limit_cb  => \&Linux::Event::_ByteStream::_xs_output_limit,
+        write_empty_cb   => \&Linux::Event::_ByteStream::_xs_write_empty,
+        framing_error_cb => \&Linux::Event::_ByteStream::_xs_framing_error,
+
+        delimiter         => $framing->{delimiter},
+        include_delimiter => $framing->{include_delimiter} // 0,
+        max_frame         => $framing->{max_frame},
+        fixed_size        => $framing->{fixed_size} // 0,
+        prefix_bytes      => $framing->{prefix_bytes} // 0,
+        prefix_little     => $framing->{prefix_little} // 0,
+        include_prefix    => $framing->{include_prefix} // 0,
+
+        consumer_provider    => $consumer ? $consumer->{provider} : undef,
+        consumer_abi_version => $consumer ? $consumer->{abi_version} : 0,
+        consumer_ops_address => $consumer
+            ? $consumer->{operations_address} : 0,
+    });
+}
+
 sub for_class ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
 
@@ -258,43 +313,7 @@ sub for_class ($class) {
     }
 
     my $framing = $framer ? { %{ $framer->{native} } } : { read_mode => 0 };
-
-    my $native = Linux::Event::_ByteStream::Descriptor::Native->new({
-        read_size          => $option->{read_size},
-        read_budget_bytes  => $option->{read_budget_bytes},
-        read_batch_bytes   => $option->{read_batch_bytes},
-        message_batch_size => $option->{message_batch_size},
-        high_watermark     => $option->{high_watermark},
-        low_watermark      => $option->{low_watermark},
-        max_pending_bytes  => $option->{max_pending_bytes},
-        max_buffer         => $option->{max_buffer},
-        read_mode          => $framing->{read_mode},
-
-        deliver_cb       => $callback{on_data},
-        message_cb       => $callback{on_message},
-        message_batch_cb => $callback{on_messages},
-        drain_cb         => $callback{on_drain}
-            ? \&Linux::Event::_ByteStream::_xs_drain : undef,
-        eof_cb           => \&Linux::Event::_ByteStream::_xs_read_eof,
-        read_error_cb    => \&Linux::Event::_ByteStream::_xs_read_error,
-        write_error_cb   => \&Linux::Event::_ByteStream::_xs_write_error,
-        output_limit_cb  => \&Linux::Event::_ByteStream::_xs_output_limit,
-        write_empty_cb   => \&Linux::Event::_ByteStream::_xs_write_empty,
-        framing_error_cb => \&Linux::Event::_ByteStream::_xs_framing_error,
-
-        delimiter         => $framing->{delimiter},
-        include_delimiter => $framing->{include_delimiter} // 0,
-        max_frame         => $framing->{max_frame},
-        fixed_size        => $framing->{fixed_size} // 0,
-        prefix_bytes      => $framing->{prefix_bytes} // 0,
-        prefix_little     => $framing->{prefix_little} // 0,
-        include_prefix    => $framing->{include_prefix} // 0,
-
-        consumer_provider    => $consumer ? $consumer->{provider} : undef,
-        consumer_abi_version => $consumer ? $consumer->{abi_version} : 0,
-        consumer_ops_address => $consumer
-            ? $consumer->{operations_address} : 0,
-    });
+    my $native = _native_for($option, \%callback, $framing, $consumer);
 
     my $descriptor = {
         class     => $class,
@@ -309,9 +328,92 @@ sub for_class ($class) {
     return $descriptor;
 }
 
+sub prepared ($class, $override = {}) {
+    my $base = for_class($class);
+    return $base if !%$override;
+    my $option = merge_tuning("$class Listener stream", $base->{options}, $override);
+    validate_modes("$class Listener stream", $base, $option, {});
+    my $native = _native_for(
+        $option, $base->{callbacks}, $base->{framing}, $base->{consumer},
+    );
+    return {
+        %$base,
+        native  => $native,
+        options => $option,
+        prepared_from => $base,
+    };
+}
+
 sub clear_cache () {
     %CLASS_DESCRIPTOR = ();
     return;
+}
+
+1;
+
+package Linux::Event::_ByteStream;
+use v5.36;
+use strict;
+use warnings;
+
+sub tune ($self, %override) {
+    Carp::croak('tune(): stream is closed') if $self->{closed};
+    my $xs_state = $self->{xs_state}
+        // Carp::croak('tune(): Stream must be established before live tuning');
+    my $descriptor = $self->{descriptor};
+    my $current = $self->{_effective_tuning} // $descriptor->{options};
+    my $effective = Linux::Event::_ByteStream::Descriptor::merge_tuning(
+        'tune():', $current, \%override,
+    );
+    Linux::Event::_ByteStream::Descriptor::validate_modes(
+        'tune():', $descriptor, $effective, {},
+    );
+
+    my %native = map { $_ => $effective->{$_} }
+        Linux::Event::_ByteStream::Descriptor::native_tuning_names();
+
+    if ($effective->{message_batch_size} != $current->{message_batch_size}) {
+        my $recipe = $self->{_recipe_input_callbacks} // {};
+        my $callback = Linux::Event::_ByteStream::Descriptor::effective_input_callback(
+            $descriptor, $effective, $recipe,
+        );
+        Carp::croak(
+            'tune(): changing message_batch_size requires the corresponding '
+            . 'on_message/on_messages callback',
+        ) if $self->{read_capable} && !$descriptor->{consumer} && !$callback;
+        $native{input_cb} = $callback;
+    }
+
+    $xs_state->_transition_validated($descriptor->{native}, \%native);
+    return $self if $self->{closed};
+
+    $self->{_effective_tuning} = $effective;
+    for my $name (qw(idle_timeout read_timeout write_timeout)) {
+        $self->{timeout}{$name} = $effective->{$name};
+        $self->{timeout_override}{$name} = $effective->{$name}
+            if exists $override{$name};
+    }
+
+    if ($self->{deadline_started}) {
+        my $needs_tracking = $self->_needs_activity_tracking;
+        if ($needs_tracking && !$self->{deadline_tracking}) {
+            $xs_state->_set_activity_tracking(1);
+            $self->{deadline_tracking} = 1;
+        } elsif (!$needs_tracking && $self->{deadline_tracking}) {
+            $xs_state->_set_activity_tracking(0);
+            $self->{deadline_tracking} = 0;
+        }
+        if (exists $override{read_timeout}) {
+            $self->{deadline_read_started} = $self->_deadline_now;
+        }
+        if (exists $override{write_timeout}) {
+            $self->{deadline_write_started} = $self->pending_bytes > 0
+                ? $self->_deadline_now : undef;
+        }
+        $self->_rearm_stream_deadline;
+    }
+
+    return $self;
 }
 
 1;
