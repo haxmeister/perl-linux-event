@@ -1,5 +1,26 @@
 Revision history for Linux-Event
 
+Unreleased
+    - Replace Listener stream_class and flat accepted-Stream constructor
+      templates with one resolved stream => {...} recipe. Listener bind/listen/
+      accept policy remains top-level while class, data, tuning, TLS, and Stream
+      callbacks belong to the generated-connection recipe.
+    - Rename the ordered-byte class tuning hook from stream_options() to
+      stream_tuning(), add live $stream->tune(...), and keep effective mutable
+      values in native per-Stream state with no new steady-state Perl lookup.
+    - Define deterministic live tuning transitions for batching, watermarks,
+      hard output/input limits, and established idle/read/write deadlines.
+    - Make accepted TLS acquisition-time policy selected by stream->{tls} rather
+      than Stream class identity. Listener construction validates deployment
+      policy and prepares one reusable server SSL_CTX; accepted connections
+      allocate independent SSL state from that prepared context.
+    - Add regression coverage for recipe validation and precedence, live tuning,
+      plain/TLS reuse of one Stream class, prepared TLS context cloning, and
+      lowered max_pending_bytes/max_buffer grandfathering behavior.
+    - Add a dedicated accepted-TLS setup benchmark alongside the existing
+      steady-state encrypted-I/O microbenchmark, and update public POD, examples,
+      README, and architecture documents to the new API.
+
 0.112  2026-09-05
     - Extend first-class cached constructor callbacks to Kernel::Event,
       Kernel::Timer, Kernel::Signal, Kernel::Process, and IO::Sock::Dgram.
@@ -247,7 +268,7 @@ Revision history for Linux-Event
     - Load and validate accepted TLS certificate and key policy during Listener
       construction and create fresh native server state for every connection.
     - Pass Listener data automatically to each accepted Stream and remove the
-      cumbersome accepted_stream_tuning hook from the public design.
+      cumbersome accepted_stream_options hook from the public design.
     - Expose negotiated ALPN, protocol, cipher, and native TLS statistics
       directly on Stream without requiring access to its internal provider.
     - Add declaration validation, inheritance, role, callback-order, metadata,
@@ -534,7 +555,7 @@ Revision history for Linux-Event
     - Remove the arbitrary custom-framer object contract and
       Linux::Event::Stream::Framer::Buffer. Application-specific protocols now
       parse raw on_data bytes; generally useful families remain native built-ins.
-    - Add cached class-level stream_tuning for read size, watermarks, and
+    - Add cached class-level stream_options for read size, watermarks, and
       framed-buffer limits.
     - Rewrite Stream/framer tests, benchmarks, POD, guides, architecture notes,
       metadata, and examples for the canonical subclass-descriptor model.
