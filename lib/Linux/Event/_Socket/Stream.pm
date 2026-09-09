@@ -74,20 +74,20 @@ sub new ($class, %opt) {
         $fh, $socket_descriptor, $override, $peer,
     );
     if (my $tls = $socket_descriptor->{tls}) {
-        if (defined $transport) {
+        if (!$accepted) {
             croak 'new(): transport cannot be supplied for a TLS-declared Socket'
-                if !$accepted;
-        } else {
+                if defined $transport;
             require Linux::Event::TLS;
-            my $role = $accepted ? 'server' : $tls_role;
             croak 'new(): a TLS-declared adopted fh requires tls_role'
-                if !defined $role;
+                if !defined $tls_role;
             croak 'new(): tls_role must be client or server'
-                if $role ne 'client' && $role ne 'server';
-            $transport = $role eq 'server'
+                if $tls_role ne 'client' && $tls_role ne 'server';
+            $transport = $tls_role eq 'server'
                 ? Linux::Event::TLS->_server_from_declaration($tls)
                 : Linux::Event::TLS->_client_from_declaration($tls);
         }
+        # Accepted sockets acquire TLS only from the Listener recipe.
+        # A class declaration/default never activates TLS by itself.
     } elsif (defined $tls_role) {
         croak 'new(): tls_role requires a Socket subclass declaring TLS';
     }
