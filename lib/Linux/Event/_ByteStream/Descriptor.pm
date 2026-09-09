@@ -9,6 +9,7 @@ use mro ();
 my %FRAMER_DEFINITION;
 my %CONSUMER_DEFINITION;
 my %CLASS_DESCRIPTOR;
+my %CONSTRUCTION_DESCRIPTOR;
 
 my @TUNING_NAME = qw(
     read_size read_budget_bytes read_batch_bytes message_batch_size
@@ -266,6 +267,8 @@ sub _native_for ($option, $callback, $framing, $consumer) {
 }
 
 sub for_class ($class) {
+    return $CONSTRUCTION_DESCRIPTOR{$class}
+        if exists $CONSTRUCTION_DESCRIPTOR{$class};
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
 
     croak 'Linux::Event::_ByteStream is a private implementation base; subclass a public ordered-byte leaf'
@@ -328,20 +331,33 @@ sub for_class ($class) {
     return $descriptor;
 }
 
-sub prepared ($class, $override = {}) {
+sub prepared ($class, $override = {}, $callback_override = {}) {
+    croak "$class Listener stream callbacks must be a hash reference"
+        if ref($callback_override) ne 'HASH';
     my $base = for_class($class);
-    return $base if !%$override;
-    my $option = merge_tuning("$class Listener stream", $base->{options}, $override);
-    validate_modes("$class Listener stream", $base, $option, {});
+    return $base if !%$override && !%$callback_override;
+    my $option = merge_tuning(
+        "$class Listener stream", $base->{options}, $override,
+    );
+    my %callback = (%{ $base->{callbacks} }, %$callback_override);
+    validate_modes("$class Listener stream", $base, $option, \%callback);
     my $native = _native_for(
-        $option, $base->{callbacks}, $base->{framing}, $base->{consumer},
+        $option, \%callback, $base->{framing}, $base->{consumer},
     );
     return {
         %$base,
-        native  => $native,
-        options => $option,
+        native        => $native,
+        options       => $option,
+        callbacks     => \%callback,
         prepared_from => $base,
     };
+}
+
+sub with_prepared ($class, $descriptor, $constructor, @arg) {
+    croak 'internal prepared Stream constructor must be a coderef'
+        if ref($constructor) ne 'CODE';
+    local $CONSTRUCTION_DESCRIPTOR{$class} = $descriptor;
+    return $constructor->($class, @arg);
 }
 
 sub clear_cache () {
@@ -404,11 +420,12 @@ sub tune ($self, %override) {
             $self->{deadline_tracking} = 0;
         }
         if (exists $override{read_timeout}) {
-            $self->{deadline_read_started} = $self->_deadline_now;
+            $self->{deadline_read_started}
+                = Linux::Event::_ByteStream::_deadline_now();
         }
         if (exists $override{write_timeout}) {
             $self->{deadline_write_started} = $self->pending_bytes > 0
-                ? $self->_deadline_now : undef;
+                ? Linux::Event::_ByteStream::_deadline_now() : undef;
         }
         $self->_rearm_stream_deadline;
     }
