@@ -373,17 +373,20 @@ becoming a special TLS class:
 
   sub tls_defaults ($class) {
       return (
-          cert_file => '/etc/app/server.crt',
-          key_file  => '/etc/app/server.key',
-          alpn      => ['echo/1'],
+          alpn              => ['echo/1'],
+          handshake_timeout => 10,
+          shutdown_timeout  => 5,
       );
   }
 
   sub on_data ($self, $bytes) { ... }
 
 Listener C<stream =E<gt> { tls =E<gt> {...} }> values override those defaults.
-If neither C<tls_defaults()> nor a Listener TLS recipe is present, the Stream is
-plain and allocates no TLS state.
+C<tls_defaults()> does not activate TLS by itself: an accepted connection is TLS
+only when its Listener recipe contains a C<tls> key. Certificate and key paths
+are normally deployment values in that Listener recipe. A Listener without a
+C<tls> recipe generates plain Streams and allocates no TLS state even when the
+Stream class defines C<tls_defaults()>.
 
 =head1 SERVER TLS OPTIONS
 

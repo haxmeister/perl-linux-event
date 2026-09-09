@@ -78,7 +78,8 @@ distinguishing features because a protocol class can declare, once:
 
 =item * a native L<Linux::Event::Framer> and its wire format;
 
-=item * L<Linux::Event::TLS> identity, verification, ALPN, and role policy;
+=item * reusable TLS defaults such as ALPN and transport timeouts, without
+making TLS part of the Stream class identity;
 
 =item * C<stream_tuning> tuning for reads, fairness, batching, buffers,
 watermarks, limits, and established deadlines; and
@@ -174,8 +175,42 @@ it.
 =back
 
 Byte counts are integers. Timeout values are finite non-negative seconds and
-may be fractional. Constructor timeout values override class defaults for one
-Stream; the other values are class policy.
+may be fractional.
+
+=head2 tune
+
+C<tune> changes the mutable ordered-byte policy of an existing Stream without
+reconstructing it:
+
+  $stream->tune(
+      read_size         => 131_072,
+      read_budget_bytes => 524_288,
+      high_watermark    => 2_097_152,
+      low_watermark     => 524_288,
+      idle_timeout      => 30,
+  );
+
+The supported keys are the same eleven values documented by C<stream_tuning>:
+C<read_size>, C<read_budget_bytes>, C<read_batch_bytes>,
+C<message_batch_size>, C<high_watermark>, C<low_watermark>,
+C<max_pending_bytes>, C<max_buffer>, C<idle_timeout>, C<read_timeout>, and
+C<write_timeout>.
+
+Effective precedence is class C<stream_tuning()> defaults, then Listener
+C<stream =E<gt> { tuning =E<gt> {...} }> deployment overrides for accepted
+connections, then C<tune()> on the live object.
+
+Mutable values are copied into native per-Stream state when policy changes.
+Ordinary reads and writes do not consult Perl hashes or perform class-versus-
+instance resolution. Changing message batching settles work owned by the old
+batch policy first. Watermark changes immediately reconcile backpressure.
+Lowering C<max_pending_bytes> or C<max_buffer> does not discard bytes already
+queued or buffered; later growth must satisfy the new limit. Timeout changes
+re-arm or cancel established deadline state as needed.
+
+Framer identity, callback structure, native-consumer identity, and transport
+kind are not C<tune()> values. C<tune()> returns the Stream and rejects calls
+on a closed Stream.
 
 =head2 socket_options
 
@@ -338,18 +373,34 @@ deadlines.
 
 =head1 TLS
 
-A stream-socket subclass opts into TLS declaratively:
+TLS is acquisition policy for a Stream socket rather than a separate Stream
+class identity. For accepted connections a Listener selects TLS in its generated
+Stream recipe:
 
-  package SecureClient;
-  use parent 'Linux::Event::IO::Sock::Stream';
-  use Linux::Event::TLS
-      verify => 1,
-      alpn   => ['http/1.1'];
+  my $listener = Linux::Event::IO::Sock::Listener->new(
+      loop => $loop,
+      host => '0.0.0.0',
+      port => 9443,
+      stream => {
+          class => 'ServerConnection',
+          tls => {
+              cert_file => $cert_file,
+              key_file  => $key_file,
+              alpn      => ['my-protocol/1'],
+          },
+      },
+  );
 
-Outbound C<connect> selects client mode and derives the default server name from
-C<host>. A listener that accepts a TLS-declared class selects server mode; that
-class must declare C<cert_file> and C<key_file>. Framing and callbacks receive
-plaintext. See L<Linux::Event::TLS>.
+The same C<ServerConnection> class may be used by another Listener without a
+C<tls> recipe and is then plain. A subclass may define C<tls_defaults()> for
+reusable policy such as ALPN and handshake/shutdown timeouts, but those defaults
+do not activate TLS. The Listener prepares one reusable server context and each
+accepted TLS Stream receives independent connection state.
+
+Existing class-level L<Linux::Event::TLS> declarations remain available for
+explicit outbound client policy and adopted-handle compatibility. Outbound
+C<connect> derives the default server name from C<host>. Framing and callbacks
+always receive plaintext. See L<Linux::Event::TLS>.
 
 =head1 ADDRESSES AND LIFECYCLE
 
