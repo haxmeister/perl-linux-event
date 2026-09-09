@@ -130,7 +130,9 @@ les_state_destroy(pTHX_ les_xsstate_t *st)
     les_consumer_destroy(aTHX_ st);
     if (st->stream_sv) SvREFCNT_dec(st->stream_sv);
     if (st->descriptor_sv) SvREFCNT_dec(st->descriptor_sv);
-    if (st->input_cb) SvREFCNT_dec(st->input_cb);
+    if (st->input_cb && st->input_cb != st->instance_input_cb)
+        SvREFCNT_dec(st->input_cb);
+    if (st->instance_input_cb) SvREFCNT_dec(st->instance_input_cb);
     if (st->drain_cb) SvREFCNT_dec(st->drain_cb);
     if (st->transport_provider_sv) SvREFCNT_dec(st->transport_provider_sv);
     free(st->read_buffer);
