@@ -10,10 +10,10 @@ handshake/shutdown deadlines.
 ## Configuration
 
 Subclass defaults belong in the cached ordered-byte descriptor through the
-current `stream_options()` tuning hook:
+current `stream_tuning()` tuning hook:
 
 ```perl
-sub stream_options ($class) {
+sub stream_tuning ($class) {
     return (
         idle_timeout  => 60,
         read_timeout  => 30,
