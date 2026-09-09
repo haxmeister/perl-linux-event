@@ -151,7 +151,9 @@ typedef struct les_xsstate_s {
     UV max_buffer;
 
     SV *input_cb;
+    SV *instance_input_cb;
     SV *drain_cb;
+    int instance_input_kind;
     int has_instance_drain_cb;
     SV *transport_provider_sv;
 
@@ -302,8 +304,8 @@ void les_process_buffered(pTHX_ les_xsstate_t *st);
 void les_process_existing_input(
     pTHX_ les_xsstate_t *st, int flush_batch);
 
-void les_transition_descriptor(pTHX_ les_xsstate_t *st,
-    SV *descriptor_obj, SV *input_sv, SV *input_cb);
+void les_transition_descriptor(
+    pTHX_ les_xsstate_t *st, SV *descriptor_obj, SV *input_sv);
 void les_read_ready(pTHX_ les_xsstate_t *st);
 int les_write_submit(pTHX_ les_xsstate_t *st, SV *bytes_sv);
 void les_write_ready(pTHX_ les_xsstate_t *st);
