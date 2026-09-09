@@ -34,8 +34,8 @@ my $loop = Linux::Event::Loop->new;
 my $state = { received => '', ready => 0, drain => 0, error => '' };
 my $listener = Linux::Event::IO::Sock::Listener->new(
     loop => $loop,
-    stream_class => 'T::PreconnectSink',
-    host => '127.0.0.1', port => 0, data => $state,
+    host => '127.0.0.1', port => 0,
+    stream => { class => 'T::PreconnectSink', data => $state },
 );
 my $client = T::PreconnectClient->connect(
     host => '127.0.0.1', port => $listener->port,

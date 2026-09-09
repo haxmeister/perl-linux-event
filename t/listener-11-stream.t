@@ -23,8 +23,8 @@ use Linux::Event::IO::Sock::Listener;
 my $loop = Linux::Event::Loop->new;
 my $state = { streams => [], messages => 0 };
 my $listener = Linux::Event::IO::Sock::Listener->new(
-    stream_class => 'T::LineEchoStream',
-    loop => $loop, host => '127.0.0.1', port => 0, data => $state,
+    loop => $loop, host => '127.0.0.1', port => 0,
+    stream => { class => 'T::LineEchoStream', data => $state },
 );
 socket(my $client, AF_INET, SOCK_STREAM, 0) or die "socket: $!";
 connect($client, pack_sockaddr_in($listener->port, inet_aton('127.0.0.1')))

@@ -139,7 +139,7 @@ subtest 'close inside ready callback is safe' => sub {
     my $loop = Linux::Event::Loop->new;
     my $state = { ready => 0, close => 0 };
     my $listener = Linux::Event::IO::Sock::Listener->new(
-        loop => $loop, stream_class => 'T::ReadySink',
+        loop => $loop, stream => { class => 'T::ReadySink' },
         host => '127.0.0.1', port => 0,
     );
     my $stream = T::CloseOnReady->connect(
