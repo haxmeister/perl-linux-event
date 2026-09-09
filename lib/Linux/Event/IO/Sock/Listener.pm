@@ -125,10 +125,10 @@ must have the message sink required by its effective batching policy, unless a
 native consumer supplies that sink. These predictable errors are rejected while
 the Listener is being constructed, before any client can be accepted.
 
-=head1 LISTENER SETTINGS
+=head2 Listener acceptance tuning
 
 Listener settings remain top-level because they configure the listening
-resource itself:
+resource itself rather than the Streams it generates:
 
   my $listener = Linux::Event::IO::Sock::Listener->new(
       loop                => $loop,
@@ -141,15 +141,44 @@ resource itself:
       },
   );
 
-C<backlog> defaults to 4,096. C<max_accept_per_tick> defaults to 256; zero
-drains accepts until C<EAGAIN> and is required when C<edge_triggered> is true.
-C<reuseaddr> defaults to true, C<reuseport> to false, and optional C<v6only>
-controls C<IPV6_V6ONLY>. C<bind_device> selects C<SO_BINDTODEVICE> for an
-Internet listener.
+=over 4
+
+=item * C<backlog> (default 4,096)
+
+Positive listen backlog requested from the kernel.
+
+=item * C<max_accept_per_tick> (default 256)
+
+Non-negative accept fairness limit. Zero drains until C<EAGAIN> and is required
+when C<edge_triggered> is enabled.
+
+=item * C<edge_triggered> (default 0)
+
+Boolean selecting edge-triggered accept readiness.
+
+=item * C<reuseaddr> (default 1)
+
+Boolean controlling C<SO_REUSEADDR> for a created listener.
+
+=item * C<reuseport> (default 0)
+
+Boolean controlling C<SO_REUSEPORT> for a created listener.
+
+=item * C<v6only> (default unspecified)
+
+Optional boolean controlling C<IPV6_V6ONLY> for a created IPv6 listener.
+
+=item * C<bind_device> (default unspecified)
+
+Optional non-empty interface name used with C<SO_BINDTODEVICE> for an Internet
+listener.
+
+=back
 
 Unix listener ownership controls are C<unlink> (default false),
 C<unlink_on_close> (default true), and optional C<permissions>. C<owns_socket>
-controls ownership of an adopted listening C<fh>.
+controls ownership of an adopted listening C<fh>. These are construction and
+ownership settings, not Stream tuning.
 
 Exactly one listener source is selected:
 
@@ -207,6 +236,23 @@ TLS is generated-Stream acquisition policy and therefore belongs under
 C<stream =E<gt> { tls =E<gt> {...} }>. A Stream class does not need to be a
 special TLS subclass. TLS configuration is resolved when the Listener is
 constructed and plain listeners allocate no OpenSSL connection state.
+
+  my $listener = Linux::Event::IO::Sock::Listener->new(
+      host => '0.0.0.0',
+      port => 9443,
+      stream => {
+          class => 'ServerConnection',
+          tls => {
+              cert_file => '/etc/myapp/server-cert.pem',
+              key_file  => '/etc/myapp/server-key.pem',
+          },
+      },
+  );
+
+The Listener prepares reusable server TLS context and policy once. Each accepted
+TLS Stream receives independent connection state while sharing that prepared
+server context. Ordinary server code does not need to load C<Linux::Event::TLS>
+directly.
 
 =head1 METHODS AND LIFECYCLE
 
