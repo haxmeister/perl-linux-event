@@ -727,9 +727,10 @@ sub _listener_error_ready ($self) {
         path      => $self->{unix},
     );
     $self->{last_error} = $error;
+    my $on_error = $self->{listener_callbacks}{on_error};
     $self->_shutdown('failed', 1);
     my $reported = eval {
-        $self->{listener_callbacks}{on_error}->($self, $error);
+        $on_error->($self, $error);
         1;
     };
     my $failure = $@;

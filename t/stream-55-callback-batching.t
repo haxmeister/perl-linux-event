@@ -412,7 +412,7 @@ sub descriptor_error ($class) {
     sub on_message ($stream, $message) { return }
 }
 
-subtest 'batching policies reject ambiguous class contracts' => sub {
+subtest 'batching policies validate class contracts' => sub {
     like(descriptor_error('T::Batch::InvalidRawMessageBatch'),
         qr/message_batch_size is available only to framed ordered-byte classes/,
         'raw ordered-byte class rejects framed batching policy');
@@ -425,12 +425,11 @@ subtest 'batching policies reject ambiguous class contracts' => sub {
     like(descriptor_error('T::Batch::InvalidMissingMessages'),
         qr/requires on_message or a native consumer/,
         'batch policy requires a class or constructor batch callback');
-    like(descriptor_error('T::Batch::InvalidBothMessageCallbacks'),
-        qr/cannot define both on_message.*on_messages/,
-        'batch mode rejects ambiguous callbacks');
+    is(descriptor_error('T::Batch::InvalidBothMessageCallbacks'), '',
+        'a framed class may provide both callbacks for live batch switching');
     like(descriptor_error('T::Batch::InvalidUnconfiguredMessages'),
-        qr/on_messages.*without enabling message_batch_size/,
-        'batch callback requires explicit policy');
+        qr/readable framed Stream requires on_message or a native consumer/,
+        'initial unbatched policy still requires an effective on_message sink');
     like(descriptor_error('T::Batch::InvalidNegativeReadBatch'),
         qr/read_batch_bytes must be a non-negative integer/,
         'raw batch byte limit rejects negative values');

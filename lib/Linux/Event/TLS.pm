@@ -190,7 +190,6 @@ sub _prepare_listener_server ($class, $stream_class, $recipe) {
     croak 'Listener TLS recipe must be a hash reference'
         if defined($recipe) && ref($recipe) ne 'HASH';
     my %option = (%{ _class_tls_defaults($stream_class) }, %{ $recipe // {} });
-    return undef if !%option;
 
     my %known = map { $_ => 1 } qw(
         cert_file key_file alpn handshake_timeout shutdown_timeout
