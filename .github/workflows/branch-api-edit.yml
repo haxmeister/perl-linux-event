@@ -1,0 +1,260 @@
+name: Branch public API documentation migration
+
+on:
+  push:
+    branches:
+      - feature/listener-stream-recipe-runtime-tuning-tls
+
+permissions:
+  contents: write
+
+jobs:
+  edit:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out implementation branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feature/listener-stream-recipe-runtime-tuning-tls
+
+      - name: Update public API documentation and examples
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def rep(path, old, new, count=1):
+              p = Path(path)
+              s = p.read_text()
+              if s.count(old) < count:
+                  raise SystemExit(f'{path}: expected text not found: {old[:120]!r}')
+              p.write_text(s.replace(old, new, count))
+
+          # Listener POD: retain the detailed stream-generator documentation,
+          # but give acceptance tuning its stable documented subsection and
+          # explicit option entries.
+          listener = 'lib/Linux/Event/IO/Sock/Listener.pm'
+          old = '''=head1 LISTENER SETTINGS
+
+Listener settings remain top-level because they configure the listening
+resource itself:
+
+  my $listener = Linux::Event::IO::Sock::Listener->new(
+      loop                => $loop,
+      host                => '0.0.0.0',
+      port                => 9999,
+      backlog             => 8_192,
+      max_accept_per_tick => 512,
+      stream              => {
+          class => 'ServerConnection',
+      },
+  );
+
+C<backlog> defaults to 4,096. C<max_accept_per_tick> defaults to 256; zero
+drains accepts until C<EAGAIN> and is required when C<edge_triggered> is true.
+C<reuseaddr> defaults to true, C<reuseport> to false, and optional C<v6only>
+controls C<IPV6_V6ONLY>. C<bind_device> selects C<SO_BINDTODEVICE> for an
+Internet listener.
+
+Unix listener ownership controls are C<unlink> (default false),
+C<unlink_on_close> (default true), and optional C<permissions>. C<owns_socket>
+controls ownership of an adopted listening C<fh>.
+'''
+          new = '''=head2 Listener acceptance tuning
+
+Listener settings remain top-level because they configure the listening
+resource itself rather than the Streams it generates:
+
+  my $listener = Linux::Event::IO::Sock::Listener->new(
+      loop                => $loop,
+      host                => '0.0.0.0',
+      port                => 9999,
+      backlog             => 8_192,
+      max_accept_per_tick => 512,
+      stream              => {
+          class => 'ServerConnection',
+      },
+  );
+
+=over 4
+
+=item * C<backlog> (default 4,096)
+
+Positive listen backlog requested from the kernel.
+
+=item * C<max_accept_per_tick> (default 256)
+
+Non-negative accept fairness limit. Zero drains until C<EAGAIN> and is required
+when C<edge_triggered> is enabled.
+
+=item * C<edge_triggered> (default 0)
+
+Boolean selecting edge-triggered accept readiness.
+
+=item * C<reuseaddr> (default 1)
+
+Boolean controlling C<SO_REUSEADDR> for a created listener.
+
+=item * C<reuseport> (default 0)
+
+Boolean controlling C<SO_REUSEPORT> for a created listener.
+
+=item * C<v6only> (default unspecified)
+
+Optional boolean controlling C<IPV6_V6ONLY> for a created IPv6 listener.
+
+=item * C<bind_device> (default unspecified)
+
+Optional non-empty interface name used with C<SO_BINDTODEVICE> for an Internet
+listener.
+
+=back
+
+Unix listener ownership controls are C<unlink> (default false),
+C<unlink_on_close> (default true), and optional C<permissions>. C<owns_socket>
+controls ownership of an adopted listening C<fh>. These are construction and
+ownership settings, not Stream tuning.
+'''
+          rep(listener, old, new)
+
+          # Stream POD executable synopsis.
+          stream = 'lib/Linux/Event/IO/Sock/Stream.pm'
+          rep(stream,
+          '''  my $server = Linux::Event::IO::Sock::Listener->new(
+      loop         => $loop,
+      stream_class => 'Linux::Event::IO::Sock::Stream',
+      host         => '127.0.0.1',
+      port         => 0,
+      on_data      => sub ($stream, $bytes) {
+          $stream->write($bytes);
+      },
+  );
+''',
+          '''  my $server = Linux::Event::IO::Sock::Listener->new(
+      loop => $loop,
+      host => '127.0.0.1',
+      port => 0,
+      stream => {
+          on_data => sub ($stream, $bytes) {
+              $stream->write($bytes);
+          },
+      },
+  );
+''')
+
+          # README server examples.
+          readme = 'README.md'
+          rep(readme,
+          '''my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop         => $loop,
+    stream_class => 'EchoConnection',
+    host         => '127.0.0.1',
+    port         => 9999,
+);
+''',
+          '''my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop => $loop,
+    host => '127.0.0.1',
+    port => 9999,
+    stream => {
+        class => 'EchoConnection',
+    },
+);
+''')
+          rep(readme,
+          '''my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop         => $loop,
+    stream_class => 'Linux::Event::IO::Sock::Stream',
+    host         => '127.0.0.1',
+    port         => 9999,
+    on_data      => sub ($stream, $bytes) {
+        store_bytes($database, $stream, $bytes);
+        $stream->write($bytes);
+    },
+);
+''',
+          '''my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop => $loop,
+    host => '127.0.0.1',
+    port => 9999,
+    stream => {
+        on_data => sub ($stream, $bytes) {
+            store_bytes($database, $stream, $bytes);
+            $stream->write($bytes);
+        },
+    },
+);
+''')
+
+          # Complete examples.
+          rep('examples/line-echo-server.pl',
+          '''my $server = $loop->add(Linux::Event::IO::Sock::Listener->new(
+    stream_class => 'EchoSocket',
+    host => '0.0.0.0',
+    port => $ARGV[0] // 9999,
+    on_message => sub ($stream, $line) {
+        $stream->send($line);
+    },
+));
+''',
+          '''my $server = $loop->add(Linux::Event::IO::Sock::Listener->new(
+    host => '0.0.0.0',
+    port => $ARGV[0] // 9999,
+    stream => {
+        class => 'EchoSocket',
+        on_message => sub ($stream, $line) {
+            $stream->send($line);
+        },
+    },
+));
+''')
+
+          rep('examples/first-class-line-echo-server.pl',
+          '''my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop         => $loop,
+    stream_class => 'LineConnection',
+    host         => '127.0.0.1',
+    port         => $port,
+    on_message   => sub ($stream, $message) {
+        $messages++;
+        say "message $messages: $message";
+        $stream->send($message);
+    },
+    on_error     => sub ($stream, $error) {
+        warn "connection error: $error\\n";
+    },
+);
+''',
+          '''my $listener = Linux::Event::IO::Sock::Listener->new(
+    loop => $loop,
+    host => '127.0.0.1',
+    port => $port,
+    stream => {
+        class => 'LineConnection',
+        on_message => sub ($stream, $message) {
+            $messages++;
+            say "message $messages: $message";
+            $stream->send($message);
+        },
+        on_error => sub ($stream, $error) {
+            warn "connection error: $error\\n";
+        },
+    },
+);
+''')
+          PY
+
+          git diff --check
+
+      - name: Commit public API documentation migration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name 'Joshua S. Day'
+          git config user.email 'hax@cpan.org'
+          git add lib/Linux/Event/IO/Sock/Listener.pm \
+            lib/Linux/Event/IO/Sock/Stream.pm README.md examples/
+          git commit -m 'Document Listener stream recipes in public API examples'
+          git push origin HEAD:feature/listener-stream-recipe-runtime-tuning-tls
