@@ -61,6 +61,11 @@ use Linux::Event::IO::Sock::Stream;
         push @{ $stream->data->{batches} }, [@$messages];
         return;
     }
+
+    sub on_error ($stream, $error) {
+        $stream->data->{error} = $error;
+        return;
+    }
 }
 
 sub socket_pair () {
@@ -229,6 +234,39 @@ subtest 'lower max_pending_bytes preserves existing queue' => sub {
     isa_ok($state->{error}, 'Linux::Event::Error');
     is($state->{error}->type, 'output_limit',
         'future queue growth is rejected against the lower limit');
+
+    close $right;
+};
+
+subtest 'lower max_buffer preserves incomplete frame until future growth' => sub {
+    my ($left, $right) = socket_pair();
+    my $loop = Linux::Event::Loop->new;
+    my $state = { messages => [], batches => [] };
+    my $stream = T::LiveFramedStream->new(
+        loop => $loop, fh => $left, data => $state,
+    );
+
+    is(syswrite($right, 'abcdefghijklmnop'), 16,
+        'peer writes an incomplete framed payload');
+    $loop->run_once(100);
+    is($stream->{xs_state}->_input_buffered_bytes, 16,
+        'incomplete frame is retained in native input state');
+
+    $stream->tune(max_buffer => 8);
+    is($stream->{xs_state}->_input_buffered_bytes, 16,
+        'lowering max_buffer does not discard already buffered input');
+    ok(!$stream->is_closed,
+        'grandfathered incomplete frame remains valid immediately after tuning');
+
+    is(syswrite($right, 'q'), 1, 'peer attempts future input growth');
+    $loop->run_once(100);
+    ok($stream->is_closed,
+        'future input growth against the lower cap closes the Stream');
+    isa_ok($state->{error}, 'Linux::Event::Error');
+    is($state->{error}->type, 'framing',
+        'future growth failure uses the normal framing error lifecycle');
+    like("$state->{error}", qr/max_buffer=8/,
+        'framing error reports the lowered input cap');
 
     close $right;
 };
