@@ -24,41 +24,44 @@ Current strategic direction:
 - Protocol-specific native optimization requires realistic evidence of a
   material bottleneck.
 
-## Current work: remove core multiple inheritance
+## Current work: Linux::Event 0.113 release candidate
 
-Development branch:
+Main now contains the completed Listener stream-recipe, runtime tuning,
+runtime TLS, and core multiple-inheritance removal work. Release preparation
+uses version 0.113 dated 2026-09-12.
 
-```text
-refactor/remove-core-multiple-inheritance
-```
+The release audit found and repaired stale uses of the removed `stream_class`
+and flat Listener Stream-callback API in top-level POD, design guides, and two
+shipped benchmark programs. `t/37-current-doc-taxonomy.t` now scans current
+benchmark programs as well as public documentation, and
+`t/listener-13-benchmark-smoke.t` executes both Listener attachment modes so
+that constructor API drift cannot hide behind a `--help`-only smoke test.
 
-The private behavioral hierarchy now uses single inheritance. In particular,
-`Linux::Event::_Socket::Stream` inherits only
-`Linux::Event::_ByteStream`. Socket descriptors, connection acquisition,
-configuration, addresses, and transports remain explicitly composed
-facilities; `_Socket::Stream` does not inherit `_Socket` merely to express a
-conceptual category.
+Verified release candidate state:
 
-The affected Stream implementations are organized into demarcated sections in
-this order:
+- source build and test: 157 files, 3,061 tests, PASS;
+- generated distribution build and test: 157 files, 3,059 tests, PASS;
+- the two fewer distribution assertions are expected because one
+  repository-only benchmark is excluded from MANIFEST;
+- `make distcheck`: PASS;
+- `META.json` and `META.yml`: version 0.113 and parse successfully;
+- all 25 indexed public POD files pass `Pod::Checker`;
+- Listener lifecycle benchmark `add` and `loop` modes execute successfully;
+- the Linux::Event line-runtime server passes an end-to-end echoed-line run;
+- `Linux-Event-0.113.tar.gz` is generated and passes gzip/tar inspection.
 
-1. constructors and class lifecycle;
-2. accessors;
-3. methods;
-4. private helpers and internal overrides.
+The upstream main CI run for commit `321d4c2` was green across Perl
+5.36-5.44, latest Perl, threaded variants, and distribution integrity. The
+Listener/tuning/TLS feature run also passed the performance regression job.
 
-`tune()` now lives with the other `_ByteStream` public methods rather than in a
-trailing package reopening inside `_ByteStream/Descriptor.pm`.
+Remaining release operations after the preparation commit is pushed:
 
-Public Stream subclasses may initialize, store, and expose their own ordinary
-instance variables. Linux::Event does not interpret or manage that state. Do
-not add an `init`, `state`, initialization callback, role, mixin, or similar
-core mechanism for subclass-owned state.
-
-Tests enforce one direct behavioral parent for the private IO layers and cover
-subclass-owned state across normal Stream teardown. The full suite passes: 157
-files and 2,902 tests, with the two expected Unix-socket sandbox skips. Rerun
-the suite after any further edits before merging.
+1. wait for the new main CI run to pass;
+2. create the normalized tag `v0.113` (the prior 0.112 tag is unusually named
+   `v.112`);
+3. build `Linux-Event-0.113.tar.gz` from the tagged clean checkout;
+4. upload the tarball to PAUSE/CPAN;
+5. create the GitHub release and attach the same tarball if desired.
 
 ## Completed priority: Listener stream recipes, runtime tuning, and runtime TLS
 

@@ -1,6 +1,6 @@
 Revision history for Linux-Event
 
-Unreleased
+0.113  2026-09-12
     - Replace the internal Socket Stream multiple-inheritance diamond with a
       single behavioral parent, the ordered-byte engine. Socket descriptors,
       connection acquisition, configuration, addresses, and transports remain
@@ -26,6 +26,9 @@ Unreleased
     - Add a dedicated accepted-TLS setup benchmark alongside the existing
       steady-state encrypted-I/O microbenchmark, and update public POD, examples,
       README, and architecture documents to the new API.
+    - Repair remaining shipped Listener documentation and benchmark examples
+      that still used the removed stream_class/flat callback API, and add a
+      regression guard against reintroducing the retired configuration syntax.
 
 0.112  2026-09-05
     - Extend first-class cached constructor callbacks to Kernel::Event,

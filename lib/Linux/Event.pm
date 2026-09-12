@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.112';
+our $VERSION = '0.113';
 
 1;
 
@@ -250,15 +250,18 @@ C<on_data>. Ordered-byte lifecycle callbacks can also be supplied to the
 constructor. See L<Linux::Event::IO::Sock::Stream> and
 F<docs/FIRST-CLASS-STREAM-CALLBACKS.md> for the complete callback matrix.
 
-A listener then names that completed stream-socket class:
+A listener then uses that completed stream-socket class in its generated-Stream
+recipe:
 
   my $listener = Linux::Event::IO::Sock::Listener->new(
-      loop         => $loop,
-      stream_class => 'Protocol',
-      host         => '0.0.0.0',
-      port         => 9999,
-      on_message   => sub ($stream, $message) {
-          $stream->send($message);
+      loop => $loop,
+      host => '0.0.0.0',
+      port => 9999,
+      stream => {
+          class      => 'Protocol',
+          on_message => sub ($stream, $message) {
+              $stream->send($message);
+          },
       },
   );
 
