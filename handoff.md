@@ -24,7 +24,43 @@ Current strategic direction:
 - Protocol-specific native optimization requires realistic evidence of a
   material bottleneck.
 
-## Next priority: Listener stream recipes, runtime tuning, and runtime TLS
+## Current work: remove core multiple inheritance
+
+Development branch:
+
+```text
+refactor/remove-core-multiple-inheritance
+```
+
+The private behavioral hierarchy now uses single inheritance. In particular,
+`Linux::Event::_Socket::Stream` inherits only
+`Linux::Event::_ByteStream`. Socket descriptors, connection acquisition,
+configuration, addresses, and transports remain explicitly composed
+facilities; `_Socket::Stream` does not inherit `_Socket` merely to express a
+conceptual category.
+
+The affected Stream implementations are organized into demarcated sections in
+this order:
+
+1. constructors and class lifecycle;
+2. accessors;
+3. methods;
+4. private helpers and internal overrides.
+
+`tune()` now lives with the other `_ByteStream` public methods rather than in a
+trailing package reopening inside `_ByteStream/Descriptor.pm`.
+
+Public Stream subclasses may initialize, store, and expose their own ordinary
+instance variables. Linux::Event does not interpret or manage that state. Do
+not add an `init`, `state`, initialization callback, role, mixin, or similar
+core mechanism for subclass-owned state.
+
+Tests enforce one direct behavioral parent for the private IO layers and cover
+subclass-owned state across normal Stream teardown. The full suite passes: 157
+files and 2,902 tests, with the two expected Unix-socket sandbox skips. Rerun
+the suite after any further edits before merging.
+
+## Completed priority: Listener stream recipes, runtime tuning, and runtime TLS
 
 This is the next implementation task. The API design has been discussed and is
 considered settled enough to implement without reopening the basic model.

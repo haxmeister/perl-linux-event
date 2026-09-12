@@ -94,6 +94,33 @@ retained once in that object's effective descriptor. This makes it natural to
 combine reusable high-performance protocol policy with per-connection lexical
 state without adding event-time method lookup or callback-style selection.
 
+A Stream subclass is also an ordinary Perl class and may initialize and expose
+its own instance variables. Linux::Event does not interpret or manage
+subclass-owned state, and no separate state or initialization hook is required:
+
+  package StatefulConnection;
+  use parent 'Linux::Event::IO::Sock::Stream';
+
+  sub new ($class, %option) {
+      my $self = $class->SUPER::new(%option);
+      $self->{message_count} = 0;
+      return $self;
+  }
+
+  sub message_count ($self, @value) {
+      $self->{message_count} = $value[0] if @value;
+      return $self->{message_count};
+  }
+
+  sub on_data ($self, $bytes) {
+      $self->{message_count}++;
+      ...;
+  }
+
+Core operations leave unrelated subclass-owned entries alone. Subclass
+constructors remain responsible for their own state and should pass only
+Linux::Event constructor options to C<SUPER::new>.
+
 =head2 stream_tuning
 
 Define C<stream_tuning> as a class method on the Stream subclass. It returns

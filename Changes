@@ -1,6 +1,12 @@
 Revision history for Linux-Event
 
 Unreleased
+    - Replace the internal Socket Stream multiple-inheritance diamond with a
+      single behavioral parent, the ordered-byte engine. Socket descriptors,
+      connection acquisition, configuration, addresses, and transports remain
+      explicitly composed facilities. Document and test ordinary subclass-owned
+      instance state, and organize Stream implementation code into demarcated
+      constructor, accessor, method, and private-helper sections.
     - Replace Listener stream_class and flat accepted-Stream constructor
       templates with one resolved stream => {...} recipe. Listener bind/listen/
       accept policy remains top-level while class, data, tuning, TLS, and Stream
