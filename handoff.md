@@ -51,13 +51,15 @@ handling after the release-preparation commit is pushed and CI passes.
 
 ## Branch cleanup
 
-After the 0.114 release-preparation commit is safely on `main`, close and delete
-the obsolete `fix/transition-resource-kind` branch/PR. Its intent has been
-ported to the current architecture.
+The obsolete PRs are closed: #12's resource-kind intent has been ported to the
+current architecture, and #7's tuning explorer targets retired APIs.
 
-Also close and delete `feature/stream-tuning-explorer`; it targets retired APIs
-and is not mergeable. Any future explorer should be implemented fresh under
-the constraints in `docs/V1-ROADMAP.md`.
+The remote branches `fix/transition-resource-kind` and
+`feature/stream-tuning-explorer` still need deletion. The authenticated GitHub
+interface used for this preparation can close PRs and update refs but does not
+expose ref deletion. Delete those exact branches through GitHub or an
+authenticated Git client. Any future explorer should be implemented fresh
+under the constraints in `docs/V1-ROADMAP.md`.
 
 After cleanup, `main` should be the only remote branch unless a new, current
 piece of work deliberately creates another one.
