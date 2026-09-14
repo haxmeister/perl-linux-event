@@ -441,10 +441,7 @@ sub transition_to ($self, $class, %opt) {
         if !defined($class) || ref($class) || $class eq '';
     croak "transition_to(): $class is already active"
         if ref($self) eq $class;
-    my $source_socket = $self->isa('Linux::Event::_Socket::Stream') ? 1 : 0;
-    my $target_socket = $class->isa('Linux::Event::_Socket::Stream') ? 1 : 0;
-    croak 'transition_to(): cannot cross the ordered-byte resource boundary'
-        if $source_socket != $target_socket;
+    Linux::Event::_IO::_guard_transition_resource_kind($self, $class);
 
     my $input = delete $opt{input};
     croak 'transition_to(): input must be a byte string'

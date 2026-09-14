@@ -1,5 +1,16 @@
 Revision history for Linux-Event
 
+0.114  2026-09-13
+    - Enforce the documented transition_to() invariant across all public
+      ordered-byte resource kinds. Pipe, TTY, and connected SOCK_STREAM
+      subclasses may transition only to another protocol class for the same
+      underlying kind.
+    - Add a complete cross-kind rejection and same-kind success regression
+      matrix. Failed transitions preserve the source class, protocol
+      descriptor, and native state.
+    - Record the remaining foreign-loop integration, deferred-callback,
+      post-fork Loop-contract, and inotify work on the roadmap to 1.000.
+
 0.113  2026-09-12
     - Replace the internal Socket Stream multiple-inheritance diamond with a
       single behavioral parent, the ordered-byte engine. Socket descriptors,
