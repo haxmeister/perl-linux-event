@@ -3,51 +3,43 @@
 Before architectural, performance, dependency, or ecosystem work, read
 `docs/ECOSYSTEM-CHARTER.md`. It is authoritative.
 
-For planned core work and the release path after 0.114, read
-`docs/V1-ROADMAP.md`. That roadmap covers:
+For planned core work beyond this narrow correctness release, read
+`docs/V1-ROADMAP.md`. No roadmap feature work is part of 0.115.
 
-- the foreign-loop `poll_fd()`/nonblocking-pump boundary;
-- owner-interpreter deferred/next-turn callbacks;
-- the post-fork Loop contract;
-- native filesystem notification using inotify;
-- the possible replacement of the obsolete Stream tuning-explorer branch;
-- the tests, documentation, integration, and release gates for 1.000.
+## Current state: 0.115 protocol-subclass close correctness
 
-## Current state: 0.114 release preparation
+0.115 is a narrow correctness release prompted by Linux::Event::WebSocket
+integration. Protocol subclasses may give their public `close()` method
+protocol-level semantics, so core-internal involuntary teardown must not assume
+that virtual `$self->close` still means immediate raw transport destruction.
 
-0.114 is a narrow correctness release. It fixes the documented
-`transition_to()` invariant that remained incomplete on 0.113: Pipe and TTY
-subclasses could previously transition into each other because the guard only
-distinguished connected sockets from all non-socket ordered-byte resources.
+Three forced-cleanup sites now bypass subclass `close()` and call the existing
+private terminal primitive `_close_now(1)` directly:
 
-The current implementation classifies the source and target as `pipe`, `tty`,
-or `stream-socket` on the cold transition path and rejects a kind change before
-descriptor/native-state mutation. The regression matrix verifies all six
-cross-kind directions, all three same-kind transitions, informative errors,
-and atomic preservation of source class, descriptor, and native state after
-rejection. Existing socket/Pipe boundary coverage uses the new diagnostic.
+- adopted/accepted Stream configuration failure in
+  `Linux::Event::_Socket::Stream`;
+- accepted Stream preparation/attachment failure in
+  `Linux::Event::_Socket::Listener`;
+- Listener `on_accept` callback failure after a Stream has been constructed.
 
-Release bookkeeping is set to version 0.114 dated 2026-09-13. The new test is
-in `MANIFEST`; checked-in metadata is synchronized; the repository-only v1
-roadmap is excluded from the CPAN distribution alongside the other strategic
-documents.
+The native-consumer path `_xs_consumer_close()` intentionally still dispatches
+through public `close()`. `LES_CONSUMER_CLOSE` is documented as an explicit
+semantic request to close the host through normal lifecycle, not an involuntary
+transport failure.
 
-Verification completed so far:
+Regression coverage in `t/stream-49-socket-options.t` and
+`t/listener-16-callbacks.t` installs Stream subclasses whose public `close()`
+does not tear down the transport. The tests require forced cleanup to bypass
+that override while still closing descriptors and preserving the existing
+`on_close` behavior.
 
-- focused protocol/resource transition suite: PASS, 3 files, 69 tests;
-- complete 0.114 source build and suite: PASS, 158 files, 3,065 tests;
-- generated-distribution build and suite: PASS, 158 files, 3,063 tests (the
-  two-test difference is expected from repository-only material excluded by
-  `MANIFEST.SKIP`);
-- `make distcheck`: PASS;
-- `META.json` and `META.yml`: parse successfully and report 0.114;
-- all 25 indexed public POD files: PASS;
-- generated tarball: gzip integrity PASS, and repository-only roadmap,
-  handoff, and optional foreign-loop tooling are absent;
-- `git diff --check`: PASS.
+Distribution version bookkeeping is bumped from 0.114 to 0.115, including
+public/private versioned modules and checked-in META files. `Changes` records
+the fix. No unrelated core architecture or roadmap work is included.
 
-`Linux-Event-0.114.tar.gz` is generated and ready for final clean-tree release
-handling after the release-preparation commit is pushed and CI passes.
+The browser development environment cannot execute the compiled XS suite
+locally. GitHub CI is therefore the verification gate for this commit before a
+0.115 CPAN release.
 
 ## Branch cleanup
 
