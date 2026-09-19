@@ -368,7 +368,7 @@ sub take ($stream) {
 }
 
 for my $case (
-    ['T::RawConsumerBadCallback', qr/on_data.*native consumer/,
+    ['T::RawConsumerBadCallback', qr/native consumer.*on_data/,
         'raw native consumer rejects a class on_data callback'],
     ['T::RawConsumerBatch', qr/raw native consumer.*read_batch_bytes/,
         'raw native consumer rejects Perl raw batching'],
