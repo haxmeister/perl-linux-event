@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: stream-timer-fairness-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
@@ -37,18 +41,35 @@ jobs:
           perl Makefile.PL
           make --jobs=2
 
-      - name: Syntax check fairness benchmark
-        run: perl -Mblib -c bench/run-stream-timer-fairness.pl
+      - name: Syntax check fairness benchmarks
+        run: |
+          perl -Mblib -c bench/run-stream-timer-fairness.pl
+          perl -Mblib -c bench/run-stream-feedback-timer-fairness.pl
 
       - name: Run fairness matrix
         run: |
           mkdir -p bench/results
           perl -Mblib bench/run-stream-timer-fairness.pl             --read-size=65536             --budgets=0,65536,262144,1048576             --timer-after=0.250             --producer-duration=1.000             --producer-block=262144             --warmup=1             --repeats=5             --case-timeout=3.000             --json=bench/results/stream-timer-fairness.json
 
-      - name: Preserve fairness report
+      - name: Run feedback fairness reproducer
+        run: |
+          perl -Mblib bench/run-stream-feedback-timer-fairness.pl \
+            --read-size=65536 \
+            --budgets=0,65536,262144,1048576 \
+            --timer-after=1.500 \
+            --message-bytes=64 \
+            --window=32 \
+            --warmup=1 \
+            --repeats=3 \
+            --case-timeout=5.000 \
+            --json=bench/results/stream-feedback-timer-fairness.json
+
+      - name: Preserve fairness reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: stream-timer-fairness
-          path: bench/results/stream-timer-fairness.json
+          path: |
+            bench/results/stream-timer-fairness.json
+            bench/results/stream-feedback-timer-fairness.json
           if-no-files-found: warn
