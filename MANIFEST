@@ -273,6 +273,7 @@ t/stream-65-first-class-callbacks.t
 t/stream-66-first-class-framed-callback-benchmark-smoke.t
 t/stream-66-resource-kind-transition.t
 t/stream-67-first-class-raw-callback-benchmark-smoke.t
+t/stream-68-read-fairness.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
