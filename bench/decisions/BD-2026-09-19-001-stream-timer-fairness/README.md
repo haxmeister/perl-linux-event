@@ -141,31 +141,33 @@ because all three use the same ordered-byte engine.
   unbounded by Linux::Event and one measured feedback case exceeded the
   independent watchdog.
 
-## Implementation work still requiring authorization
+## Integration decision
 
-No production behavior has been changed by this investigation.
+**Decision: KEEP**
 
-If the candidate is approved:
+Change the shared ordered-byte default to:
 
-1. change the shared ordered-byte default from unlimited to 64 KiB;
-2. keep explicit zero as the unlimited opt-in;
-3. update README, public Pipe/TTY/Stream POD, ordered-byte design docs, Changes,
-   and tuning-default tests;
-4. add regression coverage proving the default is bounded and that a competing
-   Loop resource receives service during sustained ordered-byte input;
-5. run the complete test suite and the permanent performance gates;
-6. audit the queued-write readiness loop separately for an analogous
-   application-replenished fairness hazard;
-7. bump the development version and update handoff/release bookkeeping only as
-   appropriate for the eventual release.
+```perl
+read_budget_bytes => 65_536
+```
+
+Retain explicit zero as the unlimited drain-until-EAGAIN opt-in.
+
+The 64 KiB default is the measured throughput/fairness knee for the tested
+workloads: it removes unbounded Loop monopolization while retaining essentially
+all fixed-frame feedback throughput and avoiding the medium/large-payload
+throughput losses seen at smaller budgets. The change applies to the shared
+ordered-byte engine so Stream, Pipe, and TTY receive the same fairness policy.
+
+The integration updates the public tuning documentation and default regression
+coverage. The queued-write readiness loop remains a separate follow-up audit;
+this decision does not claim that output-side application replenishment has
+already been analyzed.
 
 ## Evidence retention
 
-The complete machine-readable outputs from run `35409047873` are preserved by
-GitHub Actions artifact `10572949283` (`stream-timer-fairness`). The branch
-contains both reproducer programs and the payload-sweep enhancement used to
-produce those results.
-
-Before merging an actual default change, copy the final raw JSON evidence into a
-new `bench/decisions/BD-...` directory and append the corresponding KEEP
-decision to `bench/BENCHMARK-DECISIONS.md`, per repository policy.
+The complete machine-readable outputs from run `35409047873` / artifact
+`10572949283` (`stream-timer-fairness`) are committed unchanged in this
+directory. The branch also retains both reproducer programs and the
+payload-sweep enhancement used to produce the results. The corresponding KEEP
+decision is recorded in `bench/BENCHMARK-DECISIONS.md`.
