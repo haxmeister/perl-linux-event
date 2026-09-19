@@ -97,6 +97,9 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
                     les_input_consume(st, consumed);
                 if (!consumed)
                     return;
+                if (!st->closed && !LES_INPUT_PAUSED(st)
+                    && !st->read_eof && st->input_len)
+                    continue;
             } else if (st->read_batch_bytes) {
                 les_flush_raw_batch(aTHX_ st);
             } else {
