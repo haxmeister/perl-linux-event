@@ -86,6 +86,7 @@ les_apply_tuning(pTHX_ les_xsstate_t *st, HV *tuning)
     }
 
     if (st->read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER
+        && !les_consumer_uses_raw_input(st)
         && (size_t)read_size != st->read_size) {
         next_read_buffer = (char *)malloc((size_t)read_size);
         if (!next_read_buffer)
@@ -184,7 +185,10 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
 
     /* Allocate every replacement before mutating live state. A failed
      * transition therefore leaves the old descriptor and buffers intact. */
-    if (next_descriptor->read_mode == LES_READ_DELIVER) {
+    if (next_descriptor->read_mode == LES_READ_DELIVER
+        && !(next_descriptor->consumer_ops
+            && (next_descriptor->consumer_ops->flags
+                & LES_CONSUMER_F_RAW_INPUT))) {
         next_read_buffer = (char *)malloc(next_descriptor->read_size);
         if (!next_read_buffer)
             croak("transition_to(): malloc raw read buffer failed");
