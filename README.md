@@ -312,7 +312,7 @@ constructor callbacks select an instance's effective cached CVs.
 sub stream_tuning ($class) {
     return (
         read_size          => 65_536,
-        read_budget_bytes  => 0,
+        read_budget_bytes  => 65_536,
         read_batch_bytes   => 0,
         message_batch_size => 0,
         high_watermark     => 1_048_576,
@@ -325,6 +325,8 @@ sub stream_tuning ($class) {
     );
 }
 ```
+
+`read_budget_bytes` defaults to 65,536 bytes per readiness callback so one continuously replenished ordered-byte fd cannot monopolize Loop dispatch. Explicit `read_budget_bytes => 0` remains the opt-in drain-until-EAGAIN mode.
 
 `read_batch_bytes` coalesces raw input callbacks. `message_batch_size` switches
 a framed type from `on_message` to `on_messages`. Partial batches flush at the
