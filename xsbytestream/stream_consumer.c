@@ -196,6 +196,52 @@ les_consumer_apply_status(pTHX_ les_xsstate_t *st, int status,
 }
 
 int
+les_consumer_uses_raw_input(const les_xsstate_t *st)
+{
+    return st && st->consumer_ops
+        && (st->consumer_ops->flags & LES_CONSUMER_F_RAW_INPUT);
+}
+
+int
+les_consumer_input(pTHX_ les_xsstate_t *st, const char *data, size_t length,
+    size_t *consumed_out)
+{
+    size_t consumed = 0;
+    int status;
+    int jump_status;
+    dJMPENV;
+
+    if (!st || !st->consumer_ops || !st->consumer_context
+        || !(st->consumer_ops->flags & LES_CONSUMER_F_RAW_INPUT)
+        || !st->consumer_ops->input)
+        croak("raw native Stream consumer is not attached");
+    if (!consumed_out)
+        croak("raw native Stream consumer requires a consumed output pointer");
+    LES_STAT(st, consumer_input_calls)++;
+    st->consumer_flush_pending = 1;
+    JMPENV_PUSH(jump_status);
+    if (jump_status == 0) {
+        status = st->consumer_ops->input(aTHX_ st->consumer_context,
+            data, length, &consumed);
+        JMPENV_POP;
+    } else {
+        st->consumer_flush_pending = 0;
+        JMPENV_POP;
+        JMPENV_JUMP(jump_status);
+    }
+    if (consumed > length)
+        croak("native Stream consumer '%s' consumed %llu of %llu raw input bytes",
+            st->consumer_ops->name,
+            (unsigned long long)consumed,
+            (unsigned long long)length);
+    *consumed_out = consumed;
+    les_consumer_validate_status(aTHX_ st, status, "input");
+    if (st->closed || st->read_eof || st->consumer_terminal)
+        return status;
+    return les_consumer_apply_status(aTHX_ st, status, 0);
+}
+
+int
 les_consumer_message(pTHX_ les_xsstate_t *st, SV *message)
 {
     int status;
