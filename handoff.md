@@ -1,5 +1,43 @@
 # Linux::Event Handoff
 
+## Investigation branch: ordered-byte timer fairness
+
+Branch `investigate/stream-timer-fairness` contains investigation-only work;
+no production default or runtime behavior has been changed.
+
+Linux::Event::WebSocket exposed nominal 1.5-second timers being delayed by tens
+of seconds during sustained external echo traffic. Core-only reproduction now
+confirms the cause: the ordered-byte default `read_budget_bytes => 0` permits a
+single Stream/Pipe/TTY readiness callback to drain successful reads until
+EAGAIN. A concurrently replenished fd can therefore monopolize Loop dispatch
+while the shared timerfd and other descriptors remain ready but unserviced.
+
+The decisive fixed-frame feedback reproducer keeps a 32-message window against
+a forked echo peer. With 64-byte messages and a 1.5-second Timer, unlimited
+drain had median timer lateness 1556.807 ms and one of three measured cases hit
+the independent five-second watchdog. Finite budgets kept throughput essentially
+flat at about 214k-217k msg/s. Median timer lateness was 1.459 ms at 16 KiB,
+2.848 ms at 32 KiB, 7.930 ms at 64 KiB, 15.539 ms at 128 KiB, and 30.904 ms at
+256 KiB.
+
+A representative raw/Delimiter payload sweep through 200,000 B held
+`read_size=64 KiB` constant. 64 KiB is the measured knee: smaller budgets
+materially reduce medium/large payload throughput, while 128 KiB provides only
+modest extra raw throughput and approximately doubles feedback timer lateness.
+The current candidate fix is therefore to change the shared ordered-byte
+default to `read_budget_bytes => 65_536`, retaining explicit zero as the
+unlimited opt-in.
+
+Full findings, exact tables, workflow run/artifact IDs, and implementation
+follow-ups are in
+`bench/decisions/BD-2026-09-19-001-stream-timer-fairness/README.md`.
+
+Do not change the production default or merge this branch without explicit user
+authorization. If approved, preserve final JSON under `bench/decisions`,
+append the benchmark decision record, update all tuning-default documentation
+and tests, run the full suite/performance gates, and separately audit the
+queued-write drain for the analogous replenishment hazard.
+
 Before architectural, performance, dependency, or ecosystem work, read
 `docs/ECOSYSTEM-CHARTER.md`. It is authoritative.
 
