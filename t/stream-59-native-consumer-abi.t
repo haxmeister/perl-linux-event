@@ -9,6 +9,7 @@ use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 use Linux::Event::Loop;
 use Linux::Event::_ByteStream ();
 use Linux::Event::IO::Sock::Stream;
+use Linux::Event::Framer ();
 use Linux::Event::TLS;
 
 is(Linux::Event::_ByteStream->_native_consumer_abi_version, 1,
@@ -24,6 +25,52 @@ is(Linux::Event::_ByteStream->_native_consumer_abi_version, 1,
     }
     sub on_error ($stream, $error) { $stream->data->{error} = $error }
     sub on_eof ($stream) { $stream->data->{eof}++ }
+}
+
+{
+    package T::RawConsumer;
+    use parent 'Linux::Event::IO::Sock::Stream';
+    BEGIN {
+        Linux::Event::Framer->declare_native_consumer(
+            __PACKAGE__,
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'raw-input',
+            ),
+        );
+    }
+    sub on_error ($stream, $error) { $stream->data->{error} = $error }
+    sub on_eof ($stream) { $stream->data->{eof}++ }
+}
+
+{
+    package T::RawConsumerBadCallback;
+    use parent -norequire, 'T::RawConsumer';
+    sub on_data ($stream, $bytes) { return }
+}
+
+{
+    package T::RawConsumerBatch;
+    use parent -norequire, 'T::RawConsumer';
+    sub stream_tuning ($class) { return read_batch_bytes => 64 }
+}
+
+{
+    package T::RawConsumerFramed;
+    use parent -norequire, 'T::RawConsumer';
+    use Linux::Event::Framer 'Delimiter', "\n";
+}
+
+{
+    package T::RawMissingInput;
+    use parent 'Linux::Event::IO::Sock::Stream';
+    BEGIN {
+        Linux::Event::Framer->declare_native_consumer(
+            __PACKAGE__,
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'raw-missing-input',
+            ),
+        );
+    }
 }
 
 {
@@ -251,6 +298,90 @@ sub cancel_arm ($stream) {
 
 sub take ($stream) {
     return $stream->{xs_state}->_test_consumer_take;
+}
+
+{
+    my ($loop, $stream, $peer) = pair('T::RawConsumer');
+    my $ready = 0;
+    arm($stream, sub {
+        $ready++;
+        $loop->stop;
+    });
+    syswrite($peer, "hel") == 3 or die "raw partial write: $!";
+    $loop->run_for(0.01);
+    is($ready, 0, 'raw consumer retains an incomplete protocol unit natively');
+    is($stream->{xs_state}->stats->{input_buffered_bytes}, 3,
+        'incomplete raw input remains in the native input buffer');
+    is($stream->{xs_state}->stats->{delivery_calls}, 0,
+        'raw native consumer does not surface partial bytes through on_data');
+
+    syswrite($peer, "lo\nnext\n") == 8 or die "raw completion write: $!";
+    $loop->run;
+    is($ready, 1, 'raw consumer wakes when its protocol parser consumes a unit');
+    is(take($stream), 'hello',
+        'raw consumer parser receives the contiguous native input window');
+    is($stream->{xs_state}->stats->{input_buffered_bytes}, 5,
+        'unconsumed raw tail remains native after one protocol unit');
+
+    my $immediate = 0;
+    arm($stream, sub { $immediate++ });
+    is($immediate, 1,
+        'raw consumer resume immediately re-drives an already-buffered tail');
+    is(take($stream), 'next',
+        'raw consumer preserves tail bytes across pause/resume');
+    my $stats = $stream->{xs_state}->stats;
+    cmp_ok($stats->{consumer_input_calls}, '>=', 2,
+        'raw consumer input calls are instrumented');
+    is($stats->{consumer_message_calls}, 0,
+        'raw consumer bypasses framed message delivery');
+    is($stats->{message_callback_calls}, 0,
+        'raw consumer bypasses Perl message callbacks');
+    is($stats->{delivery_calls}, 0,
+        'raw consumer bypasses Perl raw callbacks');
+    $stream->close;
+    close $peer;
+}
+
+for my $case (
+    ['T::RawConsumerBadCallback', qr/on_data.*native consumer/,
+        'raw native consumer rejects a class on_data callback'],
+    ['T::RawConsumerBatch', qr/raw native consumer.*read_batch_bytes/,
+        'raw native consumer rejects Perl raw batching'],
+    ['T::RawConsumerFramed', qr/raw-input native consumer requires an unframed/,
+        'raw-input capability rejects a built-in native framer'],
+    ['T::RawMissingInput', qr/requests raw input without an input function/,
+        'raw-input capability requires the appended input operation'],
+) {
+    my ($class, $error, $label) = @$case;
+    my $ok = eval {
+        socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+            or die "socketpair: $!";
+        my $loop = Linux::Event::Loop->new;
+        $class->new(loop => $loop, fh => $a);
+        close $b;
+        1;
+    };
+    ok(!$ok, $label);
+    like($@, $error, "$label reports a stable diagnostic");
+}
+
+{
+    socketpair(my $a, my $b, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die "socketpair: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $ok = eval {
+        T::RawConsumer->new(
+            loop => $loop,
+            fh => $a,
+            on_data => sub ($stream, $bytes) { return },
+        );
+        1;
+    };
+    ok(!$ok, 'raw native consumer rejects a constructor on_data callback');
+    like($@, qr/on_data cannot be combined with a native consumer/,
+        'constructor callback conflict reports the native consumer boundary');
+    close $a;
+    close $b;
 }
 
 {
