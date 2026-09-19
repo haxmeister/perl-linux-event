@@ -1,0 +1,54 @@
+name: Stream timer fairness investigation
+
+on:
+  push:
+    branches:
+      - investigate/stream-timer-fairness
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up latest Perl
+        uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5"
+          multi-thread: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+
+      - name: Install Perl dependencies
+        run: cpanm --notest --installdeps .
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+
+      - name: Syntax check fairness benchmark
+        run: perl -Mblib -c bench/run-stream-timer-fairness.pl
+
+      - name: Run fairness matrix
+        run: |
+          mkdir -p bench/results
+          perl -Mblib bench/run-stream-timer-fairness.pl             --read-size=65536             --budgets=0,65536,262144,1048576             --timer-after=0.250             --producer-duration=1.000             --producer-block=262144             --warmup=1             --repeats=5             --case-timeout=3.000             --json=bench/results/stream-timer-fairness.json
+
+      - name: Preserve fairness report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: stream-timer-fairness
+          path: bench/results/stream-timer-fairness.json
+          if-no-files-found: warn
