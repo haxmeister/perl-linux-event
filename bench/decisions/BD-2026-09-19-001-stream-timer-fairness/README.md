@@ -159,8 +159,10 @@ all fixed-frame feedback throughput and avoiding the medium/large-payload
 throughput losses seen at smaller budgets. The change applies to the shared
 ordered-byte engine so Stream, Pipe, and TTY receive the same fairness policy.
 
-The integration updates the public tuning documentation and default regression
-coverage. The queued-write readiness loop remains a separate follow-up audit;
+The integration updates the public tuning documentation and adds
+`t/stream-68-read-fairness.t`, which proves the default yields after one
+64 KiB budget with data still queued and explicit zero retains one-turn
+drain-until-EAGAIN behavior. The queued-write readiness loop remains a separate follow-up audit;
 this decision does not claim that output-side application replenishment has
 already been analyzed.
 
