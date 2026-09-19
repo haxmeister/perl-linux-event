@@ -123,14 +123,31 @@ _new_validated(CLASS, spec_rv)
         if (consumer_ops->struct_size < LES_CONSUMER_OPS_V1_REQUIRED_SIZE)
             croak("consumer operations table is smaller than ABI v1");
         if (consumer_ops->flags
-            & ~(LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH))
+            & ~(LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH
+                | LES_CONSUMER_F_RAW_INPUT))
             croak("consumer operations table has unsupported flags");
         if (!consumer_ops->name || !consumer_ops->name[0]
-            || !consumer_ops->create || !consumer_ops->message
-            || !consumer_ops->event || !consumer_ops->destroy)
+            || !consumer_ops->create || !consumer_ops->event
+            || !consumer_ops->destroy)
             croak("consumer operations table is incomplete");
+        if ((consumer_ops->flags & LES_CONSUMER_F_RAW_INPUT)) {
+            if (consumer_ops->struct_size
+                    < LES_CONSUMER_OPS_V1_RAW_INPUT_REQUIRED_SIZE
+                || !consumer_ops->input)
+                croak("consumer operations table requests raw input without an input function");
+            if (read_mode != LES_READ_DELIVER)
+                croak("raw-input native consumer requires an unframed ordered-byte class");
+            if (read_batch_bytes)
+                croak("raw-input native consumer cannot use read_batch_bytes");
+        } else {
+            if (!consumer_ops->message)
+                croak("consumer operations table is incomplete");
+            if (read_mode == LES_READ_DELIVER)
+                croak("framed native consumer requires a built-in native framer");
+        }
         if ((consumer_ops->flags & LES_CONSUMER_F_WANT_FLUSH)
-            && (consumer_ops->struct_size < sizeof(les_consumer_ops_v1_t)
+            && (consumer_ops->struct_size
+                    < LES_CONSUMER_OPS_V1_FLUSH_REQUIRED_SIZE
                 || !consumer_ops->flush))
             croak("consumer operations table requests flush without a flush function");
     } else if ((consumer_provider && SvOK(consumer_provider))
