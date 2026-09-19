@@ -87,7 +87,17 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
         les_descriptor_t *descriptor = st->descriptor;
 
         if (descriptor->read_mode == LES_READ_DELIVER) {
-            if (st->read_batch_bytes) {
+            if (les_consumer_uses_raw_input(st)) {
+                const char *data = les_input_data(st);
+                size_t len = st->input_len;
+                size_t consumed = 0;
+
+                les_consumer_input(aTHX_ st, data, len, &consumed);
+                if (consumed)
+                    les_input_consume(st, consumed);
+                if (!consumed)
+                    return;
+            } else if (st->read_batch_bytes) {
                 les_flush_raw_batch(aTHX_ st);
             } else {
                 const char *data = les_input_data(st);
