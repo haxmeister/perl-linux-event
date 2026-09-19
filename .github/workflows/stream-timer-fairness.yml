@@ -16,7 +16,7 @@ concurrency:
 jobs:
   benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       - name: Check out source
@@ -55,7 +55,7 @@ jobs:
         run: |
           perl -Mblib bench/run-stream-feedback-timer-fairness.pl \
             --read-size=65536 \
-            --budgets=0,65536,262144,1048576 \
+            --budgets=0,16384,32768,65536,131072,262144 \
             --timer-after=1.500 \
             --message-bytes=64 \
             --window=32 \
@@ -63,6 +63,22 @@ jobs:
             --repeats=3 \
             --case-timeout=5.000 \
             --json=bench/results/stream-feedback-timer-fairness.json
+
+      - name: Run payload throughput budget sweep
+        run: |
+          for budget in 0 16384 32768 65536 131072 262144; do
+            perl -Mblib bench/run-stream-payload-sweep.pl \
+              --sizes=64,4096,32768,200000 \
+              --modes=raw,delimiter \
+              --repeats=3 \
+              --warmup=1 \
+              --target-bytes=67108864 \
+              --read-size=65536 \
+              --read-budget-bytes=$budget \
+              --variant=stream-timer-fairness-budget-$budget \
+              --commit=${{ github.sha }} \
+              --output=bench/results/stream-payload-budget-$budget.json
+          done
 
       - name: Preserve fairness reports
         if: always()
@@ -72,4 +88,5 @@ jobs:
           path: |
             bench/results/stream-timer-fairness.json
             bench/results/stream-feedback-timer-fairness.json
+            bench/results/stream-payload-budget-*.json
           if-no-files-found: warn
