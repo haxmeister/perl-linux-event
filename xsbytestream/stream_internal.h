@@ -111,6 +111,7 @@ typedef struct les_xsstats_s {
     unsigned long long framing_error_count;
     unsigned long long transition_count;
     unsigned long long consumer_message_calls;
+    unsigned long long consumer_input_calls;
     unsigned long long consumer_pause_count;
     unsigned long long consumer_resume_count;
     unsigned long long consumer_event_calls;
@@ -263,6 +264,9 @@ void les_flush_raw_batch(pTHX_ les_xsstate_t *st);
 
 int les_consumer_create(pTHX_ les_xsstate_t *st);
 void les_consumer_destroy(pTHX_ les_xsstate_t *st);
+int les_consumer_uses_raw_input(const les_xsstate_t *st);
+int les_consumer_input(pTHX_ les_xsstate_t *st, const char *data,
+    size_t length, size_t *consumed_out);
 int les_consumer_message(pTHX_ les_xsstate_t *st, SV *message);
 int les_consumer_flush(pTHX_ les_xsstate_t *st);
 int les_consumer_flush_terminal(pTHX_ les_xsstate_t *st);
