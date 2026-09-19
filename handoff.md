@@ -1,42 +1,44 @@
 # Linux::Event Handoff
 
-## Investigation branch: ordered-byte timer fairness
+## 0.115 integration: ordered-byte fairness and raw native input
 
-Branch `investigate/stream-timer-fairness` contains investigation-only work;
-no production default or runtime behavior has been changed.
+The timer-starvation investigation is now an approved 0.115 integration rather
+than investigation-only work. The shared ordered-byte default is
+`read_budget_bytes => 65_536` for Stream, Pipe, and TTY. Explicit
+`read_budget_bytes => 0` remains the unlimited drain-until-EAGAIN opt-in.
 
 Linux::Event::WebSocket exposed nominal 1.5-second timers being delayed by tens
-of seconds during sustained external echo traffic. Core-only reproduction now
-confirms the cause: the ordered-byte default `read_budget_bytes => 0` permits a
-single Stream/Pipe/TTY readiness callback to drain successful reads until
-EAGAIN. A concurrently replenished fd can therefore monopolize Loop dispatch
-while the shared timerfd and other descriptors remain ready but unserviced.
+of seconds during sustained external echo traffic. The core reproducer showed
+that unlimited draining allowed one continuously replenished ordered-byte fd to
+remain inside a single readiness callback while timerfd and other descriptors
+were already ready.
 
-The decisive fixed-frame feedback reproducer keeps a 32-message window against
-a forked echo peer. With 64-byte messages and a 1.5-second Timer, unlimited
-drain had median timer lateness 1556.807 ms and one of three measured cases hit
-the independent five-second watchdog. Finite budgets kept throughput essentially
+The decisive fixed-frame feedback benchmark measured median timer lateness of
+1556.807 ms for unlimited drain, with one of three measured cases reaching the
+independent five-second watchdog. Finite budgets kept throughput essentially
 flat at about 214k-217k msg/s. Median timer lateness was 1.459 ms at 16 KiB,
 2.848 ms at 32 KiB, 7.930 ms at 64 KiB, 15.539 ms at 128 KiB, and 30.904 ms at
-256 KiB.
+256 KiB. A raw/Delimiter payload sweep through 200,000 B identified 64 KiB as
+the throughput/fairness knee.
 
-A representative raw/Delimiter payload sweep through 200,000 B held
-`read_size=64 KiB` constant. 64 KiB is the measured knee: smaller budgets
-materially reduce medium/large payload throughput, while 128 KiB provides only
-modest extra raw throughput and approximately doubles feedback timer lateness.
-The current candidate fix is therefore to change the shared ordered-byte
-default to `read_budget_bytes => 65_536`, retaining explicit zero as the
-unlimited opt-in.
+The benchmark programs remain under `bench/`. Raw machine-readable evidence is
+committed under
+`bench/decisions/BD-2026-09-19-001-stream-timer-fairness/`, and the KEEP
+decision is indexed in `bench/BENCHMARK-DECISIONS.md`.
 
-Full findings, exact tables, workflow run/artifact IDs, and implementation
-follow-ups are in
-`bench/decisions/BD-2026-09-19-001-stream-timer-fairness/README.md`.
+The native consumer ABI v1 is also generalized for upper protocol libraries
+that cannot use one of the built-in native framers. A provider can request
+`LES_CONSUMER_F_RAW_INPUT` and receive a borrowed contiguous `(data, length)`
+window directly from the ordered-byte native input buffer before payload bytes
+are converted to a Perl SV. The provider reports the leading byte count it
+consumed; the core retains any tail natively and can re-drive it after later
+reads or consumer resume. This is an append-only ABI-v1 extension guarded by
+`struct_size`, so original providers remain compatible.
 
-Do not change the production default or merge this branch without explicit user
-authorization. If approved, preserve final JSON under `bench/decisions`,
-append the benchmark decision record, update all tuning-default documentation
-and tests, run the full suite/performance gates, and separately audit the
-queued-write drain for the analogous replenishment hazard.
+Regression coverage lives in `t/stream-14-class-options.t` for the bounded
+default/unlimited opt-in and `t/stream-59-native-consumer-abi.t` for raw-input
+lifetime, retained tails, callback conflicts, original-v1 compatibility, and
+native-buffer delivery.
 
 Before architectural, performance, dependency, or ecosystem work, read
 `docs/ECOSYSTEM-CHARTER.md`. It is authoritative.
