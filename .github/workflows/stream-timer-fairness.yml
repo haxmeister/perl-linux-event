@@ -1,9 +1,6 @@
 name: Stream timer fairness investigation
 
 on:
-  push:
-    branches:
-      - investigate/stream-timer-fairness
   workflow_dispatch:
 
 permissions:
