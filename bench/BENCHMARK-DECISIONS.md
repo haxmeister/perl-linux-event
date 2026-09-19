@@ -113,6 +113,7 @@ not part of the CPAN distribution.
 | BD-2026-09-02-004 | 2026-09-02 | Stream stats presentation | KEEP |
 | BD-2026-09-02-005 | 2026-09-02 | Stream construction/failure policy | KEEP |
 | BD-2026-09-02-006 | 2026-09-02 | Stream transition policy | KEEP |
+| BD-2026-09-19-001 | 2026-09-19 | Ordered-byte read fairness default | KEEP |
 
 ---
 
@@ -812,3 +813,94 @@ if a quieter paired payload host reproduces a same-direction regression.
 
 **Evidence:**
 `bench/decisions/BD-2026-09-02-007-read-boundary-settlement/`
+
+
+---
+
+## BD-2026-09-19-001 - Ordered-byte read fairness default
+
+**Decision:** KEEP
+
+**Hypothesis:** An unlimited ordered-byte read drain can monopolize one Loop
+dispatch turn when a peer continuously replenishes the fd. Bounding transport
+bytes read per readiness callback should restore service to timerfd and other
+ready descriptors without materially reducing realistic Stream throughput.
+
+**Baseline and candidate:**
+
+- baseline/main ancestor: `c80a2141deb29e3153a93a77137723049b8c2119`;
+- investigation benchmark commit: `e7f1fcf7f20ed35ae1c753fca759d506dbed086a`;
+- integration branch: `investigate/stream-timer-fairness`;
+- Linux::Event version remained unreleased `0.115`; no version bump was made.
+
+**Fairness workload:**
+
+- Linux::Event fixed-frame ordered-byte Stream connected to a forked blocking
+  AF_UNIX echo peer;
+- 64-byte messages with a 32-message feedback window;
+- `read_size = 65,536`;
+- `read_budget_bytes` values 0, 16,384, 32,768, 65,536, 131,072, and
+  262,144;
+- a 1.5-second Timer sharing the same Loop;
+- one warmup and three measured repeats;
+- independent five-second watchdog so a starved Linux::Event timer could not
+  hang the benchmark process.
+
+**Payload throughput workload:**
+
+- raw and Delimiter-framed Stream delivery;
+- payloads 64 B, 4 KiB, 32 KiB, and 200,000 B;
+- `read_size = 65,536`;
+- the same six read-budget values;
+- one warmup and three measured repeats;
+- approximately 64 MiB target traffic per case.
+
+**Measured feedback results:**
+
+| Read budget | Median timer lateness | Median throughput |
+|---:|---:|---:|
+| unlimited (0) | 1556.807 ms | 211,859 msg/s |
+| 16 KiB | 1.459 ms | 216,848 msg/s |
+| 32 KiB | 2.848 ms | 215,982 msg/s |
+| 64 KiB | 7.930 ms | 215,377 msg/s |
+| 128 KiB | 15.539 ms | 216,771 msg/s |
+| 256 KiB | 30.904 ms | 214,014 msg/s |
+
+One of the three measured unlimited-budget cases reached the independent
+five-second watchdog. Finite-budget throughput remained essentially flat in
+this workload.
+
+The representative raw/Delimiter payload sweep through 200,000 B identified
+64 KiB as the practical knee. Smaller 16 KiB and 32 KiB budgets materially
+reduced medium/large-payload throughput. Raising the budget to 128 KiB provided
+only modest extra raw throughput while approximately doubling feedback timer
+lateness; 256 KiB increased median timer lateness to about 31 ms without a
+corresponding feedback-throughput gain.
+
+**Reason:** The previous default of zero gave Linux::Event no upper bound on
+time spent draining a continuously replenished ordered-byte fd in one readiness
+callback. A 65,536-byte default matches the ordinary default `read_size`,
+restores bounded yielding to the Loop, and retained the useful throughput
+characteristics measured across the required payload sweep.
+
+Explicit `read_budget_bytes => 0` remains supported as the deliberate
+drain-until-EAGAIN opt-in.
+
+**Evidence:** Raw benchmark output from GitHub Actions run `35409047873`,
+artifact `10572949283`, is committed unchanged under
+`bench/decisions/BD-2026-09-19-001-stream-timer-fairness/`:
+
+- `stream-feedback-timer-fairness.json`
+- `stream-timer-fairness.json`
+- `stream-payload-budget-0.json`
+- `stream-payload-budget-16384.json`
+- `stream-payload-budget-32768.json`
+- `stream-payload-budget-65536.json`
+- `stream-payload-budget-131072.json`
+- `stream-payload-budget-262144.json`
+
+**Caveats / revisit conditions:** Measurements were made on the Linux GitHub
+Actions runner and use AF_UNIX for the decisive feedback reproducer. A future
+material transport/read-engine change should retest the knee. The analogous
+application-replenished queued-write path was not part of this decision and
+remains a separate audit target.
