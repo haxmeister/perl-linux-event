@@ -1,6 +1,18 @@
 Revision history for Linux-Event
 
 0.115  2026-09-18
+    - Bound the shared ordered-byte read drain by default with
+      read_budget_bytes => 65_536 so continuously replenished Stream, Pipe,
+      or TTY input yields back to Loop dispatch instead of starving timerfd
+      and other ready descriptors. Explicit read_budget_bytes => 0 remains
+      the opt-in drain-until-EAGAIN mode. Preserve the fairness reproducer,
+      payload sweep, raw benchmark evidence, and KEEP decision record.
+    - Generalize the append-only native consumer ABI v1 with an optional
+      raw-input capability for protocol engines that cannot use a built-in
+      native framer. Providers may consume a borrowed contiguous native
+      (data, length) window before payload bytes become a Perl SV; unconsumed
+      tails remain in the shared native input buffer across later reads and
+      pause/resume. Original ABI-v1 providers remain compatible.
     - Keep protocol subclasses free to define public close() semantics by
       routing involuntary Stream teardown through the private terminal-close
       primitive instead of virtual close() dispatch.
