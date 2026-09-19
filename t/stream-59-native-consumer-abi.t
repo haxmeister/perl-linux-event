@@ -342,6 +342,31 @@ sub take ($stream) {
     close $peer;
 }
 
+{
+    my ($loop, $stream, $peer) = pair('T::RawConsumer');
+    my @ready;
+    arm($stream, sub {
+        push @ready, 'first';
+        arm($stream, sub {
+            push @ready, 'second';
+            $loop->stop;
+        });
+    });
+    syswrite($peer, "one\ntwo\n") == 8
+        or die "raw CONTINUE write: $!";
+    $loop->run;
+    is_deeply(\@ready, [qw(first second)],
+        'raw consumer CONTINUE re-drives a complete native-buffer tail');
+    is(take($stream), 'one',
+        'first raw unit is delivered before reentrant receive arm');
+    is(take($stream), 'two',
+        'second raw unit is delivered without another fd readiness event');
+    is($stream->{xs_state}->stats->{read_ready_calls}, 1,
+        'buffered raw CONTINUE path completes in the same read-ready turn');
+    $stream->close;
+    close $peer;
+}
+
 for my $case (
     ['T::RawConsumerBadCallback', qr/on_data.*native consumer/,
         'raw native consumer rejects a class on_data callback'],
