@@ -288,7 +288,9 @@ _new_validated(CLASS, object, read_fd, write_fd, descriptor_obj, input_cb = &PL_
         : descriptor->drain_cb
             ? SvREFCNT_inc_simple_NN(descriptor->drain_cb) : NULL;
 
-    if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER) {
+    if (read_fd >= 0 && descriptor->read_mode == LES_READ_DELIVER
+        && !(descriptor->consumer_ops
+            && (descriptor->consumer_ops->flags & LES_CONSUMER_F_RAW_INPUT))) {
         st->read_buffer = (char *)malloc(descriptor->read_size);
         if (!st->read_buffer) {
             SvREFCNT_dec(st->descriptor_sv);
