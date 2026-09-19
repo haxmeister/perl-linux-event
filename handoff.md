@@ -35,9 +35,11 @@ consumed; the core retains any tail natively and can re-drive it after later
 reads or consumer resume. This is an append-only ABI-v1 extension guarded by
 `struct_size`, so original providers remain compatible.
 
-Regression coverage lives in `t/stream-14-class-options.t` for the bounded
-default/unlimited opt-in and `t/stream-59-native-consumer-abi.t` for raw-input
-lifetime, retained tails, callback conflicts, original-v1 compatibility, and
+Regression coverage lives in `t/stream-14-class-options.t` for the resolved
+bounded default, `t/stream-68-read-fairness.t` for one-turn 64 KiB yielding
+and the explicit-zero unlimited opt-in, and
+`t/stream-59-native-consumer-abi.t` for raw-input lifetime, retained tails,
+CONTINUE re-drive, callback conflicts, original-v1 compatibility, and
 native-buffer delivery.
 
 Before architectural, performance, dependency, or ecosystem work, read
