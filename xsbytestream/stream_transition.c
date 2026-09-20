@@ -181,6 +181,8 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
         return;
     }
 
+    if (st->consumer_transition_preparing)
+        croak("transition_to(): reentrant transition during native consumer create");
     if (st->consumer_transition_pending)
         croak("transition_to(): native consumer handoff is already pending");
 
