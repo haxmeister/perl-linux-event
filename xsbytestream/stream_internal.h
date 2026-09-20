@@ -168,7 +168,11 @@ typedef struct les_xsstate_s {
 
     const les_consumer_ops_v1_t *consumer_ops;
     void *consumer_context;
+    const les_consumer_ops_v1_t *consumer_next_ops;
+    void *consumer_next_context;
     UV consumer_host_retain_count;
+    unsigned int consumer_call_depth;
+    int consumer_transition_pending;
     int destroy_pending;
 
     /* Native framed-input storage. Logical bytes begin at input_start and
@@ -264,6 +268,11 @@ void les_flush_raw_batch(pTHX_ les_xsstate_t *st);
 
 int les_consumer_create(pTHX_ les_xsstate_t *st);
 void les_consumer_destroy(pTHX_ les_xsstate_t *st);
+void *les_consumer_prepare_transition_context(
+    pTHX_ les_xsstate_t *st, const les_consumer_ops_v1_t *ops);
+void les_consumer_schedule_transition(
+    pTHX_ les_xsstate_t *st, const les_consumer_ops_v1_t *ops, void *context);
+void les_consumer_settle_transition(pTHX_ les_xsstate_t *st);
 int les_consumer_uses_raw_input(const les_xsstate_t *st);
 int les_consumer_input(pTHX_ les_xsstate_t *st, const char *data,
     size_t length, size_t *consumed_out);
