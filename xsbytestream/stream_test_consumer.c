@@ -18,6 +18,7 @@ typedef struct les_test_consumer_s {
 } les_test_consumer_t;
 
 static UV les_test_destroyed = 0;
+static UV les_test_last_destroy_flushes = 0;
 
 static void *
 les_test_create(pTHX_ const les_consumer_host_api_v1_t *host,
@@ -108,6 +109,26 @@ les_test_input(pTHX_ void *opaque, const char *data, size_t length,
         }
         return context->permits
             ? LES_CONSUMER_CONTINUE : LES_CONSUMER_PAUSE;
+    }
+    return LES_CONSUMER_CONTINUE;
+}
+
+static int
+les_test_input_transition_target(pTHX_ void *opaque, const char *data,
+    size_t length, size_t *consumed)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    size_t index;
+    PERL_UNUSED_CONTEXT;
+
+    *consumed = 0;
+    for (index = 0; index < length; index++) {
+        if (data[index] != '\n')
+            continue;
+        context->delivered++;
+        av_push(context->messages, newSVpvn(data, (STRLEN)index));
+        *consumed = index + 1;
+        return LES_CONSUMER_CONTINUE;
     }
     return LES_CONSUMER_CONTINUE;
 }
@@ -268,6 +289,7 @@ les_test_destroy(pTHX_ void *opaque)
     SvREFCNT_dec((SV *)context->messages);
     SvREFCNT_dec((SV *)context->events);
     SvREFCNT_dec((SV *)context->trace);
+    les_test_last_destroy_flushes = context->flushes;
     Safefree(context);
     les_test_destroyed++;
 }
@@ -284,6 +306,19 @@ static const les_consumer_ops_v1_t les_test_raw_ops = {
     les_test_destroy,
     les_test_flush,
     les_test_input
+};
+
+static const les_consumer_ops_v1_t les_test_raw_transition_target_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "raw-input transition target test consumer",
+    LES_CONSUMER_F_WANT_FLUSH | LES_CONSUMER_F_RAW_INPUT,
+    les_test_create,
+    NULL,
+    les_test_event,
+    les_test_destroy,
+    les_test_flush_continue,
+    les_test_input_transition_target
 };
 
 static const les_consumer_ops_v1_t les_test_raw_missing_input_ops = {
@@ -499,6 +534,7 @@ les_test_context(les_xsstate_t *st)
 {
     if (!st || (st->consumer_ops != &les_test_ops
         && st->consumer_ops != &les_test_raw_ops
+        && st->consumer_ops != &les_test_raw_transition_target_ops
         && st->consumer_ops != &les_test_flush_continue_ops
         && st->consumer_ops != &les_test_croak_ops
         && st->consumer_ops != &les_test_message_continue_ops
@@ -522,6 +558,8 @@ les_test_consumer_definition(pTHX_ const char *variant)
 
     if (strEQ(variant, "raw-input"))
         ops = &les_test_raw_ops;
+    else if (strEQ(variant, "raw-transition-target"))
+        ops = &les_test_raw_transition_target_ops;
     else if (strEQ(variant, "raw-missing-input"))
         ops = &les_test_raw_missing_input_ops;
     else if (strEQ(variant, "incomplete"))
@@ -688,4 +726,10 @@ UV
 les_test_consumer_destroy_count(void)
 {
     return les_test_destroyed;
+}
+
+UV
+les_test_consumer_last_destroy_flushes(void)
+{
+    return les_test_last_destroy_flushes;
 }
