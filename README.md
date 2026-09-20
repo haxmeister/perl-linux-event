@@ -82,8 +82,10 @@ plus constructor closures for per-instance application state.
 cpanm Linux::Event
 ```
 
-Building requires Linux, a C compiler, and OpenSSL development files. The
-distribution requires Perl 5.36 or newer.
+Building the complete distribution requires Perl 5.36 or newer, Linux headers
+with pidfd syscall definitions, a Linux 5.4 or newer runtime for pidfd process
+status, a libc providing `posix_spawn_file_actions_addchdir_np`, a C compiler,
+and OpenSSL 1.1.1 or newer development files. Perl ithreads are not required.
 
 ## The reactor
 
