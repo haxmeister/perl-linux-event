@@ -853,6 +853,39 @@ for my $case (
 }
 
 {
+    my $before =
+        Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
+    my ($loop, $stream, $peer) = pair('T::RawConsumer');
+
+    my $host_results =
+        Linux::Event::_ByteStream::TestSupport
+            ->_test_consumer_transition_retain(
+                $stream,
+                sub { $stream->transition_to('T::RawTransitionTarget') },
+            );
+
+    is_deeply($host_results, [0, 0, 0, 1],
+        'retiring provider cannot mutate or re-retain host before release');
+    isa_ok($stream, 'T::RawTransitionTarget',
+        'host release completes deferred provider handoff');
+    is(
+        Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count,
+        $before + 1,
+        'retained source context is destroyed only after host release',
+    );
+
+    syswrite($peer, "after-retain-release\n")
+        == length("after-retain-release\n")
+        or die "short retained-handoff fixture write: $!";
+    $loop->run_for(0.05);
+    is(take($stream), 'after-retain-release',
+        'target consumer receives input after retained handoff settles');
+
+    $stream->close;
+    close $peer;
+}
+
+{
     my ($loop, $stream, $peer) = pair('T::ConsumerLine');
     my $ok = eval {
         $stream->transition_to('T::TransitionCreateFailureLine');
