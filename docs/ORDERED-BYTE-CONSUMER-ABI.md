@@ -326,8 +326,9 @@ that provider frame/retain is safely released. The target context is then
 installed and retained input is immediately re-driven through the target
 provider when its policy is not paused.
 
-During transition-time target `create`, host `pause`, `resume`, and `retain`
-are intentionally unavailable until the target context is activated. Once a
+During transition-time target `create`, host `pause`, `resume`, `retain`,
+and `release` are intentionally unavailable until the target context is
+activated. Once a
 provider-changing handoff is pending, those same mutating operations are also
 unavailable to the retiring source context; an already-held source retain may
 only be released so the handoff can reach its safe point. Stream identity and
