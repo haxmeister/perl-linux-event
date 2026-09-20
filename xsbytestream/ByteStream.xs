@@ -756,3 +756,12 @@ _test_consumer_external_arm(object, callback)
     RETVAL = les_test_consumer_external_arm(aTHX_ object, callback);
   OUTPUT:
     RETVAL
+
+SV *
+_test_consumer_transition_retain(object, callback)
+    SV *object
+    SV *callback
+  CODE:
+    RETVAL = les_test_consumer_transition_retain(aTHX_ object, callback);
+  OUTPUT:
+    RETVAL
