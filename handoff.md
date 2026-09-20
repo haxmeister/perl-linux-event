@@ -143,8 +143,10 @@ retiring descriptor stays referenced until that destruction so its provider
 lifetime token cannot disappear early; then the retained tail is re-driven
 through the target provider. This directly
 supports cases such as HTTP native parsing handing same-read post-Upgrade bytes
-to a WebSocket native parser without a Perl byte-buffer round trip. Adding or
-removing native-consumer mode itself remains rejected.
+to a WebSocket native parser without a Perl byte-buffer round trip. The later
+native-consumer retirement work documented above additionally permits a native
+provider to hand unread input to an ordinary Perl target; adding a native
+consumer to an already-ordinary live Stream remains rejected.
 
 The native consumer ABI v1 is also generalized for upper protocol libraries
 that cannot use one of the built-in native framers. A provider can request
