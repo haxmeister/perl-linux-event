@@ -290,6 +290,7 @@ void les_consumer_notify_paused(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_definition(pTHX_ const char *variant);
 void les_test_consumer_arm(pTHX_ les_xsstate_t *st, SV *callback);
 int les_test_consumer_external_arm(pTHX_ SV *stream, SV *callback);
+SV *les_test_consumer_transition_retain(pTHX_ SV *stream, SV *callback);
 void les_test_consumer_cancel(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_take(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_events(pTHX_ les_xsstate_t *st);
