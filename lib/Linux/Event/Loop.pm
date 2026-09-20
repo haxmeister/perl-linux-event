@@ -179,6 +179,36 @@ C<fh>.
 
 =head1 DRIVING THE LOOP
 
+=head2 poll_fd
+
+Return the Loop-owned epoll descriptor used to integrate Linux::Event beneath
+another event system. The descriptor becomes readable whenever Linux::Event has
+kernel readiness pending, including its timerfd, signalfd, pidfds, eventfds,
+and ordinary I/O registrations.
+
+The returned descriptor is borrowed. Linux::Event owns it and closes it when
+the Loop is destroyed; foreign adapters must not close it. An adapter that
+requires a Perl filehandle may duplicate the descriptor and watch the duplicate.
+
+Foreign loops should normally watch C<poll_fd> for level-triggered read
+readiness and call C<poll> once from that readiness callback.
+
+=head2 poll
+
+Perform exactly one nonblocking C<epoll_wait> and dispatch the returned batch.
+Returns the number of events returned by epoll. This is the supported
+foreign-loop drive primitive; adapters should not depend on C<resources()> or
+use C<run_once(0)> as an integration convention.
+
+If more than C<event_capacity> events are pending, the epoll descriptor remains
+readable so a level-triggered foreign loop can schedule another turn. C<poll>
+does not run or stop the foreign event system. A prior C<stop> request does not
+suppress C<poll>.
+
+Like the other driver methods, C<poll> cannot recursively drive the same Loop
+from one of its callbacks. Callback exceptions propagate after native driver
+state is restored.
+
 =head2 run
 
 Wait and dispatch until C<stop> is called.
