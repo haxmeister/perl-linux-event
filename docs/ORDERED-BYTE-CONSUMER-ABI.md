@@ -310,14 +310,33 @@ terminal rather than reject it or attempt to resume input.
 
 ## Descriptor transitions
 
-`transition_to()` can change framing while retaining one provider context only
-when source and target cached descriptors use the same operations-table
-pointer.
+`transition_to()` can change framing while retaining one provider context when
+source and target cached descriptors use the same operations-table pointer.
 
-Adding, removing, or changing the native consumer provider on a live object is
-rejected. Unread bytes stay in native input storage and are interpreted by the
-target framer under the ordinary protocol-transition rules.
+It can also replace one native consumer provider with another. The target
+provider context is created before the live source context is disturbed. If
+target creation fails, the source descriptor, source provider context, and
+unread native input remain active.
 
+A provider-changing transition preserves unread bytes in the shared native input
+buffer. Source flush debt is settled before the source context is destroyed.
+If the transition is requested reentrantly from a provider callback, or while
+the source provider holds a host lifetime retain, destruction is deferred until
+that provider frame/retain is safely released. The target context is then
+installed and retained input is immediately re-driven through the target
+provider when its policy is not paused.
+
+During transition-time target `create`, host `pause`, `resume`, `retain`,
+and `release` are intentionally unavailable until the target context is
+activated. Once a
+provider-changing handoff is pending, those same mutating operations are also
+unavailable to the retiring source context; an already-held source retain may
+only be released so the handoff can reach its safe point. Stream identity and
+closed-state queries remain available. This prevents either side from driving
+buffered input while target descriptor state and source provider state overlap.
+
+Adding or removing a native consumer provider on a live object remains rejected;
+this handoff contract is specifically provider-to-provider replacement.
 The transition also must remain within the same public resource category.
 
 ## Fairness

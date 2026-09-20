@@ -72,6 +72,8 @@ les_read_ready(pTHX_ les_xsstate_t *st)
         if (st->descriptor->read_mode != LES_READ_DELIVER
             || !st->read_batch_bytes)
             les_process_existing_input(aTHX_ st, 0);
+        if (st->consumer_transition_pending)
+            break;
         if (st->closed || LES_INPUT_PAUSED(st) || st->read_eof)
             break;
 

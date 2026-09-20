@@ -253,6 +253,11 @@ ordered-byte layer.
 same native ordered-byte state, descriptors, buffered input, output queue,
 backpressure state, deadlines, and application data.
 
+When both protocol descriptors declare native consumers, the transition may
+replace the consumer provider at a safe provider-frame/host-retain boundary.
+Unread bytes remain in that same native input buffer and are re-driven through
+the incoming provider after the source flush/context handoff completes.
+
 The target must represent the same underlying resource category. Protocol
 transition must not silently turn a pipe into a socket or a connected socket
 into a TTY.

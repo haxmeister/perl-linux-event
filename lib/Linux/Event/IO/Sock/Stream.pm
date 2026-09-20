@@ -382,7 +382,10 @@ uses high/low watermarks plus optional C<max_pending_bytes> protection.
 C<pause_read> and C<resume_read> control application reads. C<transition_to>
 changes protocol callback/framing descriptors in place while retaining the live
 socket, transport, output queue, and unread native input according to the
-transition rules in F<docs/FRAMING.md>.
+transition rules in F<docs/FRAMING.md>. Native protocol extensions may also
+hand off from one native consumer provider to another without copying the
+retained input through Perl; adding or removing native-consumer mode during a
+live transition remains invalid.
 
 =head1 SOCKET POLICY
 

@@ -509,7 +509,11 @@ _transition_ready(state_obj)
     ENTER;
     SAVEFREESV(SvREFCNT_inc(state_obj));
     st = les_state_from_sv(state_obj);
-    if (!st->closed && !LES_INPUT_PAUSED(st) && !st->read_eof
+    if (st->consumer_transition_pending && !st->consumer_call_depth
+        && !st->consumer_host_retain_count)
+        les_consumer_flush(aTHX_ st);
+    if (!st->consumer_transition_pending
+        && !st->closed && !LES_INPUT_PAUSED(st) && !st->read_eof
         && st->input_dispatch_depth == 0 && st->input_len) {
         ENTER;
         SAVEINT(st->input_dispatch_depth);
@@ -735,11 +739,29 @@ _test_consumer_destroy_count(CLASS)
   OUTPUT:
     RETVAL
 
+UV
+_test_consumer_last_destroy_flushes(CLASS)
+    const char *CLASS
+  CODE:
+    PERL_UNUSED_VAR(CLASS);
+    RETVAL = les_test_consumer_last_destroy_flushes();
+  OUTPUT:
+    RETVAL
+
 int
 _test_consumer_external_arm(object, callback)
     SV *object
     SV *callback
   CODE:
     RETVAL = les_test_consumer_external_arm(aTHX_ object, callback);
+  OUTPUT:
+    RETVAL
+
+SV *
+_test_consumer_transition_retain(object, callback)
+    SV *object
+    SV *callback
+  CODE:
+    RETVAL = les_test_consumer_transition_retain(aTHX_ object, callback);
   OUTPUT:
     RETVAL

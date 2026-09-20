@@ -1,6 +1,12 @@
 Revision history for Linux-Event
 
 0.115  2026-09-18
+    - Generalize transition_to() so one native consumer provider can hand the
+      live ordered-byte stream to another provider without surfacing unread
+      tail bytes through Perl. Pre-create the target context, settle source
+      flush debt, defer source destruction across active provider frames/host
+      retains, and re-drive preserved native input through the target. Keep
+      adding/removing native-consumer mode during a live transition rejected.
     - Add the supported foreign-loop integration boundary: poll_fd() exposes
       the Loop-owned epoll descriptor as a borrowed readiness fd, and poll()
       performs exactly one nonblocking dispatch turn. Keep adapters outside
