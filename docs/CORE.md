@@ -201,7 +201,9 @@ It is intentionally a separate public contract from `run_once(0)`, even though
 both use the same native readiness path. Foreign adapters should watch
 `poll_fd()` with level-triggered semantics and call `poll()` once per host-loop
 readiness callback. If more work remains than one event batch can hold, the
-epoll fd remains readable for a later host-loop turn.
+epoll fd remains readable for a later host-loop turn. An interrupted native
+wait is treated as an empty turn; other native wait failures throw, and callback
+exceptions propagate after driver state is restored.
 
 Linux::Event does not depend on or take ownership of the foreign loop. Adapters
 for EV/AnyEvent, IO::Async, Mojo, or other event systems belong outside core.
