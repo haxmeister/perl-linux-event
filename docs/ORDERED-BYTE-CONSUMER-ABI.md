@@ -327,9 +327,12 @@ installed and retained input is immediately re-driven through the target
 provider when its policy is not paused.
 
 During transition-time target `create`, host `pause`, `resume`, and `retain`
-are intentionally unavailable until the target context is activated. Stream
-identity and closed-state queries remain available. This prevents target setup
-from mutating or ambiguously retaining the still-live source context.
+are intentionally unavailable until the target context is activated. Once a
+provider-changing handoff is pending, those same mutating operations are also
+unavailable to the retiring source context; an already-held source retain may
+only be released so the handoff can reach its safe point. Stream identity and
+closed-state queries remain available. This prevents either side from driving
+buffered input while target descriptor state and source provider state overlap.
 
 Adding or removing a native consumer provider on a live object remains rejected;
 this handoff contract is specifically provider-to-provider replacement.
