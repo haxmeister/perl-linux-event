@@ -171,6 +171,15 @@ les_consumer_settle_transition(pTHX_ les_xsstate_t *st)
     st->consumer_flush_pending = 0;
     st->consumer_paused = st->consumer_ops
         && (st->consumer_ops->flags & LES_CONSUMER_F_START_PAUSED) ? 1 : 0;
+
+    if (!LES_INPUT_PAUSED(st) && !st->closed && !st->read_eof
+        && st->input_dispatch_depth == 0 && st->input_len) {
+        ENTER;
+        SAVEINT(st->input_dispatch_depth);
+        st->input_dispatch_depth++;
+        les_process_existing_input(aTHX_ st, 1);
+        LEAVE;
+    }
 }
 
 int
