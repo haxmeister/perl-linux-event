@@ -52,8 +52,10 @@ Native consumer protocol handoff is also generalized for protocol upgrades.
 `transition_to()` may now replace one native consumer operations table with
 another while preserving the same ordered-byte input buffer. Target context
 creation is validated before the source is disturbed; source flush debt and
-provider-frame/host-retain lifetime are settled before source destruction; then
-the retained tail is re-driven through the target provider. This directly
+provider-frame/host-retain lifetime are settled before source destruction; the
+retiring descriptor stays referenced until that destruction so its provider
+lifetime token cannot disappear early; then the retained tail is re-driven
+through the target provider. This directly
 supports cases such as HTTP native parsing handing same-read post-Upgrade bytes
 to a WebSocket native parser without a Perl byte-buffer round trip. Adding or
 removing native-consumer mode itself remains rejected.
