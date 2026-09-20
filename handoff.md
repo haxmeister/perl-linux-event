@@ -48,6 +48,16 @@ committed under
 `bench/decisions/BD-2026-09-19-001-stream-timer-fairness/`, and the KEEP
 decision is indexed in `bench/BENCHMARK-DECISIONS.md`.
 
+Native consumer protocol handoff is also generalized for protocol upgrades.
+`transition_to()` may now replace one native consumer operations table with
+another while preserving the same ordered-byte input buffer. Target context
+creation is validated before the source is disturbed; source flush debt and
+provider-frame/host-retain lifetime are settled before source destruction; then
+the retained tail is re-driven through the target provider. This directly
+supports cases such as HTTP native parsing handing same-read post-Upgrade bytes
+to a WebSocket native parser without a Perl byte-buffer round trip. Adding or
+removing native-consumer mode itself remains rejected.
+
 The native consumer ABI v1 is also generalized for upper protocol libraries
 that cannot use one of the built-in native framers. A provider can request
 `LES_CONSUMER_F_RAW_INPUT` and receive a borrowed contiguous `(data, length)`
