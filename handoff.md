@@ -1,10 +1,11 @@
 # Linux::Event Handoff
 
-## 0.116 release preparation
+## 0.116 release
 
 Linux::Event 0.116 is the patch release for the native-consumer retirement
-generalization merged by PR #22. The release branch is `release/0.116`, based
-on main commit `09073f76744d1ed2bfd6e0b8913ee57f5828c035`.
+generalization merged by PR #22. Release PR #23 passed all release gates and
+was squash-merged to `main` as
+`bf0c56b7443cd91d559e7a8d7fe580e59eb1e5b6`.
 
 Release bookkeeping is updated from 0.115 to 0.116 across every versioned Perl
 module, including the private versioned support modules, and both checked-in
@@ -18,10 +19,11 @@ ordered bytes and the existing provider flush/retain lifetime guarantees.
 Ordinary -> native live transition remains rejected. No ordinary read hot-path
 bookkeeping was added.
 
-The release PR must pass the full Perl/threaded matrix, generated-distribution
-integrity checks, metadata/POD validation, and the permanent same-run
-performance regression gate before merge. After merge, record the exact main
-commit here for tagging/release.
+PR #23 passed CI run #439: Perl 5.36/5.38/5.40/5.42/5.44/latest,
+threaded 5.36/latest, generated-distribution integrity, metadata/POD validation,
+and the permanent same-run performance regression gate. Foreign-loop integration
+run #9 also passed on Perl 5.36 and 5.44. The 0.116 release commit for
+tagging/distribution is `bf0c56b7443cd91d559e7a8d7fe580e59eb1e5b6`.
 
 ## 0.116 native-consumer retirement transition
 
