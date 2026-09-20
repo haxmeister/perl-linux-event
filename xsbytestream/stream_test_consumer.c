@@ -651,6 +651,62 @@ les_test_consumer_external_arm(pTHX_ SV *stream, SV *callback)
     return resumed >= 0 && observed_after_resume;
 }
 
+SV *
+les_test_consumer_transition_retain(pTHX_ SV *stream, SV *callback)
+{
+    HV *stream_hv;
+    SV **state_slot;
+    les_xsstate_t *st;
+    les_test_consumer_t *context;
+    AV *result;
+    UV destroyed_before;
+    int resume_result;
+    int pause_result;
+    int retain_result;
+    dSP;
+
+    if (!SvROK(stream) || SvTYPE(SvRV(stream)) != SVt_PVHV)
+        croak("test consumer transition retain requires a hash-based Stream");
+    if (!callback || !SvOK(callback) || !SvROK(callback)
+        || SvTYPE(SvRV(callback)) != SVt_PVCV)
+        croak("test consumer transition retain requires a callback");
+
+    stream_hv = (HV *)SvRV(stream);
+    state_slot = hv_fetchs(stream_hv, "xs_state", 0);
+    if (!state_slot || !SvOK(*state_slot))
+        croak("test consumer transition retain requires live native state");
+    st = les_state_from_sv(*state_slot);
+    context = les_test_context(st);
+    if (context->host->struct_size
+        < LES_CONSUMER_HOST_V1_RETAIN_REQUIRED_SIZE
+        || !context->host->retain || !context->host->release)
+        croak("test consumer host lifetime extension is unavailable");
+    if (!context->host->retain(aTHX_ context->host_context))
+        croak("test consumer could not retain host lifetime");
+
+    destroyed_before = les_test_destroyed;
+    ENTER;
+    SAVETMPS;
+    PUSHMARK(SP);
+    PUTBACK;
+    call_sv(callback, G_DISCARD | G_VOID);
+    FREETMPS;
+    LEAVE;
+
+    resume_result = context->host->resume(aTHX_ context->host_context);
+    pause_result = context->host->pause(aTHX_ context->host_context);
+    retain_result = context->host->retain(aTHX_ context->host_context);
+
+    result = newAV();
+    av_push(result, newSViv(resume_result));
+    av_push(result, newSViv(pause_result));
+    av_push(result, newSViv(retain_result));
+    av_push(result, newSViv(les_test_destroyed == destroyed_before ? 1 : 0));
+
+    context->host->release(aTHX_ context->host_context);
+    return newRV_noinc((SV *)result);
+}
+
 void
 les_test_consumer_cancel(pTHX_ les_xsstate_t *st)
 {
