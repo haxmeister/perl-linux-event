@@ -206,8 +206,9 @@ does not run or stop the foreign event system. A prior C<stop> request does not
 suppress C<poll>.
 
 Like the other driver methods, C<poll> cannot recursively drive the same Loop
-from one of its callbacks. Callback exceptions propagate after native driver
-state is restored.
+from one of its callbacks. An interrupted C<epoll_wait> returns zero events;
+other C<epoll_wait> failures throw. Callback exceptions propagate after native
+driver state is restored.
 
 =head2 run
 
