@@ -282,9 +282,12 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     st->write_blocked = st->pending_bytes > st->high_watermark;
     LES_STAT(st, transition_count)++;
 
-    if (consumer_change)
+    if (consumer_change) {
         les_consumer_schedule_transition(aTHX_ st,
             next_descriptor->consumer_ops, next_consumer_context);
+        st->consumer_retiring_descriptor_sv = old_descriptor_sv;
+        old_descriptor_sv = NULL;
+    }
 
     if (old_descriptor_sv)
         SvREFCNT_dec(old_descriptor_sv);
