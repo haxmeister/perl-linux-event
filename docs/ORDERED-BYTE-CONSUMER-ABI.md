@@ -144,6 +144,14 @@ Provider code must copy bytes it needs after return. The host retains
 unconsumed bytes natively, including across provider pause/resume, and can
 re-drive already-buffered input synchronously when resumed.
 
+An `input` call may invoke application code that closes the host reentrantly.
+Terminal teardown then owns and clears the native input buffer; the host
+validates the provider's returned status and consumed count but does not apply
+that count to the cleared buffer. A nonterminal provider-changing
+`transition_to()` is different: the source provider's consumed prefix is
+applied first, and the unconsumed native tail is then re-driven through the
+replacement provider.
+
 This extension is intended for protocol engines whose own native parser cannot
 be expressed as one of Linux::Event's built-in native framers. It generalizes
 the existing consumer boundary without making the core own protocol parsing.

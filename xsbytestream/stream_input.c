@@ -93,7 +93,14 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
                 size_t consumed = 0;
 
                 les_consumer_input(aTHX_ st, data, len, &consumed);
-                if (consumed)
+                /* input() may enter Perl and close the Stream reentrantly.
+                 * Terminal teardown owns and clears the input buffer, so a
+                 * count returned from the now-finished borrowed window must
+                 * not be applied afterward. A descriptor/provider handoff is
+                 * deliberately nonterminal: consume the source prefix before
+                 * flushing the old provider and re-driving the retained tail. */
+                if (consumed && !st->closed && !st->read_eof
+                    && !st->consumer_terminal)
                     les_input_consume(st, consumed);
                 if (st->descriptor != descriptor) {
                     les_consumer_flush(aTHX_ st);

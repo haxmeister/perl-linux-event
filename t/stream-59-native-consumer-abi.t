@@ -401,6 +401,28 @@ sub take ($stream) {
     close $peer;
 }
 
+{
+    my ($loop, $stream, $peer, $xs) = pair('T::RawConsumer');
+    arm($stream, sub {
+        $stream->close;
+        $loop->stop;
+    });
+    syswrite($peer, "close-inside-input\nretained-tail\n")
+        == length("close-inside-input\nretained-tail\n")
+        or die "raw reentrant-close write: $!";
+    my $ok = eval { $loop->run; 1 };
+    ok($ok,
+        'raw consumer may close the Stream reentrantly from input callback')
+        or diag $@;
+    ok($stream->is_closed,
+        'reentrant raw-consumer close leaves the Stream terminal');
+    is($xs->stats->{input_buffered_bytes}, 0,
+        'terminal teardown owns and clears the native input buffer');
+    is_deeply($xs->_test_consumer_events, [[4, 0, '']],
+        'reentrant raw-consumer close emits one terminal consumer event');
+    close $peer;
+}
+
 for my $case (
     ['T::RawConsumerBadCallback', qr/native consumer.*on_data/,
         'raw native consumer rejects a class on_data callback'],

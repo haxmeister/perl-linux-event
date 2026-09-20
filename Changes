@@ -1,6 +1,11 @@
 Revision history for Linux-Event
 
 0.115  2026-09-19
+    - Make raw native-consumer input safe when application callbacks close the
+      Stream reentrantly. Terminal teardown owns the cleared native buffer, so
+      the core no longer applies a returned consumed count afterward. Preserve
+      nonterminal provider-changing transition_to() accounting: consume the
+      source prefix, then re-drive the retained tail through the replacement.
     - Generalize transition_to() so one native consumer provider can hand the
       live ordered-byte stream to another provider without surfacing unread
       tail bytes through Perl. Pre-create the target context, settle source

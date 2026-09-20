@@ -1,5 +1,19 @@
 # Linux::Event Handoff
 
+## 0.115 raw-consumer reentrant-close correction
+
+Raw native-consumer `input()` callbacks may enter application code that closes
+the Stream before returning a consumed-byte count. Terminal teardown clears
+the native input buffer, so `les_process_existing_input()` now treats that
+teardown as owning buffer disposal and does not apply the stale count afterward.
+Returned status and consumed-count validation still run.
+
+This does not weaken provider replacement. A nonterminal provider-changing
+`transition_to()` still applies the source consumer's consumed prefix before
+settling its flush/destruction obligations and re-driving the preserved native
+tail through the target consumer. `t/stream-59-native-consumer-abi.t` covers
+both reentrant terminal close and the HTTP-to-WebSocket-shaped provider handoff.
+
 ## 0.115 release review
 
 PR #21 completed the 0.115 release-readiness audit and was merged to `main` as
