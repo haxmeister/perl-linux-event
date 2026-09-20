@@ -5,7 +5,8 @@
 The raw native-consumer integration work in upper protocol layers exposed one
 remaining transition boundary: a native consumer could be replaced by another
 native consumer, but could not retire into an ordinary Perl Stream input sink.
-This is now generalized on branch `feature/native-to-ordinary-transition`.
+This was merged to `main` by PR #22 at core implementation commit
+`51f2e1eab28f6f1234024a0cf37be03b36780e84`.
 
 The chosen scope is deliberately one-way. `transition_to()` may remove an
 active native consumer and move the same live ordered-byte object to an
@@ -35,10 +36,10 @@ Focused coverage extends `t/stream-59-native-consumer-abi.t` for:
 - no extra source-consumer input call after transition; and
 - continued rejection of ordinary -> native transitions.
 
-The implementation does not bump 0.115. CI is the verification gate because
-the browser development environment cannot execute the compiled XS suite
-locally. After CI is green, merge this branch to `main` and record the exact
-resulting main commit here.
+The implementation does not bump 0.115. PR #22 passed the full Perl/threaded
+matrix, distribution-integrity checks, and the permanent same-run performance
+regression gate before merge. The core implementation commit to use for upper
+layer validation is `51f2e1eab28f6f1234024a0cf37be03b36780e84`.
 
 ## 0.115 raw-consumer reentrant-close correction
 
