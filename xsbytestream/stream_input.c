@@ -95,6 +95,12 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
                 les_consumer_input(aTHX_ st, data, len, &consumed);
                 if (consumed)
                     les_input_consume(st, consumed);
+                if (st->descriptor != descriptor) {
+                    les_consumer_flush(aTHX_ st);
+                    if (st->consumer_transition_pending)
+                        return;
+                    continue;
+                }
                 if (!consumed)
                     return;
                 if (!st->closed && !LES_INPUT_PAUSED(st)
@@ -114,6 +120,8 @@ les_process_existing_input(pTHX_ les_xsstate_t *st, int flush_batch)
             les_process_buffered(aTHX_ st);
             if (st->descriptor != descriptor) {
                 les_consumer_flush(aTHX_ st);
+                if (st->consumer_transition_pending)
+                    return;
                 continue;
             }
             if (flush_batch) {
