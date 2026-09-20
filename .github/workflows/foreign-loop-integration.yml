@@ -1,0 +1,55 @@
+name: Foreign loop integration
+
+on:
+  pull_request:
+    paths:
+      - 'xsloop/**'
+      - 'lib/Linux/Event/Loop.pm'
+      - 'xt/foreign-loop-cpan.t'
+      - '.github/workflows/foreign-loop-integration.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'xsloop/**'
+      - 'lib/Linux/Event/Loop.pm'
+      - 'xt/foreign-loop-cpan.t'
+      - '.github/workflows/foreign-loop-integration.yml'
+  workflow_dispatch:
+
+jobs:
+  foreign-loop:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        perl:
+          - '5.36'
+          - '5.44'
+
+    name: Perl ${{ matrix.perl }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl }}
+          install-modules-with: cpanm
+          install-modules: |
+            EV
+            AnyEvent
+            IO::Async
+            Mojolicious
+          enable-modules-cache: false
+
+      - name: Install distribution dependencies
+        run: cpanm --installdeps .
+
+      - name: Build Linux::Event
+        run: |
+          perl Makefile.PL
+          make -j2
+
+      - name: Run foreign-loop integration tests
+        run: prove -bl xt/foreign-loop-cpan.t

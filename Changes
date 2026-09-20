@@ -1,6 +1,10 @@
 Revision history for Linux-Event
 
 0.115  2026-09-18
+    - Add the supported foreign-loop integration boundary: poll_fd() exposes
+      the Loop-owned epoll descriptor as a borrowed readiness fd, and poll()
+      performs exactly one nonblocking dispatch turn. Keep adapters outside
+      core and preserve dependency-free shipped contract coverage.
     - Bound the shared ordered-byte read drain by default with
       read_budget_bytes => 65_536 so continuously replenished Stream, Pipe,
       or TTY input yields back to Loop dispatch instead of starving timerfd

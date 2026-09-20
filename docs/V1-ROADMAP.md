@@ -22,31 +22,28 @@ new public API.
 
 ### 1. Foreign-loop integration boundary
 
-Design a small public contract that lets another event system drive a
-Linux::Event loop without adopting Linux::Event as the application's top-level
-loop. The leading design is:
+Implemented as the small public contract:
 
 ```perl
 my $fd = $loop->poll_fd;
 $loop->poll;
 ```
 
-`poll_fd()` would expose the epoll readiness descriptor as a supported
-integration surface. `poll()` would perform exactly one nonblocking dispatch
-turn. Do not make integrations depend on the diagnostic shape of
-`resources()` or on undocumented `run_once(0)` knowledge.
+`poll_fd()` exposes the Loop-owned epoll readiness descriptor as a borrowed
+integration surface. `poll()` performs exactly one nonblocking dispatch turn.
+Integrations must not depend on the diagnostic shape of `resources()` or use
+`run_once(0)` as an undocumented adapter convention.
 
-Acceptance requires:
+The shipped dependency-free contract test drives ordinary I/O, timers, signals,
+processes, and eventfd notifications through an external `IO::Select` owner and
+covers borrowed-fd stability, nonblocking polling, stale-stop behavior, driver
+state, and same-Loop reentrancy rejection.
 
-- dependency-free core contract tests shipped in the CPAN distribution;
-- repository/CI integration tests against representative CPAN loops such as
-  EV/AnyEvent, IO::Async, and Mojo;
-- no runtime or installation dependency on those event systems;
-- documented ownership, readiness, draining, error, and reentrancy semantics;
-- proof that timers, signals, processes, eventfd notifications, and I/O remain
-  driveable through the single integration boundary.
+Repository-only integration coverage exercises EV, AnyEvent, IO::Async, and
+Mojo in a separate CI workflow. Those modules are development validation only
+and are not runtime, configure, or CPAN test prerequisites.
 
-Adapters should normally live outside Linux::Event core.
+Adapters remain outside Linux::Event core.
 
 ### 2. Deferred next-turn execution
 

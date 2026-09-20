@@ -1,5 +1,27 @@
 # Linux::Event Handoff
 
+## Foreign-loop integration
+
+The first required post-0.114 roadmap item is implemented in PR #19.
+
+`Linux::Event::Loop->poll_fd` returns the Loop-owned epoll descriptor as a
+borrowed readiness fd. Foreign loops must not close it; adapters that need a
+Perl filehandle may duplicate it. `Loop->poll` performs exactly one
+nonblocking epoll wait and dispatch turn and returns the kernel event count.
+It has the same single-driver/reentrancy guard as `run`, `run_once`, and
+`run_for`, but it is a separate supported integration contract rather than
+an alias convention around `run_once(0)`.
+
+The shipped dependency-free regression `t/loop-foreign-integration.t` drives
+raw I/O, Timer, Event, Signal, and Process readiness through `IO::Select`
+watching a duplicate of `poll_fd`. Repository-only
+`xt/foreign-loop-cpan.t` covers EV, AnyEvent, IO::Async, and Mojo, with those
+modules installed only by `.github/workflows/foreign-loop-integration.yml`.
+They are not CPAN prerequisites.
+
+`poll_calls` is exposed in Loop statistics and reset by `reset_stats`.
+The existing `run_once` implementation and counters remain unchanged.
+
 ## 0.115 integration: ordered-byte fairness and raw native input
 
 The timer-starvation investigation is now an approved 0.115 integration rather
@@ -45,13 +67,15 @@ native-buffer delivery.
 Before architectural, performance, dependency, or ecosystem work, read
 `docs/ECOSYSTEM-CHARTER.md`. It is authoritative.
 
-For planned core work beyond this narrow correctness release, read
-`docs/V1-ROADMAP.md`. No roadmap feature work is part of 0.115.
+For remaining planned core work, read `docs/V1-ROADMAP.md`. The
+foreign-loop boundary is the first roadmap item completed in 0.115; later
+roadmap items remain out of scope for this release.
 
 ## Current state: 0.115 protocol-subclass close correctness
 
-0.115 is a narrow correctness release prompted by Linux::Event::WebSocket
-integration. Protocol subclasses may give their public `close()` method
+0.115 includes the protocol-subclass close correctness work prompted by
+Linux::Event::WebSocket integration. Protocol subclasses may give their public
+`close()` method
 protocol-level semantics, so core-internal involuntary teardown must not assume
 that virtual `$self->close` still means immediate raw transport destruction.
 
@@ -77,7 +101,8 @@ that override while still closing descriptors and preserving the existing
 
 Distribution version bookkeeping is bumped from 0.114 to 0.115, including
 public/private versioned modules and checked-in META files. `Changes` records
-the fix. No unrelated core architecture or roadmap work is included.
+the fix. The separately documented foreign-loop boundary is the only roadmap
+feature added to 0.115.
 
 The browser development environment cannot execute the compiled XS suite
 locally. GitHub CI is therefore the verification gate for this commit before a
