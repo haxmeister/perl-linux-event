@@ -1,6 +1,11 @@
 Revision history for Linux-Event
 
 0.115  2026-09-19
+    - Allow transition_to() to retire a live native consumer into an ordinary
+      Perl Stream input sink while preserving unread ordered input natively
+      until the target consumes it. Reuse provider flush/retain lifetime
+      settling, support reentrant transition and target close safely, and keep
+      ordinary-to-native live transitions explicitly rejected.
     - Make raw native-consumer input safe when application callbacks close the
       Stream reentrantly. Terminal teardown owns the cleared native buffer, so
       the core no longer applies a returned consumed count afterward. Preserve
@@ -10,8 +15,9 @@ Revision history for Linux-Event
       live ordered-byte stream to another provider without surfacing unread
       tail bytes through Perl. Pre-create the target context, settle source
       flush debt, defer source destruction across active provider frames/host
-      retains, and re-drive preserved native input through the target. Keep
-      adding/removing native-consumer mode during a live transition rejected.
+      retains, and re-drive preserved native input through the target. Native
+      consumer removal into an ordinary target is also supported; adding a
+      native consumer to an already-ordinary live Stream remains rejected.
     - Add the supported foreign-loop integration boundary: poll_fd() exposes
       the Loop-owned epoll descriptor as a borrowed readiness fd, and poll()
       performs exactly one nonblocking dispatch turn. Keep adapters outside

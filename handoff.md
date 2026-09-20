@@ -1,5 +1,45 @@
 # Linux::Event Handoff
 
+## 0.115 native-consumer retirement transition
+
+The raw native-consumer integration work in upper protocol layers exposed one
+remaining transition boundary: a native consumer could be replaced by another
+native consumer, but could not retire into an ordinary Perl Stream input sink.
+This is now generalized on branch `feature/native-to-ordinary-transition`.
+
+The chosen scope is deliberately one-way. `transition_to()` may remove an
+active native consumer and move the same live ordered-byte object to an
+ordinary target such as a raw `on_data` Stream. Adding a native consumer to an
+already-ordinary live Stream remains rejected because there is no demonstrated
+caller and ordinary callbacks may already have surfaced bytes into Perl. This
+keeps the new contract as small as the HTTP Upgrade/CONNECT requirement needs.
+
+No ordinary read hot-path bookkeeping was added. The implementation reuses the
+existing provider-handoff state: the target provider is simply NULL. The source
+provider remains alive until its active provider frame, pending flush work, and
+host lifetime retains are settled; its descriptor lifetime token remains held
+until destruction. The connection-local ordered-byte input buffer is unchanged.
+After the source prefix reported by raw `input()` is consumed, any unread tail
+is re-driven under the ordinary target descriptor. Ordinary raw delivery
+consumes that native tail before invoking `on_data`, so a reentrant close from
+the new target cannot cause a second consume or stale-buffer accounting.
+
+Focused coverage extends `t/stream-59-native-consumer-abi.t` for:
+
+- native raw consumer -> ordinary `on_data` from inside `input()`;
+- same-read unread native tail preservation, ordering, and exact-once delivery;
+- later kernel input through the ordinary target;
+- source flush/destruction and host-retain lifetime across retirement;
+- reentrant ordinary-target close while retained bytes are re-driven;
+- explicit read pause across transition and synchronous tail delivery on resume;
+- no extra source-consumer input call after transition; and
+- continued rejection of ordinary -> native transitions.
+
+The implementation does not bump 0.115. CI is the verification gate because
+the browser development environment cannot execute the compiled XS suite
+locally. After CI is green, merge this branch to `main` and record the exact
+resulting main commit here.
+
 ## 0.115 raw-consumer reentrant-close correction
 
 Raw native-consumer `input()` callbacks may enter application code that closes
@@ -103,8 +143,10 @@ retiring descriptor stays referenced until that destruction so its provider
 lifetime token cannot disappear early; then the retained tail is re-driven
 through the target provider. This directly
 supports cases such as HTTP native parsing handing same-read post-Upgrade bytes
-to a WebSocket native parser without a Perl byte-buffer round trip. Adding or
-removing native-consumer mode itself remains rejected.
+to a WebSocket native parser without a Perl byte-buffer round trip. The later
+native-consumer retirement work documented above additionally permits a native
+provider to hand unread input to an ordinary Perl target; adding a native
+consumer to an already-ordinary live Stream remains rejected.
 
 The native consumer ABI v1 is also generalized for upper protocol libraries
 that cannot use one of the built-in native framers. A provider can request
