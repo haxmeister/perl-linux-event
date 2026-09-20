@@ -241,8 +241,13 @@ les_consumer_destroy(pTHX_ les_xsstate_t *st)
         st->consumer_next_context = NULL;
         st->consumer_transition_pending = 0;
     }
-    if (!st->consumer_ops || !st->consumer_context)
+    if (!st->consumer_ops || !st->consumer_context) {
+        if (st->consumer_retiring_descriptor_sv) {
+            SvREFCNT_dec(st->consumer_retiring_descriptor_sv);
+            st->consumer_retiring_descriptor_sv = NULL;
+        }
         return;
+    }
     ops = st->consumer_ops;
     context = st->consumer_context;
     st->consumer_ops = NULL;
