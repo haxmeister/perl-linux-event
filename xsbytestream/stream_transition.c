@@ -163,6 +163,10 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     char *next_input_buffer = NULL;
     size_t next_input_cap = 0;
     char *next_read_buffer = NULL;
+    void *next_consumer_context = NULL;
+    int consumer_change;
+    int jump_status;
+    dJMPENV;
 
     if (!st || st->closed)
         croak("transition_to(): stream is closed");
@@ -176,6 +180,11 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
         les_apply_tuning(aTHX_ st, (HV *)SvRV(input_sv));
         return;
     }
+
+    if (st->consumer_transition_pending)
+        croak("transition_to(): native consumer handoff is already pending");
+
+    consumer_change = next_descriptor->consumer_ops != st->consumer_ops;
 
     if (input_sv && SvOK(input_sv))
         injected = SvPVbyte(input_sv, injected_len);
@@ -205,6 +214,26 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
             memcpy(next_input_buffer, les_input_data(st), st->input_len);
         memcpy(next_input_buffer + st->input_len, injected,
             (size_t)injected_len);
+    }
+
+    if (consumer_change) {
+        JMPENV_PUSH(jump_status);
+        if (jump_status == 0) {
+            next_consumer_context = les_consumer_prepare_transition_context(
+                aTHX_ st, next_descriptor->consumer_ops);
+            JMPENV_POP;
+        } else {
+            free(next_read_buffer);
+            free(next_input_buffer);
+            JMPENV_POP;
+            JMPENV_JUMP(jump_status);
+        }
+        if (!next_consumer_context) {
+            free(next_read_buffer);
+            free(next_input_buffer);
+            croak("transition_to(): native consumer '%s' failed to create context",
+                next_descriptor->consumer_ops->name);
+        }
     }
 
     next_descriptor_sv = newSVsv(descriptor_obj);
@@ -252,6 +281,10 @@ les_transition_descriptor(pTHX_ les_xsstate_t *st, SV *descriptor_obj,
     st->max_buffer = next_descriptor->max_buffer;
     st->write_blocked = st->pending_bytes > st->high_watermark;
     LES_STAT(st, transition_count)++;
+
+    if (consumer_change)
+        les_consumer_schedule_transition(aTHX_ st,
+            next_descriptor->consumer_ops, next_consumer_context);
 
     if (old_descriptor_sv)
         SvREFCNT_dec(old_descriptor_sv);
