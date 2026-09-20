@@ -226,8 +226,9 @@ C<run_once> call.
 Run against a monotonic deadline for the supplied non-negative number of
 seconds.
 
-Only one driver method may be active for a given Loop. Calling C<run>,
-C<run_once>, or C<run_for> recursively on that same Loop throws an exception;
+Only one driver method may be active for a given Loop. Calling C<poll>,
+C<run>, C<run_once>, or C<run_for> recursively on that same Loop throws an
+exception;
 a callback may drive a different Loop. C<set_event_capacity> is likewise
 rejected while its Loop is running or dispatching.
 
@@ -240,8 +241,8 @@ work completes.
 
 =head2 running
 
-True while this Loop is inside C<run>, C<run_once>, or C<run_for>, including
-from a callback. This is an O(1) query of native driver state.
+True while this Loop is inside C<poll>, C<run>, C<run_once>, or C<run_for>,
+including from a callback. This is an O(1) query of native driver state.
 
 =head2 count
 
