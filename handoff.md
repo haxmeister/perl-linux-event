@@ -1,6 +1,29 @@
 # Linux::Event Handoff
 
-## 0.115 native-consumer retirement transition
+## 0.116 release preparation
+
+Linux::Event 0.116 is the patch release for the native-consumer retirement
+generalization merged by PR #22. The release branch is `release/0.116`, based
+on main commit `09073f76744d1ed2bfd6e0b8913ee57f5828c035`.
+
+Release bookkeeping is updated from 0.115 to 0.116 across every versioned Perl
+module, including the private versioned support modules, and both checked-in
+META files. `Changes` now has a distinct 0.116 entry dated 2026-09-20. The
+0.115 history is restored to its released provider-to-provider transition
+contract; native-consumer removal belongs only to 0.116.
+
+The functional release change is deliberately narrow: a live native consumer
+may retire into an ordinary Perl Stream input sink while preserving unread
+ordered bytes and the existing provider flush/retain lifetime guarantees.
+Ordinary -> native live transition remains rejected. No ordinary read hot-path
+bookkeeping was added.
+
+The release PR must pass the full Perl/threaded matrix, generated-distribution
+integrity checks, metadata/POD validation, and the permanent same-run
+performance regression gate before merge. After merge, record the exact main
+commit here for tagging/release.
+
+## 0.116 native-consumer retirement transition
 
 The raw native-consumer integration work in upper protocol layers exposed one
 remaining transition boundary: a native consumer could be replaced by another
@@ -36,10 +59,10 @@ Focused coverage extends `t/stream-59-native-consumer-abi.t` for:
 - no extra source-consumer input call after transition; and
 - continued rejection of ordinary -> native transitions.
 
-The implementation does not bump 0.115. PR #22 passed the full Perl/threaded
-matrix, distribution-integrity checks, and the permanent same-run performance
-regression gate before merge. The core implementation commit to use for upper
-layer validation is `51f2e1eab28f6f1234024a0cf37be03b36780e84`.
+This is the functional change being released as 0.116. PR #22 already passed
+the full Perl/threaded matrix, distribution-integrity checks, and the permanent
+same-run performance regression gate before merge. The underlying core
+implementation commit remains `51f2e1eab28f6f1234024a0cf37be03b36780e84`.
 
 ## 0.115 raw-consumer reentrant-close correction
 
