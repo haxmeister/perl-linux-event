@@ -841,6 +841,13 @@ for my $case (
     is($stream->data->{error}, undef,
         'native consumer replacement reports no Stream error');
 
+    syswrite($peer, "later-websocket-frame\n")
+        == length("later-websocket-frame\n")
+        or die "short post-handoff fixture write: $!";
+    $loop->run_for(0.05);
+    is(take($stream), 'later-websocket-frame',
+        'target consumer keeps receiving later kernel input after handoff');
+
     $stream->close;
     close $peer;
 }
