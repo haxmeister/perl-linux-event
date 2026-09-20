@@ -2,10 +2,11 @@
 
 ## 0.115 release review
 
-The complete 0.115 release-readiness audit is represented by PR #21. It reviews
-version bookkeeping, checked-in META files, MANIFEST/MANIFEST.SKIP, public POD,
-Markdown documentation, examples, current API taxonomy, Linux/system
-prerequisites, generated-distribution tests, and the permanent performance gate.
+PR #21 completed the 0.115 release-readiness audit and was merged to `main` as
+`6d8195b0fe593cc0e3efdd58081194a1f0f6ccb1`. The audit covered version
+bookkeeping, checked-in META files, MANIFEST/MANIFEST.SKIP, public POD, Markdown
+documentation, examples, current API taxonomy, Linux/system prerequisites,
+generated-distribution tests, and the permanent performance gate.
 
 Release-facing corrections made by that audit:
 
@@ -20,13 +21,15 @@ Release-facing corrections made by that audit:
   development files;
 - add documentation regressions so the new 0.115 public surfaces remain visible.
 
-Existing release gates already compile every shipped example and POD synopsis,
-audit public modules/metadata/MANIFEST contents, run the normal suite across the
-supported Perl matrix including threaded builds, run `disttest` / `distcheck`,
-validate metadata/POD, and compare the permanent performance regression suite.
+The exact PR head `74084902b0d6972359682217c4ae470abf32a162` passed CI run
+#433: Perl 5.36/5.38/5.40/5.42/5.44/latest, threaded 5.36/latest,
+generated-distribution `disttest` / `distcheck`, metadata and public POD
+validation, and the permanent performance comparison. The performance gate
+reported every workload within its 10 percent regression threshold.
 
-Do not upload to CPAN or create the 0.115 tag until PR #21 is merged and its
-final exact head has passed all release gates.
+The repository is ready for the 0.115 release process. CPAN upload and creation
+of the 0.115 tag/release remain explicit release actions rather than part of
+the preparation audit.
 
 
 ## Foreign-loop integration
@@ -154,12 +157,19 @@ locally. GitHub CI is therefore the verification gate for this commit before a
 The obsolete PRs are closed: #12's resource-kind intent has been ported to the
 current architecture, and #7's tuning explorer targets retired APIs.
 
-The remote branches `fix/transition-resource-kind` and
-`feature/stream-tuning-explorer` still need deletion. The authenticated GitHub
-interface used for this preparation can close PRs and update refs but does not
-expose ref deletion. Delete those exact branches through GitHub or an
-authenticated Git client. Any future explorer should be implemented fresh
-under the constraints in `docs/V1-ROADMAP.md`.
+The authenticated GitHub interface used for this preparation can update refs
+but does not expose ref deletion. The following merged/obsolete remote branches
+remain and may be deleted through GitHub or an authenticated Git client:
 
-After cleanup, `main` should be the only remote branch unless a new, current
-piece of work deliberately creates another one.
+- `feature/foreign-loop-integration`;
+- `feature/native-consumer-transition`;
+- `feature/stream-tuning-explorer`;
+- `fix/transition-resource-kind`;
+- `investigate/stream-timer-fairness`;
+- `release/0.115-review`;
+- `verify/core-0.115-fairness-abi`;
+- `verify/core-0.115-fairness-abi-v2`.
+
+Any future tuning explorer should be implemented fresh under the constraints in
+`docs/V1-ROADMAP.md`. After cleanup, `main` should be the only remote branch
+unless a new, current piece of work deliberately creates another one.
