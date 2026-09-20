@@ -1,5 +1,28 @@
 # Linux::Event Handoff
 
+## Foreign-loop integration
+
+The first required post-0.114 roadmap item is implemented on
+`feature/foreign-loop-integration` and is under CI validation in PR #19.
+
+`Linux::Event::Loop->poll_fd` returns the Loop-owned epoll descriptor as a
+borrowed readiness fd. Foreign loops must not close it; adapters that need a
+Perl filehandle may duplicate it. `Loop->poll` performs exactly one
+nonblocking epoll wait and dispatch turn and returns the kernel event count.
+It has the same single-driver/reentrancy guard as `run`, `run_once`, and
+`run_for`, but it is a separate supported integration contract rather than
+an alias convention around `run_once(0)`.
+
+The shipped dependency-free regression `t/loop-foreign-integration.t` drives
+raw I/O, Timer, Event, Signal, and Process readiness through `IO::Select`
+watching a duplicate of `poll_fd`. Repository-only
+`xt/foreign-loop-cpan.t` covers EV, AnyEvent, IO::Async, and Mojo, with those
+modules installed only by `.github/workflows/foreign-loop-integration.yml`.
+They are not CPAN prerequisites.
+
+`poll_calls` is exposed in Loop statistics and reset by `reset_stats`.
+The existing `run_once` implementation and counters remain unchanged.
+
 ## 0.115 integration: ordered-byte fairness and raw native input
 
 The timer-starvation investigation is now an approved 0.115 integration rather
