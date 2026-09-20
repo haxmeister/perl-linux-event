@@ -45,6 +45,9 @@ sub await_foreign_readable ($selector, $label, $timeout = 3) {
 
     $loop->stop;
     is($loop->poll, 0, 'a stale stop request does not suppress poll');
+
+    $loop->reset_stats;
+    is($loop->stats->{poll_calls}, 0, 'reset_stats clears poll_calls');
 }
 
 {
