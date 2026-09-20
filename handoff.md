@@ -67,13 +67,15 @@ native-buffer delivery.
 Before architectural, performance, dependency, or ecosystem work, read
 `docs/ECOSYSTEM-CHARTER.md`. It is authoritative.
 
-For planned core work beyond this narrow correctness release, read
-`docs/V1-ROADMAP.md`. No roadmap feature work is part of 0.115.
+For remaining planned core work, read `docs/V1-ROADMAP.md`. The
+foreign-loop boundary is the first roadmap item completed in 0.115; later
+roadmap items remain out of scope for this release.
 
 ## Current state: 0.115 protocol-subclass close correctness
 
-0.115 is a narrow correctness release prompted by Linux::Event::WebSocket
-integration. Protocol subclasses may give their public `close()` method
+0.115 includes the protocol-subclass close correctness work prompted by
+Linux::Event::WebSocket integration. Protocol subclasses may give their public
+`close()` method
 protocol-level semantics, so core-internal involuntary teardown must not assume
 that virtual `$self->close` still means immediate raw transport destruction.
 
@@ -99,7 +101,8 @@ that override while still closing descriptors and preserving the existing
 
 Distribution version bookkeeping is bumped from 0.114 to 0.115, including
 public/private versioned modules and checked-in META files. `Changes` records
-the fix. No unrelated core architecture or roadmap work is included.
+the fix. The separately documented foreign-loop boundary is the only roadmap
+feature added to 0.115.
 
 The browser development environment cannot execute the compiled XS suite
 locally. GitHub CI is therefore the verification gate for this commit before a
