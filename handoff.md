@@ -2,8 +2,7 @@
 
 ## Foreign-loop integration
 
-The first required post-0.114 roadmap item is implemented on
-`feature/foreign-loop-integration` and is under CI validation in PR #19.
+The first required post-0.114 roadmap item is implemented in PR #19.
 
 `Linux::Event::Loop->poll_fd` returns the Loop-owned epoll descriptor as a
 borrowed readiness fd. Foreign loops must not close it; adapters that need a
