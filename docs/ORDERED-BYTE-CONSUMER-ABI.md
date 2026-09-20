@@ -326,9 +326,10 @@ that provider frame/retain is safely released. The target context is then
 installed and retained input is immediately re-driven through the target
 provider when its policy is not paused.
 
-Transition-time target `create` must not retain the host before the target
-context is activated. Core rejects that provider bug rather than making a host
-retain ambiguous between the retiring and incoming contexts.
+During transition-time target `create`, host `pause`, `resume`, and `retain`
+are intentionally unavailable until the target context is activated. Stream
+identity and closed-state queries remain available. This prevents target setup
+from mutating or ambiguously retaining the still-live source context.
 
 Adding or removing a native consumer provider on a live object remains rejected;
 this handoff contract is specifically provider-to-provider replacement.
