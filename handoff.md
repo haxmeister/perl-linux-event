@@ -1,5 +1,34 @@
 # Linux::Event Handoff
 
+## 0.115 release review
+
+The complete 0.115 release-readiness audit is represented by PR #21. It reviews
+version bookkeeping, checked-in META files, MANIFEST/MANIFEST.SKIP, public POD,
+Markdown documentation, examples, current API taxonomy, Linux/system
+prerequisites, generated-distribution tests, and the permanent performance gate.
+
+Release-facing corrections made by that audit:
+
+- stamp the 0.115 Changes entry with the final 2026-09-19 release date;
+- surface the supported Loop `poll_fd` / `poll` foreign-loop boundary in the
+  README;
+- surface raw native consumer input and provider-to-provider `transition_to()`
+  handoff in README, Framer POD, and the framing guide;
+- align README build prerequisites with the module POD: Perl 5.36+, pidfd-capable
+  Linux headers, Linux 5.4+ for pidfd process status, libc
+  `posix_spawn_file_actions_addchdir_np`, a C compiler, and OpenSSL 1.1.1+
+  development files;
+- add documentation regressions so the new 0.115 public surfaces remain visible.
+
+Existing release gates already compile every shipped example and POD synopsis,
+audit public modules/metadata/MANIFEST contents, run the normal suite across the
+supported Perl matrix including threaded builds, run `disttest` / `distcheck`,
+validate metadata/POD, and compare the permanent performance regression suite.
+
+Do not upload to CPAN or create the 0.115 tag until PR #21 is merged and its
+final exact head has passed all release gates.
+
+
 ## Foreign-loop integration
 
 The first required post-0.114 roadmap item is implemented in PR #19.
