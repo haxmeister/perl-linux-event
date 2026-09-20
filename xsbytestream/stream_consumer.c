@@ -163,6 +163,10 @@ les_consumer_settle_transition(pTHX_ les_xsstate_t *st)
 
     if (old_ops && old_context)
         old_ops->destroy(aTHX_ old_context);
+    if (st->consumer_retiring_descriptor_sv) {
+        SvREFCNT_dec(st->consumer_retiring_descriptor_sv);
+        st->consumer_retiring_descriptor_sv = NULL;
+    }
 
     st->consumer_ops = st->consumer_next_ops;
     st->consumer_context = st->consumer_next_context;
@@ -244,6 +248,10 @@ les_consumer_destroy(pTHX_ les_xsstate_t *st)
     st->consumer_ops = NULL;
     st->consumer_context = NULL;
     ops->destroy(aTHX_ context);
+    if (st->consumer_retiring_descriptor_sv) {
+        SvREFCNT_dec(st->consumer_retiring_descriptor_sv);
+        st->consumer_retiring_descriptor_sv = NULL;
+    }
 }
 
 void
