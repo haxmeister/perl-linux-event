@@ -139,6 +139,7 @@ les_consumer_settle_transition(pTHX_ les_xsstate_t *st)
 {
     const les_consumer_ops_v1_t *old_ops;
     void *old_context;
+    int was_paused;
 
     if (!st || !st->consumer_transition_pending
         || st->consumer_call_depth || st->consumer_host_retain_count
@@ -156,6 +157,7 @@ les_consumer_settle_transition(pTHX_ les_xsstate_t *st)
 
     old_ops = st->consumer_ops;
     old_context = st->consumer_context;
+    was_paused = st->consumer_paused;
     st->consumer_ops = NULL;
     st->consumer_context = NULL;
 
@@ -171,6 +173,11 @@ les_consumer_settle_transition(pTHX_ les_xsstate_t *st)
     st->consumer_flush_pending = 0;
     st->consumer_paused = st->consumer_ops
         && (st->consumer_ops->flags & LES_CONSUMER_F_START_PAUSED) ? 1 : 0;
+
+    if (st->consumer_paused && !was_paused)
+        les_consumer_notify_paused(aTHX_ st);
+    else if (!st->consumer_paused && was_paused)
+        les_call_stream_method(aTHX_ st, "_xs_consumer_resumed");
 
     if (!LES_INPUT_PAUSED(st) && !st->closed && !st->read_eof
         && st->input_dispatch_depth == 0 && st->input_len) {
