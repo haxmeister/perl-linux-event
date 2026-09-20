@@ -858,11 +858,10 @@ for my $case (
     my ($loop, $stream, $peer) = pair('T::RawConsumer');
 
     my $host_results =
-        Linux::Event::_ByteStream::TestSupport
-            ->_test_consumer_transition_retain(
-                $stream,
-                sub { $stream->transition_to('T::RawTransitionTarget') },
-            );
+        Linux::Event::_ByteStream::TestSupport::_test_consumer_transition_retain(
+            $stream,
+            sub { $stream->transition_to('T::RawTransitionTarget') },
+        );
 
     is_deeply($host_results, [0, 0, 0, 1],
         'retiring provider cannot mutate or re-retain host before release');
