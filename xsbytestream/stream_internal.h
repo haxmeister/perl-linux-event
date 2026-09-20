@@ -174,6 +174,7 @@ typedef struct les_xsstate_s {
     UV consumer_host_retain_count;
     int consumer_call_depth;
     int consumer_transition_pending;
+    int consumer_transition_preparing;
     int destroy_pending;
 
     /* Native framed-input storage. Logical bytes begin at input_start and
