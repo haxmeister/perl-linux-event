@@ -294,6 +294,7 @@ SV *les_test_consumer_events(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_stats(pTHX_ les_xsstate_t *st);
 SV *les_test_consumer_trace(pTHX_ les_xsstate_t *st);
 UV les_test_consumer_destroy_count(void);
+UV les_test_consumer_last_destroy_flushes(void);
 
 void les_clear_write_queue(les_xsstate_t *st);
 void les_queue_bytes(
