@@ -739,6 +739,15 @@ _test_consumer_destroy_count(CLASS)
   OUTPUT:
     RETVAL
 
+UV
+_test_consumer_last_destroy_flushes(CLASS)
+    const char *CLASS
+  CODE:
+    PERL_UNUSED_VAR(CLASS);
+    RETVAL = les_test_consumer_last_destroy_flushes();
+  OUTPUT:
+    RETVAL
+
 int
 _test_consumer_external_arm(object, callback)
     SV *object
