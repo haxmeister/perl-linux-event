@@ -171,7 +171,7 @@ typedef struct les_xsstate_s {
     const les_consumer_ops_v1_t *consumer_next_ops;
     void *consumer_next_context;
     UV consumer_host_retain_count;
-    unsigned int consumer_call_depth;
+    int consumer_call_depth;
     int consumer_transition_pending;
     int destroy_pending;
 
