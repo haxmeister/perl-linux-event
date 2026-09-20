@@ -1,6 +1,6 @@
 Revision history for Linux-Event
 
-0.115  2026-09-18
+0.115  2026-09-19
     - Generalize transition_to() so one native consumer provider can hand the
       live ordered-byte stream to another provider without surfacing unread
       tail bytes through Perl. Pre-create the target context, settle source
