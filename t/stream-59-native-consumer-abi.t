@@ -43,6 +43,21 @@ is(Linux::Event::_ByteStream->_native_consumer_abi_version, 1,
 }
 
 {
+    package T::RawTransitionTarget;
+    use parent 'Linux::Event::IO::Sock::Stream';
+    BEGIN {
+        Linux::Event::Framer->declare_native_consumer(
+            __PACKAGE__,
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'raw-transition-target',
+            ),
+        );
+    }
+    sub on_error ($stream, $error) { $stream->data->{error} = $error }
+    sub on_eof ($stream) { $stream->data->{eof}++ }
+}
+
+{
     package T::RawConsumerBadCallback;
     use parent -norequire, 'T::RawConsumer';
     sub on_data ($stream, $bytes) { return }
@@ -237,6 +252,25 @@ is(Linux::Event::_ByteStream->_native_consumer_abi_version, 1,
     package T::ConsumerDecimal;
     use parent -norequire, 'T::ConsumerBase';
     use Linux::Event::Framer 'DecimalLength', separator => ' ';
+}
+
+{
+    package T::TransitionCreateFailureBase;
+    use parent 'Linux::Event::IO::Sock::Stream';
+    BEGIN {
+        Linux::Event::_ByteStream->_declare_consumer(
+            __PACKAGE__,
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'create-failure',
+            ),
+        );
+    }
+}
+
+{
+    package T::TransitionCreateFailureLine;
+    use parent -norequire, 'T::TransitionCreateFailureBase';
+    use Linux::Event::Framer 'Delimiter', "\n";
 }
 
 {
@@ -765,9 +799,70 @@ for my $case (
         'retained consumer uses target native framer after transition');
 
     my $ok = eval { $stream->transition_to('T::CallbackLine'); 1 };
-    ok(!$ok, 'transition cannot remove a live native consumer');
-    like($@, qr/cannot change native consumer provider/,
-        'consumer-changing transition reports the ABI boundary');
+    ok(!$ok, 'transition still rejects removing a live native consumer');
+    like($@, qr/cannot add or remove a native consumer provider/,
+        'consumer removal remains outside the handoff contract');
+    $stream->close;
+    close $peer;
+}
+
+{
+    my $before =
+        Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
+    my ($loop, $stream, $peer) = pair('T::RawConsumer');
+    my $source_class = ref($stream);
+
+    arm($stream, sub {
+        $stream->transition_to('T::RawTransitionTarget');
+    });
+    syswrite($peer, "http-head\nfirst-websocket-frame\n")
+        == length("http-head\nfirst-websocket-frame\n")
+        or die "short native consumer handoff fixture write: $!";
+    $loop->run_for(0.05);
+
+    is($source_class, 'T::RawConsumer',
+        'handoff fixture begins on the source native consumer');
+    isa_ok($stream, 'T::RawTransitionTarget');
+    is(take($stream), 'first-websocket-frame',
+        'unconsumed native tail is re-driven through the target consumer');
+    is(
+        Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count,
+        $before + 1,
+        'source consumer context is destroyed at the live handoff boundary',
+    );
+    cmp_ok(
+        Linux::Event::_ByteStream::TestSupport
+            ->_test_consumer_last_destroy_flushes,
+        '>=', 1,
+        'source consumer flush obligation is settled before destruction',
+    );
+    is($stream->{xs_state}->stats->{consumer_input_calls}, 2,
+        'source and target each consume directly from native input');
+    is($stream->data->{error}, undef,
+        'native consumer replacement reports no Stream error');
+
+    $stream->close;
+    close $peer;
+}
+
+{
+    my ($loop, $stream, $peer) = pair('T::ConsumerLine');
+    my $ok = eval {
+        $stream->transition_to('T::TransitionCreateFailureLine');
+        1;
+    };
+    ok(!$ok, 'target consumer creation failure rejects transition');
+    like($@, qr/failed to create context/,
+        'target consumer creation failure has a stable transition diagnostic');
+    isa_ok($stream, 'T::ConsumerLine',
+        'failed target creation leaves the source Perl protocol active');
+
+    arm($stream, sub { $loop->stop });
+    syswrite($peer, "still-source\n");
+    $loop->run;
+    is(take($stream), 'still-source',
+        'failed target creation leaves the source native consumer usable');
+
     $stream->close;
     close $peer;
 }
