@@ -22,7 +22,8 @@ static int
 les_consumer_host_resume(pTHX_ void *host_context)
 {
     les_xsstate_t *st = (les_xsstate_t *)host_context;
-    if (!st || st->consumer_transition_preparing)
+    if (!st || st->consumer_transition_preparing
+        || st->consumer_transition_pending)
         return 0;
     return les_consumer_resume(aTHX_ st);
 }
@@ -33,6 +34,7 @@ les_consumer_host_pause(pTHX_ void *host_context)
     les_xsstate_t *st = (les_xsstate_t *)host_context;
 
     if (!st || st->consumer_transition_preparing
+        || st->consumer_transition_pending
         || !st->consumer_ops || !st->consumer_context
         || st->consumer_terminal || st->closed || st->read_eof)
         return 0;
@@ -64,7 +66,8 @@ les_consumer_host_retain(pTHX_ void *host_context)
     les_xsstate_t *st = (les_xsstate_t *)host_context;
     PERL_UNUSED_CONTEXT;
 
-    if (!st || st->consumer_transition_preparing || st->destroy_pending)
+    if (!st || st->consumer_transition_preparing
+        || st->consumer_transition_pending || st->destroy_pending)
         return 0;
     if (st->consumer_host_retain_count == (UV)-1)
         croak("native Stream consumer host retain count overflow");
