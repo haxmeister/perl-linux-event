@@ -80,7 +80,9 @@ les_consumer_host_release(pTHX_ void *host_context)
 {
     les_xsstate_t *st = (les_xsstate_t *)host_context;
 
-    if (!st || !st->consumer_host_retain_count)
+    if (!st || st->consumer_transition_preparing)
+        croak("native Stream consumer host release is unavailable during transition create");
+    if (!st->consumer_host_retain_count)
         croak("unbalanced native Stream consumer host release");
     st->consumer_host_retain_count--;
     if (!st->consumer_host_retain_count && st->destroy_pending) {
