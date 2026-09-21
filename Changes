@@ -8,6 +8,7 @@ Revision history for Linux-Event
       exceptions, and bound each drain to 1,024 queue entries. Use a lazy
       private eventfd so deferred work participates in poll_fd()/poll()
       foreign-loop integration without becoming a cross-thread callback queue.
+
 0.116  2026-09-20
     - Allow transition_to() to retire a live native consumer into an ordinary
       Perl Stream input sink while preserving unread ordered input natively
