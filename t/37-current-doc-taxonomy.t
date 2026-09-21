@@ -103,7 +103,7 @@ like($current_text{'README.md'},
     qr/\bpoll_fd\(\).*?\bpoll\(\)/s,
     'README surfaces the foreign-loop integration boundary');
 like($current_text{'README.md'},
-    qr/\bdefer\(\).*?non-reentrant/s,
+    qr/non-reentrant.*?\bdefer\(\)/s,
     'README surfaces owner-interpreter deferred work');
 like($current_text{'README.md'},
     qr/docs\/ORDERED-BYTE-CONSUMER-ABI\.md/,
