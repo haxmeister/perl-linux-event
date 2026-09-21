@@ -175,6 +175,33 @@ $registration->disable_write;
 The ordered-byte public leaves manage this transition automatically through
 their native write queue.
 
+## Deferred owner-interpreter work
+
+Protocol and lifecycle code that must complete outside the initiating callback
+stack can queue work on the owning Loop:
+
+```perl
+my $pending = $loop->defer(sub {
+    apply_completed_transition();
+});
+```
+
+`defer()` never invokes the callback inline. Eligible callbacks run FIFO.
+Callbacks deferred while a deferred drain is already executing wait for a later
+Loop turn. The opaque handle supports `cancel()` and `is_active()`; dropping
+the handle does not cancel pending work.
+
+A drain examines at most 1,024 queue entries. If work remains, the private
+eventfd source is signaled again so Linux readiness can interleave with a
+self-scheduling deferred chain. Callback exceptions propagate normally after
+the remaining queue is re-armed, allowing the caller to catch the exception
+and drive the Loop again.
+
+Deferred callbacks are owned by the creating Perl interpreter. `defer()` is
+not a cross-thread or cross-process callback-posting API. Use
+`Linux::Event::Kernel::Event` plus an appropriate payload queue or IPC channel
+when another execution context must wake the Loop.
+
 ## Driving the loop
 
 ### Foreign-loop integration
