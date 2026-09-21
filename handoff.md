@@ -29,7 +29,6 @@ coverage in `t/loop-foreign-integration.t` and a current-documentation guard
 in `t/37-current-doc-taxonomy.t`.
 
 ## 0.116 release
-## 0.116 release
 
 Linux::Event 0.116 is the patch release for the native-consumer retirement
 generalization merged by PR #22. Release PR #23 passed all release gates and
