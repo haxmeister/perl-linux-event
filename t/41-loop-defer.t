@@ -14,6 +14,10 @@ sub exception ($code) {
 subtest 'validation, non-inline delivery, liveness, and handle lifecycle' => sub {
     my $loop = Linux::Event::Loop->new;
     can_ok($loop, 'defer');
+    ok(!defined $loop->resources->{defer_fd},
+        'defer source is absent before first use');
+    is($loop->resources->{pending_deferred}, 0,
+        'new Loop has no deferred work');
     like(exception(sub { $loop->defer('not a callback') }),
         qr/callback must be a coderef/, 'non-coderef is rejected');
 
