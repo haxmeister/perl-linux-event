@@ -128,9 +128,11 @@ registrations. Socket address and transport fields appear only for
 {
     epoll_fd                 => 3,
     timer_fd                 => 5,       # undef until first Kernel::Timer
-    registered_fds           => 4,
+    defer_fd                 => 6,       # undef until first defer()
+    pending_deferred         => 2,
+    registered_fds           => 5,
     public_registrations     => 1,
-    internal_registrations   => 3,
+    internal_registrations   => 4,
     public_registration_fds  => [7],
     active_timers            => 2,
     registry_capacity        => 1024,
@@ -140,17 +142,22 @@ registrations. Socket address and transport fields appear only for
 ```
 
 Internal registrations back public resources and services such as timerfd,
-signalfd, resolver eventfd, pidfd, and sockets. A registration created directly
-with public `watch()` is reported separately. `timer_fd` is `undef` until the
-Loop first creates its shared timer source.
+signalfd, resolver eventfd, pidfd, sockets, and the private deferred-work
+eventfd. A registration created directly with public `watch()` is reported
+separately. `timer_fd` is `undef` until the Loop first creates its shared timer
+source. `defer_fd` is `undef` until the first `defer()` call; once created it
+remains the Loop's private wakeup source. `pending_deferred` is the number of
+uncancelled deferred callbacks awaiting delivery.
 
 ## Liveness and pressure
 
 `why_alive` returns an array reference of actionable user-visible reasons. A
 managed-object reason is its inspection snapshot plus `object`, containing the
 exact object. A direct raw registration reason contains `type =>
-'registration'`, `registered => 1`, and `fd`. Private backing registrations do
-not appear as duplicate reasons.
+'registration'`, `registered => 1`, and `fd`. Pending deferred work adds one
+`{ type => 'deferred', pending => $count }` reason. The private defer eventfd
+itself does not appear as a duplicate liveness reason once the queue is empty.
+Other private backing registrations likewise remain hidden.
 
 `pressure` returns conservative current indicators rather than a synthetic
 health score:
