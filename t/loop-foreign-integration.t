@@ -129,6 +129,21 @@ sub await_foreign_readable ($selector, $label, $timeout = 3) {
     my ($poll_fh, $selector) = foreign_selector($loop);
     my $seen = 0;
 
+    my $pending = $loop->defer(sub { $seen++ });
+    await_foreign_readable($selector,
+        'deferred work makes poll_fd readable');
+    cmp_ok($loop->poll, '>=', 1, 'poll dispatches deferred work');
+    is($seen, 1, 'deferred callback ran through the foreign-loop boundary');
+    ok(!$pending->is_active, 'foreign-driven deferred handle completes');
+
+    close $poll_fh;
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my ($poll_fh, $selector) = foreign_selector($loop);
+    my $seen = 0;
+
     my $signal = Linux::Event::Kernel::Signal->new(
         loop => $loop,
         signals => SIGUSR1,
