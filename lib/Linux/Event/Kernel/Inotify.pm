@@ -77,6 +77,7 @@ $WATCH_CALLBACK{on_event} = 1;
 my %CLASS_DESCRIPTOR;
 my %LIVE;
 my $NEXT_ID = 1;
+my $DISPATCH_BUDGET = 256;
 
 sub _class_descriptor ($class) {
     return $CLASS_DESCRIPTOR{$class} if exists $CLASS_DESCRIPTOR{$class};
@@ -123,6 +124,7 @@ sub new ($class, %option) {
         watches        => {},
         watch_order    => [],
         groups         => {},
+        group_identity => {},
         pending_events => [],
         resume_defer   => undef,
     }, $class;
@@ -226,6 +228,7 @@ sub _attach_to_loop ($self, $loop) {
         $self->{fd} = undef;
         $self->{loop} = undef;
         $self->{groups} = {};
+        $self->{group_identity} = {};
         for my $watch (values %{ $self->{watches} }) {
             $watch->_reset_pending if $watch->is_active;
         }
@@ -236,40 +239,140 @@ sub _attach_to_loop ($self, $loop) {
     return $self;
 }
 
-sub _activate_watch ($self, $watch) {
-    my $mask = $watch->_event_mask | IN_MASK_ADD;
+sub _watch_kernel_mask ($watch, $event_mask = undef) {
+    $event_mask = $watch->_event_mask if !defined $event_mask;
+    my $mask = $event_mask;
+    $mask |= IN_EXCL_UNLINK if $watch->_flag('excl_unlink');
     $mask |= IN_ONLYDIR if $watch->_flag('only_dir');
     $mask |= IN_DONT_FOLLOW if $watch->_flag('dont_follow');
+    return $mask;
+}
 
-    my $wd = _add_watch($self->{fd}, $watch->path, $mask);
-    my $group = $self->{groups}{$wd};
+sub _watch_identity ($watch) {
+    my @stat = $watch->_flag('dont_follow')
+        ? lstat($watch->path)
+        : stat($watch->path);
+    return undef if !@stat;
+    return $stat[0] . ':' . $stat[1];
+}
 
-    if ($group) {
-        if (!!$group->{excl_unlink} != !!$watch->_flag('excl_unlink')) {
-            croak 'watch(): excl_unlink must match existing watches for the same inode';
+sub _forget_group ($self, $group) {
+    delete $self->{groups}{ $group->{wd} }
+        if $self->{groups}{ $group->{wd} }
+        && refaddr($self->{groups}{ $group->{wd} }) == refaddr($group);
+
+    my $identity = $group->{identity};
+    delete $self->{group_identity}{$identity}
+        if defined($identity)
+        && $self->{group_identity}{$identity}
+        && refaddr($self->{group_identity}{$identity}) == refaddr($group);
+    return;
+}
+
+sub _group_union_mask ($group) {
+    my $mask = 0;
+    for my $watch (@{ $group->{watches} }) {
+        next if !$watch->is_active;
+        $mask |= $watch->_event_mask;
+    }
+    return $mask;
+}
+
+sub _reprogram_group ($self, $group, $event_mask) {
+    return 0 if !defined($self->{fd}) || !$event_mask;
+
+    for my $watch (@{ $group->{watches} }) {
+        next if !$watch->is_active;
+
+        my $wd;
+        my $ok = eval {
+            $wd = _add_watch(
+                $self->{fd},
+                $watch->path,
+                _watch_kernel_mask($watch, $event_mask),
+            );
+            1;
+        };
+        next if !$ok;
+
+        if ($wd == $group->{wd}) {
+            $group->{kernel_event_mask} = $event_mask;
+            return 1;
         }
-    } else {
-        if ($watch->_flag('excl_unlink')) {
-            my $confirmed = eval {
-                _add_watch($self->{fd}, $watch->path, $mask | IN_EXCL_UNLINK)
-            };
-            if (!defined $confirmed) {
-                my $error = $@ || 'could not enable excl_unlink';
-                eval { _rm_watch($self->{fd}, $wd); 1 };
-                die $error;
-            }
-            croak 'watch(): inotify watch descriptor changed while enabling excl_unlink'
-                if $confirmed != $wd;
-        }
-        $group = {
-            wd          => $wd,
-            excl_unlink => $watch->_flag('excl_unlink') ? 1 : 0,
-            watches     => [],
+
+        # The pathname stopped naming the inode represented by this group.
+        # Remove the accidental new watch and try another surviving alias.
+        eval { _rm_watch($self->{fd}, $wd); 1 };
+    }
+
+    # Keeping a kernel-mask superset is safe because logical dispatch still
+    # filters each record against the surviving Watch objects.
+    return 0;
+}
+
+sub _activate_watch ($self, $watch) {
+    my $mask = _watch_kernel_mask($watch);
+
+    # IN_MASK_CREATE guarantees that a genuinely new logical subscription
+    # cannot overwrite the mask of an inode that this inotify instance already
+    # watches. A duplicate inode falls through to the explicit sharing path.
+    my $wd = _add_watch_create($self->{fd}, $watch->path, $mask);
+
+    if (defined $wd) {
+        my $identity = _watch_identity($watch);
+        my $group = {
+            wd                => $wd,
+            identity          => $identity,
+            excl_unlink       => $watch->_flag('excl_unlink') ? 1 : 0,
+            kernel_event_mask => $watch->_event_mask,
+            watches           => [],
         };
         $self->{groups}{$wd} = $group;
+        $self->{group_identity}{$identity} = $group if defined $identity;
+        push @{ $group->{watches} }, $watch;
+        $watch->_activate($wd);
+        return $watch;
+    }
+
+    # The kernel reports that this inode is already watched. Where possible,
+    # reject incompatible shared-watch policy before changing the kernel mask.
+    my $identity = _watch_identity($watch);
+    if (defined($identity) && (my $known = $self->{group_identity}{$identity})) {
+        if (!!$known->{excl_unlink} != !!$watch->_flag('excl_unlink')) {
+            croak 'watch(): excl_unlink must match existing watches for the same inode';
+        }
+    }
+
+    $wd = _add_watch(
+        $self->{fd},
+        $watch->path,
+        $mask | IN_MASK_ADD,
+    );
+
+    my $group = $self->{groups}{$wd};
+    if (!$group) {
+        # The pathname changed between the create-only probe and the sharing
+        # call. Treat the object selected by the second syscall as a new group.
+        $identity = _watch_identity($watch);
+        $group = {
+            wd                => $wd,
+            identity          => $identity,
+            excl_unlink       => $watch->_flag('excl_unlink') ? 1 : 0,
+            kernel_event_mask => $watch->_event_mask,
+            watches           => [],
+        };
+        $self->{groups}{$wd} = $group;
+        $self->{group_identity}{$identity} = $group if defined $identity;
+    }
+    elsif (!!$group->{excl_unlink} != !!$watch->_flag('excl_unlink')) {
+        # A rare pathname race may bypass the identity precheck. Restore the
+        # previous logical union before reporting the incompatible request.
+        $self->_reprogram_group($group, $group->{kernel_event_mask});
+        croak 'watch(): excl_unlink must match existing watches for the same inode';
     }
 
     push @{ $group->{watches} }, $watch;
+    $group->{kernel_event_mask} |= $watch->_event_mask;
     $watch->_activate($wd);
     return $watch;
 }
@@ -278,7 +381,8 @@ sub _ready ($self) {
     return if $self->{state} ne 'active';
 
     $self->_drain_pending if @{ $self->{pending_events} };
-    return if $self->{state} ne 'active';
+    return if $self->{state} ne 'active'
+        || @{ $self->{pending_events} };
 
     my $events;
     my $ok = eval {
@@ -295,8 +399,14 @@ sub _ready ($self) {
 }
 
 sub _drain_pending ($self) {
-    while ($self->{state} eq 'active' && @{ $self->{pending_events} }) {
+    my $dispatched = 0;
+
+    while ($self->{state} eq 'active'
+            && @{ $self->{pending_events} }
+            && $dispatched < $DISPATCH_BUDGET) {
         my $record = shift @{ $self->{pending_events} };
+        $dispatched++;
+
         my $ok = eval {
             $self->_dispatch_record($record);
             1;
@@ -309,13 +419,17 @@ sub _drain_pending ($self) {
             die $error;
         }
     }
+
+    $self->_schedule_resume
+        if $self->{state} eq 'active'
+        && @{ $self->{pending_events} };
     return;
 }
 
 sub _schedule_resume ($self) {
     return if $self->{resume_defer} || $self->{state} ne 'active';
     my $loop = $self->{loop};
-    return if !$loop || !$loop->can('defer');
+    return if !$loop;
 
     $self->{resume_defer} = $loop->defer(sub {
         $self->{resume_defer} = undef;
@@ -348,10 +462,7 @@ sub _dispatch_record ($self, $record) {
 
     my $group = $self->{groups}{$wd} // return;
     my $ignored = !!($mask & IN_IGNORED);
-    if ($ignored && $self->{groups}{$wd}
-            && refaddr($self->{groups}{$wd}) == refaddr($group)) {
-        delete $self->{groups}{$wd};
-    }
+    $self->_forget_group($group) if $ignored;
 
     my @watch = @{ $group->{watches} };
     my $error;
@@ -433,12 +544,17 @@ sub _cancel_watch ($self, $watch) {
             } @{ $group->{watches} };
 
             if (!@{ $group->{watches} }) {
-                delete $self->{groups}{$wd};
+                $self->_forget_group($group);
                 my $ok = eval {
                     _rm_watch($self->{fd}, $wd);
                     1;
                 };
                 $error = $@ if !$ok;
+            }
+            else {
+                my $union = _group_union_mask($group);
+                $self->_reprogram_group($group, $union)
+                    if $union != $group->{kernel_event_mask};
             }
         }
     }
@@ -474,9 +590,11 @@ sub close ($self) {
     $self->{watches} = {};
     $self->{watch_order} = [];
     $self->{groups} = {};
+    $self->{group_identity} = {};
     $self->{pending_events} = [];
     $self->{loop} = undef;
     $self->{data} = undef;
+    $self->{descriptor} = {};
     $self->{state} = 'closed';
     $self->{terminal} = 1;
     delete $LIVE{ $self->{id} };
@@ -561,7 +679,7 @@ Linux::Event::Kernel::Inotify - inotify filesystem notifications on a Loop
 C<Linux::Event::Kernel::Inotify> owns one nonblocking Linux inotify instance.
 C<watch()> creates logical L<Linux::Event::Kernel::Inotify::Watch>
 subscriptions. Several logical watches that resolve to one kernel watch
-descriptor are safely faned out by the parent.
+descriptor are safely fanned out by the parent.
 
 A detached Inotify object only records watch specifications. Kernel watches
 begin when the object is attached with C<< $loop->add($inotify) >>. Supplying
@@ -615,6 +733,10 @@ The same Event object is passed to every callback for one logical Watch.
 The first callback exception stops dispatch of that record and propagates
 through the active Loop driver. Already-read later records are retained for a
 later turn.
+
+Dispatch is bounded to 256 decoded records per turn. If a native read produces
+more work, the remainder is resumed with C<< $loop->defer(...) >> so filesystem
+bursts cannot monopolize one readiness callback.
 
 Cancellation is immediately terminal. Once C<< $watch->cancel >> returns, no
 later callback can target that Watch, including the C<IN_IGNORED> record caused
