@@ -56,6 +56,7 @@
 #include <time.h>
 #include <limits.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 #ifndef EPOLLRDHUP
 #define EPOLLRDHUP 0x2000
@@ -81,6 +82,13 @@ typedef struct le_watcher_s le_watcher_t;
 typedef struct le_registration_s le_registration_t;
 typedef struct le_timer_s le_timer_t;
 typedef struct le_timer_descriptor_s le_timer_descriptor_t;
+
+static pid_t le_process_pid;
+static int le_atfork_registered;
+
+static void le_process_after_fork_child(void) {
+    le_process_pid = getpid();
+}
 
 struct le_timer_descriptor_s {
     SV *callback_cv;
@@ -310,7 +318,7 @@ static le_loop_t *le_loop_from_sv(SV *sv) {
 }
 
 static void le_loop_assert_owner(le_loop_t *loop, const char *operation) {
-    pid_t current = getpid();
+    pid_t current = le_process_pid;
     if (!loop) croak("%s(): Loop is closed", operation);
     if (loop->owner_pid != current)
         croak("%s(): Loop belongs to PID %ld and cannot be used in PID %ld after fork",
@@ -946,7 +954,7 @@ static void le_loop_child_reset(le_loop_t *loop) {
     int new_epoll_fd;
     int old_epoll_fd;
     int old_timer_fd;
-    pid_t current = getpid();
+    pid_t current = le_process_pid;
     if (!loop) croak("fork(): Loop is closed");
     if (loop->owner_pid == current)
         croak("fork(): child Loop reset requires an inherited Loop");
@@ -1411,6 +1419,16 @@ static int le_fd_from_sv(SV *value, const char *method) {
 MODULE = Linux::Event::Loop    PACKAGE = Linux::Event::Loop
 PROTOTYPES: DISABLE
 
+BOOT:
+    le_process_pid = getpid();
+    if (!le_atfork_registered) {
+        int error = pthread_atfork(NULL, NULL, le_process_after_fork_child);
+        if (error)
+            croak("pthread_atfork failed: %s", strerror(error));
+        le_atfork_registered = 1;
+    }
+
+
 SV *
 new(CLASS)
     const char *CLASS
@@ -1418,7 +1436,7 @@ new(CLASS)
     le_loop_t *loop = (le_loop_t *)calloc(1, sizeof(le_loop_t));
     if (!loop) croak("calloc loop failed");
     loop->timer_fd = -1;
-    loop->owner_pid = getpid();
+    loop->owner_pid = le_process_pid;
     loop->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
     if (loop->epoll_fd < 0) { int err = errno; free(loop); croak("epoll_create1 failed: %s", strerror(err)); }
     loop->event_cap = LE_INITIAL_EVENTS;
