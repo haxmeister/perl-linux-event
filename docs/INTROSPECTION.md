@@ -54,6 +54,7 @@ objects:
 - `Linux::Event::Kernel::Timer`
 - `Linux::Event::Kernel::Signal`
 - `Linux::Event::Kernel::Event`
+- `Linux::Event::Kernel::Inotify`
 - `Linux::Event::Kernel::Process`
 
 Opaque registrations returned by `watch()` and private helper objects are not
@@ -76,6 +77,7 @@ order is deliberately unspecified.
     timer    => 0,
     signal   => 0,
     event    => 0,
+    inotify  => 0,
     process  => 0,
 }
 ```
@@ -110,6 +112,7 @@ Registered objects also include `state` and type-specific fields:
 | timer | `deadline`, `interval`, `expirations` |
 | signal | `signals` |
 | event | no additional fields |
+| inotify | `fd`, `watches` |
 | process | `pid`, `pending_stdin_bytes` |
 
 The hash is a snapshot. Address values are immutable `Linux::Event::Address`
@@ -142,8 +145,8 @@ registrations. Socket address and transport fields appear only for
 ```
 
 Internal registrations back public resources and services such as timerfd,
-signalfd, resolver eventfd, pidfd, sockets, and the private deferred-work
-eventfd. A registration created directly with public `watch()` is reported
+signalfd, resolver eventfd, pidfd, inotify, sockets, and the private
+deferred-work eventfd. A registration created directly with public `watch()` is reported
 separately. `timer_fd` is `undef` until the Loop first creates its shared timer
 source. `defer_fd` is `undef` until the first `defer()` call; once created it
 remains the Loop's private wakeup source. `pending_deferred` is the number of

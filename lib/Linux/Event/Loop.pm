@@ -240,7 +240,8 @@ The public resource leaves are L<Linux::Event::IO::Pipe>,
 L<Linux::Event::IO::TTY>, L<Linux::Event::IO::Sock::Stream>,
 L<Linux::Event::IO::Sock::Listener>, L<Linux::Event::IO::Sock::Dgram>,
 L<Linux::Event::Kernel::Timer>, L<Linux::Event::Kernel::Signal>,
-L<Linux::Event::Kernel::Event>, and L<Linux::Event::Kernel::Process>.
+L<Linux::Event::Kernel::Event>, L<Linux::Event::Kernel::Inotify>, and
+L<Linux::Event::Kernel::Process>.
 A resource rejects attachment to a second Loop or attachment after reaching a
 terminal state.
 
@@ -386,7 +387,7 @@ C<fh>.
 
 Return the Loop-owned epoll descriptor used to integrate Linux::Event beneath
 another event system. The descriptor becomes readable whenever Linux::Event has
-kernel readiness pending, including its timerfd, signalfd, pidfds, eventfds,
+kernel readiness pending, including its timerfd, signalfd, pidfds, eventfds, inotify descriptors,
 and ordinary I/O registrations.
 
 The returned descriptor is borrowed. Linux::Event owns it and closes it when
@@ -475,7 +476,7 @@ the complete field table and the stable introspection type labels.
 
 Return a new hash reference containing the documented introspection counts for
 ordered-byte resources, listeners, datagrams, timers, signals, eventfd
-notifications, and processes. See F<docs/INTROSPECTION.md> for exact keys.
+notifications, inotify resources, and processes. See F<docs/INTROSPECTION.md> for exact keys.
 
 =head2 resources
 

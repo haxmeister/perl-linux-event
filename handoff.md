@@ -1,5 +1,63 @@
 # Linux::Event Handoff
 
+## feature/inotify: native filesystem notifications
+
+Draft PR #25 implements the roadmap inotify resource on branch
+`feature/inotify`. The current public design is
+`Linux::Event::Kernel::Inotify` with logical
+`Linux::Event::Kernel::Inotify::Watch` subscriptions and immutable
+`Linux::Event::Kernel::Inotify::Event` callback values.
+
+Inotify follows the ordinary resource attachment contract. Detached `watch()`
+calls only create pending specifications; `$loop->add($inotify)` installs all
+pending kernel watches transactionally and then registers the nonblocking
+inotify fd. `new(loop => $loop)` uses the same attachment path, and later
+watches activate synchronously. Successful attachment happens only once.
+The parent owns terminal `close()`; each child Watch owns terminal
+`cancel()`.
+
+Specific callbacks define the watch mask, with optional `on_event` running
+last for the same logical record. Callback order is fixed and documented.
+Explicit cancellation guarantees no later callback, including the
+`IN_IGNORED` caused by `inotify_rm_watch()`; kernel invalidation of an
+active watch may deliver `on_ignored` before making that Watch terminal.
+Rename cookies are preserved without pairing in core. Queue overflow is
+parent-level through `on_overflow`, and fatal source failures use
+`on_error`.
+
+Multiple logical Watches that resolve to one inode share the kernel watch
+descriptor. New native watches use `IN_MASK_CREATE` to avoid accidentally
+overwriting an existing mask; duplicate subscriptions explicitly union their
+masks. Cancelling one logical Watch reduces the native union when a surviving
+path still names the inode. If no surviving alias can re-address a renamed
+inode, Linux::Event keeps a safe native mask superset and continues logical
+filtering rather than risking removal of the live shared watch.
+
+Decoded record dispatch is bounded to 256 records per turn. Remaining decoded
+records retain order and resume through `Loop->defer()`, so an inotify burst
+cannot monopolize one readiness callback. Recursive directory management,
+filesystem reconciliation after overflow, and synthesized rename pairing remain
+above the primitive core resource.
+
+Focused coverage is in `t/inotify-00-api.t`,
+`t/inotify-10-events.t`, `t/inotify-11-sharing.t`, and
+`t/inotify-12-fairness.t`. Existing Loop introspection, architecture,
+documentation, example-syntax, metadata, manifest, and foreign-loop integration
+coverage has also been extended. `examples/inotify-log.pl` demonstrates the
+agreed log-file API.
+
+PR #25 remains intentionally draft and unmerged. The exact implementation
+head `800d49a21debbc382c93dbd593efac6e9ddf77f4` passed CI run #456:
+Perl 5.36/5.38/5.40/5.42/5.44/latest, threaded 5.36/latest, generated
+distribution integrity, checked-in metadata, POD validation, and the permanent
+same-run performance regression comparison all passed. Foreign loop integration
+run #26 also passed on Perl 5.36 and 5.44, including real inotify readiness
+through the supported `poll_fd()` / `poll()` boundary.
+
+The commit that records this verification is handoff-only and deliberately uses
+`[skip ci]`; the verified implementation code is unchanged from the SHA above.
+
+
 ## Post-0.116 main: Loop defer scheduling
 
 PR #24 was squash-merged to `main` as

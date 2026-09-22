@@ -86,25 +86,31 @@ silently misbehave.
 
 ### 4. Native filesystem notification with inotify
 
-Add inotify as a semantic Linux resource rather than emulating a portable stat
-watcher. The design should fit the existing explicit Loop/object lifecycle and
-deliver decoded filesystem events without making applications parse raw
-`inotify_event` records.
+Implemented as the semantic Linux resource
+`Linux::Event::Kernel::Inotify`. One public parent owns one nonblocking
+inotify fd and an internal Loop registration; logical
+`Linux::Event::Kernel::Inotify::Watch` objects describe independent
+subscriptions and may share one kernel watch descriptor when they resolve to
+the same inode.
 
-The design investigation must settle:
+The contract is deliberately primitive and Linux-native:
 
-- the public class name and callback signature;
-- one inotify instance per Loop versus independently owned instances;
-- watch-descriptor sharing when multiple objects observe the same path;
-- recursive-tree policy, including newly created directories;
-- rename-cookie pairing and queue-overflow reporting;
-- path replacement, watch invalidation, deletion, and unmount semantics;
-- coalescing, batching, fairness, teardown, and fork behavior;
-- whether recursive and higher-level convenience belongs in core or a layer
-  above the primitive watcher.
+- normal `loop => $loop` and explicit `$loop->add($inotify)` attachment are
+  equivalent; detached child watches do not begin kernel monitoring;
+- specific callbacks define the watch mask and optional `on_event` runs last
+  for the same decoded record;
+- rename cookies are exposed without delaying or pairing records in core;
+- queue overflow is parent-level and never silently ignored;
+- cancellation and parent close are terminal and reentrant-safe;
+- shared-inode masks are unioned and reduced when logical subscriptions leave;
+- decoded bursts are bounded and continued through `Loop->defer()`; and
+- recursive tree watching, rescan/reconciliation policy, and synthesized rename
+  handling remain above the primitive core resource.
 
-Acceptance requires focused Linux integration tests, lifecycle/introspection
-coverage, and evidence that idle watches add no cost to unrelated hot paths.
+Focused Linux integration tests cover activation, real filesystem events,
+invalidation, shared inodes, mask reduction, callback ordering, rename cookies,
+reentrant teardown, fairness, and Loop introspection. See
+`INOTIFY-DESIGN.md` for the complete contract.
 
 ## Developer tooling before 1.000
 

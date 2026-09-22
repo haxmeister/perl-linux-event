@@ -152,6 +152,18 @@
          "file" : "lib/Linux/Event/Kernel/Event.pm",
          "version" : "0.116"
       },
+      "Linux::Event::Kernel::Inotify" : {
+         "file" : "lib/Linux/Event/Kernel/Inotify.pm",
+         "version" : "0.116"
+      },
+      "Linux::Event::Kernel::Inotify::Event" : {
+         "file" : "lib/Linux/Event/Kernel/Inotify/Event.pm",
+         "version" : "0.116"
+      },
+      "Linux::Event::Kernel::Inotify::Watch" : {
+         "file" : "lib/Linux/Event/Kernel/Inotify/Watch.pm",
+         "version" : "0.116"
+      },
       "Linux::Event::Kernel::Process" : {
          "file" : "lib/Linux/Event/Kernel/Process.pm",
          "version" : "0.116"

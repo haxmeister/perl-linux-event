@@ -18,10 +18,12 @@ Linux::Event::Kernel - kernel event and state namespace
 C<Linux::Event::Kernel> is a namespace category for Linux::Event abstractions
 over Linux kernel notification and state facilities. Applications choose a
 concrete leaf such as L<Linux::Event::Kernel::Timer>,
-L<Linux::Event::Kernel::Signal>, L<Linux::Event::Kernel::Event>, or
-L<Linux::Event::Kernel::Process>.
+L<Linux::Event::Kernel::Signal>, L<Linux::Event::Kernel::Event>,
+L<Linux::Event::Kernel::Inotify>, or L<Linux::Event::Kernel::Process>.
 
 Each leaf accepts its application callbacks as constructor coderefs or cached
-subclass methods. Process subclasses may also centralize cached pipe-I/O tuning.
+subclass methods where appropriate. Inotify child watches carry their own
+filesystem callbacks while the parent owns the kernel source. Process
+subclasses may also centralize cached pipe-I/O tuning.
 
 =cut
