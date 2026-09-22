@@ -9,7 +9,8 @@
 Linux::Event is a Linux-only asynchronous I/O foundation for Perl. It combines
 an XS-first `epoll` reactor with native buffered byte I/O, stream and datagram
 sockets, listeners, framing, OpenSSL TLS, timerfd scheduling, signalfd signal
-delivery, eventfd notification, and pidfd process lifecycle support.
+delivery, eventfd notification, inotify filesystem notification, and pidfd
+process lifecycle support.
 
 The public API names the Linux resource the application is actually using.
 Shared buffering, framing, descriptor, and socket machinery remains private.
@@ -30,6 +31,7 @@ Linux::Event
 |   |-- Timer
 |   |-- Signal
 |   |-- Event
+|   |-- Inotify
 |   `-- Process
 |-- Framer
 |-- TLS
@@ -52,6 +54,7 @@ The principal public classes are:
 - `Linux::Event::Kernel::Timer` - monotonic timer behavior.
 - `Linux::Event::Kernel::Signal` - synchronous signalfd subscriptions.
 - `Linux::Event::Kernel::Event` - eventfd notifications.
+- `Linux::Event::Kernel::Inotify` - inotify filesystem notifications.
 - `Linux::Event::Kernel::Process` - pidfd lifecycle and native process spawning.
 - `Linux::Event::Framer` - native framing declarations for ordered byte I/O.
 - `Linux::Event::TLS` - OpenSSL TLS policy for stream-socket subclasses.
@@ -64,8 +67,8 @@ Implementation packages beginning with `_`, plus the historical internal
 
 ## Constructor callbacks and subclass policy
 
-Public Event, Timer, Signal, Process, Datagram, Pipe, TTY, and connected Stream
-objects accept application callbacks as constructor coderefs. Closures retain
+Public Event, Timer, Signal, Inotify, Process, Datagram, Pipe, TTY, and
+connected Stream objects accept application callbacks as constructor coderefs. Closures retain
 ordinary lexical scope and override same-named subclass methods for that one
 object. Linux::Event resolves the effective callback during construction; it
 does not add method lookup or a method-versus-closure decision to delivery.
@@ -143,6 +146,40 @@ its handle. This API is owner-interpreter scheduling, not a cross-thread callbac
 queue. The private eventfd source is bounded and participates automatically in
 the same `poll_fd()` / `poll()` foreign-loop boundary.
 
+## Filesystem notification
+
+`Linux::Event::Kernel::Inotify` owns one Linux inotify instance and any number
+of logical child watches. It follows the same explicit attachment contract as
+other public resources:
+
+```perl
+my $inotify = Linux::Event::Kernel::Inotify->new;
+
+my $watch = $inotify->watch(
+    "log.txt",
+    on_modify => sub ($event) {
+        say $event->path . " changed";
+    },
+    on_close_write => sub ($event) {
+        say $event->path . " finished being written";
+    },
+    on_event => sub ($event) {
+        say "mask=" . $event->mask;
+    },
+);
+
+$loop->add($inotify);
+```
+
+Before `add()`, child watches are only specifications and no kernel monitoring
+has begun. With `loop => $loop`, or after explicit attachment, later
+`watch()` calls become active synchronously. Specific callbacks define the
+native event mask; `on_event` runs last as a catch-all for the same record.
+Multiple logical watches of the same inode share one native watch descriptor
+without sharing callback state. See
+[Inotify design](docs/INOTIFY-DESIGN.md) for cancellation, overflow, rename,
+fairness, and shared-inode semantics.
+
 ## Stream socket server
 
 A connected socket protocol can subclass the concrete stream-socket leaf when
@@ -215,8 +252,10 @@ validated during construction.
 Kernel resources use the same complementary model: Event accepts `on_event`,
 Timer accepts `on_timer`, Signal accepts `on_signal`, and Process accepts
 `on_exit`, `on_error`, and, for spawned children, its optional stdio callbacks.
-Datagram accepts `on_datagram`, `on_ready`, `on_drain`, `on_error`, and
-`on_close`.
+Inotify accepts parent-level `on_overflow` and `on_error`; each logical
+Inotify Watch accepts specific filesystem callbacks such as `on_modify` plus
+an optional catch-all `on_event`. Datagram accepts `on_datagram`, `on_ready`,
+`on_drain`, `on_error`, and `on_close`.
 
 `examples/first-class-line-echo-server.pl` is a complete framed server whose
 Listener reuses one lexical `on_message` closure for every accepted Stream.
