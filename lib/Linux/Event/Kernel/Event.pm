@@ -7,6 +7,7 @@ our $VERSION = '0.116';
 
 use Carp qw(croak);
 use Config ();
+use POSIX qw(getpid);
 use Scalar::Util qw(refaddr weaken);
 
 require Linux::Event::Loop;
@@ -185,7 +186,7 @@ sub _fork_child_drop ($self, $loop) {
     $state->{data} = undef if $state;
     _close_fd(delete $self->{fd}) if defined $self->{fd};
     delete $LIVE_HANDLE{ $self->{id} };
-    $self->{owner_pid} = $;
+    $self->{owner_pid} = getpid();
     $self->{terminal} = 1;
     $self->{fork_state} = 'not_inherited';
     return;
