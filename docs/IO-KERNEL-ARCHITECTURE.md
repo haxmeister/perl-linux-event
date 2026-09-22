@@ -27,6 +27,7 @@ Linux::Event
 |   |-- Timer
 |   |-- Signal
 |   |-- Event
+|   |-- Inotify
 |   `-- Process
 |
 |-- Loop
@@ -93,6 +94,7 @@ while the backing fd mechanism remains an implementation fact.
 - `Kernel::Timer` uses timerfd-backed scheduling machinery.
 - `Kernel::Signal` uses signalfd-backed signal delivery.
 - `Kernel::Event` uses eventfd-backed counter/notification semantics.
+- `Kernel::Inotify` owns one inotify instance and logical filesystem watches.
 - `Kernel::Process` uses pidfd lifecycle observation and also owns Linux::Event
   process spawning and asynchronous stdio behavior.
 
