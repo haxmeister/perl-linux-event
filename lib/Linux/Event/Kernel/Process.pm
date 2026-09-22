@@ -694,6 +694,32 @@ sub _runtime_fail ($self, $error) {
     return;
 }
 
+sub _fork_preflight ($self, $mode, $loop) {
+    croak "fork(): Process does not support '$mode'" if $mode ne 'drop';
+    croak 'fork(): Process is not active in this Loop'
+        if $self->{state} ne 'running' || !$self->{loop}
+        || Scalar::Util::refaddr($self->{loop}) != Scalar::Util::refaddr($loop);
+    return 1;
+}
+
+sub _fork_child_drop ($self, $loop) {
+    delete @$self{qw(pid_watcher stdin_watcher stdout_watcher stderr_watcher)};
+    if (defined(my $pidfd = delete $self->{pidfd})) {
+        eval { _close_fd($pidfd) };
+    }
+    for my $name (qw(stdin stdout stderr)) {
+        my $key = $name . '_fh';
+        close delete $self->{$key} if $self->{$key};
+    }
+    $self->{stdin_queue} = [];
+    $self->{pending_stdin_bytes} = 0;
+    $self->{stdin_above_high} = 0;
+    $self->{loop} = undef;
+    $self->{descriptor} = undef;
+    $self->{state} = 'not_inherited';
+    return;
+}
+
 sub _release_handles ($self) {
     for my $name (qw(pid stdin stdout stderr)) {
         if (my $watcher = delete $self->{"${name}_watcher"}) {
@@ -747,7 +773,8 @@ sub core_dumped ($self) { !!$self->{core_dumped} }
 sub exited ($self) { $self->{state} eq 'exited' }
 sub is_running ($self) { $self->{state} eq 'running' }
 sub is_terminal ($self) {
-    return $self->{state} eq 'exited' || $self->{state} eq 'failed';
+    return $self->{state} eq 'exited' || $self->{state} eq 'failed'
+        || $self->{state} eq 'not_inherited' || $self->{state} eq 'moved';
 }
 sub pending_stdin_bytes ($self) { $self->{pending_stdin_bytes} }
 
