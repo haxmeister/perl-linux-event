@@ -24,11 +24,17 @@ sub reap_ok ($pid, $name) {
 
 {
     my $loop = Linux::Event::Loop->new;
+    $loop->run_once(0);
+    is($loop->stats->{run_once_calls}, 1,
+        'parent has diagnostic history before fork');
     my $pid = $loop->fork;
     if ($pid == 0) {
-        child_exit($loop->_owner_pid_native == $$ && $loop->count == 0);
+        child_exit($loop->_owner_pid_native == $ && $loop->count == 0
+            && $loop->stats->{run_once_calls} == 0);
     }
     ok($pid > 0, 'empty fork returns child pid in parent');
+    is($loop->stats->{run_once_calls}, 1,
+        'managed fork does not reset parent diagnostics');
     reap_ok($pid, 'empty fork');
 }
 
