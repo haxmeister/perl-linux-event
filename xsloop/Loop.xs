@@ -1479,8 +1479,12 @@ _fork_child_reset(loop_obj)
 int
 running(loop_obj)
     SV *loop_obj
+  PREINIT:
+    le_loop_t *loop;
   CODE:
-    RETVAL = le_loop_from_sv(loop_obj)->driver_depth > 0 ? 1 : 0;
+    loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "running");
+    RETVAL = loop->driver_depth > 0 ? 1 : 0;
   OUTPUT:
     RETVAL
 
@@ -1493,6 +1497,7 @@ _object_candidates_native(loop_obj)
     size_t index;
   CODE:
     loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "objects");
     objects = newAV();
     for (index = 0; index < loop->reg_cap; index++) {
         le_watcher_t *watcher = loop->registry[index];
@@ -1523,6 +1528,7 @@ _resources_native(loop_obj)
     size_t index;
   CODE:
     loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "resources");
     result = newHV();
     public_fds = newAV();
     for (index = 0; index < loop->reg_cap; index++) {
@@ -1558,7 +1564,9 @@ stats(loop_obj)
     SV *loop_obj
   CODE:
     le_loop_t *loop = le_loop_from_sv(loop_obj);
-    HV *hv = newHV();
+    HV *hv;
+    le_loop_assert_owner(loop, "stats");
+    hv = newHV();
     hv_stores(hv, "event_capacity", newSVuv(loop->event_cap));
     hv_stores(hv, "epoll_wait_calls", newSVuv(loop->epoll_wait_calls));
     hv_stores(hv, "epoll_wait_empty_calls", newSVuv(loop->epoll_wait_empty_calls));
@@ -1640,8 +1648,12 @@ SV *
 profile(loop_obj, enabled)
     SV *loop_obj
     int enabled
+  PREINIT:
+    le_loop_t *loop;
   CODE:
-    le_loop_from_sv(loop_obj)->profile_enabled = enabled ? 1 : 0;
+    loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "profile");
+    loop->profile_enabled = enabled ? 1 : 0;
     RETVAL = newSVsv(loop_obj);
   OUTPUT:
     RETVAL
@@ -1650,15 +1662,23 @@ void
 enable_watcher_reclaim(loop_obj, enabled = 1)
     SV *loop_obj
     int enabled
+  PREINIT:
+    le_loop_t *loop;
   CODE:
-    le_loop_from_sv(loop_obj)->watcher_reclaim_enabled = enabled ? 1 : 0;
+    loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "enable_watcher_reclaim");
+    loop->watcher_reclaim_enabled = enabled ? 1 : 0;
 
 
 unsigned int
 event_capacity(loop_obj)
     SV *loop_obj
+  PREINIT:
+    le_loop_t *loop;
   CODE:
-    RETVAL = (unsigned int)le_loop_from_sv(loop_obj)->event_cap;
+    loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "event_capacity");
+    RETVAL = (unsigned int)loop->event_cap;
   OUTPUT:
     RETVAL
 
@@ -1669,6 +1689,7 @@ set_event_capacity(loop_obj, capacity)
   CODE:
     le_loop_t *loop = le_loop_from_sv(loop_obj);
     struct epoll_event *events;
+    le_loop_assert_owner(loop, "set_event_capacity");
     if (capacity < 1) croak("event capacity must be >= 1");
     if (capacity > 1048576) croak("event capacity too large");
     if (loop->driver_depth || loop->in_dispatch_batch)
@@ -1682,8 +1703,12 @@ set_event_capacity(loop_obj, capacity)
 unsigned int
 callback_scope_limit(loop_obj)
     SV *loop_obj
+  PREINIT:
+    le_loop_t *loop;
   CODE:
-    RETVAL = le_loop_from_sv(loop_obj)->callback_scope_limit;
+    loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "callback_scope_limit");
+    RETVAL = loop->callback_scope_limit;
   OUTPUT:
     RETVAL
 
@@ -1691,15 +1716,20 @@ void
 set_callback_scope_limit(loop_obj, limit)
     SV *loop_obj
     unsigned int limit
+  PREINIT:
+    le_loop_t *loop;
   CODE:
+    loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "set_callback_scope_limit");
     if (limit > 1048576) croak("callback scope limit too large");
-    le_loop_from_sv(loop_obj)->callback_scope_limit = limit;
+    loop->callback_scope_limit = limit;
 
 void
 reset_stats(loop_obj)
     SV *loop_obj
   CODE:
     le_loop_t *loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "reset_stats");
     loop->epoll_wait_calls = 0;
     loop->epoll_wait_empty_calls = 0;
     loop->epoll_wait_full_batches = 0;
