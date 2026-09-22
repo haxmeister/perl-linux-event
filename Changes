@@ -1,6 +1,13 @@
 Revision history for Linux-Event
 
 0.117  UNRELEASED
+    - Add Linux::Event::Kernel::Inotify with explicit Loop attachment,
+      logical child Watch objects, decoded immutable Event values, named
+      per-event callbacks plus on_event, parent-level overflow/error handling,
+      shared-inode watch fan-out, rename-cookie preservation, reentrant-safe
+      cancellation/close, and bounded burst dispatch through Loop->defer().
+      Detached watches remain specifications until attachment; live watch
+      installation and failed attachment are synchronous and transactional.
     - Add Loop->defer() for owner-interpreter, non-reentrant next-turn work.
       Deliver eligible callbacks FIFO, force work queued during a deferred
       drain to a later turn, provide an opaque cancelable one-shot handle,
