@@ -575,6 +575,8 @@ requests reject managed fork.
 The child never reuses the parent's epoll instance or Loop-owned timerfd.
 C<fork> replaces them with fresh child reactor infrastructure before any
 selected resource is registered. Pending C<defer> callbacks are not inherited.
+Accumulated Loop diagnostic counters are reset in the child; parent statistics
+are unchanged.
 
 Move uses a private parent/child handshake. The child first completes its
 reactor reconstruction, then the parent performs its move-side descriptor
