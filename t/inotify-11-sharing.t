@@ -77,8 +77,8 @@ $a->cancel if !$a->is_terminal;
 
 append_file($alias, "shared\n");
 $loop->run_once(1000);
-is_deeply(@modify, [], 'cancelled shared Watch receives no callback');
-is_deeply(@close_write, [$alias],
+is_deeply(\@modify, [], 'cancelled shared Watch receives no callback');
+is_deeply(\@close_write, [$alias],
     'surviving shared Watch receives event with its own logical path');
 
 my @dir_events;
