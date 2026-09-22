@@ -6,7 +6,8 @@ use warnings;
 our $VERSION = '0.116';
 
 use Carp qw(croak);
-use Scalar::Util qw(blessed);
+use Hash::Util::FieldHash qw(fieldhash);
+use Scalar::Util qw(blessed weaken);
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -14,13 +15,178 @@ XSLoader::load(__PACKAGE__, $VERSION);
 require Linux::Event::Loop::Introspection;
 our @ISA = ('Linux::Event::Loop::Introspection');
 
+fieldhash my %DEFER_STATE;
+my $DEFER_CALLBACK_BATCH = 1024;
+
 sub add ($self, $object) {
     croak 'add(): object must support loop attachment'
         if !blessed($object) || !$object->can('_attach_to_loop');
     $object->_attach_to_loop($self);
     return $object;
 }
+sub _defer_state ($self) {
+    return $DEFER_STATE{$self} if $DEFER_STATE{$self};
 
+    require Linux::Event::Kernel::Event;
+    my $fd = Linux::Event::Kernel::Event::_new_fd();
+    my $state = bless {
+        fd       => $fd,
+        queue    => [],
+        pending  => 0,
+        signaled => 0,
+    }, 'Linux::Event::Loop::_DeferService';
+
+    my $ok = eval {
+        $self->watch(
+            fd        => $fd,
+            _internal => 1,
+            read      => sub { $state->_dispatch },
+            error     => sub { die "Linux::Event defer event source failed\n" },
+            no_args   => 1,
+            lean      => 1,
+        );
+        1;
+    };
+    if (!$ok) {
+        my $error = $@;
+        my $close_fd = delete $state->{fd};
+        eval { Linux::Event::Kernel::Event::_close_fd($close_fd); 1 }
+            if defined $close_fd;
+        die $error;
+    }
+
+    $DEFER_STATE{$self} = $state;
+    return $state;
+}
+
+sub defer ($self, $callback) {
+    croak 'defer(): callback must be a coderef' if ref($callback) ne 'CODE';
+    my $state = $self->_defer_state;
+    my $deferred = bless {
+        state    => $state,
+        callback => $callback,
+        active   => 1,
+    }, 'Linux::Event::_Deferred';
+    weaken($deferred->{state});
+    $state->_enqueue($deferred);
+    return $deferred;
+}
+
+sub _deferred_count ($self) {
+    my $state = $DEFER_STATE{$self};
+    return $state ? $state->{pending} : 0;
+}
+
+sub _deferred_fd ($self) {
+    my $state = $DEFER_STATE{$self};
+    return $state ? $state->{fd} : undef;
+}
+
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::Loop::_DeferService;
+
+sub _signal ($self) {
+    return if $self->{signaled};
+    Linux::Event::Kernel::Event::_signal_fd($self->{fd}, 1);
+    $self->{signaled} = 1;
+    return;
+}
+
+sub _enqueue ($self, $deferred) {
+    push @{ $self->{queue} }, $deferred;
+    $self->{pending}++;
+    my $ok = eval { $self->_signal; 1 };
+    return if $ok;
+
+    my $error = $@;
+    pop @{ $self->{queue} };
+    $self->{pending}--;
+    $deferred->{active} = 0;
+    delete $deferred->{callback};
+    die $error;
+}
+
+sub _cancel ($self, $deferred) {
+    return if !$deferred->{active};
+    $deferred->{active} = 0;
+    delete $deferred->{callback};
+    $self->{pending}-- if $self->{pending};
+    $self->{queue} = [] if !$self->{pending};
+    return;
+}
+
+sub _dispatch ($self) {
+    return if !defined $self->{fd};
+    Linux::Event::Kernel::Event::_drain_fd($self->{fd});
+    $self->{signaled} = 0;
+
+    my $eligible = scalar @{ $self->{queue} };
+    $eligible = $DEFER_CALLBACK_BATCH
+        if $eligible > $DEFER_CALLBACK_BATCH;
+
+    my $error;
+    for (1 .. $eligible) {
+        my $deferred = shift @{ $self->{queue} };
+        next if !$deferred || !$deferred->{active};
+
+        $deferred->{active} = 0;
+        $self->{pending}-- if $self->{pending};
+        my $callback = delete $deferred->{callback};
+
+        local $@;
+        my $ok = eval { $callback->(); 1 };
+        if (!$ok) {
+            $error = $@ || "deferred callback failed\n";
+            last;
+        }
+    }
+
+    if (!$self->{pending}) {
+        $self->{queue} = [];
+    }
+    else {
+        local $@;
+        my $ok = eval { $self->_signal; 1 };
+        $error = $@ || "defer event source signal failed\n"
+            if !$ok && !defined $error;
+    }
+
+    die $error if defined $error;
+    return;
+}
+
+sub CLONE_SKIP ($class) { 1 }
+
+sub DESTROY ($self) {
+    for my $deferred (@{ $self->{queue} // [] }) {
+        next if !$deferred;
+        $deferred->{active} = 0;
+        delete $deferred->{callback};
+    }
+    $self->{queue} = [];
+    $self->{pending} = 0;
+    my $fd = delete $self->{fd};
+    eval { Linux::Event::Kernel::Event::_close_fd($fd); 1 } if defined $fd;
+    return;
+}
+
+package Linux::Event::_Deferred;
+
+sub cancel ($self) {
+    return $self if !$self->{active};
+    my $state = $self->{state};
+    if ($state) {
+        $state->_cancel($self);
+    }
+    else {
+        $self->{active} = 0;
+        delete $self->{callback};
+    }
+    return $self;
+}
+
+sub is_active ($self) { !!$self->{active} }
 sub CLONE_SKIP ($class) { 1 }
 
 package Linux::Event::_Registration;
@@ -113,6 +279,43 @@ A timer uses the same attachment contract:
 
 The C<loop> constructor option and C<add> are both primary public APIs. Loop has
 no resource-specific factory hierarchy.
+
+=head1 DEFERRED WORK
+
+=head2 defer($callback)
+
+Queue a no-argument callback for non-reentrant delivery by this Loop and
+return an opaque one-shot handle:
+
+  my $pending = $loop->defer(sub {
+      finish_protocol_transition();
+  });
+
+C<defer> never invokes the callback inline. Deferred callbacks are delivered
+FIFO. Work queued while a deferred drain is already running is not eligible
+for that drain and runs on a later Loop turn.
+
+The returned handle supports C<cancel> and C<is_active>. Cancellation is
+idempotent. Dropping the handle does not cancel the work; the Loop retains
+pending callbacks until delivery, cancellation, or Loop destruction.
+
+A deferred callback exception propagates through the active Loop driver after
+the remaining queue has been made runnable again. The failed callback is
+consumed, while later callbacks remain pending for a subsequent drive after
+the exception is caught.
+
+Each deferred drain examines at most 1,024 queued entries. Remaining work
+re-signals the private eventfd source so kernel readiness gets another epoll
+turn instead of a self-scheduling deferred chain monopolizing the Loop.
+
+C<defer> is owner-interpreter scheduling only. It is not a thread-safe or
+cross-process callback queue. Cross-context producers should publish data
+through an appropriate queue or IPC mechanism and use
+L<Linux::Event::Kernel::Event> to wake the owning Loop.
+
+The defer source is created lazily and is internal to the Loop. Because it is
+an eventfd registered with the same epoll instance, deferred work also makes
+C<poll_fd> readable for supported foreign-loop integration.
 
 =head1 RAW DESCRIPTOR API
 

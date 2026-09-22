@@ -78,6 +78,7 @@ WriteMakefile(
         no_index => {
             package => [qw(
                 Linux::Event::_Registration
+                Linux::Event::_Deferred
                 Linux::Event::_IO
                 Linux::Event::_ByteStream
                 Linux::Event::_ByteStream::Descriptor
@@ -98,6 +99,7 @@ WriteMakefile(
                 Linux::Event::Kernel::Event::_OwnerState
                 Linux::Event::Kernel::Timer::_Descriptor
                 Linux::Event::Loop::Introspection
+                Linux::Event::Loop::_DeferService
                 Linux::Event::_Resolver
                 Linux::Event::_Resolver::_Native
                 Linux::Event::_SocketConfig

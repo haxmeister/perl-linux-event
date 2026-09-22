@@ -1,5 +1,33 @@
 # Linux::Event Handoff
 
+## feature/defer
+
+Current development branch: `feature/defer`, based on post-0.116 `main`
+`007db40e22374c6d7bf8e056b2d354681d20c852`.
+
+This branch implements the roadmap's deferred next-turn primitive as
+`$loop->defer(sub { ... })`. Delivery is owner-interpreter only and never
+inline. Eligible callbacks are FIFO; callbacks queued while a deferred drain
+is executing wait for a later drain. The opaque one-shot handle supports
+`cancel` and `is_active`, while dropping the handle does not cancel Loop-owned
+pending work.
+
+The implementation uses one lazily-created private eventfd and an internal
+Loop registration. A drain examines at most 1,024 queue entries and re-signals
+when work remains. Callback exceptions consume the failing callback, re-arm
+remaining work, and then propagate through the active Loop driver. Deferred
+work is exposed through `resources()` and `why_alive` without becoming a
+managed public resource object.
+
+The eventfd design means deferred work automatically participates in the
+existing `poll_fd` / `poll` foreign-loop boundary. It is deliberately not a
+generic cross-thread or cross-process Perl callback queue; those cases remain
+the domain of an application payload channel plus `Kernel::Event`.
+
+Focused coverage is in `t/41-loop-defer.t`, with additional foreign-loop
+coverage in `t/loop-foreign-integration.t` and a current-documentation guard
+in `t/37-current-doc-taxonomy.t`.
+
 ## 0.116 release
 
 Linux::Event 0.116 is the patch release for the native-consumer retirement

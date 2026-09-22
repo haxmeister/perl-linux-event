@@ -1,5 +1,14 @@
 Revision history for Linux-Event
 
+0.117  UNRELEASED
+    - Add Loop->defer() for owner-interpreter, non-reentrant next-turn work.
+      Deliver eligible callbacks FIFO, force work queued during a deferred
+      drain to a later turn, provide an opaque cancelable one-shot handle,
+      retain pending work at Loop scope, preserve later work across callback
+      exceptions, and bound each drain to 1,024 queue entries. Use a lazy
+      private eventfd so deferred work participates in poll_fd()/poll()
+      foreign-loop integration without becoming a cross-thread callback queue.
+
 0.116  2026-09-20
     - Allow transition_to() to retire a live native consumer into an ordinary
       Perl Stream input sink while preserving unread ordered input natively

@@ -167,7 +167,12 @@ sub _inspect_object ($self, $object, $registered) {
     return $result;
 }
 
-sub resources ($self) { $self->_resources_native }
+sub resources ($self) {
+    my $resource = $self->_resources_native;
+    $resource->{defer_fd} = $self->_deferred_fd;
+    $resource->{pending_deferred} = $self->_deferred_count;
+    return $resource;
+}
 
 sub why_alive ($self) {
     my @reason = map {
@@ -175,10 +180,13 @@ sub why_alive ($self) {
         $snapshot->{object} = $_;
         $snapshot;
     } @{ $self->_object_snapshot };
-    my $resources = $self->_resources_native;
+    my $resources = $self->resources;
     push @reason, map {
         +{ type => 'registration', registered => 1, fd => $_ }
     } @{ $resources->{public_registration_fds} };
+    push @reason, {
+        type => 'deferred', pending => $resources->{pending_deferred},
+    } if $resources->{pending_deferred};
     return \@reason;
 }
 

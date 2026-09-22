@@ -47,25 +47,29 @@ Adapters remain outside Linux::Event core.
 
 ### 2. Deferred next-turn execution
 
-Add an owner-interpreter scheduling primitive, provisionally:
+Implemented as the owner-interpreter scheduling primitive:
 
 ```perl
 $loop->defer(sub { ... });
 ```
 
-Its purpose is non-reentrant, next-turn delivery for protocol and lifecycle
-code. It is not a cross-thread or cross-process callback queue and must not be
-named or documented in a way that implies that guarantee.
+The contract is deliberately narrow:
 
-Before freezing the API, define:
+- callbacks are never invoked inline and eligible work is FIFO;
+- callbacks queued while a deferred drain is executing wait for a later drain;
+- the returned opaque handle supports idempotent cancellation and `is_active`;
+  dropping the handle does not cancel Loop-owned pending work;
+- exceptions propagate after remaining work is re-armed, so later callbacks
+  survive and can run after the caller catches the exception;
+- pending callbacks are visible as a Loop liveness reason;
+- each drain examines at most 1,024 queued entries and re-signals its private
+  eventfd when work remains, preventing recursive/self-scheduling starvation;
+- the eventfd is lazy and internal, so deferred work naturally participates in
+  the existing `poll_fd` / `poll` foreign-loop boundary; and
+- the API is not a cross-thread or cross-process Perl callback queue.
 
-- whether callbacks queued during a deferred drain run in the same or next
-  turn;
-- FIFO ordering and cancellation behavior;
-- exception propagation and loop recovery;
-- whether deferred callbacks keep the loop alive;
-- fairness and a bounded-drain rule so self-scheduling callbacks cannot starve
-  kernel events.
+Cross-context producers continue to use an application-owned payload channel
+plus `Linux::Event::Kernel::Event` when they need to wake the owner interpreter.
 
 ### 3. Post-fork Loop contract
 

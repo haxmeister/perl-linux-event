@@ -127,6 +127,22 @@ The foreign loop owns scheduling; Linux::Event continues to own its epoll fd
 and all registered Linux resources. Adapters that need a Perl filehandle should
 duplicate the borrowed descriptor rather than close it directly.
 
+Loop-local protocol and lifecycle work can also be made explicitly
+non-reentrant with `defer()`:
+
+```perl
+my $pending = $loop->defer(sub {
+    complete_state_change();
+});
+```
+
+Deferred callbacks are FIFO and never run inline. A callback queued from inside
+a deferred drain waits for a later Loop turn. The returned opaque handle may be
+cancelled; pending work is retained by the Loop even if the application drops
+its handle. This API is owner-interpreter scheduling, not a cross-thread callback
+queue. The private eventfd source is bounded and participates automatically in
+the same `poll_fd()` / `poll()` foreign-loop boundary.
+
 ## Stream socket server
 
 A connected socket protocol can subclass the concrete stream-socket leaf when
