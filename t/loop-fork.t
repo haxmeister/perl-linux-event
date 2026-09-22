@@ -53,6 +53,11 @@ sub reap_ok ($pid, $name) {
 
 {
     my $loop = Linux::Event::Loop->new;
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $loop,
+        after => 60,
+        on_timer => sub { },
+    );
     my $pid = CORE::fork();
     die "CORE::fork failed: $!" if !defined $pid;
     if ($pid == 0) {
@@ -60,9 +65,12 @@ sub reap_ok ($pid, $name) {
             && $@ =~ /cannot be used .* after fork/;
         my $introspection_ok = !eval { $loop->resources; 1 }
             && $@ =~ /cannot be used .* after fork/;
-        child_exit($driver_ok && $introspection_ok);
+        my $timer_ok = !eval { $timer->cancel; 1 }
+            && $@ =~ /cannot be used .* after fork/;
+        child_exit($driver_ok && $introspection_ok && $timer_ok);
     }
     reap_ok($pid, 'inherited loop ownership guard');
+    $timer->cancel;
 }
 
 {
