@@ -63,7 +63,7 @@ sub _fork_child_reset_deferred ($self) {
 
 sub fork ($self, %option) {
     $self->_assert_owner_native('fork');
-    croak 'fork(): Loop must be quiescent; use defer_fork() in a future release'
+    croak 'fork(): Loop must be quiescent and cannot fork during dispatch'
         if $self->running;
 
     my %known = map { $_ => 1 } qw(share clone move);
