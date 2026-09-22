@@ -125,10 +125,10 @@ like($current_text{'docs/ORDERED-BYTE-CONSUMER-ABI.md'},
     qr/Adding a native consumer to an already-ordinary live object remains rejected/s,
     'consumer ABI guide keeps the reverse live transition explicitly unsupported');
 like($current_text{'docs/INOTIFY-DESIGN.md'},
-    qr/detached.*?without starting kernel monitoring/s,
+    qr/detached.*?No inotify instance or kernel watch exists until/s,
     'Inotify design documents delayed activation');
 like($current_text{'docs/INOTIFY-DESIGN.md'},
-    qr/same inode.*?native watch descriptor/s,
+    qr/Multiple pathnames.*?one kernel watch descriptor/s,
     'Inotify design documents shared-inode watch fan-out');
 like($current_text{'docs/INOTIFY-DESIGN.md'},
     qr/on_create.*?on_ignored.*?on_event/s,
