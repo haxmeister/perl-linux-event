@@ -79,6 +79,7 @@ docs/SOCKET-CONNECTIONS.md
 docs/TIMER-DESIGN.md
 docs/TRANSPORT-BOUNDARY.md
 examples/first-class-line-echo-server.pl
+examples/inotify-log.pl
 examples/line-echo-client.pl
 examples/line-echo-server.pl
 examples/process-capture.pl
