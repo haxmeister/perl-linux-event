@@ -171,6 +171,18 @@ Rename pairing remains application policy. `IN_MOVED_FROM` and
 them when useful. Core does not delay records while waiting for a possible
 partner.
 
+Linux may coalesce successive identical unread inotify events. Linux::Event
+does not synthesize records to undo that kernel behavior; callbacks describe
+the decoded records the kernel actually supplied.
+
+A native watch follows the filesystem object selected when the watch is
+installed, not an abstract pathname slot. Replacing a watched pathname with a
+new inode does not silently retarget the Watch. Move/delete/invalidation events
+describe the original watched object, and higher-level code may explicitly
+install a new Watch when its application policy requires following a pathname.
+The Event `path` remains the logical absolute path captured by the Watch; it
+is not recomputed by probing the filesystem after each event.
+
 ## Cancellation and invalidation
 
 A child Watch uses:
