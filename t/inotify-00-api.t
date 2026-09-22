@@ -47,7 +47,7 @@ ok($inotify->is_active, 'Loop add activates Inotify');
 ok($watch->is_active, 'Loop add activates pending watch');
 ok(defined($inotify->fd), 'attached Inotify owns a kernel fd');
 is($loop->run_once(0), 0, 'pre-attachment filesystem activity was not queued');
-is_deeply(@seen, [], 'no callback reports pre-attachment activity');
+is_deeply(\@seen, [], 'no callback reports pre-attachment activity');
 
 append_file($path, "after attach\n");
 ok($loop->run_once(1000) >= 1, 'attached inotify fd becomes ready');
