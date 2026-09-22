@@ -526,6 +526,12 @@ Loop is running or dispatching throws. Forking from a callback should therefore
 be scheduled by application control flow outside the active Loop driver; a
 future C<defer_fork> convenience may be added separately.
 
+Managed fork also requires that the calling process have no unrelated live
+threads. Linux::Event shuts down its own idle resolver worker service before
+the syscall and rejects active resolver requests, but it cannot make arbitrary
+third-party pthread state, native-library locks, or application-created threads
+safe for continued Perl execution in the child.
+
 Every listed object must already be current in this Loop, and one object may
 appear in only one list. Unsupported resource/disposition combinations throw
 before C<fork(2)> when they can be determined in advance. Unlisted managed
