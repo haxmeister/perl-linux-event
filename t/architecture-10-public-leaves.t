@@ -17,6 +17,7 @@ use Linux::Event::Kernel ();
 use Linux::Event::Kernel::Timer ();
 use Linux::Event::Kernel::Signal ();
 use Linux::Event::Kernel::Event ();
+use Linux::Event::Kernel::Inotify ();
 use Linux::Event::Kernel::Process ();
 
 {
@@ -159,6 +160,11 @@ my $event = T::ArchitectureEvent->new;
 ok($event->isa('Linux::Event::Kernel::Event'),
     'eventfd abstraction constructs through Kernel::Event');
 $event->cancel;
+
+my $inotify = Linux::Event::Kernel::Inotify->new;
+ok($inotify->isa('Linux::Event::Kernel::Inotify'),
+    'inotify abstraction constructs through Kernel::Inotify');
+$inotify->close;
 
 for my $retired (qw(
     Linux::Event::Timer
