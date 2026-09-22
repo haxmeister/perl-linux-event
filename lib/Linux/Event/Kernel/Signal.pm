@@ -233,8 +233,13 @@ blocked for signalfd consumption.
 
 Signal masks are per-thread. Applications should establish Signal subscriptions
 before creating their own worker threads, or explicitly arrange equivalent
-blocking in those threads. Fork before attaching Signal objects; the native
-service is tied to its process and owning thread.
+blocking in those threads.
+
+Signal objects are process-bound and do not currently support C<share>,
+C<clone>, or C<move> through L<Linux::Event::Loop/fork>. An unlisted Signal is
+parent-only: managed fork dismantles the inherited child signalfd service and
+restores only the child-side mask entries that Linux::Event had blocked. An
+ordinary C<CORE::fork> does not make the inherited Signal service reusable.
 
 =head1 LIFECYCLE
 
