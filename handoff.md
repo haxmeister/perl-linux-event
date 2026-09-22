@@ -1,23 +1,25 @@
 # Linux::Event Handoff
 
-## feature/fork-resource-disposition: Loop-aware process fork
+## Loop-aware process fork merged to main
 
-Draft PR #26 implements the post-fork Loop contract on branch
-`feature/fork-resource-disposition`, based on current main commit
-`551d1db012c182ee8b28ef00ce8fb08373ddc0cb`.
+PR #26 was squash-merged to `main` as
+`e00c4a1b6ff1cd18da3f84e2415cad2ddb39bd27`
+("Add Loop-aware fork resource dispositions").
 
-The public API is `$loop->fork(%disposition)`. The initial implementation is
-deliberately quiescent-only and uses strict `share => [...]`,
-`clone => [...]`, and `move => [...]` lists. Every selected object must
-already be current in the Loop and may appear in only one list. Unlisted
-managed resources are parent-only and their child copies are made inert without
-application lifecycle callbacks.
+The verified implementation head before squash was
+`f48a038ecb95299bed7410a07426c3ce1f4f9c77`. The public API is
+`$loop->fork(%disposition)`. The initial contract is deliberately
+quiescent-only and uses strict `share => [...]`, `clone => [...]`, and
+`move => [...]` lists. Every selected object must already be current in the
+Loop and may appear in only one list. Unlisted managed resources are
+parent-only and their child copies are made inert without application lifecycle
+callbacks.
 
 The first supported disposition matrix is intentionally narrow:
 
 - Listener: `share` and `move`.
-- Timer: `clone` and `move`, with the child's timer preserving the same
-  absolute monotonic deadline.
+- Timer: `clone` and `move`, preserving the same absolute monotonic
+  deadline in the child.
 - Inotify: independent child `clone` and inherited-instance `move`.
 - Established plain socket Stream: `move`.
 - Event, Process, Datagram, Signal, Pipe, TTY, and unsupported combinations:
@@ -26,31 +28,61 @@ The first supported disposition matrix is intentionally narrow:
 Pending socket connections, non-plain Stream transports, and active resolver
 requests reject managed fork. Idle resolver workers are shut down before the
 fork and recreated lazily later if the parent needs resolution again. Pending
-`Loop->defer()` work is not inherited.
+`Loop->defer()` work is not inherited. Managed fork is documented for a
+process without unrelated live threads; Linux::Event can quiesce its own
+resolver workers but cannot repair arbitrary third-party pthread/native-library
+state after fork.
 
 The child never reuses the parent's epoll instance or Loop-owned timerfd.
-Native Loop state records its owner PID. After an ordinary `CORE::fork`,
-registration, driving, introspection, statistics, and tuning on the inherited
-Loop fail on the PID mismatch. The managed `Loop->fork` path explicitly
-replaces the child reactor infrastructure and changes Loop ownership to the
-child before selected resources are reconstructed.
+Native Loop state records process ownership. Ordinary `CORE::fork()` reuse is
+guarded through a PID cache updated by `pthread_atfork()`, so steady-state
+registration pays only a memory comparison instead of a `getpid()` call.
+Driving, registration, introspection, statistics, tuning, and direct attached
+Timer cancellation/rescheduling reject inherited parent Loop state. Managed
+`Loop->fork` explicitly replaces the child reactor infrastructure and changes
+Loop ownership before selected resources are reconstructed. Child diagnostic
+counters restart from zero while parent statistics are unchanged.
 
-Move uses a private child-ready/parent-commit handshake. The child first
-reconstructs its fresh reactor and selected resources. Only after the child
-reports success does the parent close/cancel its moved descriptors and poison
-the moved parent objects. The child does not return from `fork` until the
-parent commits the move. This avoids an interval where both processes can
-actively operate a moved resource.
+Move uses a private child-ready/parent-commit handshake. The child reconstructs
+its fresh reactor and selected resources first. Only after successful child
+reconstruction does the parent close/cancel moved descriptors and poison moved
+parent objects. Child reconstruction failure is returned to the parent before
+parent-side move commit. The child does not return from `fork` until the
+parent commits the move.
 
-Signal needs special child teardown because the process inherits the blocked
-signal mask and signalfd descriptor. The child cleanup path closes only its
-copied signalfd state and restores child-side signal-mask entries without
-modifying the parent's signalfd configuration.
+Signal has special child teardown because the process inherits the blocked
+signal mask and signalfd descriptor. Child cleanup closes only its copied
+signalfd state and restores child-side signal-mask entries without modifying the
+parent's signalfd configuration.
 
-Focused coverage is in `t/loop-fork.t`. Public documentation has been updated
-in Loop POD, README, Changes, `docs/OBJECT-LIFECYCLE.md`, and the 1.000
-roadmap. PR #26 CI verification is still pending at the time of this handoff
-entry.
+Focused coverage is in `t/loop-fork.t`, including empty managed fork,
+quiescence rejection, ordinary-fork ownership rejection, default child drop,
+Timer clone/move, Listener share/move, Inotify clone/move, Stream move,
+unsupported Stream share, strict disposition validation, and failed child
+reconstruction without parent move commit.
+
+The final implementation SHA was independently validated through temporary PR
+#27 because a cancelled intermediate PR #26 Actions job held the original
+concurrency slot. PR #27 used the exact same SHA and was closed after
+validation. CI run #480 passed Perl 5.36/5.38/5.40/5.42/5.44/latest, threaded
+5.36/latest, distribution integrity, and the permanent performance regression
+gate. Foreign loop integration run #50 also passed.
+
+Final performance comparison versus the 0.116 baseline reported:
+
+- registration lifecycle: +0.34% rate, -0.33% CPU;
+- timer lifecycle: +5.08% rate, -4.84% CPU;
+- timer expiration: +12.39% rate, -12.03% CPU;
+- raw Stream lifecycle: +5.78% rate;
+- framed Stream lifecycle: +6.88% rate;
+- raw Stream throughput: +2.81% rate;
+- deadline Stream throughput: +2.25% rate;
+- framed Stream throughput: +3.05% rate; and
+- connect/listener lifecycle: +6.76% rate.
+
+No workload exceeded the 10 percent regression threshold. The temporary
+validation PR is closed and both fork work branches were removed after the
+merge.
 
 ## Inotify merged to main
 
