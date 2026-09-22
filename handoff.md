@@ -46,9 +46,16 @@ documentation, example-syntax, metadata, manifest, and foreign-loop integration
 coverage has also been extended. `examples/inotify-log.pl` demonstrates the
 agreed log-file API.
 
-PR #25 is intentionally draft while CI validates the implementation. Do not
-merge it until the full test/performance matrix is green and this section is
-updated with the verified head commit.
+PR #25 remains intentionally draft and unmerged. The exact implementation
+head `800d49a21debbc382c93dbd593efac6e9ddf77f4` passed CI run #456:
+Perl 5.36/5.38/5.40/5.42/5.44/latest, threaded 5.36/latest, generated
+distribution integrity, checked-in metadata, POD validation, and the permanent
+same-run performance regression comparison all passed. Foreign loop integration
+run #26 also passed on Perl 5.36 and 5.44, including real inotify readiness
+through the supported `poll_fd()` / `poll()` boundary.
+
+The commit that records this verification is handoff-only and deliberately uses
+`[skip ci]`; the verified implementation code is unchanged from the SHA above.
 
 
 ## Post-0.116 main: Loop defer scheduling
