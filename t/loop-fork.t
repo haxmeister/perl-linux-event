@@ -1,0 +1,212 @@
+use v5.36;
+use strict;
+use warnings;
+
+use Test::More;
+use File::Temp qw(tempdir);
+use POSIX ();
+use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
+
+use Linux::Event::Loop;
+use Linux::Event::IO::Sock::Listener;
+use Linux::Event::IO::Sock::Stream;
+use Linux::Event::Kernel::Inotify;
+use Linux::Event::Kernel::Timer;
+
+sub child_exit ($ok) {
+    POSIX::_exit($ok ? 0 : 1);
+}
+
+sub reap_ok ($pid, $name) {
+    is(waitpid($pid, 0), $pid, "$name child reaped");
+    is($? >> 8, 0, "$name child succeeded");
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $pid = $loop->fork;
+    if ($pid == 0) {
+        child_exit($loop->_owner_pid_native == $$ && $loop->count == 0);
+    }
+    ok($pid > 0, 'empty fork returns child pid in parent');
+    reap_ok($pid, 'empty fork');
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $error;
+    $loop->defer(sub {
+        eval { $loop->fork };
+        $error = $@;
+        $loop->stop;
+    });
+    $loop->run;
+    like($error, qr/Loop must be quiescent/, 'fork is rejected inside deferred dispatch');
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $pid = CORE::fork();
+    die "CORE::fork failed: $!" if !defined $pid;
+    if ($pid == 0) {
+        my $ok = !eval { $loop->run_once(0); 1 }
+            && $@ =~ /cannot be used .* after fork/;
+        child_exit($ok);
+    }
+    reap_ok($pid, 'inherited loop ownership guard');
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $loop,
+        after => 60,
+        on_timer => sub { },
+    );
+    my $before = $timer->deadline;
+    my $pid = $loop->fork(clone => [$timer]);
+    if ($pid == 0) {
+        my $same_deadline = abs($timer->deadline - $before) < 0.01;
+        child_exit($timer->is_active && $loop->has($timer) && $same_deadline);
+    }
+    ok($timer->is_active, 'cloned Timer remains active in parent');
+    reap_ok($pid, 'Timer clone');
+    $timer->cancel;
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $loop,
+        after => 60,
+        on_timer => sub { },
+    );
+    my $pid = $loop->fork(move => [$timer]);
+    if ($pid == 0) {
+        child_exit($timer->is_active && $loop->has($timer));
+    }
+    ok($timer->is_terminal, 'moved Timer is terminal in parent');
+    reap_ok($pid, 'Timer move');
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $listener = Linux::Event::IO::Sock::Listener->new(
+        loop => $loop,
+        host => '127.0.0.1',
+        port => 0,
+        stream => { on_data => sub { } },
+    );
+    my $pid = $loop->fork(share => [$listener]);
+    if ($pid == 0) {
+        child_exit($listener->is_running && $loop->has($listener)
+            && defined($listener->fd));
+    }
+    ok($listener->is_running, 'shared Listener remains active in parent');
+    reap_ok($pid, 'Listener share');
+    $listener->close;
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $listener = Linux::Event::IO::Sock::Listener->new(
+        loop => $loop,
+        host => '127.0.0.1',
+        port => 0,
+        stream => { on_data => sub { } },
+    );
+    my $pid = $loop->fork(move => [$listener]);
+    if ($pid == 0) {
+        child_exit($listener->is_running && $loop->has($listener)
+            && defined($listener->fd));
+    }
+    is($listener->state, 'moved', 'moved Listener is poisoned in parent');
+    ok(!defined($listener->fd), 'moved Listener parent fd is closed');
+    reap_ok($pid, 'Listener move');
+}
+
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $path = "$dir/watched";
+    open my $out, '>', $path or die "open $path: $!";
+    close $out;
+
+    my $loop = Linux::Event::Loop->new;
+    my $inotify = Linux::Event::Kernel::Inotify->new(loop => $loop);
+    my $watch = $inotify->watch($path, on_modify => sub { });
+
+    my $pid = $loop->fork(clone => [$inotify]);
+    if ($pid == 0) {
+        child_exit($inotify->is_active && $watch->is_active
+            && $loop->has($inotify) && defined($inotify->fd));
+    }
+    ok($inotify->is_active && $watch->is_active,
+        'cloned Inotify remains active in parent');
+    reap_ok($pid, 'Inotify clone');
+    $inotify->close;
+}
+
+{
+    my $dir = tempdir(CLEANUP => 1);
+    my $path = "$dir/watched";
+    open my $out, '>', $path or die "open $path: $!";
+    close $out;
+
+    my $loop = Linux::Event::Loop->new;
+    my $inotify = Linux::Event::Kernel::Inotify->new(loop => $loop);
+    my $watch = $inotify->watch($path, on_modify => sub { });
+
+    my $pid = $loop->fork(move => [$inotify]);
+    if ($pid == 0) {
+        child_exit($inotify->is_active && $watch->is_active
+            && $loop->has($inotify) && defined($inotify->fd));
+    }
+    is($inotify->state, 'moved', 'moved Inotify is poisoned in parent');
+    ok($inotify->is_terminal, 'moved Inotify is terminal in parent');
+    reap_ok($pid, 'Inotify move');
+}
+
+{
+    socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die "socketpair: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = Linux::Event::IO::Sock::Stream->new(
+        loop => $loop,
+        fh => $left,
+        on_data => sub { },
+    );
+
+    my $pid = $loop->fork(move => [$stream]);
+    if ($pid == 0) {
+        child_exit($stream->state eq 'active' && $loop->has($stream)
+            && defined($stream->fd));
+    }
+    is($stream->state, 'moved', 'moved Stream is poisoned in parent');
+    reap_ok($pid, 'Stream move');
+    close $right;
+}
+
+{
+    socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die "socketpair: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = Linux::Event::IO::Sock::Stream->new(
+        loop => $loop,
+        fh => $left,
+        on_data => sub { },
+    );
+    eval { $loop->fork(share => [$stream]) };
+    like($@, qr/does not support 'share'/, 'Stream share is rejected before fork');
+    $stream->close;
+    close $right;
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    eval { $loop->fork(share => 'all') };
+    like($@, qr/share must be an array reference/, 'fork arguments are strict');
+    eval { $loop->fork(unknown => []) };
+    like($@, qr/unknown options/, 'unknown fork option is rejected');
+}
+
+done_testing;
