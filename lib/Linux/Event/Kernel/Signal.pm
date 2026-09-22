@@ -8,7 +8,7 @@ our $VERSION = '0.116';
 use Carp qw(croak);
 use Hash::Util::FieldHash qw(fieldhash);
 use POSIX qw(SIGKILL SIGRTMAX SIGSTOP);
-use Scalar::Util qw(weaken);
+use Scalar::Util qw(refaddr weaken);
 
 require Linux::Event::Loop;
 require XSLoader;
@@ -80,6 +80,27 @@ sub _attach_to_loop ($self, $loop) {
     my $engine = $ENGINE_FOR_LOOP{$loop}
         //= Linux::Event::Kernel::Signal::_Engine->_new($loop);
     return $self->_attach_native($loop, $engine->{native});
+}
+
+sub _fork_preflight ($self, $mode, $loop) {
+    croak "fork(): Signal does not support '$mode'" if $mode ne 'drop';
+    my $owner = $self->loop;
+    croak 'fork(): Signal is not active in this Loop'
+        if !$owner || refaddr($owner) != refaddr($loop) || !$self->is_active;
+    return 1;
+}
+
+sub _fork_child_drop ($self, $loop) {
+    return;
+}
+
+sub _fork_child_drop_loop ($class, $loop) {
+    my $engine = delete $ENGINE_FOR_LOOP{$loop};
+    return if !$engine;
+    my $native = delete $engine->{native};
+    $engine->{loop} = undef;
+    $native->_fork_child_drop if $native;
+    return;
 }
 
 sub _objects_for_loop ($class, $loop) {
