@@ -190,7 +190,6 @@ sub fork ($self, %option) {
 }
 
 sub add ($self, $object) {
-    $self->_assert_owner_native('add');
     croak 'add(): object must support loop attachment'
         if !blessed($object) || !$object->can('_attach_to_loop');
     $object->_attach_to_loop($self);
