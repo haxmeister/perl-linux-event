@@ -382,9 +382,10 @@ sub _activate_watch ($self, $watch) {
 sub _ready ($self) {
     return if $self->{state} ne 'active';
 
-    $self->_drain_pending if @{ $self->{pending_events} };
-    return if $self->{state} ne 'active'
-        || @{ $self->{pending_events} };
+    if (@{ $self->{pending_events} }) {
+        $self->_schedule_resume;
+        return;
+    }
 
     my $events;
     my $ok = eval {
