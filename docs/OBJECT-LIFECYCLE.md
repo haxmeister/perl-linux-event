@@ -152,11 +152,15 @@ the same absolute monotonic deadline. Inotify clones rebuild their logical
 watches on a fresh child inotify instance. Pending `defer` callbacks are never
 inherited.
 
-Managed fork is quiescent-only in the initial contract. Pending socket
-connections, non-plain Stream transports, and active resolver requests reject
-the operation. An ordinary `CORE::fork` leaves the inherited Loop owned by the
-parent PID, so child-side registration, driving, introspection, statistics, and
-tuning fail predictably.
+Managed fork is quiescent-only in the initial contract. It also assumes the
+calling process has no unrelated live threads. Linux::Event tears down its own
+idle resolver worker service before forking and rejects active resolver requests,
+but it cannot make arbitrary third-party pthread state or application-created
+threads safe for continued Perl execution in the child. Pending socket
+connections and non-plain Stream transports also reject the operation. An
+ordinary `CORE::fork` leaves the inherited Loop owned by the parent PID, so
+child-side registration, driving, introspection, statistics, and tuning fail
+predictably.
 
 ## Logical resources and native registrations
 
