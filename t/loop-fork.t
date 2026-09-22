@@ -29,7 +29,8 @@ sub reap_ok ($pid, $name) {
         'parent has diagnostic history before fork');
     my $pid = $loop->fork;
     if ($pid == 0) {
-        child_exit($loop->_owner_pid_native == $ && $loop->count == 0
+        child_exit($loop->_owner_pid_native == POSIX::getpid()
+            && $loop->count == 0
             && $loop->stats->{run_once_calls} == 0);
     }
     ok($pid > 0, 'empty fork returns child pid in parent');
