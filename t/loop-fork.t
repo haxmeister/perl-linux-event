@@ -49,9 +49,11 @@ sub reap_ok ($pid, $name) {
     my $pid = CORE::fork();
     die "CORE::fork failed: $!" if !defined $pid;
     if ($pid == 0) {
-        my $ok = !eval { $loop->run_once(0); 1 }
+        my $driver_ok = !eval { $loop->run_once(0); 1 }
             && $@ =~ /cannot be used .* after fork/;
-        child_exit($ok);
+        my $introspection_ok = !eval { $loop->resources; 1 }
+            && $@ =~ /cannot be used .* after fork/;
+        child_exit($driver_ok && $introspection_ok);
     }
     reap_ok($pid, 'inherited loop ownership guard');
 }
