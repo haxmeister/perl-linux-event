@@ -98,8 +98,9 @@ my $conflict_ok = eval {
     );
     1;
 };
+my $conflict_error = $@;
 ok(!$conflict_ok, 'incompatible excl_unlink policy is rejected for shared inode');
-like($@, qr/excl_unlink must match/,
+like($conflict_error, qr/excl_unlink must match/,
     'shared-inode option conflict reports the policy mismatch');
 is($inotify->watch_count, $before_count,
     'rejected shared-inode Watch is not retained');
@@ -117,8 +118,9 @@ my $only_dir_ok = eval {
     );
     1;
 };
+my $only_dir_error = $@;
 ok(!$only_dir_ok, 'only_dir rejects a regular file');
-like($@, qr/Not a directory|ENOTDIR/i, 'only_dir failure is synchronous');
+like($only_dir_error, qr/Not a directory|ENOTDIR/i, 'only_dir failure is synchronous');
 
 $b->cancel;
 $dir_watch->cancel;
