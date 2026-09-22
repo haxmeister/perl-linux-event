@@ -81,6 +81,23 @@ sub reap_ok ($pid, $name) {
         after => 60,
         on_timer => sub { },
     );
+    my $pid = $loop->fork;
+    if ($pid == 0) {
+        child_exit($timer->is_terminal && !$loop->has($timer));
+    }
+    ok($timer->is_active && $loop->has($timer),
+        'unlisted Timer remains parent-owned');
+    reap_ok($pid, 'default Timer child drop');
+    $timer->cancel;
+}
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $loop,
+        after => 60,
+        on_timer => sub { },
+    );
     my $pid = $loop->fork(move => [$timer]);
     if ($pid == 0) {
         child_exit($timer->is_active && $loop->has($timer));
@@ -167,6 +184,41 @@ sub reap_ok ($pid, $name) {
 }
 
 {
+    my $dir = tempdir(CLEANUP => 1);
+    my $path = "$dir/reconstruction-failure";
+    open my $out, '>', $path or die "open $path: $!";
+    close $out;
+
+    my $loop = Linux::Event::Loop->new;
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $loop,
+        after => 60,
+        on_timer => sub { },
+    );
+    my $inotify = Linux::Event::Kernel::Inotify->new(loop => $loop);
+    my $watch = $inotify->watch($path, on_modify => sub { });
+    unlink $path or die "unlink $path: $!";
+
+    my $ok = eval {
+        $loop->fork(
+            move  => [$timer],
+            clone => [$inotify],
+        );
+        1;
+    };
+    my $error = $@;
+    ok(!$ok, 'child reconstruction failure is reported to parent');
+    like($error, qr/fork\(\): .*inotify_add_watch|fork\(\): .*No such file/i,
+        'child reconstruction error is propagated');
+    ok($timer->is_active && $loop->has($timer),
+        'failed child reconstruction does not commit parent Timer move');
+    ok($inotify->is_active && $loop->has($inotify),
+        'failed child reconstruction leaves parent Inotify owned');
+    $timer->cancel;
+    $inotify->close;
+}
+
+{
     socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
         or die "socketpair: $!";
     my $loop = Linux::Event::Loop->new;
@@ -207,6 +259,16 @@ sub reap_ok ($pid, $name) {
     like($@, qr/share must be an array reference/, 'fork arguments are strict');
     eval { $loop->fork(unknown => []) };
     like($@, qr/unknown options/, 'unknown fork option is rejected');
+
+    my $timer = Linux::Event::Kernel::Timer->new(
+        loop => $loop,
+        after => 60,
+        on_timer => sub { },
+    );
+    eval { $loop->fork(clone => [$timer], move => [$timer]) };
+    like($@, qr/only one disposition list/,
+        'same resource cannot appear in multiple disposition lists');
+    $timer->cancel;
 }
 
 done_testing;
