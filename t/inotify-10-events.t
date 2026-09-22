@@ -117,7 +117,7 @@ my $combined =
 
 $inotify->_dispatch_record([$ordered->_wd, $combined, 17, undef]);
 is_deeply(
-    @order,
+    \@order,
     [qw(
         on_create on_open on_access on_modify on_attrib on_close_write
         on_close_nowrite on_moved_from on_moved_to on_move_self on_delete
@@ -153,7 +153,7 @@ my $throw_error = eval {
 $throw_error = $@ if !defined($throw_error) || $throw_error eq '';
 like($throw_error, qr/expected callback failure/,
     'specific callback exception propagates');
-is_deeply(@throw_order, ['modify'],
+is_deeply(\@throw_order, ['modify'],
     'first exception suppresses later specific callback and on_event');
 
 my $cancel_path = File::Spec->catfile($dir, 'cancel.txt');
@@ -176,7 +176,7 @@ $inotify->_dispatch_record([
     0,
     undef,
 ]);
-is_deeply(@cancel_order, ['modify'],
+is_deeply(\@cancel_order, ['modify'],
     'self-cancellation suppresses later callbacks for the same record');
 is($cancel_watch->state, 'cancelled', 'self-cancellation is terminal');
 
