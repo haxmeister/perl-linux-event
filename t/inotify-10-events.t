@@ -266,5 +266,18 @@ $overflow_parent->_dispatch_record([
 is($overflow, 1, 'queue overflow is delivered at parent level');
 $overflow_parent->close;
 
+my @source_error;
+my $error_parent = Linux::Event::Kernel::Inotify->new(
+    loop => $loop,
+    on_error => sub ($parent, $error) {
+        push @source_error, $error;
+    },
+);
+$error_parent->_runtime_fail("expected inotify source failure\n");
+is(scalar(@source_error), 1, 'fatal source failure invokes parent on_error once');
+like($source_error[0], qr/expected inotify source failure/,
+    'parent on_error receives the source failure');
+ok($error_parent->is_terminal, 'fatal source failure closes parent after on_error');
+
 $inotify->close;
 done_testing;
