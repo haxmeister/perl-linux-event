@@ -197,6 +197,61 @@ is($invalid->state, 'ignored', 'kernel invalidation records ignored state');
 ok((grep { $_ eq 'ignored' } @invalid),
     'kernel invalidation delivers on_ignored while Watch is active');
 
+my $sibling_path = File::Spec->catfile($dir, 'siblings.txt');
+open my $sibling_seed, '>', $sibling_path or die "open $sibling_path: $!";
+close $sibling_seed;
+my @sibling_order;
+my ($first_sibling, $second_sibling);
+$first_sibling = $inotify->watch(
+    $sibling_path,
+    on_modify => sub ($event) {
+        push @sibling_order, 'first';
+        $second_sibling->cancel;
+    },
+);
+$second_sibling = $inotify->watch(
+    $sibling_path,
+    on_modify => sub ($event) {
+        push @sibling_order, 'second';
+    },
+);
+$inotify->_dispatch_record([
+    $first_sibling->_wd,
+    Linux::Event::Kernel::Inotify::IN_MODIFY(),
+    0,
+    undef,
+]);
+is_deeply(\@sibling_order, ['first'],
+    'cancelling a sibling during fan-out suppresses its callback');
+$first_sibling->cancel;
+
+my $close_loop = Linux::Event::Loop->new;
+my $close_parent = Linux::Event::Kernel::Inotify->new(loop => $close_loop);
+my $close_path = File::Spec->catfile($dir, 'close-parent.txt');
+open my $close_seed, '>', $close_path or die "open $close_path: $!";
+close $close_seed;
+my @close_order;
+my $close_watch = $close_parent->watch(
+    $close_path,
+    on_modify => sub ($event) {
+        push @close_order, 'modify';
+        $close_parent->close;
+    },
+    on_close_write => sub ($event) { push @close_order, 'close_write' },
+    on_event => sub ($event) { push @close_order, 'event' },
+);
+$close_parent->_dispatch_record([
+    $close_watch->_wd,
+    Linux::Event::Kernel::Inotify::IN_MODIFY()
+        | Linux::Event::Kernel::Inotify::IN_CLOSE_WRITE(),
+    0,
+    undef,
+]);
+is_deeply(\@close_order, ['modify'],
+    'closing parent during callback suppresses later callbacks safely');
+ok($close_parent->is_terminal, 'reentrant parent close is terminal');
+ok($close_watch->is_terminal, 'reentrant parent close terminates child Watch');
+
 my $overflow = 0;
 my $overflow_parent = Linux::Event::Kernel::Inotify->new(
     loop => $loop,
