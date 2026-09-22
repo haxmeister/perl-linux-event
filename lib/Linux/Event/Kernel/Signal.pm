@@ -8,7 +8,7 @@ our $VERSION = '0.116';
 use Carp qw(croak);
 use Hash::Util::FieldHash qw(fieldhash);
 use POSIX qw(SIGKILL SIGRTMAX SIGSTOP);
-use Scalar::Util qw(weaken);
+use Scalar::Util qw(refaddr weaken);
 
 require Linux::Event::Loop;
 require XSLoader;
@@ -80,6 +80,27 @@ sub _attach_to_loop ($self, $loop) {
     my $engine = $ENGINE_FOR_LOOP{$loop}
         //= Linux::Event::Kernel::Signal::_Engine->_new($loop);
     return $self->_attach_native($loop, $engine->{native});
+}
+
+sub _fork_preflight ($self, $mode, $loop) {
+    croak "fork(): Signal does not support '$mode'" if $mode ne 'drop';
+    my $owner = $self->loop;
+    croak 'fork(): Signal is not active in this Loop'
+        if !$owner || refaddr($owner) != refaddr($loop) || !$self->is_active;
+    return 1;
+}
+
+sub _fork_child_drop ($self, $loop) {
+    return;
+}
+
+sub _fork_child_drop_loop ($class, $loop) {
+    my $engine = delete $ENGINE_FOR_LOOP{$loop};
+    return if !$engine;
+    my $native = delete $engine->{native};
+    $engine->{loop} = undef;
+    $native->_fork_child_drop if $native;
+    return;
 }
 
 sub _objects_for_loop ($class, $loop) {
@@ -212,8 +233,13 @@ blocked for signalfd consumption.
 
 Signal masks are per-thread. Applications should establish Signal subscriptions
 before creating their own worker threads, or explicitly arrange equivalent
-blocking in those threads. Fork before attaching Signal objects; the native
-service is tied to its process and owning thread.
+blocking in those threads.
+
+Signal objects are process-bound and do not currently support C<share>,
+C<clone>, or C<move> through L<Linux::Event::Loop/fork>. An unlisted Signal is
+parent-only: managed fork dismantles the inherited child signalfd service and
+restores only the child-side mask entries that Linux::Event had blocked. An
+ordinary C<CORE::fork> does not make the inherited Signal service reusable.
 
 =head1 LIFECYCLE
 

@@ -146,6 +146,27 @@ its handle. This API is owner-interpreter scheduling, not a cross-thread callbac
 queue. The private eventfd source is bounded and participates automatically in
 the same `poll_fd()` / `poll()` foreign-loop boundary.
 
+Linux::Event also provides a managed, resource-aware process fork for the cases
+where a server intentionally wants selected resources in the child:
+
+```perl
+my $pid = $loop->fork(
+    share => [$listener],
+    clone => [$timer, $inotify],
+    move  => [$connection],
+);
+```
+
+The initial contract is quiescent-only and is intended for a process with no
+unrelated live threads. Linux::Event stops its own idle resolver workers before
+the syscall, but cannot repair arbitrary third-party pthread/native-library
+state in the child. The child receives fresh epoll/timer reactor infrastructure;
+resources not listed are parent-only. Listener supports `share` and `move`,
+Timer and Inotify support `clone` and `move`, and an established plain
+socket Stream supports `move`. A move does not tear down the parent side until
+the child reports successful reconstruction. Ordinary `CORE::fork` does not
+make an inherited Loop reusable.
+
 ## Filesystem notification
 
 `Linux::Event::Kernel::Inotify` owns one Linux inotify instance and any number

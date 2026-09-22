@@ -7,7 +7,7 @@ our $VERSION = '0.116';
 
 use Carp qw(croak);
 use POSIX qw(isfinite);
-use Scalar::Util qw(looks_like_number);
+use Scalar::Util qw(looks_like_number refaddr);
 
 require Linux::Event::Loop;
 
@@ -94,6 +94,20 @@ sub reschedule ($self, %option) {
     my ($absolute, $first, $every) = _schedule('reschedule', \%option);
     return $self->_reschedule_native($absolute, $first, $every);
 }
+
+sub _fork_preflight ($self, $mode, $loop) {
+    my $owner = $self->loop;
+    croak 'fork(): Timer is not active in this Loop'
+        if !$owner || refaddr($owner) != refaddr($loop) || !$self->is_active;
+    croak "fork(): Timer does not support '$mode'"
+        if $mode ne 'drop' && $mode ne 'clone' && $mode ne 'move';
+    return 1;
+}
+
+sub _fork_child_clone ($self, $loop) { $loop->add($self); return }
+sub _fork_child_move  ($self, $loop) { $loop->add($self); return }
+sub _fork_child_drop  ($self, $loop) { $self->cancel; return }
+sub _fork_parent_move ($self, $child_pid) { $self->cancel; return }
 
 sub CLONE ($class) {
     %CLASS_DESCRIPTOR = ();

@@ -140,6 +140,75 @@ sub connect ($class, %opt) {
     croak 'connect(): available only on Linux::Event::IO::Sock::Stream subclasses';
 }
 
+sub _fork_preflight ($self, $mode, $loop) {
+    croak 'fork(): ordered-byte resource is not active in this Loop'
+        if $self->{closed} || !$self->{loop}
+        || refaddr($self->{loop}) != refaddr($loop);
+    croak 'fork(): cannot fork while an ordered-byte connection is pending'
+        if $self->{connection};
+    return 1 if $mode eq 'drop';
+    croak "fork(): ordered-byte resource does not support '$mode'"
+        if $mode ne 'move';
+    croak 'fork(): only established socket Streams support move'
+        if !$self->isa('Linux::Event::IO::Sock::Stream');
+    croak 'fork(): only plain socket Streams support move initially'
+        if ($self->transport_name // 'plain') ne 'plain';
+    return 1;
+}
+
+sub _fork_child_move ($self, $loop) {
+    $self->{read_watcher} = undef;
+    $self->{write_watcher} = undef;
+    $self->{transport_deadline_watcher} = undef;
+    $self->{loop} = $loop;
+
+    if (my $timer = $self->{deadline_timer}) {
+        $loop->add($timer) if !$timer->is_terminal;
+    }
+
+    my $interest = 0;
+    if (defined($self->{read_fh}) && !$self->{read_closed} && !$self->{read_eof}
+            && !$self->{read_paused}
+            && !($self->{xs_state} && $self->{xs_state}->consumer_paused
+                && $self->{xs_state}->transport_ready)) {
+        $interest |= 0x01;
+    }
+    $interest |= 0x02
+        if defined($self->{write_fh}) && $self->pending_bytes > 0;
+    $self->{initial_interest} = $interest;
+    $self->_register_handles;
+    return;
+}
+
+sub _fork_child_drop ($self, $loop) {
+    $self->{read_watcher} = undef;
+    $self->{write_watcher} = undef;
+    $self->{transport_deadline_watcher} = undef;
+    if (my $timer = delete $self->{deadline_timer}) {
+        eval { $timer->cancel; 1 } if !$timer->is_terminal;
+    }
+    delete $self->{xs_state};
+    $self->_close_handles;
+    $self->{loop} = undef;
+    $self->{closed} = 1;
+    $self->{fork_state} = 'not_inherited';
+    return;
+}
+
+sub _fork_parent_move ($self, $child_pid) {
+    if (my $timer = delete $self->{deadline_timer}) {
+        $timer->cancel if !$timer->is_terminal;
+    }
+    $self->{transport_deadline_watcher} = undef;
+    $self->_cancel_io_watchers;
+    delete $self->{xs_state};
+    $self->_close_handles;
+    $self->{loop} = undef;
+    $self->{closed} = 1;
+    $self->{fork_state} = 'moved';
+    return;
+}
+
 sub CLONE ($class) {
     Linux::Event::_ByteStream::Descriptor::clear_cache();
     return;
@@ -179,6 +248,7 @@ sub has_write ($self) { !!$self->{write_capable} }
 sub loop ($self) { $self->{loop} }
 
 sub state ($self) {
+    return $self->{fork_state} if $self->{closed} && $self->{fork_state};
     return 'detached' if $self->{closed} && $self->{detached};
     return 'closed' if $self->{closed};
     return 'unattached' if !$self->{loop};

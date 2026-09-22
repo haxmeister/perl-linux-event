@@ -1,62 +1,64 @@
 # Linux::Event Handoff
 
-## feature/inotify: native filesystem notifications
+## feature/fork-resource-disposition: Loop-aware process fork
 
-Draft PR #25 implements the roadmap inotify resource on branch
-`feature/inotify`. The current public design is
-`Linux::Event::Kernel::Inotify` with logical
-`Linux::Event::Kernel::Inotify::Watch` subscriptions and immutable
-`Linux::Event::Kernel::Inotify::Event` callback values.
+Draft PR #26 implements the post-fork Loop contract on branch
+`feature/fork-resource-disposition`, based on current main commit
+`551d1db012c182ee8b28ef00ce8fb08373ddc0cb`.
 
-Inotify follows the ordinary resource attachment contract. Detached `watch()`
-calls only create pending specifications; `$loop->add($inotify)` installs all
-pending kernel watches transactionally and then registers the nonblocking
-inotify fd. `new(loop => $loop)` uses the same attachment path, and later
-watches activate synchronously. Successful attachment happens only once.
-The parent owns terminal `close()`; each child Watch owns terminal
-`cancel()`.
+The public API is `$loop->fork(%disposition)`. The initial implementation is
+deliberately quiescent-only and uses strict `share => [...]`,
+`clone => [...]`, and `move => [...]` lists. Every selected object must
+already be current in the Loop and may appear in only one list. Unlisted
+managed resources are parent-only and their child copies are made inert without
+application lifecycle callbacks.
 
-Specific callbacks define the watch mask, with optional `on_event` running
-last for the same logical record. Callback order is fixed and documented.
-Explicit cancellation guarantees no later callback, including the
-`IN_IGNORED` caused by `inotify_rm_watch()`; kernel invalidation of an
-active watch may deliver `on_ignored` before making that Watch terminal.
-Rename cookies are preserved without pairing in core. Queue overflow is
-parent-level through `on_overflow`, and fatal source failures use
-`on_error`.
+The first supported disposition matrix is intentionally narrow:
 
-Multiple logical Watches that resolve to one inode share the kernel watch
-descriptor. New native watches use `IN_MASK_CREATE` to avoid accidentally
-overwriting an existing mask; duplicate subscriptions explicitly union their
-masks. Cancelling one logical Watch reduces the native union when a surviving
-path still names the inode. If no surviving alias can re-address a renamed
-inode, Linux::Event keeps a safe native mask superset and continues logical
-filtering rather than risking removal of the live shared watch.
+- Listener: `share` and `move`.
+- Timer: `clone` and `move`, with the child's timer preserving the same
+  absolute monotonic deadline.
+- Inotify: independent child `clone` and inherited-instance `move`.
+- Established plain socket Stream: `move`.
+- Event, Process, Datagram, Signal, Pipe, TTY, and unsupported combinations:
+  child drop only in this first version.
 
-Decoded record dispatch is bounded to 256 records per turn. Remaining decoded
-records retain order and resume through `Loop->defer()`, so an inotify burst
-cannot monopolize one readiness callback. Recursive directory management,
-filesystem reconciliation after overflow, and synthesized rename pairing remain
-above the primitive core resource.
+Pending socket connections, non-plain Stream transports, and active resolver
+requests reject managed fork. Idle resolver workers are shut down before the
+fork and recreated lazily later if the parent needs resolution again. Pending
+`Loop->defer()` work is not inherited.
 
-Focused coverage is in `t/inotify-00-api.t`,
-`t/inotify-10-events.t`, `t/inotify-11-sharing.t`, and
-`t/inotify-12-fairness.t`. Existing Loop introspection, architecture,
-documentation, example-syntax, metadata, manifest, and foreign-loop integration
-coverage has also been extended. `examples/inotify-log.pl` demonstrates the
-agreed log-file API.
+The child never reuses the parent's epoll instance or Loop-owned timerfd.
+Native Loop state records its owner PID. After an ordinary `CORE::fork`,
+registration, driving, introspection, statistics, and tuning on the inherited
+Loop fail on the PID mismatch. The managed `Loop->fork` path explicitly
+replaces the child reactor infrastructure and changes Loop ownership to the
+child before selected resources are reconstructed.
 
-PR #25 remains intentionally draft and unmerged. The exact implementation
-head `800d49a21debbc382c93dbd593efac6e9ddf77f4` passed CI run #456:
-Perl 5.36/5.38/5.40/5.42/5.44/latest, threaded 5.36/latest, generated
-distribution integrity, checked-in metadata, POD validation, and the permanent
-same-run performance regression comparison all passed. Foreign loop integration
-run #26 also passed on Perl 5.36 and 5.44, including real inotify readiness
-through the supported `poll_fd()` / `poll()` boundary.
+Move uses a private child-ready/parent-commit handshake. The child first
+reconstructs its fresh reactor and selected resources. Only after the child
+reports success does the parent close/cancel its moved descriptors and poison
+the moved parent objects. The child does not return from `fork` until the
+parent commits the move. This avoids an interval where both processes can
+actively operate a moved resource.
 
-The commit that records this verification is handoff-only and deliberately uses
-`[skip ci]`; the verified implementation code is unchanged from the SHA above.
+Signal needs special child teardown because the process inherits the blocked
+signal mask and signalfd descriptor. The child cleanup path closes only its
+copied signalfd state and restores child-side signal-mask entries without
+modifying the parent's signalfd configuration.
 
+Focused coverage is in `t/loop-fork.t`. Public documentation has been updated
+in Loop POD, README, Changes, `docs/OBJECT-LIFECYCLE.md`, and the 1.000
+roadmap. PR #26 CI verification is still pending at the time of this handoff
+entry.
+
+## Inotify merged to main
+
+PR #25 was merged to `main` as
+`551d1db012c182ee8b28ef00ce8fb08373ddc0cb`
+("Add native inotify filesystem notifications"). Inotify is therefore part of
+the current 0.117 development baseline; the former `feature/inotify` branch
+state is no longer the active handoff.
 
 ## Post-0.116 main: Loop defer scheduling
 

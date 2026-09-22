@@ -572,6 +572,100 @@ sub _cancel_watch ($self, $watch) {
     return $watch;
 }
 
+sub _fork_preflight ($self, $mode, $loop) {
+    croak 'fork(): Inotify is not active in this Loop'
+        if $self->{terminal} || $self->{state} ne 'active'
+        || !$self->{loop} || refaddr($self->{loop}) != refaddr($loop);
+    croak "fork(): Inotify does not support '$mode'"
+        if $mode ne 'drop' && $mode ne 'clone' && $mode ne 'move';
+    return 1;
+}
+
+sub _fork_child_clone ($self, $loop) {
+    $self->{watcher} = undef;
+    $self->{resume_defer} = undef;
+    if (defined(my $fd = delete $self->{fd})) {
+        _close_fd($fd);
+    }
+    $self->{pending_events} = [];
+    $self->{groups} = {};
+    $self->{group_identity} = {};
+    my @order;
+    for my $id (sort { $a <=> $b } keys %{ $self->{watches} }) {
+        my $watch = $self->{watches}{$id};
+        next if !$watch || $watch->is_terminal;
+        $watch->_reset_pending;
+        push @order, $id;
+    }
+    $self->{watch_order} = \@order;
+    $self->{loop} = undef;
+    $self->{state} = 'unattached';
+    $self->_attach_to_loop($loop);
+    return;
+}
+
+sub _fork_child_move ($self, $loop) {
+    $self->{watcher} = undef;
+    $self->{resume_defer} = undef;
+    $self->{loop} = $loop;
+    my $fd = $self->{fd};
+    croak 'fork(): inherited Inotify fd is unavailable' if !defined $fd;
+    $self->{watcher} = $loop->watch(
+        fd => $fd,
+        _internal => 1,
+        data => $self,
+        read => \&_ready,
+        error => \&_source_error,
+        _callback_data_arg => 1,
+    );
+    $self->_schedule_resume if @{ $self->{pending_events} };
+    return;
+}
+
+sub _fork_child_drop ($self, $loop) {
+    $self->{watcher} = undef;
+    $self->{resume_defer} = undef;
+    if (defined(my $fd = delete $self->{fd})) {
+        _close_fd($fd);
+    }
+    for my $watch (values %{ $self->{watches} }) {
+        $watch->_terminate('not_inherited') if !$watch->is_terminal;
+    }
+    $self->{pending_events} = [];
+    $self->{groups} = {};
+    $self->{group_identity} = {};
+    $self->{watch_order} = [];
+    $self->{loop} = undef;
+    $self->{state} = 'not_inherited';
+    $self->{terminal} = 1;
+    delete $LIVE{ $self->{id} };
+    return;
+}
+
+sub _fork_parent_move ($self, $child_pid) {
+    if (my $defer = delete $self->{resume_defer}) {
+        eval { $defer->cancel; 1 };
+    }
+    if (my $watcher = delete $self->{watcher}) {
+        $watcher->cancel;
+    }
+    if (defined(my $fd = delete $self->{fd})) {
+        _close_fd($fd);
+    }
+    for my $watch (values %{ $self->{watches} }) {
+        $watch->_terminate('moved') if !$watch->is_terminal;
+    }
+    $self->{pending_events} = [];
+    $self->{groups} = {};
+    $self->{group_identity} = {};
+    $self->{watch_order} = [];
+    $self->{loop} = undef;
+    $self->{state} = 'moved';
+    $self->{terminal} = 1;
+    delete $LIVE{ $self->{id} };
+    return;
+}
+
 sub close ($self) {
     return $self if $self->{terminal};
 

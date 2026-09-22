@@ -7,6 +7,7 @@ our $VERSION = '0.116';
 
 use Carp qw(croak);
 use Config ();
+use POSIX qw(getpid);
 use Scalar::Util qw(refaddr weaken);
 
 require Linux::Event::Loop;
@@ -154,6 +155,7 @@ sub loop ($self) {
     return $self->_owner_state('loop')->{loop};
 }
 sub state ($self) {
+    return $self->{fork_state} if $self->{terminal} && $self->{fork_state};
     return 'cancelled' if $self->{terminal};
     return $self->_owner_state('state')->{state};
 }
@@ -165,6 +167,29 @@ sub data ($self, @argument) {
     my $state = $self->_owner_state('data');
     $state->{data} = $argument[0] if @argument;
     return $state->{data};
+}
+
+sub _fork_preflight ($self, $mode, $loop) {
+    croak "fork(): Event does not support '$mode'" if $mode ne 'drop';
+    my $state = $OWNER_STATE{ $self->{id} };
+    croak 'fork(): Event is not active in this Loop'
+        if $self->{terminal} || !$state || !$state->{loop}
+        || refaddr($state->{loop}) != refaddr($loop)
+        || $state->{state} ne 'active';
+    return 1;
+}
+
+sub _fork_child_drop ($self, $loop) {
+    my $state = delete $OWNER_STATE{ $self->{id} };
+    $state->{watcher} = undef if $state;
+    $state->{loop} = undef if $state;
+    $state->{data} = undef if $state;
+    _close_fd(delete $self->{fd}) if defined $self->{fd};
+    delete $LIVE_HANDLE{ $self->{id} };
+    $self->{owner_pid} = getpid();
+    $self->{terminal} = 1;
+    $self->{fork_state} = 'not_inherited';
+    return;
 }
 
 sub _objects_for_loop ($class, $loop) {

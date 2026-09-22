@@ -73,16 +73,28 @@ plus `Linux::Event::Kernel::Event` when they need to wake the owner interpreter.
 
 ### 3. Post-fork Loop contract
 
-Audit and document what happens when a process forks after creating a Loop.
-The default candidate contract is that a Loop belongs to the process that
-created it and the child must construct a new Loop. Narrow inherited-descriptor
-behavior, such as a child notifying a parent-owned eventfd, remains documented
-by the relevant resource.
+Implemented as an explicit resource-disposition contract on
+`Loop->fork(%disposition)`.
 
-Add a loop reinitialization API only if implementation and tests show that it
-is safe, understandable, and materially useful. In either case, 1.000 requires
-tests that make accidental child-side Loop reuse fail predictably rather than
-silently misbehave.
+The Loop remains process-owned: ordinary `CORE::fork` does not make an
+inherited Loop reusable, and child-side driver, registration, introspection,
+statistics, and tuning operations fail on the PID mismatch. Managed
+`Loop->fork` is different: it is quiescent-only, replaces the child's epoll
+and shared timer infrastructure, and then reconstructs only the resource
+ownership requested by the application.
+
+The first supported matrix is deliberately small:
+
+- Listener: `share` or `move`;
+- Timer: `clone` or `move`, preserving the absolute deadline;
+- Inotify: independent `clone` or inherited-instance `move`;
+- established plain socket Stream: `move`;
+- unlisted resources: parent-only and dropped from the child.
+
+Unsupported combinations, pending connections, non-plain Stream transports,
+and active resolver requests are rejected. Move uses a child-ready/parent-commit
+handshake so parent descriptor teardown does not happen until child
+reconstruction succeeds. Deferred callbacks are not inherited.
 
 ### 4. Native filesystem notification with inotify
 

@@ -1,6 +1,22 @@
 Revision history for Linux-Event
 
 0.117  UNRELEASED
+    - Add an explicit Loop-aware fork contract with strict per-resource
+      dispositions. Loop->fork() is quiescent-only, rejects unsupported
+      combinations before the syscall where foreseeable, gives the child a
+      fresh epoll/timer reactor, and makes unlisted resources parent-only.
+      Listener supports share/move, Timer supports clone/move with preserved
+      absolute deadlines, Inotify supports independent clone or inherited
+      move, and established plain socket Stream supports move. Moved parent
+      objects become terminal/inert. A parent/child reconstruction handshake
+      prevents parent-side move teardown until the child is ready.
+    - Make accidental reuse of an inherited Loop after ordinary CORE::fork()
+      fail by process ownership checks across driving, registration,
+      introspection, statistics, and tuning operations. Deferred queues are
+      not inherited. Signal services are dismantled child-side without
+      modifying the parent's inherited signalfd state, and idle resolver
+      worker services are quiesced before managed fork; active resolution is
+      rejected.
     - Add Linux::Event::Kernel::Inotify with explicit Loop attachment,
       logical child Watch objects, decoded immutable Event values, named
       per-event callbacks plus on_event, parent-level overflow/error handling,

@@ -126,6 +126,42 @@ object. It does not wrap or replace it.
 
 Violations are rejected synchronously so fd ownership remains unambiguous.
 
+## Fork ownership transitions
+
+`Loop->fork()` is an explicit ownership operation, not permission to keep
+using copied epoll state after an ordinary process fork.
+
+The first supported disposition matrix is intentionally narrow:
+
+- Listener: `share` or `move`;
+- Timer: `clone` or `move`;
+- Inotify: `clone` or `move`;
+- established plain socket Stream: `move`.
+
+A resource omitted from all disposition lists remains parent-owned and its
+child copy is made inert without application callbacks. `clone` means the
+child reconstructs an independent kernel facility while the parent stays
+unchanged. `share` means both processes intentionally register the inherited
+kernel object in separate Loop reactors. `move` uses a child-ready/parent-
+commit handshake; only after child reconstruction succeeds does the parent
+close or cancel its side and poison the moved object.
+
+The child receives a new epoll instance and new Loop-owned timer source rather
+than reusing either inherited reactor descriptor. Timer clones are scheduled at
+the same absolute monotonic deadline. Inotify clones rebuild their logical
+watches on a fresh child inotify instance. Pending `defer` callbacks are never
+inherited.
+
+Managed fork is quiescent-only in the initial contract. It also assumes the
+calling process has no unrelated live threads. Linux::Event tears down its own
+idle resolver worker service before forking and rejects active resolver requests,
+but it cannot make arbitrary third-party pthread state or application-created
+threads safe for continued Perl execution in the child. Pending socket
+connections and non-plain Stream transports also reject the operation. An
+ordinary `CORE::fork` leaves the inherited Loop owned by the parent PID, so
+child-side registration, driving, introspection, statistics, and tuning fail
+predictably.
+
 ## Logical resources and native registrations
 
 A public object is a logical activity, not necessarily one epoll entry.
