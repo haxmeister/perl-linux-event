@@ -6,8 +6,10 @@ use warnings;
 our $VERSION = '0.116';
 
 use Carp qw(croak);
+use Errno ();
 use Hash::Util::FieldHash qw(fieldhash);
-use Scalar::Util qw(blessed weaken);
+use Scalar::Util qw(blessed refaddr weaken);
+use utf8 ();
 
 require XSLoader;
 XSLoader::load(__PACKAGE__, $VERSION);
@@ -18,7 +20,176 @@ our @ISA = ('Linux::Event::Loop::Introspection');
 fieldhash my %DEFER_STATE;
 my $DEFER_CALLBACK_BATCH = 1024;
 
+sub _fork_write_all ($fh, $bytes) {
+    my $offset = 0;
+    while ($offset < length($bytes)) {
+        my $written = syswrite($fh, $bytes, length($bytes) - $offset, $offset);
+        next if !defined($written) && $! == Errno::EINTR();
+        die "fork(): handshake write failed: $!\n" if !defined $written;
+        die "fork(): handshake write returned zero bytes\n" if !$written;
+        $offset += $written;
+    }
+    return;
+}
+
+sub _fork_read_exact ($fh, $length) {
+    my $bytes = '';
+    while (length($bytes) < $length) {
+        my $chunk = '';
+        my $read = sysread($fh, $chunk, $length - length($bytes));
+        next if !defined($read) && $! == Errno::EINTR();
+        die "fork(): handshake read failed: $!\n" if !defined $read;
+        return undef if !$read;
+        $bytes .= $chunk;
+    }
+    return $bytes;
+}
+
+sub _fork_child_failure ($fh, $error) {
+    $error = "$error";
+    $error = "child reconstruction failed\n" if $error eq '';
+    utf8::encode($error) if utf8::is_utf8($error);
+    $error = substr($error, 0, 1_048_576);
+    eval { _fork_write_all($fh, 'E' . pack('N', length($error)) . $error); 1 };
+    require POSIX;
+    POSIX::_exit(255);
+}
+
+sub _fork_child_reset_deferred ($self) {
+    my $state = delete $DEFER_STATE{$self};
+    $state->_fork_child_drop if $state;
+    return;
+}
+
+sub fork ($self, %option) {
+    $self->_assert_owner_native('fork');
+    croak 'fork(): Loop must be quiescent; use defer_fork() in a future release'
+        if $self->running;
+
+    my %known = map { $_ => 1 } qw(share clone move);
+    my @unknown = sort grep { !$known{$_} } keys %option;
+    croak 'fork(): unknown options: ' . join(', ', @unknown) if @unknown;
+
+    my %disposition;
+    my %selected;
+    for my $mode (qw(share clone move)) {
+        my $list = exists($option{$mode}) ? $option{$mode} : [];
+        croak "fork(): $mode must be an array reference" if ref($list) ne 'ARRAY';
+        for my $object (@$list) {
+            croak "fork(): $mode entries must be resource objects"
+                if !blessed($object);
+            my $id = refaddr($object);
+            croak 'fork(): a resource may appear in only one disposition list'
+                if $selected{$id}++;
+            croak "fork(): $mode resource is not current in this Loop"
+                if !$self->has($object);
+            $disposition{$id} = $mode;
+        }
+    }
+
+    my $objects = $self->objects;
+    for my $object (@$objects) {
+        my $mode = $disposition{ refaddr($object) } // 'drop';
+        croak 'fork(): resource does not implement fork disposition hooks'
+            if !$object->can('_fork_preflight') || !$object->can('_fork_child_drop');
+        $object->_fork_preflight($mode, $self);
+        croak "fork(): resource does not implement child '$mode' disposition"
+            if $mode ne 'drop' && !$object->can("_fork_child_$mode");
+        croak 'fork(): moved resource does not implement parent disposition'
+            if $mode eq 'move' && !$object->can('_fork_parent_move');
+    }
+
+    require Linux::Event::_Resolver;
+    Linux::Event::_Resolver->_fork_prepare_loop($self);
+
+    require Socket;
+    socketpair(my $parent_channel, my $child_channel,
+        Socket::AF_UNIX(), Socket::SOCK_STREAM(), Socket::PF_UNSPEC())
+        or croak "fork(): socketpair failed: $!";
+
+    my $pid = CORE::fork();
+    if (!defined $pid) {
+        my $errno = 0 + $!;
+        close $parent_channel;
+        close $child_channel;
+        $! = $errno;
+        return undef;
+    }
+
+    if ($pid == 0) {
+        close $parent_channel;
+        my $ok = eval {
+            $self->_fork_child_reset;
+            $self->_fork_child_reset_deferred;
+            require Linux::Event::Kernel::Signal;
+            Linux::Event::Kernel::Signal->_fork_child_drop_loop($self);
+
+            for my $object (@$objects) {
+                my $mode = $disposition{ refaddr($object) } // 'drop';
+                my $method = $mode eq 'drop'
+                    ? '_fork_child_drop' : "_fork_child_$mode";
+                $object->$method($self);
+            }
+            1;
+        };
+        _fork_child_failure($child_channel, $@) if !$ok;
+
+        my $ready = eval { _fork_write_all($child_channel, 'R'); 1 };
+        _fork_child_failure($child_channel, $@) if !$ready;
+        my $commit = eval { _fork_read_exact($child_channel, 1) };
+        if ($@ || !defined($commit) || $commit ne 'C') {
+            require POSIX;
+            POSIX::_exit(255);
+        }
+        close $child_channel;
+        return 0;
+    }
+
+    close $child_channel;
+    my $status = eval { _fork_read_exact($parent_channel, 1) };
+    if ($@ || !defined $status) {
+        my $error = $@ || "fork(): child reconstruction channel closed\n";
+        waitpid($pid, 0);
+        close $parent_channel;
+        die $error;
+    }
+    if ($status eq 'E') {
+        my $length_bytes = _fork_read_exact($parent_channel, 4);
+        my $length = defined($length_bytes) ? unpack('N', $length_bytes) : 0;
+        my $message = $length ? _fork_read_exact($parent_channel, $length) : undef;
+        waitpid($pid, 0);
+        close $parent_channel;
+        $message //= 'child reconstruction failed';
+        croak "fork(): $message";
+    }
+    if ($status ne 'R') {
+        waitpid($pid, 0);
+        close $parent_channel;
+        croak 'fork(): invalid child reconstruction handshake';
+    }
+
+    my $moved = eval {
+        for my $object (@$objects) {
+            next if ($disposition{ refaddr($object) } // '') ne 'move';
+            $object->_fork_parent_move($pid);
+        }
+        1;
+    };
+    if (!$moved) {
+        my $error = $@ || "fork(): parent move disposition failed\n";
+        eval { _fork_write_all($parent_channel, 'A'); 1 };
+        waitpid($pid, 0);
+        close $parent_channel;
+        die $error;
+    }
+
+    _fork_write_all($parent_channel, 'C');
+    close $parent_channel;
+    return $pid;
+}
+
 sub add ($self, $object) {
+    $self->_assert_owner_native('add');
     croak 'add(): object must support loop attachment'
         if !blessed($object) || !$object->can('_attach_to_loop');
     $object->_attach_to_loop($self);
@@ -60,6 +231,7 @@ sub _defer_state ($self) {
 }
 
 sub defer ($self, $callback) {
+    $self->_assert_owner_native('defer');
     croak 'defer(): callback must be a coderef' if ref($callback) ne 'CODE';
     my $state = $self->_defer_state;
     my $deferred = bless {
@@ -113,6 +285,20 @@ sub _cancel ($self, $deferred) {
     delete $deferred->{callback};
     $self->{pending}-- if $self->{pending};
     $self->{queue} = [] if !$self->{pending};
+    return;
+}
+
+sub _fork_child_drop ($self) {
+    for my $deferred (@{ $self->{queue} // [] }) {
+        next if !$deferred;
+        $deferred->{active} = 0;
+        delete $deferred->{callback};
+    }
+    $self->{queue} = [];
+    $self->{pending} = 0;
+    $self->{signaled} = 0;
+    my $fd = delete $self->{fd};
+    eval { Linux::Event::Kernel::Event::_close_fd($fd); 1 } if defined $fd;
     return;
 }
 
