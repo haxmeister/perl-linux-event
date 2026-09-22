@@ -117,8 +117,9 @@ my $pending = $retry->watch(
 );
 
 my $attach_ok = eval { $retry_loop->add($retry); 1 };
+my $attach_error = $@;
 ok(!$attach_ok, 'attachment fails when a pending watch cannot be installed');
-like($@, qr/inotify_add_watch .*No such file|inotify_add_watch .*not found/i,
+like($attach_error, qr/inotify_add_watch .*No such file|inotify_add_watch .*not found/i,
     'attachment reports the failed path');
 is($retry->state, 'unattached', 'failed attachment is transactional');
 is($pending->state, 'pending', 'failed attachment restores pending Watch state');
