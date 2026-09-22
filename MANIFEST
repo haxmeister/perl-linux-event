@@ -201,6 +201,7 @@ t/listener-16-callbacks.t
 t/listener-17-first-class-stream-callbacks.t
 t/listener-18-first-class-callback-benchmark-smoke.t
 t/loop-foreign-integration.t
+t/loop-fork.t
 t/process-00-api.t
 t/process-10-spawn.t
 t/process-11-observe-signal.t
