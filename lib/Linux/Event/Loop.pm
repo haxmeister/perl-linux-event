@@ -504,6 +504,83 @@ The defer source is created lazily and is internal to the Loop. Because it is
 an eventfd registered with the same epoll instance, deferred work also makes
 C<poll_fd> readable for supported foreign-loop integration.
 
+=head1 PROCESS FORKING
+
+=head2 fork(%disposition)
+
+Fork the current process while giving Linux::Event an explicit resource
+ownership plan:
+
+  my $pid = $loop->fork(
+      share => [$listener],
+      clone => [$timer, $inotify],
+      move  => [$connection],
+  );
+
+The return value follows C<CORE::fork>: the parent receives the positive child
+PID, the child receives zero, and a syscall failure returns undef with C<$!>
+preserved.
+
+This first contract is intentionally quiescent-only. Calling C<fork> while the
+Loop is running or dispatching throws. Forking from a callback should therefore
+be scheduled by application control flow outside the active Loop driver; a
+future C<defer_fork> convenience may be added separately.
+
+Every listed object must already be current in this Loop, and one object may
+appear in only one list. Unsupported resource/disposition combinations throw
+before C<fork(2)> when they can be determined in advance. Unlisted managed
+resources are parent-only: their child copies are closed or made terminal
+without application lifecycle callbacks.
+
+The initial supported dispositions are:
+
+=over 4
+
+=item * Listener: C<share>, C<move>
+
+C<share> registers the inherited listening socket in both independent reactors.
+C<move> keeps it in the child and poisons the parent object after the child has
+finished reconstruction.
+
+=item * Timer: C<clone>, C<move>
+
+The child receives an independent timer scheduled for the same absolute
+monotonic deadline. C<move> additionally cancels the parent copy only after the
+child is ready.
+
+=item * Inotify: C<clone>, C<move>
+
+C<clone> creates a fresh child inotify instance and rebuilds live logical
+watches. C<move> transfers use of the inherited instance to the child reactor.
+
+=item * established plain socket Stream: C<move>
+
+The child keeps the inherited connected socket and existing ordered-byte native
+state. The parent closes its descriptor and marks the Stream C<moved>. Stream
+C<share> is deliberately unsupported.
+
+=back
+
+Other public resource types currently support only the default child drop.
+Pending socket connections, non-plain Stream transports, and active resolver
+requests reject managed fork.
+
+The child never reuses the parent's epoll instance or Loop-owned timerfd.
+C<fork> replaces them with fresh child reactor infrastructure before any
+selected resource is registered. Pending C<defer> callbacks are not inherited.
+
+Move uses a private parent/child handshake. The child first completes its
+reactor reconstruction, then the parent performs its move-side descriptor
+teardown, and only then is the child released to continue. This prevents both
+processes from concurrently treating a moved resource as active during the
+handoff.
+
+A Loop also records its creating process. After an ordinary C<CORE::fork>,
+using the inherited Loop for registration, driving, introspection, statistics,
+or tuning throws instead of silently operating on copied reactor state.
+C<Loop-E<gt>fork> is the supported path that deliberately establishes a fresh
+child reactor and reassigns ownership.
+
 =head1 RAW DESCRIPTOR API
 
 =head2 watch(fh => $fh, read => $callback) / watch(fd => $fd, read => $callback)
