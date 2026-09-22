@@ -157,12 +157,15 @@ my $pid = $loop->fork(
 );
 ```
 
-The initial contract is quiescent-only. The child receives fresh epoll/timer
-reactor infrastructure; resources not listed are parent-only. Listener supports
-`share` and `move`, Timer and Inotify support `clone` and `move`, and an
-established plain socket Stream supports `move`. A move does not tear down the
-parent side until the child reports successful reconstruction. Ordinary
-`CORE::fork` does not make an inherited Loop reusable.
+The initial contract is quiescent-only and is intended for a process with no
+unrelated live threads. Linux::Event stops its own idle resolver workers before
+the syscall, but cannot repair arbitrary third-party pthread/native-library
+state in the child. The child receives fresh epoll/timer reactor infrastructure;
+resources not listed are parent-only. Listener supports `share` and `move`,
+Timer and Inotify support `clone` and `move`, and an established plain
+socket Stream supports `move`. A move does not tear down the parent side until
+the child reports successful reconstruction. Ordinary `CORE::fork` does not
+make an inherited Loop reusable.
 
 ## Filesystem notification
 
