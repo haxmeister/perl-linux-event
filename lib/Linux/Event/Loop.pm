@@ -120,6 +120,7 @@ sub fork ($self, %option) {
         close $parent_channel;
         my $ok = eval {
             $self->_fork_child_reset;
+            $self->reset_stats;
             $self->_fork_child_reset_deferred;
             require Linux::Event::Kernel::Signal;
             Linux::Event::Kernel::Signal->_fork_child_drop_loop($self);
