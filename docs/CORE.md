@@ -38,6 +38,7 @@ Linux::Event::IO::Sock::Dgram
 Linux::Event::Kernel::Timer
 Linux::Event::Kernel::Signal
 Linux::Event::Kernel::Event
+Linux::Event::Kernel::Inotify
 Linux::Event::Kernel::Process
 ```
 
@@ -219,7 +220,7 @@ my $events = $loop->poll;
 
 `poll_fd()` is the Loop-owned epoll descriptor. It becomes readable when any
 Linux::Event-owned kernel source is ready, including ordinary I/O, timerfd,
-signalfd, pidfds, and eventfd notifications. The descriptor is borrowed; do not
+signalfd, pidfds, eventfd notifications, and inotify filesystem events. The descriptor is borrowed; do not
 close it. Duplicate it first if the foreign API requires ownership of a Perl
 filehandle.
 
