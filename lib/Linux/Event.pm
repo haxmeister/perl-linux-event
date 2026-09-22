@@ -52,7 +52,7 @@ datagram socket.
 =item * L<Linux::Event::Kernel>
 
 Kernel notification and state facilities such as timers, signals, eventfd
-notifications, and process lifecycle handling.
+notifications, inotify filesystem events, and process lifecycle handling.
 
 =back
 
@@ -135,6 +135,11 @@ Signalfd subscriptions with constructor or subclass callbacks and native fan-out
 
 Eventfd-backed notifications. Foreign threads or forked children can signal a
 registered object without transferring Perl callbacks or Perl values.
+
+=item * L<Linux::Event::Kernel::Inotify>
+
+Inotify filesystem notifications with logical child watches, decoded event
+values, shared-inode fan-out, and parent-level overflow reporting.
 
 =item * L<Linux::Event::Kernel::Process>
 
