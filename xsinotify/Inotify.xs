@@ -35,6 +35,25 @@ _add_watch(fd, path, mask)
     OUTPUT:
         RETVAL
 
+SV *
+_add_watch_create(fd, path, mask)
+        int fd
+        const char *path
+        UV mask
+    PREINIT:
+        int wd;
+    CODE:
+        wd = inotify_add_watch(fd, path, (uint32_t)mask | IN_MASK_CREATE);
+        if (wd >= 0) {
+            RETVAL = newSViv(wd);
+        } else if (errno == EEXIST) {
+            RETVAL = newSV(0);
+        } else {
+            croak("inotify_add_watch %s: %s", path, Strerror(errno));
+        }
+    OUTPUT:
+        RETVAL
+
 int
 _rm_watch(fd, wd)
         int fd
@@ -53,13 +72,17 @@ SV *
 _read_events(fd)
         int fd
     PREINIT:
-        char buffer[LE_INOTIFY_READ_BUFFER];
+        union {
+            struct inotify_event align;
+            char bytes[LE_INOTIFY_READ_BUFFER];
+        } storage;
+        char *buffer = storage.bytes;
         ssize_t got;
         size_t offset;
         AV *events;
     CODE:
         do {
-            got = read(fd, buffer, sizeof(buffer));
+            got = read(fd, buffer, sizeof(storage.bytes));
         } while (got < 0 && errno == EINTR);
 
         events = newAV();
