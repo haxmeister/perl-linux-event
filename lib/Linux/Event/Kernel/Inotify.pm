@@ -179,7 +179,8 @@ sub watch ($self, $path, %option) {
         $self, $id, $absolute, $event_mask, \%callback, \%flag,
     );
     $self->{watches}{$id} = $watch;
-    push @{ $self->{watch_order} }, $id;
+    push @{ $self->{watch_order} }, $id
+        if $self->{state} ne 'active';
 
     if ($self->{state} eq 'active') {
         my $ok = eval { $self->_activate_watch($watch); 1 };
@@ -236,6 +237,7 @@ sub _attach_to_loop ($self, $loop) {
     }
 
     $self->{state} = 'active';
+    $self->{watch_order} = [];
     return $self;
 }
 
@@ -535,6 +537,11 @@ sub _cancel_watch ($self, $watch) {
     my $error;
 
     delete $self->{watches}{ $watch->_id };
+    if ($self->{state} ne 'active' && @{ $self->{watch_order} }) {
+        my $id = $watch->_id;
+        @{ $self->{watch_order} } = grep { $_ != $id }
+            @{ $self->{watch_order} };
+    }
 
     if (defined $wd && $self->{state} eq 'active') {
         my $group = $self->{groups}{$wd};
