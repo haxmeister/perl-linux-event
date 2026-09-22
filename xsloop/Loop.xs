@@ -2157,6 +2157,7 @@ _attach_to_loop(timer_obj, loop_obj)
   CODE:
     le_timer_t *timer = le_timer_from_sv(timer_obj);
     le_loop_t *loop = le_loop_from_sv(loop_obj);
+    le_loop_assert_owner(loop, "add");
     le_timer_activate(timer_obj, timer, loop_obj, loop);
     RETVAL = newSVsv(timer_obj);
   OUTPUT:
@@ -2170,9 +2171,13 @@ _reschedule_native(timer_obj, absolute, first_seconds, interval_seconds)
     double interval_seconds
   CODE:
     le_timer_t *timer = le_timer_from_sv(timer_obj);
-    unsigned long long first_ns = le_seconds_to_ns(
+    unsigned long long first_ns;
+    unsigned long long interval_ns;
+    if (timer->loop)
+        le_loop_assert_owner(timer->loop, "reschedule");
+    first_ns = le_seconds_to_ns(
         first_seconds, 1, absolute ? "at" : "after");
-    unsigned long long interval_ns = interval_seconds == 0.0
+    interval_ns = interval_seconds == 0.0
         ? 0 : le_seconds_to_ns(interval_seconds, 0, "every");
     le_timer_reschedule_native(timer, absolute, first_ns, interval_ns);
     RETVAL = newSVsv(timer_obj);
@@ -2182,8 +2187,13 @@ _reschedule_native(timer_obj, absolute, first_seconds, interval_seconds)
 SV *
 cancel(timer_obj)
     SV *timer_obj
+  PREINIT:
+    le_timer_t *timer;
   CODE:
-    le_timer_cancel_native(le_timer_from_sv(timer_obj));
+    timer = le_timer_from_sv(timer_obj);
+    if (timer->loop)
+        le_loop_assert_owner(timer->loop, "cancel");
+    le_timer_cancel_native(timer);
     RETVAL = newSVsv(timer_obj);
   OUTPUT:
     RETVAL
