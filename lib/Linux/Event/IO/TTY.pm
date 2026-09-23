@@ -9,6 +9,12 @@ use parent 'Linux::Event::_ByteStream';
 use Carp qw(croak);
 
 sub new ($class, %option) {
+    my $owns_handles = exists($option{owns_handles})
+        ? delete($option{owns_handles}) : 0;
+    croak 'new(): owns_handles must be zero or one'
+        if !defined($owns_handles) || ref($owns_handles)
+        || $owns_handles !~ /\A[01]\z/;
+
     if (defined(my $fh = $option{fh})) {
         croak 'new(): fh is not a TTY or PTY' if !-t $fh;
     } else {
@@ -17,8 +23,12 @@ sub new ($class, %option) {
         croak 'new(): write_fh is not a TTY or PTY'
             if defined($option{write_fh}) && !-t $option{write_fh};
     }
+
+    $option{_owns_handles} = $owns_handles ? 1 : 0;
     return $class->SUPER::new(%option);
 }
+
+sub owns_handles ($self) { !!$self->{owns_handles} }
 
 1;
 
@@ -176,22 +186,86 @@ Perl's C<-t> test.
 
 =head1 HANDLE OWNERSHIP
 
-The handles supplied to C<Linux::Event::IO::TTY> become the handles managed by
-that TTY object.
+TTY handles are B<borrowed by default>.
 
-Linux::Event makes them nonblocking and close-on-exec.
+This is deliberate because the most common terminal handles are often the
+program's own C<STDIN> and C<STDOUT>:
 
-Normal TTY close operations close the corresponding supplied handles.
+  my $tty = Linux::Event::IO::TTY->new(
+      read_fh  => \*STDIN,
+      write_fh => \*STDOUT,
+      ...
+  );
 
-This is particularly important with:
+Linux::Event temporarily makes borrowed handles nonblocking and close-on-exec
+while the TTY is managing them.
 
-  read_fh  => \*STDIN,
-  write_fh => \*STDOUT,
+When the TTY becomes terminal through C<close>, Linux::Event stops using the
+borrowed handles, leaves them open, and restores the file status and descriptor
+flags that were present when the TTY was constructed.
 
-because closing the TTY also closes those terminal handles.
+Therefore this is valid:
 
-If an application needs to stop using Linux::Event while keeping the handles
-open, use C<detach> rather than C<close>.
+  my $tty = Linux::Event::IO::TTY->new(
+      loop     => $loop,
+      read_fh  => \*STDIN,
+      write_fh => \*STDOUT,
+      ...
+  );
+
+  ...
+
+  $tty->close;
+
+  say "ordinary STDOUT still works";
+
+Closing the TTY does not close C<STDIN> or C<STDOUT> in the default borrowed
+mode.
+
+=head2 While borrowed handles are active
+
+While Linux::Event is managing a borrowed terminal handle, that descriptor is
+nonblocking.
+
+On Linux, C<O_NONBLOCK> belongs to the underlying open-file description. Other
+file descriptors duplicated from the same terminal open-file description may
+therefore observe the nonblocking setting while the TTY is active.
+
+For example, ordinary buffered C<print> to C<STDOUT> should not be mixed
+casually with asynchronous C<< $tty->write(...) >> output while Linux::Event is
+actively managing that same terminal.
+
+Use the TTY's C<write> or C<send> methods for output during the managed
+lifetime. After the borrowed TTY closes or detaches, Linux::Event restores the
+captured descriptor flags and ordinary Perl I/O can resume normally.
+
+=head2 owns_handles
+
+An application may explicitly transfer handle ownership to the TTY:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      fh           => $terminal,
+      owns_handles => 1,
+      ...
+  );
+
+With C<owns_handles =E<gt> 1>, normal TTY close operations own and close the
+supplied handles.
+
+The default is:
+
+  owns_handles => 0
+
+Use owning mode for terminal handles whose lifetime should be controlled
+entirely by the TTY object rather than by the surrounding application.
+
+=head2 owns_handles()
+
+  if ($tty->owns_handles) {
+      ...
+  }
+
+Return true when the TTY was constructed with C<owns_handles =E<gt> 1>.
 
 =head1 READ-ONLY TERMINALS
 
@@ -475,11 +549,21 @@ and retrieved through:
 
 A TTY with separate read and write directions can control them independently.
 
+In the default borrowed-handle mode, directional close stops Linux::Event from
+using that direction but does not close the caller's terminal handle.
+
+If another direction remains active, restoration of borrowed descriptor flags
+is deferred until the complete TTY becomes terminal. This avoids changing
+descriptor state out from under the still-active direction.
+
+With C<owns_handles =E<gt> 1>, released distinct directional handles are closed
+as part of the owning lifecycle.
+
 =head2 close_read
 
   $tty->close_read;
 
-Close the readable direction immediately.
+Stop the readable direction immediately.
 
 The writable direction may remain active.
 
@@ -487,7 +571,7 @@ The writable direction may remain active.
 
   $tty->close_write;
 
-Close the writable direction immediately.
+Stop the writable direction immediately.
 
 The readable direction may remain active.
 
@@ -497,15 +581,18 @@ The readable direction may remain active.
 
 Allow already accepted output to drain and then end the writable direction.
 
-Use this when pending output should finish before the writable side closes.
+Use this when pending output should finish before the writable side ends.
 
 =head2 close
 
   $tty->close;
 
-Close the whole TTY immediately.
+Make the whole TTY terminal immediately.
 
-This is terminal.
+For the default borrowed TTY, C<close> leaves the supplied handles open and
+restores their captured file status and descriptor flags.
+
+For C<owns_handles =E<gt> 1>, C<close> closes the owned handles.
 
 =head1 DETACHING TERMINAL HANDLES
 
@@ -513,7 +600,7 @@ This is terminal.
 
   my $handles = $tty->detach;
 
-Detach the TTY from Linux::Event without closing its handles.
+Stop Linux::Event management and return the still-open terminal handles.
 
 The return value is a hash reference containing:
 
@@ -533,9 +620,15 @@ Detachment requires the output queue to be empty.
 
 It is terminal for the TTY object and does not call C<on_close>.
 
-The returned handles remain nonblocking and close-on-exec; C<detach> transfers
-ownership but does not restore their previous file status flags or terminal
-settings.
+For the default borrowed TTY, C<detach> restores the file status and descriptor
+flags captured at construction before returning the handles.
+
+For C<owns_handles =E<gt> 1>, C<detach> transfers ownership of the still-open
+handles to the caller. Those owned handles retain their current nonblocking and
+close-on-exec descriptor configuration.
+
+Neither C<close> nor C<detach> changes terminal mode or restores termios state,
+because Linux::Event did not configure termios state in the first place.
 
 =head1 SUBCLASSING
 

@@ -1,5 +1,41 @@
 # Linux::Event Handoff
 
+## TTY borrowed-handle lifecycle in progress
+
+Branch `feature/tty-borrowed-handles` changes `Linux::Event::IO::TTY` so
+supplied terminal handles are borrowed by default. This is motivated by the
+ordinary console case `read_fh => \\*STDIN, write_fh => \\*STDOUT`: closing
+the Linux::Event TTY should stop event-loop management, not permanently close
+the process standard handles.
+
+The public constructor option `owns_handles => 1` explicitly restores the old
+owning behavior. Default borrowed construction captures each distinct
+descriptor's original `F_GETFL` and `F_GETFD` state before the shared
+ordered-byte engine applies `O_NONBLOCK` and `FD_CLOEXEC`. Complete TTY
+close and detach restore those captured flags and leave the caller's handles
+open. Directional close stops Linux::Event use without closing a borrowed
+handle; if another TTY direction remains active, flag restoration waits until
+the complete TTY becomes terminal so a shared open-file description is not
+changed out from under the active direction.
+
+The private `_ByteStream` machinery carries this as an internal ownership
+mode; Pipe and connected Stream behavior remains owning. Managed-fork child
+drop deliberately does not restore borrowed TTY flags in the child because
+Linux file-status flags belong to the inherited open-file description and
+restoring them there would mutate the still-active parent's TTY.
+
+Focused coverage is in `t/architecture-10-public-leaves.t` using
+`/dev/ptmx`: default borrowing, active nonblocking/close-on-exec state,
+restoration on close, explicit `owns_handles => 1`, boolean validation,
+detach restoration, directional close, graceful write end, and input EOF are
+all exercised. A lifecycle review after the first implementation also found
+and corrected the natural EOF and graceful `end()` paths, which still had
+direct descriptor closes in the shared ordered-byte engine. Those paths now
+respect the internal TTY ownership mode too. `t/stream-66-resource-kind-transition.t`
+verifies a same-kind TTY transition retains borrowed ownership.
+`t/loop-fork.t` verifies default managed-fork child drop does not restore
+shared open-file flags out from under the still-active parent TTY.
+
 ## Loop-aware process fork merged to main
 
 PR #26 was squash-merged to `main` as
