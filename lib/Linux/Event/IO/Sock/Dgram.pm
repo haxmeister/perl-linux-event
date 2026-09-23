@@ -28,10 +28,10 @@ Linux::Event::IO::Sock::Dgram - Asynchronous UDP and Unix datagram sockets
       host => '127.0.0.1',
       port => 9999,
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           say "Received: $payload";
 
-          $socket->send(
+          $self->send(
               "reply",
               to => $peer,
           );
@@ -112,7 +112,7 @@ Use C<new> to create a UDP socket that can receive packets from many peers:
       host => '0.0.0.0',
       port => 9999,
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -158,7 +158,7 @@ A detached Datagram may instead be added later:
   my $socket = Linux::Event::IO::Sock::Dgram->new(
       host => '127.0.0.1',
       port => 9999,
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -173,7 +173,7 @@ Every Datagram requires an effective C<on_datagram> callback.
 
 It may be supplied directly:
 
-  on_datagram => sub ($socket, $payload, $peer) {
+  on_datagram => sub ($self, $payload, $peer) {
       ...
   }
 
@@ -199,7 +199,7 @@ A L<Linux::Event::Address> describing the sender.
 
 For example:
 
-  on_datagram => sub ($socket, $payload, $peer) {
+  on_datagram => sub ($self, $payload, $peer) {
       say "Received " . length($payload) . " bytes";
       say "From: $peer";
   }
@@ -210,8 +210,8 @@ Zero-length datagrams are valid and are delivered normally.
 
 For an unconnected Datagram, specify the destination with C<to>:
 
-  on_datagram => sub ($socket, $payload, $peer) {
-      $socket->send(
+  on_datagram => sub ($self, $payload, $peer) {
+      $self->send(
           "Thanks",
           to => $peer,
       );
@@ -231,11 +231,11 @@ Use C<connect> when a Datagram should have one default peer:
       host => 'collector.example.com',
       port => 9000,
 
-      on_ready => sub ($socket) {
-          $socket->send("hello");
+      on_ready => sub ($self) {
+          $self->send("hello");
       },
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           say "Received: $payload";
       },
   );
@@ -281,8 +281,8 @@ Numeric IP addresses do not require hostname resolution.
 
 A connected Datagram may use:
 
-  on_ready => sub ($socket) {
-      $socket->send("hello");
+  on_ready => sub ($self) {
+      $self->send("hello");
   }
 
 C<on_ready> is called when the Datagram is active and ready for application
@@ -299,7 +299,7 @@ A bound Unix-domain datagram socket uses C<unix>:
       loop => $loop,
       unix => '/run/my-service.sock',
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -310,7 +310,7 @@ A connected Unix-domain Datagram also uses C<unix> for its peer:
       loop => $loop,
       unix => '/run/my-service.sock',
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -375,7 +375,7 @@ For example:
 
 Then:
 
-  on_drain => sub ($socket) {
+  on_drain => sub ($self) {
       # Producing more output is safe again.
   }
 
@@ -422,7 +422,7 @@ A constructor callback overrides a same-named subclass method for that object.
 
 =head2 on_error
 
-  on_error => sub ($socket, $error) {
+  on_error => sub ($self, $error) {
       warn "$error\n";
   }
 
@@ -468,7 +468,7 @@ A simple UDP service can use constructor callbacks directly:
 
   my $socket = Linux::Event::IO::Sock::Dgram->new(
       ...
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -526,7 +526,7 @@ C<new> or C<connect>:
       max_datagrams_per_tick => 128,
       receive_buffer         => 1_048_576,
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -690,7 +690,7 @@ interface can be written as:
 
       max_datagram_size => 32_768,
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -717,7 +717,7 @@ A Unix-domain Datagram provides another example:
       unlink_on_close => 1,
       permissions     => 0660,
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -827,7 +827,7 @@ C<new> can adopt an existing datagram socket:
       loop => $loop,
       fh   => $fh,
 
-      on_datagram => sub ($socket, $payload, $peer) {
+      on_datagram => sub ($self, $payload, $peer) {
           ...
       },
   );
@@ -954,7 +954,7 @@ C<close> is terminal.
 
 =head2 on_close
 
-  on_close => sub ($socket) {
+  on_close => sub ($self) {
       ...
   }
 
