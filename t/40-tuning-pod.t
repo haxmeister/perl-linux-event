@@ -96,10 +96,11 @@ for my $path (qw(
     )) {
         documents_option($text, $option, $path);
     }
-    for my $option (qw(unlink unlink_on_close permissions owns_socket)) {
-        like $text, qr/C<\Q$option\E>/,
-            "$path distinguishes constructor option $option";
+    for my $option (qw(unlink unlink_on_close permissions)) {
+        documents_option($text, $option, $path);
     }
+    like $text, qr/C<owns_socket>/,
+        "$path distinguishes constructor option owns_socket";
 }
 
 {
@@ -111,9 +112,11 @@ for my $path (qw(
         like $text, qr/^=head2 \Q$method\E(?:\([^\n]*\))?\s*$/m,
             "Loop POD documents tuning method $method";
     }
-    like $text, qr/^=head2 event_capacity\s*$.*?The default is 8,192 events\./ms,
+    like $text,
+        qr/^=head2 event_capacity\s*\n.*?The default is 8,192 events\./ms,
         'Loop POD records event capacity default';
-    like $text, qr/^=head2 callback_scope_limit\s*$.*?The default is 128\./ms,
+    like $text,
+        qr/^=head2 callback_scope_limit\s*\n.*?The default is 128\./ms,
         'Loop POD records callback scope default';
     like $text, qr/\$loop->set_event_capacity\(16_384\)/,
         'Loop POD demonstrates instance-method tuning';
