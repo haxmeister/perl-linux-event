@@ -52,9 +52,9 @@ Linux::Event::IO::Pipe - Asynchronous pipes and FIFOs
       loop    => $loop,
       read_fh => $read_fh,
 
-      on_data => sub ($pipe, $bytes) {
+      on_data => sub ($self, $bytes) {
           say "Received: $bytes";
-          $pipe->close;
+          $self->close;
           $loop->stop;
       },
   );
@@ -137,7 +137,7 @@ Supply C<read_fh>:
       loop    => $loop,
       read_fh => $read_fh,
 
-      on_data => sub ($pipe, $bytes) {
+      on_data => sub ($self, $bytes) {
           print $bytes;
       },
   );
@@ -171,7 +171,7 @@ A Pipe may use different handles for input and output:
       read_fh  => $stdout_from_child,
       write_fh => $stdin_to_child,
 
-      on_data => sub ($pipe, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -197,7 +197,7 @@ When one handle supplies both readable and writable directions, use C<fh>:
       loop => $loop,
       fh   => $fh,
 
-      on_data => sub ($pipe, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -235,7 +235,7 @@ Both forms are normal Linux::Event APIs.
 
 An unframed readable Pipe receives bytes through C<on_data>:
 
-  on_data => sub ($pipe, $bytes) {
+  on_data => sub ($self, $bytes) {
       print $bytes;
   }
 
@@ -283,7 +283,7 @@ for one object:
       loop    => $loop,
       read_fh => $read_fh,
 
-      on_message => sub ($pipe, $message) {
+      on_message => sub ($self, $message) {
           say "$prefix: $message";
       },
   );
@@ -328,7 +328,7 @@ be exceeded.
 
 When queued output later falls to the low watermark, C<on_drain> is called:
 
-  on_drain => sub ($pipe) {
+  on_drain => sub ($self) {
       # Producing more output is safe again.
   }
 
@@ -339,7 +339,7 @@ to grow without bound.
 
 =head2 on_eof
 
-  on_eof => sub ($pipe) {
+  on_eof => sub ($self) {
       say "Input reached EOF";
   }
 
@@ -492,7 +492,7 @@ Constructor callbacks are usually simplest for one Pipe:
   my $pipe = Linux::Event::IO::Pipe->new(
       read_fh => $read_fh,
 
-      on_data => sub ($pipe, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -651,7 +651,7 @@ For example:
           operation => 'read',
       },
 
-      on_data => sub ($pipe, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
