@@ -28,19 +28,19 @@ Linux::Event::IO::Sock::Stream - Asynchronous connected sockets
       host => 'example.com',
       port => 80,
 
-      on_ready => sub ($stream) {
-          $stream->write("GET / HTTP/1.0\r\n\r\n");
+      on_ready => sub ($self) {
+          $self->write("GET / HTTP/1.0\r\n\r\n");
       },
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           print $bytes;
       },
 
-      on_error => sub ($stream, $error) {
+      on_error => sub ($self, $error) {
           warn "$error\n";
       },
 
-      on_close => sub ($stream) {
+      on_close => sub ($self) {
           $loop->stop;
       },
   );
@@ -100,11 +100,11 @@ Use C<connect> to create an outbound connection:
       host => 'example.com',
       port => 1234,
 
-      on_ready => sub ($stream) {
+      on_ready => sub ($self) {
           say "Connected";
       },
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           say "Received: $bytes";
       },
   );
@@ -187,7 +187,7 @@ These options are normally unnecessary.
 
 =head2 on_ready
 
-  on_ready => sub ($stream) {
+  on_ready => sub ($self) {
       ...
   }
 
@@ -203,8 +203,8 @@ without needing to know whether the underlying connection is plain or TLS.
 
 For example:
 
-  on_ready => sub ($stream) {
-      $stream->write("HELLO\r\n");
+  on_ready => sub ($self) {
+      $self->write("HELLO\r\n");
   }
 
 =head1 RECEIVING DATA
@@ -213,7 +213,7 @@ For example:
 
 For an unframed Stream, incoming bytes are delivered to C<on_data>:
 
-  on_data => sub ($stream, $bytes) {
+  on_data => sub ($self, $bytes) {
       print $bytes;
   }
 
@@ -297,7 +297,7 @@ aborting the connection immediately.
 
 =head2 on_close
 
-  on_close => sub ($stream) {
+  on_close => sub ($self) {
       ...
   }
 
@@ -305,7 +305,7 @@ Called when the Stream reaches its terminal closed state.
 
 =head2 on_eof
 
-  on_eof => sub ($stream) {
+  on_eof => sub ($self) {
       ...
   }
 
@@ -318,7 +318,7 @@ that care about half-close behavior may handle C<on_eof> separately.
 
 =head2 on_error
 
-  on_error => sub ($stream, $error) {
+  on_error => sub ($self, $error) {
       warn "Connection error: $error\n";
   }
 
@@ -364,7 +364,7 @@ When queued output later falls to the low watermark, C<on_drain> is called.
 
 =head2 on_drain
 
-  on_drain => sub ($stream) {
+  on_drain => sub ($self) {
       say "Output has drained; producing more data is safe";
   }
 
@@ -380,7 +380,7 @@ Stream behavior may be supplied with constructor callbacks:
       host => 'example.com',
       port => 1234,
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -456,7 +456,7 @@ Use C<new> when you already have a connected C<SOCK_STREAM> socket:
       loop => $loop,
       fh   => $socket,
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -484,8 +484,8 @@ For example:
       port => 5000,
 
       stream => {
-          on_data => sub ($stream, $bytes) {
-              $stream->write($bytes);
+          on_data => sub ($self, $bytes) {
+              $self->write($bytes);
           },
       },
   );
@@ -533,7 +533,7 @@ For a simple connection, constructor callbacks are often all that is needed:
 
   my $stream = Linux::Event::IO::Sock::Stream->connect(
       ...
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
