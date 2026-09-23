@@ -1,6 +1,12 @@
 Revision history for Linux-Event
 
 0.117  UNRELEASED
+    - Make IO::TTY borrow supplied terminal handles by default so wrapping
+      STDIN/STDOUT does not make TTY close destroy the process standard
+      handles. Capture and temporarily apply nonblocking/close-on-exec
+      descriptor state, restore the captured flags when a borrowed TTY closes
+      or detaches, and add owns_handles => 1 for explicit ownership. Preserve
+      Pipe and Stream ownership semantics.
     - Add an explicit Loop-aware fork contract with strict per-resource
       dispositions. Loop->fork() is quiescent-only, rejects unsupported
       combinations before the syscall where foreseeable, gives the child a
