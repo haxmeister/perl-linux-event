@@ -9,6 +9,11 @@ use parent 'Linux::Event::_ByteStream';
 use Carp qw(croak);
 
 sub new ($class, %option) {
+    my $owns_handles = exists($option{owns_handles})
+        ? delete($option{owns_handles}) : 0;
+    croak 'new(): owns_handles must be zero or one'
+        if ref($owns_handles) || $owns_handles !~ /\A[01]\z/;
+
     if (defined(my $fh = $option{fh})) {
         croak 'new(): fh is not a TTY or PTY' if !-t $fh;
     } else {
@@ -17,8 +22,12 @@ sub new ($class, %option) {
         croak 'new(): write_fh is not a TTY or PTY'
             if defined($option{write_fh}) && !-t $option{write_fh};
     }
+
+    $option{_owns_handles} = $owns_handles ? 1 : 0;
     return $class->SUPER::new(%option);
 }
+
+sub owns_handles ($self) { !!$self->{owns_handles} }
 
 1;
 
