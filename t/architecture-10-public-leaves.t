@@ -4,6 +4,7 @@ use warnings;
 
 use Test::More;
 use File::Temp qw(tempfile);
+use Fcntl qw(F_GETFD F_GETFL FD_CLOEXEC O_NONBLOCK);
 use Socket qw(AF_UNIX SOCK_DGRAM SOCK_STREAM);
 
 use Linux::Event::IO ();
@@ -99,11 +100,26 @@ close $not_tty_write;
 
 SKIP: {
     open my $ptmx, '+<', '/dev/ptmx'
-        or skip '/dev/ptmx is unavailable for TTY validation', 2;
-    skip '/dev/ptmx is not reported as a TTY on this system', 2 if !-t $ptmx;
+        or skip '/dev/ptmx is unavailable for TTY validation', 20;
+    skip '/dev/ptmx is not reported as a TTY on this system', 20 if !-t $ptmx;
+
+    my $status_before = fcntl($ptmx, F_GETFL, 0);
+    my $descriptor_before = fcntl($ptmx, F_GETFD, 0);
     my $tty = T::ArchitectureTTY->new(fh => $ptmx);
-    ok($tty->isa('Linux::Event::IO::TTY'), 'TTY leaf accepts a real pseudo-terminal handle');
+    ok($tty->isa('Linux::Event::IO::TTY'),
+        'TTY leaf accepts a real pseudo-terminal handle');
+    ok(!$tty->owns_handles, 'TTY borrows supplied handles by default');
+    ok(fcntl($ptmx, F_GETFL, 0) & O_NONBLOCK,
+        'borrowed TTY handle is nonblocking while managed');
+    ok(fcntl($ptmx, F_GETFD, 0) & FD_CLOEXEC,
+        'borrowed TTY handle is close-on-exec while managed');
     $tty->close;
+    ok(defined fileno($ptmx), 'default TTY close leaves borrowed handle open');
+    is(fcntl($ptmx, F_GETFL, 0), $status_before,
+        'default TTY close restores borrowed status flags');
+    is(fcntl($ptmx, F_GETFD, 0), $descriptor_before,
+        'default TTY close restores borrowed descriptor flags');
+    close $ptmx;
 
     open my $closure_ptmx, '+<', '/dev/ptmx'
         or die "reopen /dev/ptmx: $!";
@@ -114,6 +130,61 @@ SKIP: {
     ok($closure_tty->isa('Linux::Event::IO::TTY'),
         'public TTY leaf accepts a constructor callback');
     $closure_tty->close;
+    close $closure_ptmx;
+
+    open my $owned_ptmx, '+<', '/dev/ptmx'
+        or die "reopen owned /dev/ptmx: $!";
+    my $owned_tty = T::ArchitectureTTY->new(
+        fh => $owned_ptmx,
+        owns_handles => 1,
+    );
+    ok($owned_tty->owns_handles, 'owns_handles opts into TTY handle ownership');
+    $owned_tty->close;
+    ok(!defined fileno($owned_ptmx),
+        'owned TTY close closes the supplied handle');
+
+    open my $invalid_ptmx, '+<', '/dev/ptmx'
+        or die "reopen invalid /dev/ptmx: $!";
+    my $owns_error = eval {
+        T::ArchitectureTTY->new(fh => $invalid_ptmx, owns_handles => 2);
+        1;
+    } ? '' : "$@";
+    like($owns_error, qr/owns_handles must be zero or one/,
+        'owns_handles validates as a boolean');
+    close $invalid_ptmx;
+
+    open my $detach_ptmx, '+<', '/dev/ptmx'
+        or die "reopen detach /dev/ptmx: $!";
+    my $detach_status = fcntl($detach_ptmx, F_GETFL, 0);
+    my $detach_descriptor = fcntl($detach_ptmx, F_GETFD, 0);
+    my $detach_tty = T::ArchitectureTTY->new(fh => $detach_ptmx);
+    ok(!$detach_tty->owns_handles, 'detached test starts with borrowed handle');
+    my $detached = $detach_tty->detach;
+    is(fileno($detached->{read_fh}), fileno($detach_ptmx),
+        'detach returns the borrowed terminal handle');
+    ok(defined fileno($detach_ptmx), 'detach leaves borrowed handle open');
+    is(fcntl($detach_ptmx, F_GETFL, 0), $detach_status,
+        'detach restores borrowed status flags');
+    is(fcntl($detach_ptmx, F_GETFD, 0), $detach_descriptor,
+        'detach restores borrowed descriptor flags');
+    close $detach_ptmx;
+
+    open my $direction_ptmx, '+<', '/dev/ptmx'
+        or die "reopen directional /dev/ptmx: $!";
+    my $direction_status = fcntl($direction_ptmx, F_GETFL, 0);
+    my $direction_descriptor = fcntl($direction_ptmx, F_GETFD, 0);
+    my $direction_tty = T::ArchitectureTTY->new(fh => $direction_ptmx);
+    $direction_tty->close_read;
+    ok(defined fileno($direction_ptmx),
+        'close_read does not close a borrowed shared terminal handle');
+    $direction_tty->close_write;
+    ok(defined fileno($direction_ptmx),
+        'close_write does not close a borrowed shared terminal handle');
+    is(fcntl($direction_ptmx, F_GETFL, 0), $direction_status,
+        'terminal close after directional shutdown restores status flags');
+    is(fcntl($direction_ptmx, F_GETFD, 0), $direction_descriptor,
+        'terminal close after directional shutdown restores descriptor flags');
+    close $direction_ptmx;
 }
 
 socketpair(my $stream_fh, my $stream_peer, AF_UNIX, SOCK_STREAM, 0)
