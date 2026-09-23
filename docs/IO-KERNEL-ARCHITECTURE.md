@@ -57,9 +57,12 @@ the same Linux pipe semantics through `Kernel::Process`.
 ### IO::TTY
 
 Represents terminal and pseudo-terminal ordered-byte I/O. It may have a
-readable handle, a writable handle, or both. Terminal configuration remains a
-terminal concern rather than a reason to duplicate the common ordered-byte
-engine.
+readable handle, a writable handle, or both. Supplied handles are borrowed by
+default: Linux::Event temporarily applies nonblocking/close-on-exec descriptor
+state and restores the captured state on terminal close or detach.
+`owns_handles => 1` explicitly transfers ownership instead. Terminal
+configuration remains a terminal concern rather than a reason to duplicate the
+common ordered-byte engine.
 
 ### IO::Sock::Stream
 
