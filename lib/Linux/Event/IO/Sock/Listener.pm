@@ -44,8 +44,8 @@ Linux::Event::IO::Sock::Listener - Accept asynchronous stream connections
       port => 9999,
 
       stream => {
-          on_data => sub ($stream, $bytes) {
-              $stream->write($bytes);
+          on_data => sub ($self, $bytes) {
+              $self->write($bytes);
           },
       },
   );
@@ -96,8 +96,8 @@ For example, this creates a simple echo server:
       port => 9000,
 
       stream => {
-          on_data => sub ($stream, $bytes) {
-              $stream->write($bytes);
+          on_data => sub ($self, $bytes) {
+              $self->write($bytes);
           },
       },
   );
@@ -115,7 +115,7 @@ A normal TCP server looks like this:
       port => 5000,
 
       stream => {
-          on_data => sub ($stream, $bytes) {
+          on_data => sub ($self, $bytes) {
               ...
           },
       },
@@ -184,7 +184,7 @@ Use C<unix> instead of C<host> and C<port>:
       unix => '/run/my-service.sock',
 
       stream => {
-          on_data => sub ($stream, $bytes) {
+          on_data => sub ($self, $bytes) {
               ...
           },
       },
@@ -203,8 +203,8 @@ accepted connection.
 The simplest form supplies callbacks directly:
 
   stream => {
-      on_data => sub ($stream, $bytes) {
-          $stream->write($bytes);
+      on_data => sub ($self, $bytes) {
+          $self->write($bytes);
       },
   }
 
@@ -245,19 +245,19 @@ C<tls>
 Callbacks inside C<stream> belong to the accepted connection:
 
   stream => {
-      on_ready => sub ($stream) {
+      on_ready => sub ($self) {
           ...
       },
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
 
-      on_error => sub ($stream, $error) {
+      on_error => sub ($self, $error) {
           ...
       },
 
-      on_close => sub ($stream) {
+      on_close => sub ($self) {
           ...
       },
   }
@@ -311,8 +311,8 @@ The Stream recipe may still provide callbacks when a Stream subclass is used:
   stream => {
       class => 'ChatConnection',
 
-      on_close => sub ($stream) {
-          remove_connection($stream);
+      on_close => sub ($self) {
+          remove_connection($self);
       },
   }
 
@@ -353,7 +353,7 @@ These are different from callbacks inside the C<stream> recipe.
 
 =head2 on_accept
 
-  on_accept => sub ($listener, $stream) {
+  on_accept => sub ($self, $stream) {
       say "Accepted a new connection";
   }
 
@@ -394,19 +394,19 @@ For example:
       port => 5000,
 
       stream => {
-          on_data => sub ($stream, $bytes) {
+          on_data => sub ($self, $bytes) {
               ...
           },
       },
 
-      on_accept => sub ($listener, $stream) {
+      on_accept => sub ($self, $stream) {
           $clients{$stream} = 1;
       },
   );
 
 =head2 on_error
 
-  on_error => sub ($listener, $error) {
+  on_error => sub ($self, $error) {
       warn "Listener error: $error\n";
   }
 
@@ -420,12 +420,12 @@ For example:
       ...
 
       stream => {
-          on_error => sub ($stream, $error) {
+          on_error => sub ($self, $error) {
               warn "Client connection error: $error\n";
           },
       },
 
-      on_error => sub ($listener, $error) {
+      on_error => sub ($self, $error) {
           warn "Listening socket error: $error\n";
       },
   );
@@ -692,7 +692,7 @@ A Listener can take an already-created listening socket:
       fh   => $socket,
 
       stream => {
-          on_data => sub ($stream, $bytes) {
+          on_data => sub ($self, $bytes) {
               ...
           },
       },
