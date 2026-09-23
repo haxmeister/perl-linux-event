@@ -1365,7 +1365,7 @@ sub _finish_write_side ($self) {
         || fileno($self->{write_fh}) != fileno($self->{read_fh}))) {
         my $watcher = delete $self->{write_watcher};
         $watcher->cancel if $watcher;
-        CORE::close($self->{write_fh});
+        CORE::close($self->{write_fh}) if $self->{owns_handles};
         $self->{write_fh} = undef;
     }
     $self->_clear_transport_deadline;
@@ -1427,7 +1427,7 @@ sub _mark_eof ($self) {
     }
     if (defined($self->{read_fh}) && (!$self->{write_fh}
         || fileno($self->{read_fh}) != fileno($self->{write_fh}))) {
-        CORE::close($self->{read_fh});
+        CORE::close($self->{read_fh}) if $self->{owns_handles};
         $self->{read_fh} = undef;
     }
     $self->_rearm_stream_deadline
