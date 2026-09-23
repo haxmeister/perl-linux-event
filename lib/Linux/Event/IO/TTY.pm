@@ -26,7 +26,7 @@ __END__
 
 =head1 NAME
 
-Linux::Event::IO::TTY - asynchronous ordered-byte I/O for terminals and PTYs
+Linux::Event::IO::TTY - Asynchronous terminal and pseudo-terminal I/O
 
 =head1 SYNOPSIS
 
@@ -34,194 +34,797 @@ Linux::Event::IO::TTY - asynchronous ordered-byte I/O for terminals and PTYs
   use Linux::Event::Loop;
   use Linux::Event::IO::TTY;
 
-  package Console;
-  use parent 'Linux::Event::IO::TTY';
-  use Linux::Event::Framer 'Delimiter', "\n";
-
-  package main;
   my $loop = Linux::Event::Loop->new;
-  my $console = Console->new(
+
+  my $tty = Linux::Event::IO::TTY->new(
       loop     => $loop,
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
-      on_message => sub ($tty, $line) {
-          $tty->write("You typed: $line\n");
+
+      on_data => sub ($tty, $bytes) {
+          $tty->write("You typed: $bytes");
       },
   );
+
   $loop->run;
 
 =head1 DESCRIPTION
 
-C<Linux::Event::IO::TTY> is the public ordered-byte I/O class for terminals and
-pseudo-terminals. It is appropriate for interactive standard input/output,
-PTY-backed subprocess interfaces, and other terminal handles that should use
-Linux::Event's native buffering and readiness machinery.
+C<Linux::Event::IO::TTY> provides asynchronous byte I/O for terminals and
+pseudo-terminals.
 
-TTY owns asynchronous byte movement; it does not configure terminal modes,
-echo, canonical input, baud rates, or other termios policy. Applications that
-need those settings configure the terminal separately.
+It can be used for things such as:
 
-=head1 CALLBACKS, SUBCLASSING, AND TUNING
+=over 4
 
-Constructor callbacks give each TTY ordinary lexical scope. A subclass is the
-right place for reusable terminal protocol policy: it can declare a native
-L<Linux::Event::Framer>, define named callbacks, and centralize
-C<stream_tuning> tuning. The Synopsis combines a delimiter-framing subclass
-with a per-object C<on_message> closure.
+=item *
 
-C<stream_tuning> controls read size and fairness, callback batching, buffer
-and output limits, watermarks, and established deadlines. Linux::Event
-validates and caches framer, tuning, and method policy once per subclass.
-Constructor callbacks override same-named methods for one TTY and are retained
-once per object; input delivery adds no repeated method lookup or
-method-versus-closure branch.
+interactive terminal input and output
 
-TLS does not apply to TTY; TLS transport policy is specific to
-L<Linux::Event::IO::Sock::Stream>.
+=item *
 
-=head2 stream_tuning
+C<STDIN> and C<STDOUT>
 
-Define C<stream_tuning> as a class method on the TTY subclass. It returns
-key/value pairs, or one hash reference:
+=item *
+
+pseudo-terminals used to communicate with subprocesses
+
+=item *
+
+terminal devices opened by an application
+
+=back
+
+TTY uses the same ordered-byte I/O engine as
+L<Linux::Event::IO::Pipe> and L<Linux::Event::IO::Sock::Stream>.
+
+That means it supports:
+
+=over 4
+
+=item *
+
+raw C<on_data> callbacks
+
+=item *
+
+L<Linux::Event::Framer> message framing
+
+=item *
+
+queued asynchronous output
+
+=item *
+
+backpressure
+
+=item *
+
+read pausing
+
+=item *
+
+timeouts and deadlines
+
+=back
+
+=head1 LINUX::EVENT DOES NOT CONFIGURE TERMINAL MODE
+
+C<Linux::Event::IO::TTY> handles asynchronous I/O.
+
+It does B<not> automatically change terminal behavior.
+
+In particular, creating a TTY object does not automatically:
+
+=over 4
+
+=item *
+
+enable or disable canonical mode
+
+=item *
+
+enable or disable echo
+
+=item *
+
+put the terminal into raw mode
+
+=item *
+
+change baud rates
+
+=item *
+
+change character-processing flags
+
+=item *
+
+restore previous terminal settings later
+
+=back
+
+Those settings are controlled separately through the terminal's termios
+configuration.
+
+For example, if C<STDIN> is still in normal canonical terminal mode, the kernel
+may continue collecting input until the user presses Enter before Linux::Event
+receives it.
+
+If an application wants individual key presses, raw mode, disabled echo, or
+other terminal behavior, it must configure those settings separately.
+
+Linux::Event then asynchronously reads and writes whatever byte behavior that
+terminal mode provides.
+
+=head1 CREATING A TERMINAL OBJECT
+
+A common interactive terminal uses separate input and output handles:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop     => $loop,
+      read_fh  => \*STDIN,
+      write_fh => \*STDOUT,
+
+      on_data => sub ($tty, $bytes) {
+          ...
+      },
+  );
+
+Both supplied handles must be terminals or pseudo-terminals according to
+Perl's C<-t> test.
+
+=head1 HANDLE OWNERSHIP
+
+The handles supplied to C<Linux::Event::IO::TTY> become the handles managed by
+that TTY object.
+
+Linux::Event makes them nonblocking and close-on-exec.
+
+Normal TTY close operations close the corresponding supplied handles.
+
+This is particularly important with:
+
+  read_fh  => \*STDIN,
+  write_fh => \*STDOUT,
+
+because closing the TTY also closes those terminal handles.
+
+If an application needs to stop using Linux::Event while keeping the handles
+open, use C<detach> rather than C<close>.
+
+=head1 READ-ONLY TERMINALS
+
+Supply only C<read_fh> when Linux::Event should read from a terminal:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop    => $loop,
+      read_fh => \*STDIN,
+
+      on_data => sub ($tty, $bytes) {
+          print "Received: $bytes";
+      },
+  );
+
+The TTY has no writable direction in this form.
+
+=head1 WRITE-ONLY TERMINALS
+
+Supply only C<write_fh> when Linux::Event should write to a terminal:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop     => $loop,
+      write_fh => \*STDOUT,
+  );
+
+Then:
+
+  $tty->write("hello\n");
+
+sends output asynchronously.
+
+No input callback is required because there is no readable side.
+
+=head1 SEPARATE READ AND WRITE HANDLES
+
+A TTY may combine two different terminal handles into one logical object:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop     => $loop,
+      read_fh  => $input,
+      write_fh => $output,
+
+      on_data => sub ($tty, $bytes) {
+          ...
+      },
+  );
+
+This is useful with C<STDIN>/C<STDOUT> and with PTY arrangements where input and
+output use different descriptors.
+
+=head1 ONE HANDLE FOR BOTH DIRECTIONS
+
+If one terminal handle is both readable and writable, use C<fh>:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop => $loop,
+      fh   => $terminal,
+
+      on_data => sub ($tty, $bytes) {
+          ...
+      },
+  );
+
+C<fh> cannot be combined with C<read_fh> or C<write_fh>.
+
+=head1 ATTACHING TO A LOOP
+
+A TTY may be attached during construction:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop    => $loop,
+      read_fh => \*STDIN,
+      ...
+  );
+
+or constructed first:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      read_fh => \*STDIN,
+      ...
+  );
+
+and attached later:
+
+  $loop->add($tty);
+
+=head1 RECEIVING INPUT
+
+=head2 on_data
+
+An unframed readable TTY receives bytes through C<on_data>:
+
+  on_data => sub ($tty, $bytes) {
+      ...
+  }
+
+C<$bytes> contains the next available part of the terminal byte stream.
+
+The exact shape of that input depends partly on the terminal mode.
+
+For example, a terminal in canonical mode commonly performs line discipline
+before Linux::Event sees the data.
+
+A terminal in raw mode may make individual bytes available much sooner.
+
+Linux::Event does not assume either behavior.
+
+=head1 LINE-ORIENTED INPUT
+
+A terminal protocol can use L<Linux::Event::Framer> just like a Stream or Pipe.
+
+For example:
+
+  package Console;
+
+  use parent 'Linux::Event::IO::TTY';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub on_message ($self, $line) {
+      $self->write("You typed: $line\n");
+  }
+
+Then:
+
+  my $console = Console->new(
+      loop     => $loop,
+      read_fh  => \*STDIN,
+      write_fh => \*STDOUT,
+  );
+
+The framer operates on the bytes delivered by the terminal.
+
+It does not alter the terminal's own line discipline.
+
+=head2 Constructor callback with framing
+
+A framed subclass may still receive its message callback through the
+constructor:
+
+  my $prefix = 'input';
+
+  my $console = Console->new(
+      loop     => $loop,
+      read_fh  => \*STDIN,
+      write_fh => \*STDOUT,
+
+      on_message => sub ($tty, $line) {
+          say "$prefix: $line";
+      },
+  );
+
+The constructor callback overrides a same-named subclass method for that TTY.
+
+=head1 WRITING OUTPUT
+
+=head2 write($bytes)
+
+  $tty->write("hello\n");
+
+Send raw bytes to the writable terminal handle.
+
+Linux::Event first attempts to write immediately.
+
+If the terminal cannot accept all the data at once, remaining bytes are queued
+and written later.
+
+Output order is preserved.
+
+=head2 send($payload)
+
+For a framed TTY:
+
+  $tty->send($payload);
+
+C<send> applies the subclass's L<Linux::Event::Framer> before writing.
+
+For an unframed TTY, use C<write>.
+
+=head1 BACKPRESSURE
+
+TTY output uses the same high- and low-watermark backpressure system as other
+ordered-byte resources.
+
+When queued output grows past the high watermark, C<write> or C<send> begins
+returning false.
+
+The data is still accepted unless a hard output limit would be exceeded.
+
+When queued data later falls to the low watermark, C<on_drain> is called:
+
+  on_drain => sub ($tty) {
+      # Producing more output is safe again.
+  }
+
+=head1 EOF
+
+=head2 on_eof
+
+  on_eof => sub ($tty) {
+      say "Terminal input reached EOF";
+  }
+
+Called when the readable direction reaches EOF.
+
+For an interactive terminal this may happen, for example, when the terminal or
+PTY peer is closed or when terminal input produces an EOF condition.
+
+The writable direction may still exist independently.
+
+=head1 PAUSING INPUT
+
+=head2 pause_read
+
+  $tty->pause_read;
+
+Temporarily stop application input delivery.
+
+=head2 resume_read
+
+  $tty->resume_read;
+
+Resume input delivery.
+
+A configured read timeout is suspended while input is deliberately paused.
+
+=head1 CALLBACKS
+
+TTY callbacks may be constructor coderefs or subclass methods.
+
+The normal callbacks are:
+
+=over 4
+
+=item C<on_data($tty, $bytes)>
+
+Raw unframed input arrived.
+
+=item C<on_message($tty, $message)>
+
+One complete framed message arrived.
+
+=item C<on_messages($tty, $messages)>
+
+A batch of framed messages arrived when message batching is enabled.
+
+=item C<on_drain($tty)>
+
+Queued output fell to the low watermark after backpressure.
+
+=item C<on_eof($tty)>
+
+The readable direction reached EOF.
+
+=item C<on_error($tty, $error)>
+
+An asynchronous I/O, framing, timeout, or queue-limit error occurred.
+
+=item C<on_close($tty)>
+
+The TTY closed.
+
+=back
+
+A constructor callback overrides a same-named subclass method for that object.
+
+=head1 APPLICATION DATA
+
+Arbitrary application state may be attached to the TTY:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      read_fh => \*STDIN,
+      data    => $state,
+      ...
+  );
+
+and retrieved through:
+
+  my $state = $tty->data;
+
+=head1 CLOSING DIRECTIONS
+
+A TTY with separate read and write directions can control them independently.
+
+=head2 close_read
+
+  $tty->close_read;
+
+Close the readable direction immediately.
+
+The writable direction may remain active.
+
+=head2 close_write
+
+  $tty->close_write;
+
+Close the writable direction immediately.
+
+The readable direction may remain active.
+
+=head2 end
+
+  $tty->end;
+
+Allow already accepted output to drain and then end the writable direction.
+
+Use this when pending output should finish before the writable side closes.
+
+=head2 close
+
+  $tty->close;
+
+Close the whole TTY immediately.
+
+This is terminal.
+
+=head1 DETACHING TERMINAL HANDLES
+
+=head2 detach
+
+  my $handles = $tty->detach;
+
+Detach the TTY from Linux::Event without closing its handles.
+
+The return value is a hash reference containing:
+
+  read_fh
+  write_fh
+
+as applicable.
+
+For example:
+
+  my $handles = $tty->detach;
+
+  my $input  = $handles->{read_fh};
+  my $output = $handles->{write_fh};
+
+Detachment requires the output queue to be empty.
+
+It is terminal for the TTY object and does not call C<on_close>.
+
+The returned handles remain nonblocking and close-on-exec; C<detach> transfers
+ownership but does not restore their previous file status flags or terminal
+settings.
+
+=head1 SUBCLASSING
+
+Subclassing is optional.
+
+Constructor callbacks are often simplest for one terminal:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      read_fh => \*STDIN,
+
+      on_data => sub ($tty, $bytes) {
+          ...
+      },
+  );
+
+A subclass is useful when many TTY objects share framing, callbacks, or tuning:
+
+  package CommandConsole;
+
+  use parent 'Linux::Event::IO::TTY';
+  use Linux::Event::Framer 'Delimiter', "\n";
+
+  sub on_message ($self, $command) {
+      ...
+  }
+
+=head1 STREAM TUNING
+
+TTY uses the common ordered-byte tuning model.
+
+Most applications should leave the defaults unchanged.
+
+Reusable defaults may be declared by a subclass with C<stream_tuning>:
 
   package InteractiveTTY;
+
   use parent 'Linux::Event::IO::TTY';
 
   sub stream_tuning ($class) {
       return (
-          read_size        => 16_384,
-          read_batch_bytes => 4_096,
-          max_buffer       => 1_048_576,
+          read_size         => 16_384,
+          read_budget_bytes => 65_536,
+          max_buffer        => 1_048_576,
       );
   }
 
-The complete option set is:
+C<stream_tuning> is subclass policy.
 
-=over 4
+The values below do not go inside a constructor C<tuning> hash.
 
-=item * C<read_size> (default 65,536)
+The timeout values C<idle_timeout>, C<read_timeout>, and C<write_timeout> may
+also be overridden directly for one TTY in C<new>.
 
-Maximum bytes requested by one native read; a positive integer.
+=head2 read_size
 
-=item * C<read_budget_bytes> (default 65_536)
+Default: 65,536 bytes.
 
-Maximum bytes read during one readiness drain. The default bounds one
-readiness callback to 65,536 bytes so other Loop resources can run. Zero is an
-explicit opt-in to drain until the input would block.
+Maximum number of bytes requested by one native read.
 
-=item * C<read_batch_bytes> (default 0)
+=head2 read_budget_bytes
 
-For an unframed class, combine successful reads before C<on_data> up to this
-non-negative byte target. A partial batch flushes when the current drain ends;
-zero preserves normal read callback boundaries. It is invalid on a framed
-class.
+Default: 65,536 bytes.
 
-=item * C<message_batch_size> (default 0)
+Maximum amount of input processed during one readiness turn before yielding to
+other Loop resources.
 
-For a framed class, deliver arrays of at most this many messages to
-C<on_messages>. A partial batch flushes when the current drain ends; zero uses
-C<on_message>. A positive value requires C<on_messages> and is invalid on an
-unframed class.
+This is a fairness control.
 
-=item * C<max_buffer> (default 8,388,608)
+A value of zero means to continue reading until the descriptor would block.
 
-Positive hard byte bound for retained input, an incomplete frame, and the
-aggregate payload retained for one message batch.
+=head2 read_batch_bytes
 
-=item * C<high_watermark> (default 1,048,576)
+Default: 0.
 
-Non-negative pending-output byte level at which C<write> or C<send> begins
-returning false while still accepting the data.
+For an unframed TTY, successful reads may be combined before C<on_data> is
+called.
 
-=item * C<low_watermark> (default 262,144)
+Zero preserves normal read callback boundaries.
 
-Non-negative pending-output byte level at or below which C<on_drain> fires
-after high-watermark backpressure. It must not exceed C<high_watermark>.
+This option cannot be used with framing.
 
-=item * C<max_pending_bytes> (default 0)
+=head2 message_batch_size
 
-Hard non-negative pending-output byte limit. Zero means unbounded.
+Default: 0.
 
-=item * C<idle_timeout> (default 0 seconds)
+For a framed TTY, deliver up to this many complete messages together through
+C<on_messages>.
 
-Maximum inactivity interval since successful input or output progress. Zero
-disables it.
+Zero uses normal C<on_message> delivery.
 
-=item * C<read_timeout> (default 0 seconds)
+A positive value requires framing and an C<on_messages> callback.
 
-Maximum interval without inbound progress while reading is active. Pausing
-input suspends it; zero disables it.
+=head2 max_buffer
 
-=item * C<write_timeout> (default 0 seconds)
+Default: 8,388,608 bytes.
 
-Maximum interval without output progress while data is queued. Zero disables
-it.
+Hard limit for retained input, incomplete framing data, and retained message
+batch data.
 
-=back
+=head2 high_watermark
 
-Byte counts are integers. Timeout values are finite non-negative seconds and
-may be fractional. Constructor timeout values override class defaults for one
-TTY; the other values are class policy.
+Default: 1,048,576 bytes.
 
-=head1 CONSTRUCTION
+Queued-output level at which C<write> and C<send> begin returning false to
+signal backpressure.
 
-C<new> accepts a shared C<fh>, separate C<read_fh> and C<write_fh>, or either
-direction alone. Every supplied handle must be a TTY or PTY according to Perl's
-C<-t> test. Separate input and output handles are intentionally supported, so
-C<STDIN> and C<STDOUT> can form one logical terminal object.
+=head2 low_watermark
 
-C<loop =E<gt> $loop> attaches immediately; detached objects may instead be
-passed to C<< $loop->add($tty) >>. C<data> stores application state. Owned
-handles are made nonblocking and close-on-exec.
+Default: 262,144 bytes.
 
-Established C<idle_timeout>, C<read_timeout>, C<write_timeout>, and explicit
-C<deadline> options use the common ordered-byte deadline model.
+After backpressure has occurred, C<on_drain> fires when queued output falls to
+or below this level.
 
-=head1 CALLBACKS AND FRAMING
+The low watermark cannot exceed the high watermark.
 
-A raw readable TTY requires C<on_data($tty, $bytes)> as a method or constructor
-callback. A class that uses L<Linux::Event::Framer> requires
-C<on_message($tty, $message)> or, with explicit batching,
-C<on_messages($tty, $messages)>; either may be supplied by the class or
-constructor.
+=head2 max_pending_bytes
 
-Delimiter framing is especially useful for line-oriented interactive input:
+Default: 0.
 
-  use Linux::Event::Framer 'Delimiter', "\n";
+Hard limit on queued output bytes.
 
-Framing operates on the bytes Linux supplies after the terminal's own line
-discipline. Linux::Event does not change canonical/raw terminal mode merely
-because a framer is declared.
+Zero means no hard output-queue limit.
 
-Optional lifecycle callbacks are C<on_drain($tty)>, C<on_eof($tty)>,
-C<on_error($tty, $error)>, and C<on_close($tty)>.
+=head2 idle_timeout
 
-The same callback names may be passed as coderefs to C<new>. A constructor
-callback overrides the corresponding class method for that TTY and can capture
-normal Perl lexical state. Linux::Event resolves the effective callback once;
-it does not select between a method and closure for each input event.
+Default: 0.
 
-=head1 OUTPUT AND LIFECYCLE
+Maximum number of seconds without successful input or output progress.
 
-C<write> submits raw bytes; C<send> applies the declared framer. Native output
-queues preserve ordering and provide high/low-watermark backpressure.
+Zero disables the timeout.
 
-C<pause_read> and C<resume_read> control application input. C<end> drains the
-writable side, while C<close_read>, C<close_write>, and C<close> provide
-immediate directional or whole-object termination.
+=head2 read_timeout
 
-C<detach> transfers still-open directional handles to the caller when no output
-is queued. It is terminal and does not call C<on_close>.
+Default: 0.
 
-=head1 CLASS POLICY
+Maximum number of seconds without inbound progress while reading is active.
 
-C<stream_tuning> configures the common ordered-byte engine. The complete
-option contract appears near the top of this document. Policy is cached per
-subclass so ordinary readiness does not parse options or look up callbacks.
+C<pause_read> suspends this timeout.
+
+Zero disables it.
+
+=head2 write_timeout
+
+Default: 0.
+
+Maximum number of seconds without output progress while data remains queued.
+
+Zero disables it.
+
+=head1 PER-OBJECT TIMEOUTS AND DEADLINES
+
+Timeout overrides for one TTY are top-level constructor options:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop    => $loop,
+      read_fh => \*STDIN,
+
+      idle_timeout => 300,
+      read_timeout => 60,
+
+      on_data => sub ($tty, $bytes) {
+          ...
+      },
+  );
+
+An explicit operation deadline is also a top-level C<new> option, but its value
+is a hash describing the deadline:
+
+  my $tty = Linux::Event::IO::TTY->new(
+      loop    => $loop,
+      read_fh => \*STDIN,
+
+      deadline => {
+          after     => 30,
+          operation => 'initial_input',
+      },
+
+      on_data => sub ($tty, $bytes) {
+          ...
+      },
+  );
+
+A deadline requires exactly one of C<after> or C<at>, plus a non-empty
+C<operation> name.
+
+These settings do not go inside a nested C<tuning> hash.
+
+See F<docs/ORDERED-BYTE-DEADLINES.md> for the full deadline model.
+
+=head1 CHANGING TUNING AT RUNTIME
+
+=head2 tune
+
+A live TTY may change its mutable ordered-byte policy:
+
+  $tty->tune(
+      read_budget_bytes => 131_072,
+      idle_timeout      => 120,
+  );
+
+C<tune> supports the same mutable ordered-byte settings used by Stream and
+Pipe.
+
+It returns the TTY object.
+
+Tuning does not change terminal mode or termios configuration.
+
+=head1 INFORMATION METHODS
+
+=head2 fh
+
+Return the shared handle when the same descriptor supplies both reading and
+writing.
+
+If separate descriptors are used, C<fh> returns undef.
+
+=head2 read_fh
+
+Return the readable terminal handle when present.
+
+=head2 write_fh
+
+Return the writable terminal handle when present.
+
+=head2 read_fd
+
+Return the readable file descriptor when present.
+
+=head2 write_fd
+
+Return the writable file descriptor when present.
+
+=head2 has_read
+
+Return true when the TTY has a readable direction.
+
+=head2 has_write
+
+Return true when the TTY has a writable direction.
+
+=head2 pending_bytes
+
+Return the number of bytes currently queued for output.
+
+=head2 state
+
+Return the current TTY lifecycle state.
+
+=head2 is_read_paused
+
+Return true while application reading is paused.
+
+=head2 is_read_eof
+
+Return true after the readable direction reaches EOF.
+
+=head2 is_read_closed
+
+Return true after the readable direction has been closed.
+
+=head2 is_write_ended
+
+Return true after the writable direction has ended.
+
+=head2 last_error
+
+Return the most recently stored L<Linux::Event::Error>, when one exists.
+
+=head1 PERFORMANCE MODEL
+
+TTY uses Linux::Event's native ordered-byte engine.
+
+Callbacks and reusable subclass policy are resolved when the object is created,
+rather than repeatedly looked up for every terminal readiness event.
+
+Framing, buffering, output queuing, and backpressure are handled before control
+returns to application callbacks.
+
+These details normally require no application action.
 
 =head1 SEE ALSO
 
-L<Linux::Event::IO::Pipe>, L<Linux::Event::IO::Sock::Stream>,
-L<Linux::Event::Framer>, F<docs/ORDERED-BYTE-IO-DESIGN.md>.
+L<Linux::Event>,
+L<Linux::Event::Loop>,
+L<Linux::Event::IO::Pipe>,
+L<Linux::Event::IO::Sock::Stream>,
+L<Linux::Event::Framer>,
+L<Linux::Event::Error>,
+F<docs/ORDERED-BYTE-IO-DESIGN.md>,
+F<docs/ORDERED-BYTE-DEADLINES.md>.
 
 =cut
