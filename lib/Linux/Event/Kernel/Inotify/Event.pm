@@ -135,7 +135,7 @@ This is useful when one callback is shared by several Watches:
       say "event:    " . $event->path;
   };
 
-=head1 NAME
+=head1 CHILD NAME
 
 =head2 name
 
