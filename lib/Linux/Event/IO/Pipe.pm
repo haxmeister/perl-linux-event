@@ -646,7 +646,10 @@ For example:
 
       idle_timeout => 60,
       read_timeout => 10,
-      deadline     => 120,
+      deadline => {
+          after     => 120,
+          operation => 'read',
+      },
 
       on_data => sub ($pipe, $bytes) {
           ...
