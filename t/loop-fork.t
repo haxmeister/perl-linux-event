@@ -4,12 +4,14 @@ use warnings;
 
 use Test::More;
 use File::Temp qw(tempdir);
+use Fcntl qw(F_GETFL O_NONBLOCK);
 use POSIX ();
 use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
 use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
+use Linux::Event::IO::TTY;
 use Linux::Event::Kernel::Inotify;
 use Linux::Event::Kernel::Timer;
 
@@ -106,6 +108,42 @@ sub reap_ok ($pid, $name) {
         'unlisted Timer remains parent-owned');
     reap_ok($pid, 'default Timer child drop');
     $timer->cancel;
+}
+
+SKIP: {
+    open my $ptmx, '+<', '/dev/ptmx'
+        or skip '/dev/ptmx is unavailable for borrowed TTY fork validation', 6;
+    skip '/dev/ptmx is not reported as a TTY on this system', 6 if !-t $ptmx;
+
+    my $status_before = fcntl($ptmx, F_GETFL, 0);
+    my $loop = Linux::Event::Loop->new;
+    my $tty = Linux::Event::IO::TTY->new(
+        loop => $loop,
+        fh   => $ptmx,
+        on_data => sub ($tty, $bytes) { },
+    );
+    my $pid = $loop->fork;
+    if ($pid == 0) {
+        child_exit(
+            $tty->is_terminal
+            && !$loop->has($tty)
+            && defined(fileno($ptmx))
+            && (fcntl($ptmx, F_GETFL, 0) & O_NONBLOCK)
+        );
+    }
+
+    ok(!$tty->is_terminal && $loop->has($tty),
+        'unlisted borrowed TTY remains active in parent');
+    ok(fcntl($ptmx, F_GETFL, 0) & O_NONBLOCK,
+        'child drop does not restore shared TTY flags out from under parent');
+    reap_ok($pid, 'default borrowed TTY child drop');
+
+    $tty->close;
+    ok(defined fileno($ptmx),
+        'parent borrowed TTY close leaves terminal handle open after fork');
+    is(fcntl($ptmx, F_GETFL, 0), $status_before,
+        'parent borrowed TTY close restores terminal flags after fork');
+    close $ptmx;
 }
 
 {

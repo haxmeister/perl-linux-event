@@ -104,8 +104,11 @@ object. It does not wrap or replace it.
 - An attachable object belongs to at most one Loop.
 - An object can be attached only once.
 - A terminal object cannot be reattached.
-- `IO::Pipe` and `IO::TTY` own each distinct configured handle according to
-  their construction contract until close or detach.
+- `IO::Pipe` owns each distinct configured handle until close or detach.
+- `IO::TTY` borrows supplied terminal handles by default. It temporarily makes
+  them nonblocking and close-on-exec, then restores their captured descriptor
+  state when the complete TTY closes or detaches. `owns_handles => 1` opts
+  into owning/closing semantics.
 - `IO::Sock::Stream` owns its connected socket once acquired/adopted.
 - An established deadline-enabled ordered-byte object owns at most one private
   timer entry in the Loop scheduler.
@@ -207,9 +210,11 @@ be closed directionally. A shared non-socket descriptor has no universal kernel
 half-close operation. Stream sockets can map graceful write completion to
 socket `shutdown()`.
 
-Plain detach transfers underlying handle ownership only when the concrete leaf
-allows it and pending output has drained. TLS connections cannot detach a bare
-socket while encrypted provider state remains attached.
+Plain detach ends Linux::Event management only when the concrete leaf allows it
+and pending output has drained. Pipe and Stream detach transfer owned handles.
+A default borrowed TTY instead restores the captured descriptor flags and
+returns the caller-owned handles; an owning TTY transfers them. TLS connections
+cannot detach a bare socket while encrypted provider state remains attached.
 
 Constructor-supplied ordered-byte callbacks are retained for the object's
 active lifetime. Compatible callbacks survive `transition_to()`; terminal

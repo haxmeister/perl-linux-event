@@ -1,5 +1,41 @@
 # Linux::Event Handoff
 
+## TTY borrowed-handle lifecycle merged into docs branch
+
+PR #28 was squash-merged into `docs/pod-clarity` as
+`5444a158af71945b6b1d2151152214f0060fae00`
+("Borrow TTY handles by default").
+
+`Linux::Event::IO::TTY` now borrows supplied terminal handles by default.
+This makes the ordinary console case
+`read_fh => \\*STDIN, write_fh => \\*STDOUT` safe to close without
+destroying the process standard handles.
+
+The public constructor option `owns_handles => 1` opts into explicit ownership.
+Default borrowed construction captures each distinct descriptor's original
+`F_GETFL` and `F_GETFD` state before the shared ordered-byte engine applies
+`O_NONBLOCK` and `FD_CLOEXEC`. Complete TTY close and detach restore those
+captured flags and leave the caller's handles open. Directional close stops
+Linux::Event use without closing borrowed handles; if another direction remains
+active, restoration waits until the complete TTY becomes terminal.
+
+The private `_ByteStream` ownership mode preserves the existing owning
+semantics for Pipe and connected Stream. Natural input EOF and graceful
+`end()` were audited and corrected so they also respect borrowed TTY
+ownership. Managed-fork child drop deliberately does not restore borrowed TTY
+flags in the child because Linux file-status flags belong to the inherited
+open-file description and restoration there would mutate the still-active
+parent TTY.
+
+Focused coverage spans `t/architecture-10-public-leaves.t`,
+`t/stream-66-resource-kind-transition.t`, and `t/loop-fork.t`, covering
+default borrowing, active nonblocking/close-on-exec state, close/detach
+restoration, explicit ownership, directional shutdown, EOF, graceful end,
+same-kind transition, and managed-fork child drop.
+
+CI run #492 passed Perl 5.36/5.38/5.40/5.42/5.44/latest, threaded 5.36/latest,
+distribution integrity, and the permanent performance regression gate.
+
 ## Loop-aware process fork merged to main
 
 PR #26 was squash-merged to `main` as
