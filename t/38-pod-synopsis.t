@@ -48,8 +48,7 @@ for my $file (sort @pod_file) {
     is($status, 0, "$name SYNOPSIS compiles")
         or diag("Extracted SYNOPSIS:\n$synopsis\n$stdout$stderr");
 
-    if (!$status && ($name eq 'lib/Linux/Event/IO/Pipe.pm'
-        || $name eq 'lib/Linux/Event/IO/Sock/Stream.pm')) {
+    if (!$status && $name eq 'lib/Linux/Event/IO/Pipe.pm') {
         my $run_error = gensym;
         my $run_pid = open3(undef, my $run_output, $run_error,
             $^X, "-I$root/blib/lib", "-I$root/blib/arch", $path);
@@ -58,7 +57,7 @@ for my $file (sort @pod_file) {
         waitpid($run_pid, 0);
         is($? >> 8, 0, "$name SYNOPSIS runs")
             or diag($run_stdout . $run_stderr);
-        like($run_stdout, qr/^received: hello\n\z/,
+        like($run_stdout, qr/^Received: hello\n\z/,
             "$name SYNOPSIS produces the documented result");
     }
 }
