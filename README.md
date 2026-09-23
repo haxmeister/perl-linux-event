@@ -328,10 +328,15 @@ my $console = Console->new(
 $loop->run;
 ```
 
-`IO::TTY` validates that every supplied handle is a terminal. If input is an
-anonymous pipe or FIFO, use `IO::Pipe` instead. Public leaf names are intended
-to describe the actual underlying Linux resource rather than merely select a
-buffer implementation.
+`IO::TTY` validates that every supplied handle is a terminal. Supplied TTY
+handles are borrowed by default, so closing the console does not close
+`STDIN` or `STDOUT`; Linux::Event restores the descriptor flags it changed
+when the TTY closes or detaches. Use `owns_handles => 1` when the TTY should
+instead own and close its handles. While a borrowed TTY is active, use its
+asynchronous output API rather than mixing ordinary buffered output with the
+same nonblocking terminal descriptor. If input is an anonymous pipe or FIFO,
+use `IO::Pipe` instead. Public leaf names are intended to describe the actual
+underlying Linux resource rather than merely select a buffer implementation.
 
 ## Pipes and FIFOs
 
