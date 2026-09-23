@@ -51,8 +51,8 @@ Linux::Event::IO::TTY - Asynchronous terminal and pseudo-terminal I/O
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
 
-      on_data => sub ($tty, $bytes) {
-          $tty->write("You typed: $bytes");
+      on_data => sub ($self, $bytes) {
+          $self->write("You typed: $bytes");
       },
   );
 
@@ -176,7 +176,7 @@ A common interactive terminal uses separate input and output handles:
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -275,7 +275,7 @@ Supply only C<read_fh> when Linux::Event should read from a terminal:
       loop    => $loop,
       read_fh => \*STDIN,
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           print "Received: $bytes";
       },
   );
@@ -308,7 +308,7 @@ A TTY may combine two different terminal handles into one logical object:
       read_fh  => $input,
       write_fh => $output,
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -324,7 +324,7 @@ If one terminal handle is both readable and writable, use C<fh>:
       loop => $loop,
       fh   => $terminal,
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -358,7 +358,7 @@ and attached later:
 
 An unframed readable TTY receives bytes through C<on_data>:
 
-  on_data => sub ($tty, $bytes) {
+  on_data => sub ($self, $bytes) {
       ...
   }
 
@@ -412,7 +412,7 @@ constructor:
       read_fh  => \*STDIN,
       write_fh => \*STDOUT,
 
-      on_message => sub ($tty, $line) {
+      on_message => sub ($self, $line) {
           say "$prefix: $line";
       },
   );
@@ -456,7 +456,7 @@ The data is still accepted unless a hard output limit would be exceeded.
 
 When queued data later falls to the low watermark, C<on_drain> is called:
 
-  on_drain => sub ($tty) {
+  on_drain => sub ($self) {
       # Producing more output is safe again.
   }
 
@@ -464,7 +464,7 @@ When queued data later falls to the low watermark, C<on_drain> is called:
 
 =head2 on_eof
 
-  on_eof => sub ($tty) {
+  on_eof => sub ($self) {
       say "Terminal input reached EOF";
   }
 
@@ -639,7 +639,7 @@ Constructor callbacks are often simplest for one terminal:
   my $tty = Linux::Event::IO::TTY->new(
       read_fh => \*STDIN,
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -789,7 +789,7 @@ Timeout overrides for one TTY are top-level constructor options:
       idle_timeout => 300,
       read_timeout => 60,
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
@@ -806,7 +806,7 @@ is a hash describing the deadline:
           operation => 'initial_input',
       },
 
-      on_data => sub ($tty, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
