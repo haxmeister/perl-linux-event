@@ -28,10 +28,13 @@ Focused coverage is in `t/architecture-10-public-leaves.t` using
 `/dev/ptmx`: default borrowing, active nonblocking/close-on-exec state,
 restoration on close, explicit `owns_handles => 1`, boolean validation,
 detach restoration, directional close, graceful write end, and input EOF are
-all exercised. `t/stream-66-resource-kind-transition.t` verifies a same-kind
-TTY transition retains borrowed ownership. `t/loop-fork.t` verifies default
-managed-fork child drop does not restore shared open-file flags out from under
-the still-active parent TTY.
+all exercised. A lifecycle review after the first implementation also found
+and corrected the natural EOF and graceful `end()` paths, which still had
+direct descriptor closes in the shared ordered-byte engine. Those paths now
+respect the internal TTY ownership mode too. `t/stream-66-resource-kind-transition.t`
+verifies a same-kind TTY transition retains borrowed ownership.
+`t/loop-fork.t` verifies default managed-fork child drop does not restore
+shared open-file flags out from under the still-active parent TTY.
 
 ## Loop-aware process fork merged to main
 
