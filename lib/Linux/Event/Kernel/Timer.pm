@@ -140,7 +140,7 @@ Linux::Event::Kernel::Timer - Schedule one-time or recurring work
       loop  => $loop,
       after => 1,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "One second has passed";
           $loop->stop;
       },
@@ -189,7 +189,7 @@ For example, a recurring heartbeat can be written as:
       loop  => $loop,
       every => 15,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           $connection->write("ping\n");
       },
   );
@@ -206,7 +206,7 @@ Use C<after> for a timer relative to now:
       loop  => $loop,
       after => 2.5,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "2.5 seconds later";
       },
   );
@@ -233,7 +233,7 @@ Use C<every> for a repeating Timer:
       loop  => $loop,
       every => 5,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "Five-second heartbeat";
       },
   );
@@ -264,7 +264,7 @@ C<after> may be combined with C<every>:
       after => 1,
       every => 10,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           ...
       },
   );
@@ -288,7 +288,7 @@ Use C<at> when you already have an absolute monotonic-clock time:
       loop => $loop,
       at   => $when,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "deadline reached";
       },
   );
@@ -348,7 +348,7 @@ C<every> must be positive.
 
 The constructor form is:
 
-  on_timer => sub ($timer) {
+  on_timer => sub ($self) {
       ...
   }
 
@@ -360,7 +360,7 @@ For example:
       loop  => $loop,
       every => 1,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "tick";
       },
   );
@@ -369,15 +369,15 @@ The callback runs as normal Loop work.
 
 It may interact with other Linux::Event resources:
 
-  on_timer => sub ($timer) {
+  on_timer => sub ($self) {
       $connection->write("heartbeat\n");
       $listener->pause;
   }
 
 or stop the Loop:
 
-  on_timer => sub ($timer) {
-      $timer->loop->stop;
+  on_timer => sub ($self) {
+      $self->loop->stop;
   }
 
 =head1 CONSTRUCTOR CALLBACKS OR SUBCLASS METHODS
@@ -387,7 +387,7 @@ Timer behavior may be supplied directly with C<on_timer>:
   my $timer = Linux::Event::Kernel::Timer->new(
       every => 5,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           ...
       },
   );
@@ -429,8 +429,8 @@ A Timer may carry arbitrary application data:
       every => 5,
       data  => $connection,
 
-      on_timer => sub ($timer) {
-          $timer->data->write("ping\n");
+      on_timer => sub ($self) {
+          $self->data->write("ping\n");
       },
   );
 
@@ -482,10 +482,10 @@ A Timer may reschedule itself:
       loop  => $loop,
       after => 1,
 
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           do_some_work();
 
-          $timer->reschedule(
+          $self->reschedule(
               after => 5,
           );
       },
@@ -516,9 +516,9 @@ Calling C<cancel> again is harmless.
 
 A Timer may also cancel itself from inside its callback:
 
-  on_timer => sub ($timer) {
+  on_timer => sub ($self) {
       ...
-      $timer->cancel;
+      $self->cancel;
   }
 
 =head1 TIMER LIFECYCLE
@@ -568,7 +568,7 @@ The usual form attaches during construction:
   my $timer = Linux::Event::Kernel::Timer->new(
       loop  => $loop,
       after => 1,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           ...
       },
   );
@@ -577,7 +577,7 @@ A Timer may also be constructed detached:
 
   my $timer = Linux::Event::Kernel::Timer->new(
       after => 1,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           ...
       },
   );
@@ -591,7 +591,7 @@ C<add> returns the same Timer object, so this is also valid:
   my $timer = $loop->add(
       Linux::Event::Kernel::Timer->new(
           after => 1,
-          on_timer => sub ($timer) {
+          on_timer => sub ($self) {
               ...
           },
       )
@@ -608,7 +608,7 @@ This means this is safe:
   Linux::Event::Kernel::Timer->new(
       loop  => $loop,
       after => 1,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "still fires";
       },
   );
@@ -651,8 +651,8 @@ Instead, missed recurring intervals are coalesced into one callback.
 
 Inside the callback:
 
-  on_timer => sub ($timer) {
-      my $ticks = $timer->expirations;
+  on_timer => sub ($self) {
+      my $ticks = $self->expirations;
 
       say "$ticks timer interval(s) elapsed";
   }
