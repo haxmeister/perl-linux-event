@@ -12,7 +12,8 @@ sub new ($class, %option) {
     my $owns_handles = exists($option{owns_handles})
         ? delete($option{owns_handles}) : 0;
     croak 'new(): owns_handles must be zero or one'
-        if ref($owns_handles) || $owns_handles !~ /\A[01]\z/;
+        if !defined($owns_handles) || ref($owns_handles)
+        || $owns_handles !~ /\A[01]\z/;
 
     if (defined(my $fh = $option{fh})) {
         croak 'new(): fh is not a TTY or PTY' if !-t $fh;
