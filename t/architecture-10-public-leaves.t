@@ -100,8 +100,8 @@ close $not_tty_write;
 
 SKIP: {
     open my $ptmx, '+<', '/dev/ptmx'
-        or skip '/dev/ptmx is unavailable for TTY validation', 20;
-    skip '/dev/ptmx is not reported as a TTY on this system', 20 if !-t $ptmx;
+        or skip '/dev/ptmx is unavailable for TTY validation', 28;
+    skip '/dev/ptmx is not reported as a TTY on this system', 28 if !-t $ptmx;
 
     my $status_before = fcntl($ptmx, F_GETFL, 0);
     my $descriptor_before = fcntl($ptmx, F_GETFD, 0);
@@ -185,6 +185,41 @@ SKIP: {
     is(fcntl($direction_ptmx, F_GETFD, 0), $direction_descriptor,
         'terminal close after directional shutdown restores descriptor flags');
     close $direction_ptmx;
+
+    open my $end_ptmx, '+<', '/dev/ptmx'
+        or die "reopen end /dev/ptmx: $!";
+    my $end_status = fcntl($end_ptmx, F_GETFL, 0);
+    my $end_descriptor = fcntl($end_ptmx, F_GETFD, 0);
+    my $end_tty = Linux::Event::IO::TTY->new(write_fh => $end_ptmx);
+    $end_tty->end;
+    ok($end_tty->is_terminal,
+        'write-only borrowed TTY becomes terminal after graceful end');
+    ok(defined fileno($end_ptmx),
+        'graceful end leaves borrowed write handle open');
+    is(fcntl($end_ptmx, F_GETFL, 0), $end_status,
+        'graceful end restores borrowed write status flags');
+    is(fcntl($end_ptmx, F_GETFD, 0), $end_descriptor,
+        'graceful end restores borrowed write descriptor flags');
+    close $end_ptmx;
+
+    open my $eof_ptmx, '+<', '/dev/ptmx'
+        or die "reopen eof /dev/ptmx: $!";
+    my $eof_status = fcntl($eof_ptmx, F_GETFL, 0);
+    my $eof_descriptor = fcntl($eof_ptmx, F_GETFD, 0);
+    my $eof_tty = Linux::Event::IO::TTY->new(
+        read_fh => $eof_ptmx,
+        on_data => sub ($tty, $bytes) { },
+    );
+    $eof_tty->_mark_eof;
+    ok($eof_tty->is_terminal,
+        'read-only borrowed TTY becomes terminal after EOF');
+    ok(defined fileno($eof_ptmx),
+        'EOF leaves borrowed read handle open');
+    is(fcntl($eof_ptmx, F_GETFL, 0), $eof_status,
+        'EOF restores borrowed read status flags');
+    is(fcntl($eof_ptmx, F_GETFD, 0), $eof_descriptor,
+        'EOF restores borrowed read descriptor flags');
+    close $eof_ptmx;
 }
 
 socketpair(my $stream_fh, my $stream_peer, AF_UNIX, SOCK_STREAM, 0)
