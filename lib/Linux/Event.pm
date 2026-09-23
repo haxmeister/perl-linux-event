@@ -25,11 +25,11 @@ Linux::Event - Fast event-driven programming for Linux
       host => '127.0.0.1',
       port => 9999,
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           print $bytes;
       },
 
-      on_error => sub ($stream, $error) {
+      on_error => sub ($self, $error) {
           warn "$error\n";
           $loop->stop;
       },
@@ -109,7 +109,7 @@ A resource can usually be attached to a loop when it is created:
   my $timer = Linux::Event::Kernel::Timer->new(
       loop => $loop,
       after => 2,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "Two seconds have passed";
       },
   );
@@ -118,7 +118,7 @@ or it can be created first and added later:
 
   my $timer = Linux::Event::Kernel::Timer->new(
       after => 2,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "Two seconds have passed";
       },
   );
@@ -141,7 +141,7 @@ For example:
   my $timer = Linux::Event::Kernel::Timer->new(
       loop => $loop,
       after => 1,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           say "Timer fired";
       },
   );
@@ -154,7 +154,7 @@ the surrounding program:
   my $timer = Linux::Event::Kernel::Timer->new(
       loop => $loop,
       after => 1,
-      on_timer => sub ($timer) {
+      on_timer => sub ($self) {
           $count++;
           say "Count is now $count";
       },
@@ -186,11 +186,11 @@ For example:
       host => 'example.com',
       port => 80,
 
-      on_ready => sub ($stream) {
-          $stream->send("GET / HTTP/1.0\r\n\r\n");
+      on_ready => sub ($self) {
+          $self->send("GET / HTTP/1.0\r\n\r\n");
       },
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           print $bytes;
       },
   );
@@ -260,7 +260,7 @@ L<Linux::Event::IO::TTY> all work with ordered streams of bytes.
 
 For raw byte-oriented protocols, use C<on_data>:
 
-  on_data => sub ($stream, $bytes) {
+  on_data => sub ($self, $bytes) {
       ...
   }
 
@@ -300,7 +300,7 @@ For many programs, constructor callbacks are enough:
   my $stream = Linux::Event::IO::Sock::Stream->new(
       fh => $socket,
 
-      on_data => sub ($stream, $bytes) {
+      on_data => sub ($self, $bytes) {
           ...
       },
   );
