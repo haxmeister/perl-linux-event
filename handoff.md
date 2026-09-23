@@ -27,7 +27,11 @@ restoring them there would mutate the still-active parent's TTY.
 Focused coverage is in `t/architecture-10-public-leaves.t` using
 `/dev/ptmx`: default borrowing, active nonblocking/close-on-exec state,
 restoration on close, explicit `owns_handles => 1`, boolean validation,
-detach restoration, and directional close are all exercised.
+detach restoration, directional close, graceful write end, and input EOF are
+all exercised. `t/stream-66-resource-kind-transition.t` verifies a same-kind
+TTY transition retains borrowed ownership. `t/loop-fork.t` verifies default
+managed-fork child drop does not restore shared open-file flags out from under
+the still-active parent TTY.
 
 ## Loop-aware process fork merged to main
 
