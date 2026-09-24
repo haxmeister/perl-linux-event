@@ -47,6 +47,27 @@ The sections below are historical implementation records. In particular, the
 TTY and public documentation work described as branch work below is now merged
 into main and included in this release.
 
+## Netlink architecture decision
+
+Netlink is approved as future work with an explicit two-layer split.
+
+Linux::Event core will provide only the reusable
+`Linux::Event::Kernel::Netlink` transport/resource machinery: AF_NETLINK
+lifecycle, Loop integration, request/reply correlation, multipart completion,
+ACK/error handling, multicast plumbing, overflow/loss detection, fairness,
+cancellation, teardown, and related generic mechanics.
+
+The complete user-facing Netlink ecosystem will live in a separate
+`Linux::Event::Netlink` distribution. Its first substantial target will be
+NETLINK_ROUTE, with semantic APIs for links, addresses, routes, neighbors,
+initial dumps, and asynchronous change notifications. Generic Netlink and
+additional family-specific interpretation belong there rather than in core.
+
+Both layers are intended to be implemented, but not immediately. When work
+starts, the core primitive should be designed against real NETLINK_ROUTE needs
+and the Route distribution should serve as the proof that the boundary is
+correct.
+
 ## Linux-native expansion roadmap
 
 The authoritative `docs/V1-ROADMAP.md` now makes the Linux-first development
