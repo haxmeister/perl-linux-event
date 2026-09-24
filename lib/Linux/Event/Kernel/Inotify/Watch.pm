@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.116';
+our $VERSION = '0.117';
 
 use Scalar::Util qw(weaken);
 
@@ -73,6 +73,12 @@ Linux::Event::Kernel::Inotify::Watch - One filesystem watch owned by an Inotify 
 
 =head1 SYNOPSIS
 
+  use Linux::Event::Loop;
+  use Linux::Event::Kernel::Inotify;
+
+  my $loop = Linux::Event::Loop->new;
+  my $inotify = Linux::Event::Kernel::Inotify->new;
+
   my $watch = $inotify->watch(
       '/srv/data',
 
@@ -81,7 +87,8 @@ Linux::Event::Kernel::Inotify::Watch - One filesystem watch owned by an Inotify 
       },
   );
 
-  ...
+  $loop->add($inotify);
+  $loop->run_for(10);
 
   $watch->cancel;
 

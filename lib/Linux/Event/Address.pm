@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.116';
+our $VERSION = '0.117';
 
 use Socket qw(
     AF_INET AF_INET6 AF_UNIX
@@ -70,10 +70,12 @@ Linux::Event::Address - Represent a socket address
 
 =head1 SYNOPSIS
 
-  my $peer = $stream->peer;
+  sub show_peer ($stream) {
+      my $peer = $stream->peer;
 
-  if ($peer && $peer->family eq 'inet') {
-      say $peer->host . ':' . $peer->port;
+      if ($peer && $peer->family eq 'inet') {
+          say $peer->host . ':' . $peer->port;
+      }
   }
 
 =head1 DESCRIPTION

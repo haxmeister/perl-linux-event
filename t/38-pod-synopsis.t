@@ -26,7 +26,10 @@ for my $file (sort @pod_file) {
     close $fh;
     next if $source !~ /^=head1 SYNOPSIS\s*\n(.*?)(?=^=head1\s)/ms;
 
-    my $synopsis = $1;
+    # SYNOPSIS may interleave prose with verbatim Perl paragraphs.
+    my $synopsis = join "\n\n", grep { /\A[ \t]+\S/ }
+        split /\n[ \t]*\n/, $1;
+    ok(length($synopsis), "$file SYNOPSIS contains Perl examples");
     $synopsis =~ s/^  //mg;
     $synopsis =~ s/\A\s+|\s+\z//g;
     $synopsis = "use v5.36;\n$synopsis\n";
