@@ -15,12 +15,30 @@ Watch, and TLS examples now provide their missing lexical context, and the
 Process tuning guard checks the current section and option headings. The source
 suite passes: 166 files, 3,460 tests on threaded Perl 5.38.2. Two Unix-domain
 socket tests skip because this execution environment denies those socket calls;
-CI must supply that coverage. Both META formats validate and all 28 public
+CI supplies that coverage. Both META formats validate and all 28 public
 module PODs pass Pod::Checker without errors.
 
 MANIFEST.SKIP now excludes generated Inotify build products just like the other
-XS directories. Generated-distribution and CI validation are the remaining
-release-preparation gates. No CPAN upload or release tag has been created.
+XS directories. Generated-distribution testing passes (166 files, 3,458 tests),
+`make distcheck` is clean, and `make dist` creates `Linux-Event-0.117.tar.gz`.
+The archive contains exactly its 348 MANIFEST entries, matches the prepared
+source bytes, and contains no generated build products. The source/distribution
+test-count difference comes from repository-only documentation checks.
+
+Release PR #31 contains the verified implementation head
+`dfbe2a90400022c16b8ec51b2003f7d3c5b27c36`. CI run #495
+(`35936706283`) passed all eight Perl configurations (5.36, 5.38, 5.40, 5.42,
+5.44, latest, threaded 5.36, and latest threaded), distribution integrity,
+and the full same-run performance regression gate. The threaded 5.36 run passed
+3,480 tests, including both locally skipped Unix-domain socket tests. Every
+performance workload stayed within the 10 percent gate. Foreign-loop
+integration run #54 (`35936706186`) also passed on Perl 5.36 and 5.44.
+
+The tested archive SHA-256 is
+`66f8e079a980f9dd9e9e43e56bf5d002faa6351545863c585444067b9eaaaae5`.
+Release preparation is complete in PR #31; merge, release tagging, and CPAN
+upload remain separate release actions. No CPAN upload or release tag has been
+created. This verification-only handoff update does not alter the CPAN archive.
 
 The sections below are historical implementation records. In particular, the
 TTY and public documentation work described as branch work below is now merged
