@@ -1,9 +1,12 @@
 # Linux::Event Handoff
 
-## CURRENT STATE - 0.117 release preparation
+## CURRENT STATE - 0.117 release ready on main
 
-Release preparation starts from main `f29283989bdd1b91aef1758fb6d68063de81726c`
-(the merged public POD rewrite). The release branch is `release/0.117`.
+Release PR #31 was squash-merged to main as
+`3338169bd8ba6d56a554b05556e0c049d9a43fa0` on 2026-09-24.
+The merged `release/0.117` branch has been deleted; only main remains.
+Preparation started from `f29283989bdd1b91aef1758fb6d68063de81726c`
+(the merged public POD rewrite).
 All 30 versioned Perl modules and both checked-in META files now consistently
 declare 0.117. `Changes` is dated 2026-09-24 and includes the public POD rewrite
 alongside defer, Inotify, managed fork, and borrowed TTY ownership.
@@ -36,8 +39,8 @@ integration run #54 (`35936706186`) also passed on Perl 5.36 and 5.44.
 
 The tested archive SHA-256 is
 `66f8e079a980f9dd9e9e43e56bf5d002faa6351545863c585444067b9eaaaae5`.
-Release preparation is complete in PR #31; merge, release tagging, and CPAN
-upload remain separate release actions. No CPAN upload or release tag has been
+Release preparation and merge are complete. Release tagging and CPAN upload
+remain separate release actions. No CPAN upload or release tag has been
 created. This verification-only handoff update does not alter the CPAN archive.
 
 The sections below are historical implementation records. In particular, the
