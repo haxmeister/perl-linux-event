@@ -3,7 +3,7 @@ use v5.36;
 use strict;
 use warnings;
 
-our $VERSION = '0.116';
+our $VERSION = '0.117';
 
 use Carp qw(croak);
 use POSIX qw(isfinite);
@@ -340,6 +340,11 @@ Linux::Event::TLS - OpenSSL TLS transport for Linux::Event Stream sockets
 =head1 SYNOPSIS
 
 For a TLS server, configure TLS in the Listener's Stream recipe:
+
+  use Linux::Event::Loop;
+  use Linux::Event::IO::Sock::Listener;
+
+  my $loop = Linux::Event::Loop->new;
 
   my $listener = Linux::Event::IO::Sock::Listener->new(
       loop => $loop,

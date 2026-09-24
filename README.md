@@ -639,6 +639,7 @@ Architecture and behavior are documented under `docs/`. In particular:
 - `docs/SOCKET-CONFIGURATION.md`
 - `docs/LISTENER-DESIGN.md`
 - `docs/PROCESS-DESIGN.md`
+- `docs/INOTIFY-DESIGN.md`
 - `docs/INTROSPECTION.md`
 - `docs/ORDERED-BYTE-CONSUMER-ABI.md`
 

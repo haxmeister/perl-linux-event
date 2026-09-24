@@ -12,7 +12,7 @@ sub source ($path) {
 
 sub pod_section ($path, $heading) {
     my $text = source($path);
-    my ($section) = $text =~ /^=head2 \Q$heading\E\n(.*?)(?=^=head[12] |^=cut)/ms;
+    my ($section) = $text =~ /^=head1 \Q$heading\E\n(.*?)(?=^=head1 |^=cut)/ms;
     ok defined($section), "$path documents $heading";
     return $section // '';
 }
@@ -71,15 +71,14 @@ for my $path (qw(
 
 {
     my $path = 'lib/Linux/Event/Kernel/Process.pm';
-    my $section = pod_section($path, 'process_options');
+    my $section = pod_section($path, 'PROCESS I/O TUNING');
     like $section, qr/^  sub process_options \(\$class\) \{/m,
         "$path demonstrates the process_options class method";
     for my $option (qw(
         read_size max_reads_per_tick stdin_high_watermark stdin_low_watermark
         max_pending_stdin
     )) {
-        like $section, qr/=item \* C<\Q$option\E>/,
-            "$path lists process option $option";
+        documents_option($section, $option, $path);
     }
 }
 

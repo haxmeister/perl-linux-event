@@ -1,5 +1,31 @@
 # Linux::Event Handoff
 
+## CURRENT STATE - 0.117 release preparation
+
+Release preparation starts from main `f29283989bdd1b91aef1758fb6d68063de81726c`
+(the merged public POD rewrite). The release branch is `release/0.117`.
+All 30 versioned Perl modules and both checked-in META files now consistently
+declare 0.117. `Changes` is dated 2026-09-24 and includes the public POD rewrite
+alongside defer, Inotify, managed fork, and borrowed TTY ownership.
+
+The initial source audit found two failing documentation test programs after
+the POD rewrite. SYNOPSIS validation now compiles only verbatim Perl paragraphs,
+while retaining an assertion that every synopsis contains code. Address, Inotify
+Watch, and TLS examples now provide their missing lexical context, and the
+Process tuning guard checks the current section and option headings. The source
+suite passes: 166 files, 3,460 tests on threaded Perl 5.38.2. Two Unix-domain
+socket tests skip because this execution environment denies those socket calls;
+CI must supply that coverage. Both META formats validate and all 28 public
+module PODs pass Pod::Checker without errors.
+
+MANIFEST.SKIP now excludes generated Inotify build products just like the other
+XS directories. Generated-distribution and CI validation are the remaining
+release-preparation gates. No CPAN upload or release tag has been created.
+
+The sections below are historical implementation records. In particular, the
+TTY and public documentation work described as branch work below is now merged
+into main and included in this release.
+
 ## TTY borrowed-handle lifecycle merged into docs branch
 
 PR #28 was squash-merged into `docs/pod-clarity` as

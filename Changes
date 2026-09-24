@@ -1,6 +1,10 @@
 Revision history for Linux-Event
 
-0.117  UNRELEASED
+0.117  2026-09-24
+    - Rewrite public POD with clearer constructor placement, callback
+      signatures, lifecycle explanations, and practical examples. Keep
+      SYNOPSIS examples compilable and validate code separately from prose.
+    - Exclude generated Inotify build files from distribution packaging.
     - Make IO::TTY borrow supplied terminal handles by default so wrapping
       STDIN/STDOUT does not make TTY close destroy the process standard
       handles. Capture and temporarily apply nonblocking/close-on-exec
