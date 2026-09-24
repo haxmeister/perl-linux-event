@@ -160,18 +160,59 @@ The default rule is:
 
 #### Netlink
 
-Netlink is the most conspicuous missing Linux event source.
+Netlink is the most conspicuous missing Linux event source, and the project has
+made an explicit architectural decision to support it in two layers.
 
-Initial investigation should focus on a reusable
-`Linux::Event::Kernel::Netlink` primitive and the event-loop semantics needed
-for kernel-originated messages. `NETLINK_ROUTE` is the first practical target
-because it can surface link, address, route, and neighbor changes useful to
-long-running network services.
+Linux::Event core will eventually provide the reusable
+`Linux::Event::Kernel::Netlink` transport/resource primitive. Core owns the
+mechanical Linux integration that every Netlink family needs:
 
-The primitive should expose kernel messages without turning core into a network
-configuration framework. Higher-level route/device interpretation and policy
-can live above the core resource. Generic Netlink families may be added later
-when a concrete consumer demonstrates the need.
+- `AF_NETLINK` socket lifecycle and Loop integration;
+- nonblocking receive/send mechanics and message-boundary validation;
+- sequence-number allocation and request/reply correlation;
+- multipart dump completion;
+- ACK, error, and extended-ACK handling;
+- multicast subscription plumbing;
+- receive-overflow/loss detection and resynchronization signals;
+- cancellation, teardown, fairness, and managed-fork lifecycle rules; and
+- native batching or parsing only where measurement justifies it.
+
+Core deliberately does not become a complete Netlink protocol catalog. It
+should not accumulate family-specific interpretation such as route attributes,
+interface policy, ethtool commands, nl80211 semantics, or other subsystem
+meaning merely because those protocols travel over Netlink.
+
+The thorough user-facing Netlink implementation will therefore live in a
+separate `Linux::Event::Netlink` distribution layered on the core primitive.
+Its first major target is `NETLINK_ROUTE`, with easy semantic APIs for links,
+addresses, routes, neighbors, initial state dumps, and asynchronous change
+notifications. Generic Netlink and additional families can then grow in that
+distribution without expanding the Linux::Event core surface for every kernel
+subsystem.
+
+The intended layering is:
+
+```text
+Linux::Event core
+    Linux::Event::Kernel::Netlink
+        generic Netlink transport and lifecycle machinery
+
+Linux::Event::Netlink distribution
+    Linux::Event::Netlink::Route
+    Linux::Event::Netlink::Generic
+    family-specific event/value objects and higher-level semantics
+```
+
+This is approved future work, not the next immediate implementation task. The
+core primitive and the separate distribution are both intended to be built,
+but the work is deliberately deferred until a later development session rather
+than displacing the current release/core agenda.
+
+When implementation begins, design the core primitive first around real
+`NETLINK_ROUTE` requirements, then build the Route layer in the separate
+distribution as the integration test of that primitive. Avoid designing an
+overly generic Netlink API in isolation before the first real family proves the
+boundary.
 
 #### EPOLLEXCLUSIVE for shared listeners
 
