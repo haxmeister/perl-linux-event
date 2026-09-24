@@ -47,6 +47,28 @@ The sections below are historical implementation records. In particular, the
 TTY and public documentation work described as branch work below is now merged
 into main and included in this release.
 
+## Linux-native expansion roadmap
+
+The authoritative `docs/V1-ROADMAP.md` now makes the Linux-first development
+rule explicit: a Linux-specific primitive belongs on the exploration roadmap
+when it provides a broadly useful event-driven/communications capability or a
+credible performance, scalability, fairness, or observability benefit.
+
+The near-term exploration set is Netlink, `EPOLLEXCLUSIVE` for managed-fork
+shared Listeners, `recvmmsg()` / `sendmmsg()` Datagram batching,
+`sendfile()` / `splice()` zero-copy transfer paths, fanotify, and
+incremental Linux UDP metadata/acceleration facilities. Specialized follow-up
+targets include AF_VSOCK, SocketCAN/AF_CAN, and AF_PACKET/PACKET_MMAP. Measured
+performance candidates include TCP_FASTOPEN, TCP_NOTSENT_LOWAT,
+SO_ZEROCOPY/MSG_ZEROCOPY, and affinity hints such as SO_INCOMING_CPU.
+
+The roadmap also preserves the existing architectural discipline: exploration
+does not imply automatic integration. Each candidate must earn its API and
+maintenance cost through a clean semantic fit, correctness coverage, and
+realistic measurement where performance is the motivation. io_uring remains
+outside the current epoll/reactor architecture unless future evidence shows a
+requirement that epoll cannot satisfy cleanly.
+
 ## TTY borrowed-handle lifecycle merged into docs branch
 
 PR #28 was squash-merged into `docs/pod-clarity` as
