@@ -347,5 +347,3 @@ xssignal/Signal.xs
 xstls/check_openssl.c
 xstls/Makefile.PL
 xstls/TLS.xs
-xstestconsumer/ExternalTestConsumer.xs
-xstestconsumer/Makefile.PL
