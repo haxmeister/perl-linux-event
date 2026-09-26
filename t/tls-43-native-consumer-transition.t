@@ -101,7 +101,7 @@ our ($LOOP, $STATE);
     sub on_accept ($listener, $stream) {
         my $state = $stream->data;
         $state->{accepted} = $stream;
-        $state->{source_identity} = refaddr($stream);
+        $state->{source_identity} = Scalar::Util::refaddr($stream);
         $state->{source_fd} = $stream->read_fd;
         $stream->{xs_state}->_test_consumer_arm(sub {
             $state->{retired_consumer_called}++;
