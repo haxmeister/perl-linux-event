@@ -103,9 +103,8 @@ our ($LOOP, $STATE);
         $state->{accepted} = $stream;
         $state->{source_identity} = Scalar::Util::refaddr($stream);
         $state->{source_fd} = $stream->read_fd;
-        $stream->{xs_state}->_test_consumer_arm(sub {
-            $state->{retired_consumer_called}++;
-        });
+        $state->{consumer_paused_before_ready}
+            = $stream->{xs_state}->consumer_paused ? 1 : 0;
     }
 
     sub on_error ($listener, $error) {
@@ -155,6 +154,8 @@ ok($ok,
     or diag $@;
 ok($STATE->{accepted},
     'Listener accepted the native-consumer Stream');
+ok($STATE->{consumer_paused_before_ready},
+    'source native consumer is still consumer-paused before TLS readiness');
 ok($STATE->{source_transport_ready},
     'TLS transport-ready callback fires before application readiness');
 ok($STATE->{source_ready},
