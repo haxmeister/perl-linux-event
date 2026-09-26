@@ -77,6 +77,10 @@ use Linux::Event::TLS;
     package T::TLSTransitionPeer;
     use parent 'Linux::Event::IO::Sock::Stream';
 
+    sub on_ready ($stream) {
+        $stream->write("early-input\n");
+    }
+
     sub on_data ($stream, $bytes) { return }
 
     sub on_error ($stream, $error) {
@@ -156,8 +160,10 @@ ok($state->{resumed_after_transition},
     'read side resumes after transition');
 is($state->{error}, '',
     'transition and later TLS input report no Stream error');
-is($state->{bytes}, "after-transition\n",
-    'ordinary raw target receives later decrypted input');
+like($state->{bytes}, qr/early-input\n/,
+    'ordinary raw target receives plaintext queued at the TLS-ready boundary');
+like($state->{bytes}, qr/after-transition\n/,
+    'ordinary raw target receives input written after the transition');
 is($state->{retired_consumer_called} // 0, 0,
     'later input is not delivered to retired native consumer');
 is(
@@ -168,7 +174,7 @@ is(
 
 $server->write("later-input\n");
 $loop->run_for(0.05);
-is($state->{bytes}, "after-transition\nlater-input\n",
+like($state->{bytes}, qr/later-input\n\z/,
     'ordinary raw target continues receiving later TLS input');
 
 $client->close;
