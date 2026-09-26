@@ -62,7 +62,7 @@ WriteMakefile(
     AUTHOR           => 'Joshua S. Day <hax@cpan.org>',
     LICENSE          => 'perl_5',
     MIN_PERL_VERSION => '5.036000',
-    DIR              => [qw(xsloop xsbytestream xstls xsconnection xsresolver xssignal xslistener xsevent xsinotify xsdatagram xsprocess)],
+    DIR              => [qw(xsloop xsbytestream xstls xsconnection xsresolver xssignal xslistener xsevent xsinotify xsdatagram xsprocess xstestconsumer)],
     CONFIGURE_REQUIRES => {
         'ExtUtils::CBuilder'  => 0,
         'ExtUtils::MakeMaker' => 0,
