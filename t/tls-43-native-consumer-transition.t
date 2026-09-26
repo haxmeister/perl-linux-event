@@ -111,6 +111,145 @@ our ($LOOP, $STATE);
     }
 }
 
+
+{
+    package T::TLSDuplexExecutor;
+
+    sub new ($class, %arg) {
+        return bless \%arg, $class;
+    }
+
+    sub input ($self, $bytes) {
+        my $state = $self->{state};
+        if ($self->{role} eq 'server') {
+            $state->{duplex_server_input} .= $bytes;
+            if ($state->{duplex_server_input} =~ /ping\n/) {
+                $self->{stream}->write("pong\n");
+            }
+        } else {
+            $state->{duplex_client_input} .= $bytes;
+            if ($state->{duplex_client_input} =~ /pong\n/) {
+                $state->{duplex_complete} = 1;
+                $self->{stream}->loop->stop;
+            }
+        }
+        return;
+    }
+}
+
+{
+    package T::TLSDuplexServerSource;
+    use parent 'Linux::Event::IO::Sock::Stream';
+
+    BEGIN {
+        Linux::Event::Framer->declare_native_consumer(
+            __PACKAGE__,
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'raw-active-stream-ref',
+            ),
+        );
+    }
+
+    sub on_ready ($stream) {
+        my $state = $stream->data;
+        $state->{duplex_server_alpn} = $stream->selected_alpn;
+        $stream->pause_read;
+        $stream->loop->defer(sub {
+            my $executor = T::TLSDuplexExecutor->new(
+                role => 'server', state => $state, stream => $stream,
+            );
+            $stream->{duplex_executor} = $executor;
+            $stream->transition_to('T::TLSDuplexServerTarget');
+            $state->{duplex_server_class} = ref($stream);
+            $state->{duplex_server_transport} = $stream->transport_name;
+            $stream->resume_read;
+        });
+    }
+
+    sub on_error ($stream, $error) {
+        $stream->data->{duplex_error} = "$error";
+        $stream->loop->stop;
+    }
+}
+
+{
+    package T::TLSDuplexClientSource;
+    use parent 'Linux::Event::IO::Sock::Stream';
+
+    BEGIN {
+        Linux::Event::Framer->declare_native_consumer(
+            __PACKAGE__,
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'raw-active-stream-ref',
+            ),
+        );
+    }
+
+    sub on_ready ($stream) {
+        my $state = $stream->data;
+        $state->{duplex_client_alpn} = $stream->selected_alpn;
+        $stream->pause_read;
+        $stream->loop->defer(sub {
+            my $executor = T::TLSDuplexExecutor->new(
+                role => 'client', state => $state, stream => $stream,
+            );
+            $stream->{duplex_executor} = $executor;
+            $stream->transition_to('T::TLSDuplexClientTarget');
+            $state->{duplex_client_class} = ref($stream);
+            $state->{duplex_client_transport} = $stream->transport_name;
+            $stream->resume_read;
+            $stream->write("ping\n");
+        });
+    }
+
+    sub on_error ($stream, $error) {
+        $stream->data->{duplex_error} = "$error";
+        $stream->loop->stop;
+    }
+}
+
+{
+    package T::TLSDuplexServerTarget;
+    use parent 'Linux::Event::IO::Sock::Stream';
+
+    sub on_data ($stream, $bytes) {
+        $stream->{duplex_executor}->input($bytes);
+    }
+
+    sub on_error ($stream, $error) {
+        $stream->data->{duplex_error} = "$error";
+        $stream->loop->stop;
+    }
+}
+
+{
+    package T::TLSDuplexClientTarget;
+    use parent 'Linux::Event::IO::Sock::Stream';
+
+    sub on_data ($stream, $bytes) {
+        $stream->{duplex_executor}->input($bytes);
+    }
+
+    sub on_error ($stream, $error) {
+        $stream->data->{duplex_error} = "$error";
+        $stream->loop->stop;
+    }
+}
+
+{
+    package T::TLSDuplexListener;
+    use parent 'Linux::Event::IO::Sock::Listener';
+
+    sub on_accept ($listener, $stream) {
+        $stream->data->{duplex_server} = $stream;
+    }
+
+    sub on_error ($listener, $error) {
+        $main::STATE->{duplex_error} = "$error";
+        $listener->loop->stop;
+    }
+}
+
 $LOOP = Linux::Event::Loop->new;
 $STATE = {
     bytes => '',
@@ -194,8 +333,80 @@ $LOOP->run_for(0.05);
 like($STATE->{bytes}, qr/later-input\n\z/,
     'ordinary raw target continues receiving later TLS input');
 
+
 $client->close;
 $STATE->{accepted}->close if !$STATE->{accepted}->is_closed;
 $listener->close;
+
+{
+    my $loop = Linux::Event::Loop->new;
+    my $state = {
+        duplex_error => '',
+        duplex_server_input => '',
+        duplex_client_input => '',
+    };
+
+    my $duplex_listener = $loop->add(T::TLSDuplexListener->new(
+        host => '127.0.0.1',
+        port => 0,
+        stream => {
+            class => 'T::TLSDuplexServerSource',
+            data => $state,
+            tls => {
+                cert_file => "$Bin/tls-certs/server-cert.pem",
+                key_file => "$Bin/tls-certs/server-key.pem",
+                alpn => ['h2', 'http/1.1'],
+            },
+        },
+    ));
+
+    my $duplex_client = T::TLSDuplexClientSource->connect(
+        loop => $loop,
+        host => 'localhost',
+        port => $duplex_listener->port,
+        timeout => 5,
+        data => $state,
+        transport => Linux::Event::TLS->client(
+            server_name => 'localhost',
+            ca_file => "$Bin/tls-certs/server-cert.pem",
+            alpn => ['h2', 'http/1.1'],
+        ),
+    );
+    $loop->add($duplex_client);
+
+    my $ok = eval {
+        $loop->run_for(5);
+        1;
+    };
+    ok($ok,
+        'both TLS native consumers may retire and exchange target raw data')
+        or diag $@;
+    is($state->{duplex_error}, '',
+        'duplex transition path reports no transport error');
+    is($state->{duplex_client_alpn}, 'h2',
+        'duplex client selects h2 before transition');
+    is($state->{duplex_server_alpn}, 'h2',
+        'duplex server selects h2 before transition');
+    is($state->{duplex_client_class}, 'T::TLSDuplexClientTarget',
+        'duplex client changes to ordinary raw target');
+    is($state->{duplex_server_class}, 'T::TLSDuplexServerTarget',
+        'duplex server changes to ordinary raw target');
+    is($state->{duplex_client_transport}, 'tls',
+        'duplex client retains TLS transport');
+    is($state->{duplex_server_transport}, 'tls',
+        'duplex server retains TLS transport');
+    like($state->{duplex_server_input}, qr/ping\n/,
+        'duplex server target receives post-transition plaintext');
+    like($state->{duplex_client_input}, qr/pong\n/,
+        'duplex client target receives post-transition plaintext reply');
+    ok($state->{duplex_complete},
+        'post-transition TLS raw exchange completes');
+
+    $duplex_client->close if !$duplex_client->is_closed;
+    if (my $server = $state->{duplex_server}) {
+        $server->close if !$server->is_closed;
+    }
+    $duplex_listener->close;
+}
 
 done_testing;
