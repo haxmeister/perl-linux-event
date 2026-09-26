@@ -82,9 +82,7 @@ our ($LOOP, $STATE);
         ca_file => "$FindBin::Bin/tls-certs/server-cert.pem",
         alpn    => ['h2', 'http/1.1'];
 
-    sub on_ready ($stream) {
-        $stream->write("early-input\n");
-    }
+    sub on_ready ($stream) { return }
 
     sub on_data ($stream, $bytes) { return }
 
@@ -143,6 +141,7 @@ my $client = T::TLSTransitionClient->connect(
     data => $STATE,
 );
 $STATE->{client} = $client;
+$client->write("early-input\n");
 $LOOP->add($client);
 
 my $ok = eval {
@@ -179,7 +178,7 @@ ok($STATE->{resumed_after_transition},
 is($STATE->{error}, '',
     'transition and later TLS input report no Stream error');
 like($STATE->{bytes}, qr/early-input\n/,
-    'ordinary raw target receives plaintext sent at TLS readiness');
+    'ordinary raw target receives plaintext queued before TLS readiness');
 like($STATE->{bytes}, qr/after-transition\n/,
     'ordinary raw target receives input written after transition');
 is($STATE->{retired_consumer_called} // 0, 0,
