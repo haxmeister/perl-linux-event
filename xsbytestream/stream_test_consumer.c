@@ -127,6 +127,26 @@ les_test_input(pTHX_ void *opaque, const char *data, size_t length,
 }
 
 static int
+les_test_input_active(pTHX_ void *opaque, const char *data, size_t length,
+    size_t *consumed)
+{
+    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
+    size_t index;
+    PERL_UNUSED_CONTEXT;
+
+    *consumed = 0;
+    for (index = 0; index < length; index++) {
+        if (data[index] != '\n')
+            continue;
+        context->delivered++;
+        av_push(context->messages, newSVpvn(data, (STRLEN)index));
+        *consumed = index + 1;
+        return LES_CONSUMER_CONTINUE;
+    }
+    return LES_CONSUMER_CONTINUE;
+}
+
+static int
 les_test_input_transition_target(pTHX_ void *opaque, const char *data,
     size_t length, size_t *consumed)
 {
@@ -335,6 +355,19 @@ static const les_consumer_ops_v1_t les_test_raw_stream_ref_ops = {
     les_test_destroy,
     les_test_flush,
     les_test_input
+};
+
+static const les_consumer_ops_v1_t les_test_raw_active_stream_ref_ops = {
+    LES_CONSUMER_ABI_VERSION,
+    sizeof(les_consumer_ops_v1_t),
+    "raw-input active stream-ref test consumer",
+    LES_CONSUMER_F_RAW_INPUT,
+    les_test_create_stream_ref,
+    NULL,
+    les_test_event,
+    les_test_destroy,
+    NULL,
+    les_test_input_active
 };
 
 static const les_consumer_ops_v1_t les_test_raw_transition_target_ops = {
@@ -564,6 +597,7 @@ les_test_context(les_xsstate_t *st)
     if (!st || (st->consumer_ops != &les_test_ops
         && st->consumer_ops != &les_test_raw_ops
         && st->consumer_ops != &les_test_raw_stream_ref_ops
+        && st->consumer_ops != &les_test_raw_active_stream_ref_ops
         && st->consumer_ops != &les_test_raw_transition_target_ops
         && st->consumer_ops != &les_test_flush_continue_ops
         && st->consumer_ops != &les_test_croak_ops
@@ -590,6 +624,8 @@ les_test_consumer_definition(pTHX_ const char *variant)
         ops = &les_test_raw_ops;
     else if (strEQ(variant, "raw-stream-ref"))
         ops = &les_test_raw_stream_ref_ops;
+    else if (strEQ(variant, "raw-active-stream-ref"))
+        ops = &les_test_raw_active_stream_ref_ops;
     else if (strEQ(variant, "raw-transition-target"))
         ops = &les_test_raw_transition_target_ops;
     else if (strEQ(variant, "raw-missing-input"))
