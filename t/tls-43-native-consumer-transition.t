@@ -4,13 +4,15 @@ use warnings;
 use Test::More;
 use FindBin qw($Bin);
 use Scalar::Util qw(refaddr);
-use Socket qw(AF_UNIX SOCK_STREAM PF_UNSPEC);
 
 use Linux::Event::Loop;
 use Linux::Event::_ByteStream ();
+use Linux::Event::IO::Sock::Listener;
 use Linux::Event::IO::Sock::Stream;
 use Linux::Event::Framer ();
 use Linux::Event::TLS;
+
+our ($LOOP, $STATE);
 
 {
     package T::TLSNativeConsumerSource;
@@ -45,9 +47,9 @@ use Linux::Event::TLS;
             $state->{transport_after_transition} = $stream->transport_name;
             $state->{fd_after_transition} = $stream->read_fd;
             $stream->resume_read;
-            $state->{resumed_after_transition} =
-                $stream->is_read_paused ? 0 : 1;
-            $state->{server}->write("after-transition\n");
+            $state->{resumed_after_transition}
+                = $stream->is_read_paused ? 0 : 1;
+            $state->{client}->write("after-transition\n");
         });
     }
 
@@ -74,8 +76,11 @@ use Linux::Event::TLS;
 }
 
 {
-    package T::TLSTransitionPeer;
+    package T::TLSTransitionClient;
     use parent 'Linux::Event::IO::Sock::Stream';
+    use Linux::Event::TLS
+        ca_file => "$FindBin::Bin/tls-certs/server-cert.pem",
+        alpn    => ['h2', 'http/1.1'];
 
     sub on_ready ($stream) {
         $stream->write("early-input\n");
@@ -89,82 +94,94 @@ use Linux::Event::TLS;
     }
 }
 
-socketpair(my $client_fh, my $server_fh,
-    AF_UNIX, SOCK_STREAM, PF_UNSPEC) or die "socketpair: $!";
+{
+    package T::TLSNativeConsumerListener;
+    use parent 'Linux::Event::IO::Sock::Listener';
 
-my $loop = Linux::Event::Loop->new;
-my $state = {
+    sub on_accept ($listener, $stream) {
+        my $state = $stream->data;
+        $state->{accepted} = $stream;
+        $state->{source_identity} = refaddr($stream);
+        $state->{source_fd} = $stream->read_fd;
+        $stream->{xs_state}->_test_consumer_arm(sub {
+            $state->{retired_consumer_called}++;
+        });
+    }
+
+    sub on_error ($listener, $error) {
+        $main::STATE->{error} = "$error";
+        $listener->loop->stop;
+    }
+}
+
+$LOOP = Linux::Event::Loop->new;
+$STATE = {
     bytes => '',
     error => '',
 };
-my $cert = "$Bin/tls-certs/server-cert.pem";
-my $key = "$Bin/tls-certs/server-key.pem";
+
 my $destroyed_before =
     Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
 
-my $server = T::TLSNativeConsumerSource->new(
-    loop => $loop,
-    fh => $server_fh,
-    data => $state,
-    transport => Linux::Event::TLS->server(
-        cert_file => $cert,
-        key_file => $key,
-        alpn => ['h2', 'http/1.1'],
-    ),
-);
-my $client = T::TLSTransitionPeer->new(
-    loop => $loop,
-    fh => $client_fh,
-    data => $state,
-    transport => Linux::Event::TLS->client(
-        server_name => 'localhost',
-        ca_file => $cert,
-        alpn => ['h2', 'http/1.1'],
-    ),
-);
-$state->{server} = $client;
+my $listener = $LOOP->add(T::TLSNativeConsumerListener->new(
+    host => '127.0.0.1',
+    port => 0,
+    stream => {
+        class => 'T::TLSNativeConsumerSource',
+        data => $STATE,
+        tls => {
+            cert_file => "$Bin/tls-certs/server-cert.pem",
+            key_file => "$Bin/tls-certs/server-key.pem",
+            alpn => ['h2', 'http/1.1'],
+        },
+    },
+));
 
-my $source_identity = refaddr($server);
-my $source_fd = $server->read_fd;
-my $xs_state = $server->{xs_state};
-$xs_state->_test_consumer_arm(sub {
-    $state->{retired_consumer_called}++;
-});
+my $client = T::TLSTransitionClient->connect(
+    host => 'localhost',
+    port => $listener->port,
+    timeout => 5,
+    data => $STATE,
+);
+$STATE->{client} = $client;
+$LOOP->add($client);
 
 my $ok = eval {
-    $loop->run_for(2);
+    $LOOP->run_for(5);
     1;
 };
 ok($ok,
-    'TLS native-consumer to ordinary raw transition does not crash')
+    'accepted TLS native-consumer may transition to ordinary raw Stream')
     or diag $@;
-ok($state->{source_transport_ready},
+ok($STATE->{accepted},
+    'Listener accepted the native-consumer Stream');
+ok($STATE->{source_transport_ready},
     'TLS transport-ready callback fires before application readiness');
-ok($state->{source_ready},
-    'TLS application on_ready schedules the transition');
-is($state->{selected_alpn}, 'h2',
-    'TLS ALPN selects h2 before transition');
-ok($state->{paused_before_transition},
+ok($STATE->{source_ready},
+    'accepted TLS Stream on_ready schedules the transition');
+is($STATE->{selected_alpn}, 'h2',
+    'server-side TLS ALPN selects h2 before transition');
+ok($STATE->{paused_before_transition},
     'source read side is paused before deferred transition');
-ok($state->{deferred_ran},
+ok($STATE->{deferred_ran},
     'transition runs from Loop defer rather than TLS callback stack');
-is($state->{class_after_transition}, 'T::TLSOrdinaryRawTarget',
-    'same live Stream changes to ordinary raw target class');
-is($state->{transport_after_transition}, 'tls',
+is($STATE->{class_after_transition}, 'T::TLSOrdinaryRawTarget',
+    'same live accepted Stream changes to ordinary raw target class');
+is($STATE->{transport_after_transition}, 'tls',
     'transition retains TLS transport');
-is($state->{fd_after_transition}, $source_fd,
+is($STATE->{fd_after_transition}, $STATE->{source_fd},
     'transition retains the same readable fd');
-is(refaddr($server), $source_identity,
+is(refaddr($STATE->{accepted}), $STATE->{source_identity},
     'transition retains the same Stream object');
-ok($state->{resumed_after_transition},
+ok($STATE->{resumed_after_transition},
     'read side resumes after transition');
-is($state->{error}, '',
+is($STATE->{error}, '',
     'transition and later TLS input report no Stream error');
-like($state->{bytes}, qr/early-input\n/,
-    'ordinary raw target receives plaintext queued at the TLS-ready boundary');
-like($state->{bytes}, qr/after-transition\n/,
-    'ordinary raw target receives input written after the transition');
-is($state->{retired_consumer_called} // 0, 0,
+like($STATE->{bytes}, qr/early-input\n/,
+    'ordinary raw target receives plaintext sent at TLS readiness');
+like($STATE->{bytes}, qr/after-transition\n/,
+    'ordinary raw target receives input written after transition');
+is($STATE->{retired_consumer_called} // 0, 0,
     'later input is not delivered to retired native consumer');
 is(
     Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count,
@@ -173,11 +190,12 @@ is(
 );
 
 $client->write("later-input\n");
-$loop->run_for(0.05);
-like($state->{bytes}, qr/later-input\n\z/,
+$LOOP->run_for(0.05);
+like($STATE->{bytes}, qr/later-input\n\z/,
     'ordinary raw target continues receiving later TLS input');
 
 $client->close;
-$server->close;
+$STATE->{accepted}->close if !$STATE->{accepted}->is_closed;
+$listener->close;
 
 done_testing;
