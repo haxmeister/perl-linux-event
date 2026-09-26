@@ -26,10 +26,15 @@ use Linux::Event::TLS;
     }
 
     sub on_transport_ready ($stream) {
+        $stream->data->{source_transport_ready} = 1;
+    }
+
+    sub on_ready ($stream) {
         my $state = $stream->data;
         return if $state->{transition_scheduled}++;
 
-        $state->{source_transport_ready} = 1;
+        $state->{source_ready} = 1;
+        $state->{selected_alpn} = $stream->selected_alpn;
         $stream->pause_read;
         $state->{paused_before_transition} = $stream->is_read_paused ? 1 : 0;
 
@@ -100,6 +105,7 @@ my $server = T::TLSTransitionPeer->new(
     transport => Linux::Event::TLS->server(
         cert_file => $cert,
         key_file => $key,
+        alpn => ['h2', 'http/1.1'],
     ),
 );
 my $client = T::TLSNativeConsumerSource->new(
@@ -109,6 +115,7 @@ my $client = T::TLSNativeConsumerSource->new(
     transport => Linux::Event::TLS->client(
         server_name => 'localhost',
         ca_file => $cert,
+        alpn => ['h2', 'http/1.1'],
     ),
 );
 $state->{server} = $server;
@@ -128,7 +135,11 @@ ok($ok,
     'TLS native-consumer to ordinary raw transition does not crash')
     or diag $@;
 ok($state->{source_transport_ready},
-    'TLS handshake completes before transition is scheduled');
+    'TLS transport-ready callback fires before application readiness');
+ok($state->{source_ready},
+    'TLS application on_ready schedules the transition');
+is($state->{selected_alpn}, 'h2',
+    'TLS ALPN selects h2 before transition');
 ok($state->{paused_before_transition},
     'source read side is paused before deferred transition');
 ok($state->{deferred_ran},
