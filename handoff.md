@@ -1,5 +1,58 @@
 # Linux::Event Handoff
 
+## 0.117 TLS native-consumer retirement investigation
+
+A reported Linux::Event::HTTP HTTP/2 ALPN selector crash was investigated
+against Linux::Event main `66af732c2dbc7475dfd285841b7b0bf1ecb3b6b0`
+(version 0.117). The suspected core shape was:
+
+```text
+TLS Stream with native raw consumer
+  -> TLS handshake / ALPN complete
+  -> pause_read
+  -> Loop->defer
+  -> transition_to ordinary raw Stream
+  -> resume_read
+```
+
+Focused core coverage now lives in
+`t/tls-43-native-consumer-transition.t`. It uses an accepted TLS Stream with
+the native raw-consumer ABI, negotiates `h2`, pauses application reads,
+performs the transition from deferred work, preserves the same Stream object,
+fd, and TLS transport, resumes reads, verifies decrypted plaintext crosses to
+the ordinary `on_data` target, verifies later TLS input continues normally,
+and verifies the retiring consumer is destroyed exactly once without receiving
+post-transition input.
+
+The reported crash could not be reproduced in Linux::Event core. During the
+investigation a temporary separate-XS provider was also used to exercise the
+same public ABI boundary as an upper-layer distribution: active
+`LES_CONSUMER_F_RAW_INPUT`, no flush hook, exact host Stream-SV retention,
+prepared Listener TLS, ALPN `h2`, deferred retirement, pre-transition TLS
+writes, and duplex post-transition raw I/O. That diagnostic matrix passed all
+functional CI configurations. The temporary external fixture was removed after
+the result; no diagnostic-only extension is shipped.
+
+The final retained diff changes no production core source. It adds only the
+focused regression and its MANIFEST entry. CI run #528 (`36207318562`) passed
+the complete functional matrix on Perl 5.36, 5.38, 5.40, 5.42, 5.44, latest,
+threaded 5.36, latest threaded, plus distribution integrity.
+
+Read-only inspection of the failing HTTP selector test identified an important
+boundary for follow-up outside this repository: the HTTP/2 executor is
+constructed before `transition_to()`, and its constructor immediately sends
+the HTTP/2 connection preface/settings by calling the live Stream's
+`write()`. Therefore the HTTP SIGSEGV is not evidence by itself that
+`transition_to()` was reached. The next HTTP-side investigation should bracket
+executor construction, its initial TLS write/flush, `transition_to()`, and the
+first resumed `on_data` delivery separately.
+
+No Linux::Event production fix was made because the requested core-only
+reproducer and the stricter external-provider diagnostic both pass. The one-way
+transition contract remains unchanged: native consumer -> ordinary raw remains
+supported; ordinary raw -> native consumer remains rejected.
+
+
 ## CURRENT STATE - 0.117 release ready on main
 
 Release PR #31 was squash-merged to main as
