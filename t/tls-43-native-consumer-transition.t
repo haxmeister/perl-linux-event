@@ -12,21 +12,6 @@ use Linux::Event::IO::Sock::Stream;
 use Linux::Event::Framer ();
 use Linux::Event::TLS;
 
-BEGIN {
-    require XSLoader;
-    XSLoader::load('Linux::Event::_ByteStream::ExternalTestConsumer');
-}
-
-sub external_consumer_definition () {
-    return {
-        provider =>
-            \&Linux::Event::_ByteStream::ExternalTestConsumer::operations_address,
-        abi_version => 1,
-        operations_address =>
-            Linux::Event::_ByteStream::ExternalTestConsumer::operations_address(),
-    };
-}
-
 {
     package T::TLSNativeConsumerSource;
     use parent 'Linux::Event::IO::Sock::Stream';
@@ -34,7 +19,9 @@ sub external_consumer_definition () {
     BEGIN {
         Linux::Event::Framer->declare_native_consumer(
             __PACKAGE__,
-            main::external_consumer_definition(),
+            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
+                'raw-input',
+            ),
         );
     }
 
@@ -45,6 +32,7 @@ sub external_consumer_definition () {
         $state->{selected_alpn} = $stream->selected_alpn;
         $state->{before_id} = Scalar::Util::refaddr($stream);
         $state->{before_fd} = $stream->read_fd;
+        $state->{xs_state} = $stream->{xs_state};
 
         $stream->pause_read;
         $state->{paused_before_transition} = $stream->is_read_paused ? 1 : 0;
@@ -95,9 +83,7 @@ my $state = {
 my $cert = "$Bin/tls-certs/server-cert.pem";
 my $key = "$Bin/tls-certs/server-key.pem";
 my $destroyed_before =
-    Linux::Event::_ByteStream::ExternalTestConsumer::destroy_count();
-my $input_before =
-    Linux::Event::_ByteStream::ExternalTestConsumer::input_count();
+    Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
 
 my $listener = Linux::Event::IO::Sock::Listener->new(
     loop => $loop,
@@ -173,13 +159,10 @@ like($state->{bytes}, qr/early-input\n/,
     'decrypted plaintext pending at transition reaches the raw target');
 like($state->{bytes}, qr/after-transition\n/,
     'raw target receives input written after transition');
+is($state->{xs_state}->stats->{consumer_input_calls}, 0,
+    'retired native consumer receives no application input');
 is(
-    Linux::Event::_ByteStream::ExternalTestConsumer::input_count(),
-    $input_before,
-    'retired native consumer receives no application input',
-);
-is(
-    Linux::Event::_ByteStream::ExternalTestConsumer::destroy_count(),
+    Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count,
     $destroyed_before + 1,
     'retired native-consumer context is destroyed exactly once',
 );
