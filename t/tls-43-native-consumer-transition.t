@@ -12,6 +12,23 @@ use Linux::Event::IO::Sock::Stream;
 use Linux::Event::Framer ();
 use Linux::Event::TLS;
 
+BEGIN {
+    require XSLoader;
+    XSLoader::load(
+        'Linux::Event::_ByteStream::ExternalTestConsumer',
+        $Linux::Event::VERSION,
+    );
+}
+
+sub external_consumer_definition () {
+    return {
+        provider => \&Linux::Event::_ByteStream::ExternalTestConsumer::operations_address,
+        abi_version => 1,
+        operations_address =>
+            Linux::Event::_ByteStream::ExternalTestConsumer::operations_address(),
+    };
+}
+
 our ($LOOP, $STATE);
 
 {
@@ -21,9 +38,7 @@ our ($LOOP, $STATE);
     BEGIN {
         Linux::Event::Framer->declare_native_consumer(
             __PACKAGE__,
-            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
-                'raw-active-stream-ref',
-            ),
+            main::external_consumer_definition(),
         );
     }
 
@@ -150,9 +165,7 @@ our ($LOOP, $STATE);
     BEGIN {
         Linux::Event::Framer->declare_native_consumer(
             __PACKAGE__,
-            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
-                'raw-active-stream-ref',
-            ),
+            main::external_consumer_definition(),
         );
     }
 
@@ -185,9 +198,7 @@ our ($LOOP, $STATE);
     BEGIN {
         Linux::Event::Framer->declare_native_consumer(
             __PACKAGE__,
-            Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
-                'raw-active-stream-ref',
-            ),
+            main::external_consumer_definition(),
         );
     }
 
@@ -263,7 +274,7 @@ $STATE = {
 };
 
 my $destroyed_before =
-    Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
+    Linux::Event::_ByteStream::ExternalTestConsumer::destroy_count();
 
 my $listener = $LOOP->add(T::TLSNativeConsumerListener->new(
     host => '127.0.0.1',
@@ -329,7 +340,7 @@ like($STATE->{bytes}, qr/after-transition\n/,
 is($STATE->{retired_consumer_called} // 0, 0,
     'later input is not delivered to retired native consumer');
 is(
-    Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count,
+    Linux::Event::_ByteStream::ExternalTestConsumer::destroy_count(),
     $destroyed_before + 1,
     'retired native-consumer context is destroyed exactly once',
 );
