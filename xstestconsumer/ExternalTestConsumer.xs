@@ -12,6 +12,7 @@ typedef struct le_external_test_consumer_s {
 } le_external_test_consumer_t;
 
 static UV le_external_destroyed = 0;
+static UV le_external_input_calls = 0;
 
 static void *
 le_external_create(pTHX_ const les_consumer_host_api_v1_t *host,
@@ -47,6 +48,7 @@ le_external_input(pTHX_ void *opaque, const char *data, size_t length,
     if (!context || !consumed)
         return LES_CONSUMER_ERROR;
 
+    le_external_input_calls++;
     *consumed = length;
     return LES_CONSUMER_CONTINUE;
 }
@@ -105,5 +107,12 @@ UV
 destroy_count()
   CODE:
     RETVAL = le_external_destroyed;
+  OUTPUT:
+    RETVAL
+
+UV
+input_count()
+  CODE:
+    RETVAL = le_external_input_calls;
   OUTPUT:
     RETVAL
