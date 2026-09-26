@@ -9,7 +9,6 @@ typedef struct les_test_consumer_s {
     AV *events;
     AV *trace;
     SV *ready_cb;
-    SV *stream_ref;
     UV permits;
     UV delivered;
     UV flushes;
@@ -34,18 +33,6 @@ les_test_create(pTHX_ const les_consumer_host_api_v1_t *host,
     context->messages = newAV();
     context->events = newAV();
     context->trace = newAV();
-    return context;
-}
-
-static void *
-les_test_create_stream_ref(pTHX_ const les_consumer_host_api_v1_t *host,
-    void *host_context, SV *stream)
-{
-    les_test_consumer_t *context =
-        (les_test_consumer_t *)les_test_create(aTHX_ host, host_context, stream);
-
-    if (context)
-        context->stream_ref = SvREFCNT_inc(stream);
     return context;
 }
 
@@ -122,26 +109,6 @@ les_test_input(pTHX_ void *opaque, const char *data, size_t length,
         }
         return context->permits
             ? LES_CONSUMER_CONTINUE : LES_CONSUMER_PAUSE;
-    }
-    return LES_CONSUMER_CONTINUE;
-}
-
-static int
-les_test_input_active(pTHX_ void *opaque, const char *data, size_t length,
-    size_t *consumed)
-{
-    les_test_consumer_t *context = (les_test_consumer_t *)opaque;
-    size_t index;
-    PERL_UNUSED_CONTEXT;
-
-    *consumed = 0;
-    for (index = 0; index < length; index++) {
-        if (data[index] != '\n')
-            continue;
-        context->delivered++;
-        av_push(context->messages, newSVpvn(data, (STRLEN)index));
-        *consumed = index + 1;
-        return LES_CONSUMER_CONTINUE;
     }
     return LES_CONSUMER_CONTINUE;
 }
@@ -319,8 +286,6 @@ les_test_destroy(pTHX_ void *opaque)
         return;
     if (context->ready_cb)
         SvREFCNT_dec(context->ready_cb);
-    if (context->stream_ref)
-        SvREFCNT_dec(context->stream_ref);
     SvREFCNT_dec((SV *)context->messages);
     SvREFCNT_dec((SV *)context->events);
     SvREFCNT_dec((SV *)context->trace);
@@ -341,33 +306,6 @@ static const les_consumer_ops_v1_t les_test_raw_ops = {
     les_test_destroy,
     les_test_flush,
     les_test_input
-};
-
-static const les_consumer_ops_v1_t les_test_raw_stream_ref_ops = {
-    LES_CONSUMER_ABI_VERSION,
-    sizeof(les_consumer_ops_v1_t),
-    "raw-input stream-ref test consumer",
-    LES_CONSUMER_F_START_PAUSED | LES_CONSUMER_F_WANT_FLUSH
-        | LES_CONSUMER_F_RAW_INPUT,
-    les_test_create_stream_ref,
-    NULL,
-    les_test_event,
-    les_test_destroy,
-    les_test_flush,
-    les_test_input
-};
-
-static const les_consumer_ops_v1_t les_test_raw_active_stream_ref_ops = {
-    LES_CONSUMER_ABI_VERSION,
-    sizeof(les_consumer_ops_v1_t),
-    "raw-input active stream-ref test consumer",
-    LES_CONSUMER_F_RAW_INPUT,
-    les_test_create_stream_ref,
-    NULL,
-    les_test_event,
-    les_test_destroy,
-    NULL,
-    les_test_input_active
 };
 
 static const les_consumer_ops_v1_t les_test_raw_transition_target_ops = {
@@ -596,8 +534,6 @@ les_test_context(les_xsstate_t *st)
 {
     if (!st || (st->consumer_ops != &les_test_ops
         && st->consumer_ops != &les_test_raw_ops
-        && st->consumer_ops != &les_test_raw_stream_ref_ops
-        && st->consumer_ops != &les_test_raw_active_stream_ref_ops
         && st->consumer_ops != &les_test_raw_transition_target_ops
         && st->consumer_ops != &les_test_flush_continue_ops
         && st->consumer_ops != &les_test_croak_ops
@@ -622,10 +558,6 @@ les_test_consumer_definition(pTHX_ const char *variant)
 
     if (strEQ(variant, "raw-input"))
         ops = &les_test_raw_ops;
-    else if (strEQ(variant, "raw-stream-ref"))
-        ops = &les_test_raw_stream_ref_ops;
-    else if (strEQ(variant, "raw-active-stream-ref"))
-        ops = &les_test_raw_active_stream_ref_ops;
     else if (strEQ(variant, "raw-transition-target"))
         ops = &les_test_raw_transition_target_ops;
     else if (strEQ(variant, "raw-missing-input"))
