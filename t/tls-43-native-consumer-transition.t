@@ -22,7 +22,7 @@ our ($LOOP, $STATE);
         Linux::Event::Framer->declare_native_consumer(
             __PACKAGE__,
             Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
-                'raw-stream-ref',
+                'raw-active-stream-ref',
             ),
         );
     }
@@ -101,8 +101,8 @@ our ($LOOP, $STATE);
         $state->{accepted} = $stream;
         $state->{source_identity} = Scalar::Util::refaddr($stream);
         $state->{source_fd} = $stream->read_fd;
-        $state->{consumer_paused_before_ready}
-            = $stream->{xs_state}->consumer_paused ? 1 : 0;
+        $state->{consumer_active_before_ready}
+            = $stream->{xs_state}->consumer_paused ? 0 : 1;
     }
 
     sub on_error ($listener, $error) {
@@ -153,8 +153,8 @@ ok($ok,
     or diag $@;
 ok($STATE->{accepted},
     'Listener accepted the native-consumer Stream');
-ok($STATE->{consumer_paused_before_ready},
-    'source native consumer is still consumer-paused before TLS readiness');
+ok($STATE->{consumer_active_before_ready},
+    'source native consumer is active before TLS readiness');
 ok($STATE->{source_transport_ready},
     'TLS transport-ready callback fires before application readiness');
 ok($STATE->{source_ready},
