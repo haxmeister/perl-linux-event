@@ -91,8 +91,7 @@ static const les_consumer_ops_v1_t le_external_ops = {
     le_external_input
 };
 
-MODULE = Linux::Event::_ByteStream::ExternalTestConsumer
-    PACKAGE = Linux::Event::_ByteStream::ExternalTestConsumer
+MODULE = Linux::Event::_ByteStream::ExternalTestConsumer    PACKAGE = Linux::Event::_ByteStream::ExternalTestConsumer
 PROTOTYPES: DISABLE
 
 UV
