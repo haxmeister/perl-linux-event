@@ -22,7 +22,7 @@ our ($LOOP, $STATE);
         Linux::Event::Framer->declare_native_consumer(
             __PACKAGE__,
             Linux::Event::_ByteStream::TestSupport->_test_consumer_definition(
-                'raw-input',
+                'raw-stream-ref',
             ),
         );
     }
