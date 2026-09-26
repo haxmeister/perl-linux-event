@@ -116,7 +116,13 @@ our ($LOOP, $STATE);
     package T::TLSDuplexExecutor;
 
     sub new ($class, %arg) {
-        return bless \%arg, $class;
+        my $self = bless \%arg, $class;
+        $self->{stream}->write(
+            $self->{role} eq 'server'
+                ? "server-preface\n"
+                : "client-preface\n"
+        );
+        return $self;
     }
 
     sub input ($self, $bytes) {
@@ -395,8 +401,12 @@ $listener->close;
         'duplex client retains TLS transport');
     is($state->{duplex_server_transport}, 'tls',
         'duplex server retains TLS transport');
+    like($state->{duplex_server_input}, qr/client-preface\n/,
+        'duplex server target receives plaintext written before transition');
     like($state->{duplex_server_input}, qr/ping\n/,
         'duplex server target receives post-transition plaintext');
+    like($state->{duplex_client_input}, qr/server-preface\n/,
+        'duplex client target receives peer plaintext written before transition');
     like($state->{duplex_client_input}, qr/pong\n/,
         'duplex client target receives post-transition plaintext reply');
     ok($state->{duplex_complete},
