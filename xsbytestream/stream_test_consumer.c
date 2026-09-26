@@ -45,7 +45,7 @@ les_test_create_stream_ref(pTHX_ const les_consumer_host_api_v1_t *host,
         (les_test_consumer_t *)les_test_create(aTHX_ host, host_context, stream);
 
     if (context)
-        context->stream_ref = newSVsv(stream);
+        context->stream_ref = SvREFCNT_inc(stream);
     return context;
 }
 
