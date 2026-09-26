@@ -295,6 +295,7 @@ t/tls-30-sigpipe.t
 t/tls-40-connect-listen.t
 t/tls-41-transition-leftover.t
 t/tls-42-accept-setup-benchmark-smoke.t
+t/tls-43-native-consumer-transition.t
 t/tls-certs/server-cert.pem
 t/tls-certs/server-key.pem
 t/wakeup-00-api.t
