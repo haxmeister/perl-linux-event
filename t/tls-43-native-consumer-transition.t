@@ -378,8 +378,6 @@ $listener->close;
             alpn => ['h2', 'http/1.1'],
         ),
     );
-    $loop->add($duplex_client);
-
     my $ok = eval {
         $loop->run_for(5);
         1;
