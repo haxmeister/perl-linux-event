@@ -14,10 +14,7 @@ use Linux::Event::TLS;
 
 BEGIN {
     require XSLoader;
-    XSLoader::load(
-        'Linux::Event::_ByteStream::ExternalTestConsumer',
-        $Linux::Event::VERSION,
-    );
+    XSLoader::load('Linux::Event::_ByteStream::ExternalTestConsumer');
 }
 
 sub external_consumer_definition () {
