@@ -102,7 +102,7 @@ my $key = "$Bin/tls-certs/server-key.pem";
 my $destroyed_before =
     Linux::Event::_ByteStream::TestSupport->_test_consumer_destroy_count;
 
-my $server = T::TLSTransitionPeer->new(
+my $server = T::TLSNativeConsumerSource->new(
     loop => $loop,
     fh => $server_fh,
     data => $state,
@@ -112,7 +112,7 @@ my $server = T::TLSTransitionPeer->new(
         alpn => ['h2', 'http/1.1'],
     ),
 );
-my $client = T::TLSNativeConsumerSource->new(
+my $client = T::TLSTransitionPeer->new(
     loop => $loop,
     fh => $client_fh,
     data => $state,
@@ -122,11 +122,11 @@ my $client = T::TLSNativeConsumerSource->new(
         alpn => ['h2', 'http/1.1'],
     ),
 );
-$state->{server} = $server;
+$state->{server} = $client;
 
-my $client_identity = refaddr($client);
-my $client_fd = $client->read_fd;
-my $xs_state = $client->{xs_state};
+my $source_identity = refaddr($server);
+my $source_fd = $server->read_fd;
+my $xs_state = $server->{xs_state};
 $xs_state->_test_consumer_arm(sub {
     $state->{retired_consumer_called}++;
 });
@@ -152,9 +152,9 @@ is($state->{class_after_transition}, 'T::TLSOrdinaryRawTarget',
     'same live Stream changes to ordinary raw target class');
 is($state->{transport_after_transition}, 'tls',
     'transition retains TLS transport');
-is($state->{fd_after_transition}, $client_fd,
+is($state->{fd_after_transition}, $source_fd,
     'transition retains the same readable fd');
-is(refaddr($client), $client_identity,
+is(refaddr($server), $source_identity,
     'transition retains the same Stream object');
 ok($state->{resumed_after_transition},
     'read side resumes after transition');
@@ -172,7 +172,7 @@ is(
     'retired native-consumer context is destroyed exactly once',
 );
 
-$server->write("later-input\n");
+$client->write("later-input\n");
 $loop->run_for(0.05);
 like($state->{bytes}, qr/later-input\n\z/,
     'ordinary raw target continues receiving later TLS input');
