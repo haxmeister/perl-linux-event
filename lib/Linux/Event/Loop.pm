@@ -416,7 +416,7 @@ sub run_for ($self, $seconds) {
             my $remaining = $seconds - $elapsed;
             last if !$first && $remaining <= 0;
             # The first native entry still validates all run_for arguments.
-            $self->_run_for_native(,
+            $self->_run_for_native(
                 $remaining > 0 ? $remaining : $seconds);
             $first = 0;
             last if $driver->{user_stop};
@@ -431,7 +431,7 @@ sub run_once ($self, @args) {
         local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
         return 0 if $driver->{user_stop};
-        my $n = $self->_run_once_native(, @args);
+        my $n = $self->_run_once_native(@args);
         $self->_drain_deferred_forks if !$driver->{user_stop};
         return $n;
 }
