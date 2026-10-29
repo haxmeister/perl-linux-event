@@ -1049,7 +1049,10 @@ C<defer_fork> only queues the request. It does not fork immediately. After
 the active native dispatch has finished, the Loop uses its existing managed
 C<fork> implementation to rebuild child resources. The appropriate callback
 then runs outside dispatch: C<on_parent> receives the new PID in the parent;
-C<on_child> runs in the child with no arguments.
+C<on_child> runs in the child with no arguments. Once these callbacks return,
+the original Loop-driving method continues in the appropriate process; do
+not call C<run> recursively from C<on_child>. The application still needs
+to reap child processes and decide when a child should stop its Loop.
 
 Unlike C<fork>, this method returns a one-shot request handle rather than a
 PID. It supports C<cancel> and C<is_active>. Cancelling a request before it
