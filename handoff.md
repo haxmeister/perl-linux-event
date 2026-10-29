@@ -1,57 +1,60 @@
 # Linux::Event Handoff
 
-## ACTIVE FEATURE - callback-safe deferred managed fork (2026-10-28)
+## ACTIVE DEVELOPMENT - 0.118 (unreleased, 2026-10-28)
 
-Working branch: `feature/defer-fork`, branched from main at
-`66af732c2dbc7475dfd285841b7b0bf1ecb3b6b0`.
-Do not merge to main or prepare a release without further approval.
+The callback-safe deferred managed fork work is implemented on
+`feature/defer-fork` and proposed in PR #35 against `main`. The user
+explicitly approved merging this feature, documentation updates, and a 0.118
+development version bump. **No GitHub release, tag, or CPAN upload is
+authorized yet**; additional core work may be included before release.
 
-This feature adds `Loop->defer_fork(share => [], clone => [], move => [],
-on_parent => sub ($pid) {}, on_child => sub {}, on_error => sub ($error) {})`.
-The call returns a cancelable one-shot request handle, not a synchronous PID.
-It queues a normal deferred wakeup; the deferred callback asks the native
-driver to stop, and the outer Perl driver wrapper performs the existing
-managed fork only after native dispatch and driver ownership have unwound.
-`fork()` remains quiescent-only.
+The 0.118 version bump updates all 30 versioned Perl modules, both checked-in
+META files, and `Changes` (with an unreleased heading). The new internal
+`Linux::Event::_DeferredFork` is excluded from CPAN indexing. Documentation
+is updated in README, the top-level and Loop POD, `docs/CORE.md`,
+`docs/V1-ROADMAP.md`, and `bench/README.md`.
 
-The Perl driver boundary is wrapped for `run`, `run_for`, `run_once`,
-and `poll`. The epoll event-dispatch hot path in XS is unchanged. Explicit
-application `stop` requests override automatic driving continuation.
-The child drops all inherited outstanding deferred fork requests, while the
-parent may process queued requests in order. Requests added from completion
-callbacks wait for a later driver turn.
+API:
 
-Implementation: `lib/Linux/Event/Loop.pm`. New focused tests:
-`t/loop-defer-fork.t`; added to MANIFEST. Public API documentation is in
-Loop.pm POD, with roadmap notes in `docs/V1-ROADMAP.md`.
+```perl
+$loop->defer_fork(
+    move      => [$stream],
+    on_parent => sub ($pid) { ... },
+    on_child  => sub { ... },
+    on_error  => sub ($error) { ... },
+);
+```
 
-Validation completed on functional head `e6ad39c57883dc5303a5be50b3e1097af0614bb7`:
-- CI run 40801811654: all eight Perl configurations passed, including both
-  threaded builds, distribution integrity and existing 10% regression gate.
-- Foreign-loop integration run 40801811559: passed.
-- Median full-suite throughput changes relative to main were -0.04% for
-  registration lifecycle, +0.42% for timer lifecycle, +1.57% for timer
-  expiration, -0.66% for raw Stream throughput, -1.51% for deadline Stream
-  throughput, -1.58% for framed Stream throughput, and +3.53% for
-  connection lifecycle. All workloads were within the 10% threshold.
+`defer_fork` queues the request and returns a cancelable one-shot handle,
+not a child PID. Existing `share`, `clone`, `move` restrictions apply:
+plain established socket Streams support move; TLS Streams do not.
+The original `fork()` remains quiescent-only.
 
-Focused microbenchmark added as `bench/defer-fork-driver-overhead.pl` with
-the `defer-fork-benchmark.yml` PR workflow. GitHub Actions run 40804777781
-on threaded-off Perl 5.44, 300,000 calls/sample, 9 samples, compared public
-drivers to their private native XS entries (no pending deferred forks):
-- `poll()`: native 490.8 ns, public 1308.9 ns; +818.1 ns (+166.7%).
-- `run_once(0)`: native 498.7 ns, public 1404.8 ns; +906.1 ns (+181.7%).
-This measures public driver-boundary overhead, not end-to-end throughput. The
-relative percentages are large because each native empty-loop call is under
-500 ns; the absolute overhead stays under 1 microsecond per invocation on
-this runner. No per-event hot-path modifications were made.
+The underlying native epoll dispatcher remains unchanged. A `defer()`
+wakeup exits the active native driver, then the Perl driver boundary performs
+the existing managed fork at a quiescent point. Parent/child callbacks run
+outside native dispatch. Pending requests are not inherited in a child;
+explicit `stop()` takes priority. The application manages process reaping.
 
-PR #35 remains draft on the feature branch. No code has been merged to main,
-and the API is not released. No changes to Unblock or Linux::Event::HTTP.
+Functional validation of the implementation before the 0.118 version bump:
+CI run 40801811654 passed all eight Perl configurations, threaded builds,
+distribution integrity, and the ten-percent full performance regression gate.
+Foreign-loop integration run 40801811559 also passed.
 
-The material below records the previous 0.117 release and older history.
+Focused benchmark, run 40804777781 on non-threaded Perl 5.44 (9 medians,
+300,000 empty calls/sample, no forks):
+- `poll()`: native 490.8 ns, public 1308.9 ns; +818.1 ns.
+- `run_once(0)`: native 498.7 ns, public 1404.8 ns; +906.1 ns.
+The end-to-end Stream throughput deltas in the full gate were -0.66% raw,
+-1.51% deadline, and -1.58% framed. These are single-run measurements,
+not an assumed cost for ordinary server dispatch.
 
-## CURRENT STATE - 0.117 release ready on main
+Final CI is required on the updated 0.118 version before merging PR #35.
+After merge, update this handoff with the exact main commit and validation.
+Do not tag, upload to CPAN, or publish a release.
+
+## HISTORICAL STATE - 0.117 release on main (prior to 0.118 work)
+
 
 Release PR #31 was squash-merged to main as
 `3338169bd8ba6d56a554b05556e0c049d9a43fa0` on 2026-09-24.
