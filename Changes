@@ -1,5 +1,20 @@
 Revision history for Linux-Event
 
+0.118  (unreleased)
+    - Add Loop->defer_fork() so socket, timer, and other event callbacks can
+      request a managed fork without forking inside native dispatch. Reuse
+      the existing resource-aware share/clone/move dispositions and child
+      reconstruction handshake. Parent and child completion callbacks run
+      only after the native driver has returned to a quiescent point.
+    - Return a cancelable one-shot request handle, support on_error for
+      deferred failures, preserve explicit stop priority, and discard pending
+      fork requests inherited by a child to prevent unintended repeated
+      forks. Support run(), run_for(), run_once(), and poll() with the same
+      application-facing API. Ordinary Loop->fork() remains quiescent-only.
+    - Keep epoll dispatch in native XS. Add targeted deferred-fork regression
+      coverage and an isolated public/native driver overhead benchmark.
+      Update examples and documentation for callback-triggered forking.
+
 0.117  2026-09-24
     - Rewrite public POD with clearer constructor placement, callback
       signatures, lifecycle explanations, and practical examples. Keep

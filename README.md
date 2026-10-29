@@ -167,6 +167,37 @@ socket Stream supports `move`. A move does not tear down the parent side until
 the child reports successful reconstruction. Ordinary `CORE::fork` does not
 make an inherited Loop reusable.
 
+To request a fork **inside a socket or timer callback**, use
+`$loop->defer_fork(...)` instead of calling `fork()` directly:
+
+```perl
+# Inside a connected, plain socket Stream's on_data callback:
+if ($bytes eq 'FORK') {
+    $loop->defer_fork(
+        move => [$stream],
+        on_parent => sub ($pid) {
+            say "Connection moved to child $pid";
+        },
+        on_child => sub {
+            say "Child now owns this connection";
+        },
+        on_error => sub ($error) {
+            warn "Could not fork: $error";
+        },
+    );
+}
+```
+
+The request is queued; the actual fork occurs after the active native
+dispatch finishes. The parent receives the child's PID in `on_parent`;
+`on_child` runs in the child with no arguments. Normal Loop driving resumes
+after those callbacks. `defer_fork()` returns a one-shot handle with
+`cancel` and `is_active` rather than returning a PID immediately.
+Dropping the handle does not cancel the request. The application is
+responsible for reaping its children. The same resource restrictions apply
+as with `fork()`: plain established Streams can move to a child, but TLS
+Streams cannot currently move.
+
 ## Filesystem notification
 
 `Linux::Event::Kernel::Inotify` owns one Linux inotify instance and any number
