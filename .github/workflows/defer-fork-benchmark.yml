@@ -1,0 +1,32 @@
+name: Deferred fork driver microbenchmark
+
+on:
+  pull_request:
+    paths:
+      - 'lib/Linux/Event/Loop.pm'
+      - 'xsloop/Loop.xs'
+      - 'bench/defer-fork-driver-overhead.pl'
+      - '.github/workflows/defer-fork-benchmark.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: Public vs native drivers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5"
+          multi-thread: false
+      - run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+          perl Makefile.PL
+          make --jobs=2
+          perl -Mblib bench/defer-fork-driver-overhead.pl

@@ -18,6 +18,7 @@ bench/archive/run-phase18.pl
 bench/archive/run-watcher-reuse-bench.pl
 bench/LINE-RUNTIME-COMPARISON.md
 bench/README.md
+bench/defer-fork-driver-overhead.pl
 bench/results/.gitkeep
 bench/run-async-consumer-lifetime-bench.pl
 bench/run-callback-batching-fairness.pl
@@ -201,6 +202,7 @@ t/listener-16-callbacks.t
 t/listener-17-first-class-stream-callbacks.t
 t/listener-18-first-class-callback-benchmark-smoke.t
 t/loop-foreign-integration.t
+t/loop-defer-fork.t
 t/loop-fork.t
 t/process-00-api.t
 t/process-10-spawn.t

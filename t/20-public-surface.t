@@ -212,6 +212,7 @@ my %allowed = map { $_ => 1 } qw(
     README.md
     STREAM-COMPETITOR-PLAN.md
     run-async-consumer-lifetime-bench.pl
+    defer-fork-driver-overhead.pl
     run-connect-microbench.pl
     run-listen-microbench.pl
     run-line-runtime-comparison.pl

@@ -1,6 +1,60 @@
 # Linux::Event Handoff
 
-## CURRENT STATE - 0.117 release ready on main
+## ACTIVE DEVELOPMENT - 0.118 (unreleased, 2026-10-28)
+
+The callback-safe deferred managed fork work is implemented on
+`feature/defer-fork` and proposed in PR #35 against `main`. The user
+explicitly approved merging this feature, documentation updates, and a 0.118
+development version bump. **No GitHub release, tag, or CPAN upload is
+authorized yet**; additional core work may be included before release.
+
+The 0.118 version bump updates all 30 versioned Perl modules, both checked-in
+META files, and `Changes` (with an unreleased heading). The new internal
+`Linux::Event::_DeferredFork` is excluded from CPAN indexing. Documentation
+is updated in README, the top-level and Loop POD, `docs/CORE.md`,
+`docs/V1-ROADMAP.md`, and `bench/README.md`.
+
+API:
+
+```perl
+$loop->defer_fork(
+    move      => [$stream],
+    on_parent => sub ($pid) { ... },
+    on_child  => sub { ... },
+    on_error  => sub ($error) { ... },
+);
+```
+
+`defer_fork` queues the request and returns a cancelable one-shot handle,
+not a child PID. Existing `share`, `clone`, `move` restrictions apply:
+plain established socket Streams support move; TLS Streams do not.
+The original `fork()` remains quiescent-only.
+
+The underlying native epoll dispatcher remains unchanged. A `defer()`
+wakeup exits the active native driver, then the Perl driver boundary performs
+the existing managed fork at a quiescent point. Parent/child callbacks run
+outside native dispatch. Pending requests are not inherited in a child;
+explicit `stop()` takes priority. The application manages process reaping.
+
+Functional validation of the implementation before the 0.118 version bump:
+CI run 40801811654 passed all eight Perl configurations, threaded builds,
+distribution integrity, and the ten-percent full performance regression gate.
+Foreign-loop integration run 40801811559 also passed.
+
+Focused benchmark, run 40804777781 on non-threaded Perl 5.44 (9 medians,
+300,000 empty calls/sample, no forks):
+- `poll()`: native 490.8 ns, public 1308.9 ns; +818.1 ns.
+- `run_once(0)`: native 498.7 ns, public 1404.8 ns; +906.1 ns.
+The end-to-end Stream throughput deltas in the full gate were -0.66% raw,
+-1.51% deadline, and -1.58% framed. These are single-run measurements,
+not an assumed cost for ordinary server dispatch.
+
+Final CI is required on the updated 0.118 version before merging PR #35.
+After merge, update this handoff with the exact main commit and validation.
+Do not tag, upload to CPAN, or publish a release.
+
+## HISTORICAL STATE - 0.117 release on main (prior to 0.118 work)
+
 
 Release PR #31 was squash-merged to main as
 `3338169bd8ba6d56a554b05556e0c049d9a43fa0` on 2026-09-24.
