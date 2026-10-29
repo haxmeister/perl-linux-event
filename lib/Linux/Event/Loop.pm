@@ -1026,10 +1026,12 @@ resource lists as C<fork>, plus three optional callbacks:
   on_child  => sub { ... }
   on_error  => sub ($message) { ... }
 
-For example, to give a connected client its own child process:
+For example, to give a connected client its own child process
+when it sends one complete framed message:
 
-  on_data => sub ($stream, $bytes) {
-      return unless $bytes eq 'FORK';
+  # Inside a Stream configured with a message framer:
+  on_message => sub ($stream, $message) {
+      return unless $message eq 'FORK';
 
       $loop->defer_fork(
           move => [$stream],
