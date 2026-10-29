@@ -19,7 +19,7 @@ our @ISA = ('Linux::Event::Loop::Introspection');
 
 fieldhash my %DEFER_STATE;
 fieldhash my %DEFER_FORK_STATE;
-fieldhash my %FORK_DRIVER_STATE;
+my $FORK_DRIVER_FRAME;
 my $DEFER_CALLBACK_BATCH = 1024;
 
 # Native drivers are private XS entry points. The public Perl boundary does
@@ -337,6 +337,17 @@ sub _fork_child_reset_deferred_forks ($self) {
     return;
 }
 
+# Driver frames are dynamically scoped, never stored on a Loop. In particular,
+# this avoids retaining Loop-owned objects across Perl ithread cloning.
+sub _current_fork_driver ($self) {
+    my $frame = $FORK_DRIVER_FRAME;
+    while ($frame) {
+        return $frame if refaddr($frame->{loop}) == refaddr($self);
+        $frame = $frame->{parent};
+    }
+    return undef;
+}
+
 sub _drain_deferred_forks ($self) {
     my $state = $DEFER_FORK_STATE{$self};
     return 0 if !$state || !$state->{pending};
@@ -346,12 +357,13 @@ sub _drain_deferred_forks ($self) {
     my $eligible = scalar @{ $state->{queue} };
     my $processed = 0;
     for (1 .. $eligible) {
-        my $driver = $FORK_DRIVER_STATE{$self};
+        my $driver = $self->_current_fork_driver;
         last if $driver && $driver->{user_stop};
         my $request = shift @{ $state->{queue} };
         next if !$request || !$request->{active};
         $request->{active} = 0;
         $state->{pending}--;
+        $processed++;
         my $options = delete $request->{options};
         my $on_parent = delete $request->{on_parent};
         my $on_child = delete $request->{on_child};
@@ -368,7 +380,6 @@ sub _drain_deferred_forks ($self) {
             die $error;
         }
 
-        $processed++;
         if ($pid == 0) {
             # fork() has discarded the inherited queue in this child.
             $on_child->() if $on_child;
@@ -383,16 +394,19 @@ sub _drain_deferred_forks ($self) {
 
 sub stop ($self) {
         # A user stop must not be mistaken for defer_fork's internal wakeup.
-        my $driver = $FORK_DRIVER_STATE{$self};
-        $driver->{user_stop} = 1 if $driver && $driver->{active};
+        my $driver = $self->_current_fork_driver;
+        $driver->{user_stop} = 1 if $driver;
         $self->_stop_native();
         return;
 }
 
 sub run ($self) {
-        my $driver = $FORK_DRIVER_STATE{$self} //= {};
-        local $driver->{active} = 1;
-        local $driver->{user_stop} = 0;
+        my $driver = {
+            loop => $self,
+            parent => $FORK_DRIVER_FRAME,
+            user_stop => 0,
+        };
+        local $FORK_DRIVER_FRAME = $driver;
         $self->_drain_deferred_forks;
         while (!$driver->{user_stop}) {
             $self->_run_native();
@@ -405,9 +419,12 @@ sub run ($self) {
 sub run_for ($self, $seconds) {
         require Time::HiRes;
         my $started = Time::HiRes::clock_gettime(Time::HiRes::CLOCK_MONOTONIC());
-        my $driver = $FORK_DRIVER_STATE{$self} //= {};
-        local $driver->{active} = 1;
-        local $driver->{user_stop} = 0;
+        my $driver = {
+            loop => $self,
+            parent => $FORK_DRIVER_FRAME,
+            user_stop => 0,
+        };
+        local $FORK_DRIVER_FRAME = $driver;
         $self->_drain_deferred_forks;
         my $first = 1;
         while (!$driver->{user_stop}) {
@@ -426,9 +443,12 @@ sub run_for ($self, $seconds) {
 }
 
 sub run_once ($self, @args) {
-        my $driver = $FORK_DRIVER_STATE{$self} //= {};
-        local $driver->{active} = 1;
-        local $driver->{user_stop} = 0;
+        my $driver = {
+            loop => $self,
+            parent => $FORK_DRIVER_FRAME,
+            user_stop => 0,
+        };
+        local $FORK_DRIVER_FRAME = $driver;
         $self->_drain_deferred_forks;
         return 0 if $driver->{user_stop};
         my $n = $self->_run_once_native(@args);
@@ -437,9 +457,12 @@ sub run_once ($self, @args) {
 }
 
 sub poll ($self) {
-        my $driver = $FORK_DRIVER_STATE{$self} //= {};
-        local $driver->{active} = 1;
-        local $driver->{user_stop} = 0;
+        my $driver = {
+            loop => $self,
+            parent => $FORK_DRIVER_FRAME,
+            user_stop => 0,
+        };
+        local $FORK_DRIVER_FRAME = $driver;
         $self->_drain_deferred_forks;
         return 0 if $driver->{user_stop};
         my $n = $self->_poll_native();
