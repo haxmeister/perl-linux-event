@@ -212,7 +212,9 @@ driver is still dispatching events.
 Inside a callback, use `defer_fork()` instead:
 
 ```perl
-# In an established plain Stream's on_data callback:
+# In an established plain Stream's on_message callback (with a framer):
+# $stream is the connected Stream, and $message is a complete message.
+return unless $message eq 'FORK';
 $loop->defer_fork(
     move => [$stream],
     on_parent => sub ($pid) {
