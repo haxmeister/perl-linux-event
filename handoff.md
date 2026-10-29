@@ -1,5 +1,51 @@
 # Linux::Event Handoff
 
+## ACTIVE EXPERIMENT — EPOLLEXCLUSIVE shared-listener evaluation (2026-10-29)
+
+- Branch: `feature/epollexclusive-evaluation` from main
+  `08d775cc2287fb63942c2a27b3a6bfeb59a28aa3`.
+- Draft PR: https://github.com/haxmeister/perl-linux-event/pull/36
+- Main remains untouched; no production Loop/Listener changes have been made.
+- Source development release 0.118 remains unreleased. Do not bump, tag,
+  release, or merge the experiment without explicit approval.
+
+Experiment setup: standalone Linux C benchmark in
+`bench/experiments/epollexclusive-accept.c`; CI in
+`.github/workflows/epollexclusive-evaluation.yml`.
+Run succeeded: https://github.com/haxmeister/perl-linux-event/actions/runs/40976555921
+Full analysis:
+`bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`. Plan:
+`docs/EPOLLEXCLUSIVE-EVALUATION.md`.
+
+Key median findings, 8 workers, 1,200 burst TCP connections:
+- Empty handler: shared 18,265/s, EPOLLEXCLUSIVE 28,513/s,
+  SO_REUSEPORT 31,948/s.
+- Empty-accept wakeups: shared 1,384, exclusive 0, reuseport 0.
+- Exclusive worker imbalance: min/max 0/1193; reuseport 138/171.
+- With simulated 150us CPU per accepted connection: shared 18,596/s,
+  exclusive 20,043/s, reuseport 18,676/s. Large apparent exclusive
+  advantage narrows when application work is included; reuseport
+  distributes work more evenly.
+- The benchmark is *not* a real Linux::Event Stream server or definitive
+  basis to change the default accept mechanism. CI is shared hardware.
+
+Important kernel and core constraints before implementation:
+- EPOLLEXCLUSIVE is ADD-only; subsequent epoll MOD yields EINVAL.
+  Listener pause/resume currently uses MOD.
+- `fork(share=>[$listener])` leaves parent registration in place and
+  reconstructs child registration. BOTH must become exclusive, before
+  the child starts accepting. An ordinary parent epoll still wakes.
+- Need robust rollback, pause/resume, detach/close, fork cancellation,
+  worker fairness, accept budgets, and realistic Stream workload tests.
+- SO_REUSEPORT is a separate-socket architecture rather than an automatic
+  replacement for managed shared listeners.
+
+Next task: prototype minimal **internal-only** exclusive registration on
+this feature branch, then compare actual Linux::Event fork-sharing servers
+against ordinary shared listeners and independent SO_REUSEPORT workers.
+Preserve public defaults and benchmark the impact. Do not merge until
+correctness, fairness, and CPU gains justify the complexity.
+
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
 The callback-safe deferred managed fork feature was squash-merged to main from
