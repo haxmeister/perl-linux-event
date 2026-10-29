@@ -1,0 +1,73 @@
+name: EPOLLEXCLUSIVE evaluation
+
+on:
+  push:
+    branches:
+      - feature/epollexclusive-evaluation
+    paths:
+      - 'bench/experiments/epollexclusive-accept.c'
+      - 'docs/EPOLLEXCLUSIVE-EVALUATION.md'
+      - '.github/workflows/epollexclusive-evaluation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: Kernel accept benchmark (research only)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Build kernel benchmark
+        run: |
+          cc -O2 -Wall -Wextra -Werror -std=gnu11 \
+            -o /tmp/le-exclusive bench/experiments/epollexclusive-accept.c
+          uname -a
+          nproc
+      - name: Run paired accept matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bench/results/epollexclusive
+          echo "Modes: shared, exclusive, reuseport; workers 1/2/4/8"
+          for trial in 1 2 3; do
+            for workers in 1 2 4 8; do
+              for shape in burst sparse; do
+                if [ "$shape" = burst ]; then
+                  count=1200; gap=0
+                else
+                  count=300; gap=2000
+                fi
+                for mode in shared exclusive reuseport; do
+                  echo "trial=$trial shape=$shape workers=$workers mode=$mode"
+                  /tmp/le-exclusive "$mode" "$workers" "$count" "$gap" |
+                    tee -a bench/results/epollexclusive/results.jsonl
+                done
+              done
+            done
+          done
+      - name: Summarize results
+        run: |
+          python3 - <<'PY'
+          import collections, json, statistics
+          rows = [json.loads(x) for x in open('bench/results/epollexclusive/results.jsonl')]
+          grouped = collections.defaultdict(list)
+          for row in rows:
+              grouped[(row['workers'],row['gap_us'],row['mode'])].append(row)
+          for (workers,gap,mode), data in sorted(grouped.items()):
+              med = lambda key: statistics.median(d[key] for d in data)
+              print(f"workers={workers:2d} gap={gap:4d} mode={mode:9s} "
+                    f"rate={med('rate_per_s'):9.0f}/s "
+                    f"cpu={med('worker_cpu_s'):6.4f}s "
+                    f"wake={med('wakeup_events'):7.0f} "
+                    f"empty={med('zero_accept_wakeups'):7.0f} "
+                    f"min/max={med('min_worker_accepted'):.0f}/{med('max_worker_accepted'):.0f}")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: epollexclusive-benchmark-raw
+          path: bench/results/epollexclusive/results.jsonl
+          if-no-files-found: warn
