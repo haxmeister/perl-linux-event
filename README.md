@@ -171,8 +171,9 @@ To request a fork **inside a socket or timer callback**, use
 `$loop->defer_fork(...)` instead of calling `fork()` directly:
 
 ```perl
-# Inside a connected, plain socket Stream's on_data callback:
-if ($bytes eq 'FORK') {
+# Inside a framed, connected Stream's on_message callback:
+# The framer ensures that $message is one complete message.
+if ($message eq 'FORK') {
     $loop->defer_fork(
         move => [$stream],
         on_parent => sub ($pid) {
