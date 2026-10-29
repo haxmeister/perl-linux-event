@@ -25,10 +25,29 @@ Implementation: `lib/Linux/Event/Loop.pm`. New focused tests:
 `t/loop-defer-fork.t`; added to MANIFEST. Public API documentation is in
 Loop.pm POD, with roadmap notes in `docs/V1-ROADMAP.md`.
 
-Validation is not complete: source build, full Linux test suite, and CI
-performance regression gate need to pass before this feature can be considered
-ready. Check the feature PR CI and correct any failures. No changes are
-needed in Unblock or Linux::Event::HTTP for this feature.
+Validation completed on functional head `e6ad39c57883dc5303a5be50b3e1097af0614bb7`:
+- CI run 40801811654: all eight Perl configurations passed, including both
+  threaded builds, distribution integrity and existing 10% regression gate.
+- Foreign-loop integration run 40801811559: passed.
+- Median full-suite throughput changes relative to main were -0.04% for
+  registration lifecycle, +0.42% for timer lifecycle, +1.57% for timer
+  expiration, -0.66% for raw Stream throughput, -1.51% for deadline Stream
+  throughput, -1.58% for framed Stream throughput, and +3.53% for
+  connection lifecycle. All workloads were within the 10% threshold.
+
+Focused microbenchmark added as `bench/defer-fork-driver-overhead.pl` with
+the `defer-fork-benchmark.yml` PR workflow. GitHub Actions run 40804777781
+on threaded-off Perl 5.44, 300,000 calls/sample, 9 samples, compared public
+drivers to their private native XS entries (no pending deferred forks):
+- `poll()`: native 490.8 ns, public 1308.9 ns; +818.1 ns (+166.7%).
+- `run_once(0)`: native 498.7 ns, public 1404.8 ns; +906.1 ns (+181.7%).
+This measures public driver-boundary overhead, not end-to-end throughput. The
+relative percentages are large because each native empty-loop call is under
+500 ns; the absolute overhead stays under 1 microsecond per invocation on
+this runner. No per-event hot-path modifications were made.
+
+PR #35 remains draft on the feature branch. No code has been merged to main,
+and the API is not released. No changes to Unblock or Linux::Event::HTTP.
 
 The material below records the previous 0.117 release and older history.
 
