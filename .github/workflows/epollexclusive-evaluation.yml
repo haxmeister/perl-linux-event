@@ -48,6 +48,19 @@ jobs:
               done
             done
           done
+      - name: Run loaded-handler comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          for trial in 1 2 3; do
+            for workers in 4 8; do
+              for mode in shared exclusive reuseport; do
+                echo "loaded trial=$trial workers=$workers mode=$mode"
+                /tmp/le-exclusive "$mode" "$workers" 1200 0 150 |
+                  tee -a bench/results/epollexclusive/results.jsonl
+              done
+            done
+          done
       - name: Summarize results
         run: |
           python3 - <<'PY'
@@ -55,10 +68,10 @@ jobs:
           rows = [json.loads(x) for x in open('bench/results/epollexclusive/results.jsonl')]
           grouped = collections.defaultdict(list)
           for row in rows:
-              grouped[(row['workers'],row['gap_us'],row['mode'])].append(row)
-          for (workers,gap,mode), data in sorted(grouped.items()):
+              grouped[(row['workers'],row['gap_us'],row['work_us'],row['mode'])].append(row)
+          for (workers,gap,work,mode), data in sorted(grouped.items()):
               med = lambda key: statistics.median(d[key] for d in data)
-              print(f"workers={workers:2d} gap={gap:4d} mode={mode:9s} "
+              print(f"workers={workers:2d} gap={gap:4d} work={work:3d} mode={mode:9s} "
                     f"rate={med('rate_per_s'):9.0f}/s "
                     f"cpu={med('worker_cpu_s'):6.4f}s "
                     f"wake={med('wakeup_events'):7.0f} "
