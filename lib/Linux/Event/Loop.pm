@@ -19,8 +19,7 @@ our @ISA = ('Linux::Event::Loop::Introspection');
 
 fieldhash my %DEFER_STATE;
 fieldhash my %DEFER_FORK_STATE;
-fieldhash my %FORK_DRIVER_ACTIVE;
-fieldhash my %FORK_USER_STOP;
+fieldhash my %FORK_DRIVER_STATE;
 my $DEFER_CALLBACK_BATCH = 1024;
 
 # Keep the original native drivers. Only their entry/exit is wrapped; the
@@ -349,7 +348,8 @@ sub _drain_deferred_forks ($self) {
     my $eligible = scalar @{ $state->{queue} };
     my $processed = 0;
     for (1 .. $eligible) {
-        last if $FORK_USER_STOP{$self};
+        my $driver = $FORK_DRIVER_STATE{$self};
+        last if $driver && $driver->{user_stop};
         my $request = shift @{ $state->{queue} };
         next if !$request || !$request->{active};
         $request->{active} = 0;
@@ -388,18 +388,20 @@ sub _drain_deferred_forks ($self) {
 
     *stop = sub ($self) {
         # A user stop must not be mistaken for defer_fork's internal wakeup.
-        $FORK_USER_STOP{$self} = 1 if $FORK_DRIVER_ACTIVE{$self};
+        my $driver = $FORK_DRIVER_STATE{$self};
+        $driver->{user_stop} = 1 if $driver && $driver->{active};
         $NATIVE_DRIVER{stop}->($self);
         return;
     };
 
     *run = sub ($self) {
-        local $FORK_DRIVER_ACTIVE{$self} = 1;
-        local $FORK_USER_STOP{$self} = 0;
+        my $driver = $FORK_DRIVER_STATE{$self} //= {};
+        local $driver->{active} = 1;
+        local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
-        while (!$FORK_USER_STOP{$self}) {
+        while (!$driver->{user_stop}) {
             $NATIVE_DRIVER{run}->($self);
-            last if $FORK_USER_STOP{$self};
+            last if $driver->{user_stop};
             last if !$self->_drain_deferred_forks;
         }
         return;
@@ -408,39 +410,45 @@ sub _drain_deferred_forks ($self) {
     *run_for = sub ($self, $seconds) {
         require Time::HiRes;
         my $started = Time::HiRes::clock_gettime(Time::HiRes::CLOCK_MONOTONIC());
-        local $FORK_DRIVER_ACTIVE{$self} = 1;
-        local $FORK_USER_STOP{$self} = 0;
+        my $driver = $FORK_DRIVER_STATE{$self} //= {};
+        local $driver->{active} = 1;
+        local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
-        while (!$FORK_USER_STOP{$self}) {
+        my $first = 1;
+        while (!$driver->{user_stop}) {
             my $elapsed = Time::HiRes::clock_gettime(
                 Time::HiRes::CLOCK_MONOTONIC()) - $started;
             my $remaining = $seconds - $elapsed;
-            # Always let native validation run on the first entry.
-            last if $remaining <= 0 && $elapsed > 0 && $seconds > 0;
-            $NATIVE_DRIVER{run_for}->($self, $remaining > 0 ? $remaining : $seconds);
-            last if $FORK_USER_STOP{$self};
+            last if !$first && $remaining <= 0;
+            # The first native entry still validates all run_for arguments.
+            $NATIVE_DRIVER{run_for}->($self,
+                $remaining > 0 ? $remaining : $seconds);
+            $first = 0;
+            last if $driver->{user_stop};
             last if !$self->_drain_deferred_forks;
         }
         return;
     };
 
     *run_once = sub ($self, @args) {
-        local $FORK_DRIVER_ACTIVE{$self} = 1;
-        local $FORK_USER_STOP{$self} = 0;
+        my $driver = $FORK_DRIVER_STATE{$self} //= {};
+        local $driver->{active} = 1;
+        local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
-        return 0 if $FORK_USER_STOP{$self};
+        return 0 if $driver->{user_stop};
         my $n = $NATIVE_DRIVER{run_once}->($self, @args);
-        $self->_drain_deferred_forks if !$FORK_USER_STOP{$self};
+        $self->_drain_deferred_forks if !$driver->{user_stop};
         return $n;
     };
 
     *poll = sub ($self) {
-        local $FORK_DRIVER_ACTIVE{$self} = 1;
-        local $FORK_USER_STOP{$self} = 0;
+        my $driver = $FORK_DRIVER_STATE{$self} //= {};
+        local $driver->{active} = 1;
+        local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
-        return 0 if $FORK_USER_STOP{$self};
+        return 0 if $driver->{user_stop};
         my $n = $NATIVE_DRIVER{poll}->($self);
-        $self->_drain_deferred_forks if !$FORK_USER_STOP{$self};
+        $self->_drain_deferred_forks if !$driver->{user_stop};
         return $n;
     };
 }
