@@ -1,5 +1,37 @@
 # Linux::Event Handoff
 
+## ACTIVE FEATURE - callback-safe deferred managed fork (2026-10-28)
+
+Working branch: `feature/defer-fork`, branched from main at
+`66af732c2dbc7475dfd285841b7b0bf1ecb3b6b0`.
+Do not merge to main or prepare a release without further approval.
+
+This feature adds `Loop->defer_fork(share => [], clone => [], move => [],
+on_parent => sub ($pid) {}, on_child => sub {}, on_error => sub ($error) {})`.
+The call returns a cancelable one-shot request handle, not a synchronous PID.
+It queues a normal deferred wakeup; the deferred callback asks the native
+driver to stop, and the outer Perl driver wrapper performs the existing
+managed fork only after native dispatch and driver ownership have unwound.
+`fork()` remains quiescent-only.
+
+The Perl driver boundary is wrapped for `run`, `run_for`, `run_once`,
+and `poll`. The epoll event-dispatch hot path in XS is unchanged. Explicit
+application `stop` requests override automatic driving continuation.
+The child drops all inherited outstanding deferred fork requests, while the
+parent may process queued requests in order. Requests added from completion
+callbacks wait for a later driver turn.
+
+Implementation: `lib/Linux/Event/Loop.pm`. New focused tests:
+`t/loop-defer-fork.t`; added to MANIFEST. Public API documentation is in
+Loop.pm POD, with roadmap notes in `docs/V1-ROADMAP.md`.
+
+Validation is not complete: source build, full Linux test suite, and CI
+performance regression gate need to pass before this feature can be considered
+ready. Check the feature PR CI and correct any failures. No changes are
+needed in Unblock or Linux::Event::HTTP for this feature.
+
+The material below records the previous 0.117 release and older history.
+
 ## CURRENT STATE - 0.117 release ready on main
 
 Release PR #31 was squash-merged to main as
