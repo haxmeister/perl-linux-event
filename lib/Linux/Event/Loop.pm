@@ -18,7 +18,15 @@ require Linux::Event::Loop::Introspection;
 our @ISA = ('Linux::Event::Loop::Introspection');
 
 fieldhash my %DEFER_STATE;
+fieldhash my %DEFER_FORK_STATE;
+fieldhash my %FORK_DRIVER_ACTIVE;
+fieldhash my %FORK_USER_STOP;
 my $DEFER_CALLBACK_BATCH = 1024;
+
+# Keep the original native drivers. Only their entry/exit is wrapped; the
+# epoll and callback dispatch loops remain entirely in XS.
+my %NATIVE_DRIVER = map { $_ => __PACKAGE__->can($_) }
+    qw(run run_for run_once poll stop);
 
 sub _fork_write_all ($fh, $bytes) {
     my $offset = 0;
@@ -122,6 +130,7 @@ sub fork ($self, %option) {
             $self->_fork_child_reset;
             $self->reset_stats;
             $self->_fork_child_reset_deferred;
+            $self->_fork_child_reset_deferred_forks;
             require Linux::Event::Kernel::Signal;
             Linux::Event::Kernel::Signal->_fork_child_drop_loop($self);
 
@@ -254,6 +263,188 @@ sub _deferred_fd ($self) {
     return $state ? $state->{fd} : undef;
 }
 
+
+# A deferred fork cannot execute in a normal defer() callback: that callback
+# still runs inside the native driver. The defer eventfd only asks the driver
+# to exit. We perform the managed fork after its XS frame has unwound.
+sub defer_fork ($self, %option) {
+    $self->_assert_owner_native('defer_fork');
+
+    my %known = map { $_ => 1 }
+        qw(share clone move on_parent on_child on_error);
+    my @unknown = sort grep { !$known{$_} } keys %option;
+    croak 'defer_fork(): unknown options: ' . join(', ', @unknown)
+        if @unknown;
+
+    for my $mode (qw(share clone move)) {
+        next if !exists $option{$mode};
+        croak "defer_fork(): $mode must be an array reference"
+            if ref($option{$mode}) ne 'ARRAY';
+    }
+    for my $callback (qw(on_parent on_child on_error)) {
+        next if !exists $option{$callback};
+        croak "defer_fork(): $callback must be a coderef"
+            if ref($option{$callback}) ne 'CODE';
+    }
+
+    my $state = $DEFER_FORK_STATE{$self} //= { queue => [], pending => 0 };
+    my $request = bless {
+        state   => $state,
+        options => { map { $_ => $option{$_} }
+            grep { exists $option{$_} } qw(share clone move) },
+        on_parent => delete $option{on_parent},
+        on_child  => delete $option{on_child},
+        on_error  => delete $option{on_error},
+        active    => 1,
+    }, 'Linux::Event::_DeferredFork';
+    weaken($request->{state});
+    push @{ $state->{queue} }, $request;
+    $state->{pending}++;
+
+    # A wakeup also handles requests scheduled while no driver is running,
+    # and makes requests queued by on_parent wait for another Loop turn.
+    my $weak_loop = $self;
+    my $weak_request = $request;
+    weaken($weak_loop);
+    weaken($weak_request);
+    my $ok = eval {
+        $self->defer(sub {
+            my $loop = $weak_loop // return;
+            my $pending = $weak_request // return;
+            $NATIVE_DRIVER{stop}->($loop)
+                if $pending->{active} && $loop->running;
+        });
+        1;
+    };
+    if (!$ok) {
+        my $error = $@;
+        pop @{ $state->{queue} };
+        $state->{pending}--;
+        $request->{active} = 0;
+        delete @$request{qw(options on_parent on_child on_error)};
+        die $error;
+    }
+    return $request;
+}
+
+sub _fork_child_reset_deferred_forks ($self) {
+    my $state = delete $DEFER_FORK_STATE{$self};
+    return if !$state;
+    for my $request (@{ $state->{queue} }) {
+        next if !$request;
+        $request->{active} = 0;
+        delete @$request{qw(options on_parent on_child on_error)};
+    }
+    $state->{queue} = [];
+    $state->{pending} = 0;
+    return;
+}
+
+sub _drain_deferred_forks ($self) {
+    my $state = $DEFER_FORK_STATE{$self};
+    return 0 if !$state || !$state->{pending};
+
+    # Freeze the eligible set: requests added from completion callbacks wait
+    # for the next driver turn, rather than recursively forking here.
+    my $eligible = scalar @{ $state->{queue} };
+    my $processed = 0;
+    for (1 .. $eligible) {
+        last if $FORK_USER_STOP{$self};
+        my $request = shift @{ $state->{queue} };
+        next if !$request || !$request->{active};
+        $request->{active} = 0;
+        $state->{pending}--;
+        my $options = delete $request->{options};
+        my $on_parent = delete $request->{on_parent};
+        my $on_child = delete $request->{on_child};
+        my $on_error = delete $request->{on_error};
+
+        my $pid;
+        my $ok = eval { $pid = $self->fork(%$options); 1 };
+        if (!$ok || !defined $pid) {
+            my $error = !$ok ? $@ : "defer_fork(): fork failed: $!\n";
+            if ($on_error) {
+                $on_error->($error);
+                next;
+            }
+            die $error;
+        }
+
+        $processed++;
+        if ($pid == 0) {
+            # fork() has discarded the inherited queue in this child.
+            $on_child->() if $on_child;
+            return $processed;
+        }
+        $on_parent->($pid) if $on_parent;
+    }
+
+    $state->{queue} = [] if !$state->{pending};
+    return $processed;
+}
+
+{
+    no warnings 'redefine';
+
+    *stop = sub ($self) {
+        # A user stop must not be mistaken for defer_fork's internal wakeup.
+        $FORK_USER_STOP{$self} = 1 if $FORK_DRIVER_ACTIVE{$self};
+        $NATIVE_DRIVER{stop}->($self);
+        return;
+    };
+
+    *run = sub ($self) {
+        local $FORK_DRIVER_ACTIVE{$self} = 1;
+        local $FORK_USER_STOP{$self} = 0;
+        $self->_drain_deferred_forks;
+        while (!$FORK_USER_STOP{$self}) {
+            $NATIVE_DRIVER{run}->($self);
+            last if $FORK_USER_STOP{$self};
+            last if !$self->_drain_deferred_forks;
+        }
+        return;
+    };
+
+    *run_for = sub ($self, $seconds) {
+        require Time::HiRes;
+        my $started = Time::HiRes::clock_gettime(Time::HiRes::CLOCK_MONOTONIC());
+        local $FORK_DRIVER_ACTIVE{$self} = 1;
+        local $FORK_USER_STOP{$self} = 0;
+        $self->_drain_deferred_forks;
+        while (!$FORK_USER_STOP{$self}) {
+            my $elapsed = Time::HiRes::clock_gettime(
+                Time::HiRes::CLOCK_MONOTONIC()) - $started;
+            my $remaining = $seconds - $elapsed;
+            # Always let native validation run on the first entry.
+            last if $remaining <= 0 && $elapsed > 0 && $seconds > 0;
+            $NATIVE_DRIVER{run_for}->($self, $remaining > 0 ? $remaining : $seconds);
+            last if $FORK_USER_STOP{$self};
+            last if !$self->_drain_deferred_forks;
+        }
+        return;
+    };
+
+    *run_once = sub ($self, @args) {
+        local $FORK_DRIVER_ACTIVE{$self} = 1;
+        local $FORK_USER_STOP{$self} = 0;
+        $self->_drain_deferred_forks;
+        return 0 if $FORK_USER_STOP{$self};
+        my $n = $NATIVE_DRIVER{run_once}->($self, @args);
+        $self->_drain_deferred_forks if !$FORK_USER_STOP{$self};
+        return $n;
+    };
+
+    *poll = sub ($self) {
+        local $FORK_DRIVER_ACTIVE{$self} = 1;
+        local $FORK_USER_STOP{$self} = 0;
+        $self->_drain_deferred_forks;
+        return 0 if $FORK_USER_STOP{$self};
+        my $n = $NATIVE_DRIVER{poll}->($self);
+        $self->_drain_deferred_forks if !$FORK_USER_STOP{$self};
+        return $n;
+    };
+}
+
 sub CLONE_SKIP ($class) { 1 }
 
 package Linux::Event::Loop::_DeferService;
@@ -369,6 +560,20 @@ sub cancel ($self) {
         $self->{active} = 0;
         delete $self->{callback};
     }
+    return $self;
+}
+
+sub is_active ($self) { !!$self->{active} }
+sub CLONE_SKIP ($class) { 1 }
+
+package Linux::Event::_DeferredFork;
+
+sub cancel ($self) {
+    return $self if !$self->{active};
+    $self->{active} = 0;
+    delete @$self{qw(options on_parent on_child on_error)};
+    my $state = $self->{state};
+    $state->{pending}-- if $state && $state->{pending};
     return $self;
 }
 
