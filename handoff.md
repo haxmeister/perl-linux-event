@@ -1,57 +1,61 @@
 # Linux::Event Handoff
 
-## ACTIVE DEVELOPMENT - 0.118 (unreleased, 2026-10-28)
+## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
-The callback-safe deferred managed fork work is implemented on
-`feature/defer-fork` and proposed in PR #35 against `main`. The user
-explicitly approved merging this feature, documentation updates, and a 0.118
-development version bump. **No GitHub release, tag, or CPAN upload is
-authorized yet**; additional core work may be included before release.
+The callback-safe deferred managed fork feature was squash-merged to main from
+PR #35 at commit `1e1426303ef0d7d676ae991af11a325c4461e39b`
+on 2026-10-28 (America/Chicago; 2026-10-29 UTC).
 
-The 0.118 version bump updates all 30 versioned Perl modules, both checked-in
-META files, and `Changes` (with an unreleased heading). The new internal
-`Linux::Event::_DeferredFork` is excluded from CPAN indexing. Documentation
-is updated in README, the top-level and Loop POD, `docs/CORE.md`,
-`docs/V1-ROADMAP.md`, and `bench/README.md`.
+Current source/development version: **0.118**. All 30 versioned Perl modules,
+both checked-in META files, and `Changes` are updated. The 0.118 changelog
+entry is intentionally marked `(unreleased)`, because the user plans to make
+additional core additions before the next public release.
 
-API:
+**Do not tag, publish a GitHub release, or upload to CPAN yet.** The user
+explicitly authorized the merge and version bump, but not a release.
+The previous published version remains 0.117 until a future release decision.
 
-```perl
-$loop->defer_fork(
-    move      => [$stream],
-    on_parent => sub ($pid) { ... },
-    on_child  => sub { ... },
-    on_error  => sub ($error) { ... },
-);
-```
+The new public API is `$loop->defer_fork(%options)`, with existing managed
+resource dispositions `share`, `clone`, and `move`, plus optional callbacks
+`on_parent => sub ($pid) { ... }`, `on_child => sub { ... }`, and
+`on_error => sub ($error) { ... }`.
 
-`defer_fork` queues the request and returns a cancelable one-shot handle,
-not a child PID. Existing `share`, `clone`, `move` restrictions apply:
-plain established socket Streams support move; TLS Streams do not.
-The original `fork()` remains quiescent-only.
+It returns a one-shot request handle supporting `cancel` and `is_active`.
+A callback queues the request; native dispatch unwinds before the existing
+managed fork reconstructs resources in the new child. Completion callbacks run
+in their own processes, outside native dispatch, and ordinary Loop driving
+continues. Direct `$loop->fork()` remains quiescent-only. Pending parent
+requests are not inherited by children; explicit `stop()` takes priority.
+The existing resource matrix remains unchanged (established plain socket
+Streams support `move`, TLS Streams do not).
 
-The underlying native epoll dispatcher remains unchanged. A `defer()`
-wakeup exits the active native driver, then the Perl driver boundary performs
-the existing managed fork at a quiescent point. Parent/child callbacks run
-outside native dispatch. Pending requests are not inherited in a child;
-explicit `stop()` takes priority. The application manages process reaping.
+Public documentation covers the API in README, the top-level and Loop POD,
+`docs/CORE.md`, and `docs/V1-ROADMAP.md`. The examples use framed
+`on_message` where they discuss commands such as `FORK`, because raw
+`on_data` callbacks do not guarantee message boundaries.
+Tests include `t/loop-defer-fork.t` and `t/20-public-surface.t`; the latter
+was updated to admit the new benchmark in the supported `bench/` inventory.
+The benchmark and its guide/CI workflow are retained.
 
-Functional validation of the implementation before the 0.118 version bump:
-CI run 40801811654 passed all eight Perl configurations, threaded builds,
-distribution integrity, and the ten-percent full performance regression gate.
-Foreign-loop integration run 40801811559 also passed.
+Validation before merge:
+- The original feature implementation passed all eight Perl configurations,
+  distribution integrity and the full 10-percent performance gate
+  (CI run 40801811654); foreign-loop integration run 40801811559 passed.
+- Full performance regression deltas on that implementation stayed within
+  the 10% gate; raw Stream throughput -0.66%, deadline -1.51%, framed -1.58%.
+- Focused Perl 5.44 microbenchmark run 40804777781 found an additional
+  +818.1 ns for empty `poll()` and +906.1 ns for empty `run_once(0)` public
+  wrapper calls, versus the private native entry points.
+- The 0.118 version/doc pass initially exposed a single test inventory issue
+  for the added benchmark, corrected in `t/20-public-surface.t`. The
+  final pre-merge CI run 40814675688 passed all eight Perl configurations
+  and distribution integrity; foreign-loop integration and focused driver
+  benchmark checks were also green. Its long performance comparison was
+  still running when the user-approved merge was performed.
 
-Focused benchmark, run 40804777781 on non-threaded Perl 5.44 (9 medians,
-300,000 empty calls/sample, no forks):
-- `poll()`: native 490.8 ns, public 1308.9 ns; +818.1 ns.
-- `run_once(0)`: native 498.7 ns, public 1404.8 ns; +906.1 ns.
-The end-to-end Stream throughput deltas in the full gate were -0.66% raw,
--1.51% deadline, and -1.58% framed. These are single-run measurements,
-not an assumed cost for ordinary server dispatch.
-
-Final CI is required on the updated 0.118 version before merging PR #35.
-After merge, update this handoff with the exact main commit and validation.
-Do not tag, upload to CPAN, or publish a release.
+Main-branch CI after the merge and this handoff update should be checked
+before any future release preparation. No other Linux::Event subproject or
+Unblock distribution was changed for this work.
 
 ## HISTORICAL STATE - 0.117 release on main (prior to 0.118 work)
 
