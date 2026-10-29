@@ -22,10 +22,8 @@ fieldhash my %DEFER_FORK_STATE;
 fieldhash my %FORK_DRIVER_STATE;
 my $DEFER_CALLBACK_BATCH = 1024;
 
-# Keep the original native drivers. Only their entry/exit is wrapped; the
-# epoll and callback dispatch loops remain entirely in XS.
-my %NATIVE_DRIVER = map { $_ => __PACKAGE__->can($_) }
-    qw(run run_for run_once poll stop);
+# Native drivers are private XS entry points. The public Perl boundary does
+# not retain XS coderefs across interpreter clones.
 
 sub _fork_write_all ($fh, $bytes) {
     my $offset = 0;
@@ -310,7 +308,7 @@ sub defer_fork ($self, %option) {
         $self->defer(sub {
             my $loop = $weak_loop // return;
             my $pending = $weak_request // return;
-            $NATIVE_DRIVER{stop}->($loop)
+            $loop->_stop_native
                 if $pending->{active} && $loop->running;
         });
         1;
@@ -383,31 +381,28 @@ sub _drain_deferred_forks ($self) {
     return $processed;
 }
 
-{
-    no warnings 'redefine';
-
-    *stop = sub ($self) {
+sub stop ($self) {
         # A user stop must not be mistaken for defer_fork's internal wakeup.
         my $driver = $FORK_DRIVER_STATE{$self};
         $driver->{user_stop} = 1 if $driver && $driver->{active};
-        $NATIVE_DRIVER{stop}->($self);
+        $self->_stop_native();
         return;
-    };
+}
 
-    *run = sub ($self) {
+sub run ($self) {
         my $driver = $FORK_DRIVER_STATE{$self} //= {};
         local $driver->{active} = 1;
         local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
         while (!$driver->{user_stop}) {
-            $NATIVE_DRIVER{run}->($self);
+            $self->_run_native();
             last if $driver->{user_stop};
             last if !$self->_drain_deferred_forks;
         }
         return;
-    };
+}
 
-    *run_for = sub ($self, $seconds) {
+sub run_for ($self, $seconds) {
         require Time::HiRes;
         my $started = Time::HiRes::clock_gettime(Time::HiRes::CLOCK_MONOTONIC());
         my $driver = $FORK_DRIVER_STATE{$self} //= {};
@@ -421,36 +416,35 @@ sub _drain_deferred_forks ($self) {
             my $remaining = $seconds - $elapsed;
             last if !$first && $remaining <= 0;
             # The first native entry still validates all run_for arguments.
-            $NATIVE_DRIVER{run_for}->($self,
+            $self->_run_for_native(,
                 $remaining > 0 ? $remaining : $seconds);
             $first = 0;
             last if $driver->{user_stop};
             last if !$self->_drain_deferred_forks;
         }
         return;
-    };
+}
 
-    *run_once = sub ($self, @args) {
+sub run_once ($self, @args) {
         my $driver = $FORK_DRIVER_STATE{$self} //= {};
         local $driver->{active} = 1;
         local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
         return 0 if $driver->{user_stop};
-        my $n = $NATIVE_DRIVER{run_once}->($self, @args);
+        my $n = $self->_run_once_native(, @args);
         $self->_drain_deferred_forks if !$driver->{user_stop};
         return $n;
-    };
+}
 
-    *poll = sub ($self) {
+sub poll ($self) {
         my $driver = $FORK_DRIVER_STATE{$self} //= {};
         local $driver->{active} = 1;
         local $driver->{user_stop} = 0;
         $self->_drain_deferred_forks;
         return 0 if $driver->{user_stop};
-        my $n = $NATIVE_DRIVER{poll}->($self);
+        my $n = $self->_poll_native();
         $self->_drain_deferred_forks if !$driver->{user_stop};
         return $n;
-    };
 }
 
 sub CLONE_SKIP ($class) { 1 }
