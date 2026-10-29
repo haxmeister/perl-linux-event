@@ -107,12 +107,14 @@ and active resolver requests are rejected. Move uses a child-ready/parent-commit
 handshake so parent descriptor teardown does not happen until child
 reconstruction succeeds. Deferred callbacks are not inherited.
 
-The follow-up feature branch `feature/defer-fork` adds a callback-safe
-`Loop->defer_fork(%options)` entry point. It queues managed fork requests,
-uses the existing deferred wakeup service to unwind the active native driver,
-and performs the fork only at the quiescent boundary. Parent and child callbacks
-run after resource reconstruction; pending parent requests are not inherited
-by the child. This is under test and is not part of released 0.117.
+The 0.118 development line extends managed fork with callback-safe
+`Loop->defer_fork(%options)`. It queues managed fork requests and uses the
+existing deferred wakeup service to unwind the active native driver before
+forking at a quiescent boundary. Parent and child callbacks run only after
+resource reconstruction; pending parent requests are not inherited by the
+child. The API supports `run`, `run_for`, `run_once`, and `poll` without
+loosening the direct `fork` rule. The established resource matrix is
+unchanged. This is implemented in source but not yet released on CPAN.
 
 ### 4. Native filesystem notification with inotify
 
