@@ -19,7 +19,7 @@ our @ISA = ('Linux::Event::Loop::Introspection');
 
 fieldhash my %DEFER_STATE;
 fieldhash my %DEFER_FORK_STATE;
-my $FORK_DRIVER_FRAME;
+our $FORK_DRIVER_FRAME;
 my $DEFER_CALLBACK_BATCH = 1024;
 
 # Native drivers are private XS entry points. The public Perl boundary does
