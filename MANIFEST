@@ -18,6 +18,7 @@ bench/archive/run-phase18.pl
 bench/archive/run-watcher-reuse-bench.pl
 bench/LINE-RUNTIME-COMPARISON.md
 bench/README.md
+bench/defer-fork-driver-overhead.pl
 bench/results/.gitkeep
 bench/run-async-consumer-lifetime-bench.pl
 bench/run-callback-batching-fairness.pl
