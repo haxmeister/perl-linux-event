@@ -164,4 +164,50 @@ subtest 'run_for preserves bounded driving' => sub {
     reap_ok($pid, 'run_for');
 };
 
+
+subtest 'explicit stop postpones fork until the next drive' => sub {
+    my $loop = Linux::Event::Loop->new;
+    my $pid;
+    $loop->defer(sub {
+        $loop->defer_fork(
+            on_child => sub { POSIX::_exit(0) },
+            on_parent => sub ($child_pid) {
+                $pid = $child_pid;
+                $loop->stop;
+            },
+        );
+        $loop->stop;
+    });
+    $loop->run;
+    ok(!defined $pid, 'explicit stop wins over queued request');
+    $loop->run;
+    ok($pid > 0, 'a later drive processes postponed fork');
+    reap_ok($pid, 'postponed fork');
+};
+
+subtest 'handled deferred fork failure keeps run alive' => sub {
+    socketpair(my $left, my $right, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die "socketpair failed: $!";
+    my $loop = Linux::Event::Loop->new;
+    my $stream = Linux::Event::IO::Sock::Stream->new(
+        loop => $loop, fh => $left, on_data => sub { },
+    );
+    my ($reported, $continued);
+    $loop->defer(sub {
+        $loop->defer_fork(
+            share => [$stream],
+            on_error => sub ($error) {
+                $reported = $error;
+                $loop->defer(sub { $continued = 1; $loop->stop });
+            },
+        );
+    });
+    $loop->run;
+    like($reported, qr/does not support 'share'/,
+        'managed fork error was reported');
+    ok($continued, 'driver continued running after handled fork error');
+    $stream->close;
+    close $right;
+};
+
 done_testing;
