@@ -996,6 +996,63 @@ their callbacks is actively dispatching.
 
 In particular, do not call it directly from an event callback.
 
+=head2 defer_fork(%options)
+
+C<defer_fork> is the safe way to request a managed fork from a Stream, Timer,
+or other event callback. It accepts the same C<share>, C<clone>, and C<move>
+resource lists as C<fork>, plus three optional callbacks:
+
+  on_parent => sub ($pid) { ... }
+  on_child  => sub { ... }
+  on_error  => sub ($message) { ... }
+
+For example, to give a connected client its own child process:
+
+  on_data => sub ($stream, $bytes) {
+      return unless $bytes eq 'FORK';
+
+      $loop->defer_fork(
+          move => [$stream],
+          on_parent => sub ($pid) {
+              say "Client moved to child $pid";
+          },
+          on_child => sub {
+              say "Child now owns the client connection";
+          },
+          on_error => sub ($message) {
+              warn $message;
+          },
+      );
+  },
+
+C<defer_fork> only queues the request. It does not fork immediately. After
+the active native dispatch has finished, the Loop uses its existing managed
+C<fork> implementation to rebuild child resources. The appropriate callback
+then runs outside dispatch: C<on_parent> receives the new PID in the parent;
+C<on_child> runs in the child with no arguments.
+
+Unlike C<fork>, this method returns a one-shot request handle rather than a
+PID. It supports C<cancel> and C<is_active>. Cancelling a request before it
+is processed prevents the fork. Dropping the handle does not cancel it.
+
+Requests waiting in the parent are discarded from a newly forked child's
+queue, avoiding accidental additional children. Requests added from a
+completion callback wait for another Loop turn.
+
+When the actual fork fails, C<on_error> receives an error message, and neither
+the parent nor child success callback runs. If there is no C<on_error>, the
+error propagates from the Loop driver. Bad option names and callback types
+are rejected when the request is queued.
+
+This works with C<run>, C<run_for>, C<run_once>, and C<poll>. A normal
+C<< $loop->stop >> call still stops the active driver. If both a stop and a
+deferred fork are requested during that driver call, the explicit stop wins;
+the pending fork remains queued for a later drive.
+
+The current managed-fork resource restrictions and thread-safety rules apply
+equally to C<defer_fork>. It does not add support for TLS Stream moves or
+other unsupported dispositions.
+
 =head2 Threads and fork
 
 Managed fork assumes the application does not have unrelated live native
