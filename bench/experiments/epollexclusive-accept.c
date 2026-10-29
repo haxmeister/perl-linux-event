@@ -10,7 +10,7 @@
  * All workers have independent epoll fds. Connections are made over 127.0.0.1.
  * Example:
  *   cc -O2 -Wall -Wextra -std=gnu11 -o /tmp/exclusive bench/experiments/epollexclusive-accept.c
- *   /tmp/exclusive exclusive 4 1000 0
+ *   /tmp/exclusive exclusive 4 1000 0 0
  *
  * Output is one JSON record per run. Kernel behavior depends on scheduler
  * load, hardware, traffic shape and version; use paired repeated trials.
@@ -85,7 +85,7 @@ static int listener(int port, int reuse, int *bound_port) {
 }
 
 static void worker(enum mode mode, int index, int listening_fd,
-                   int port, struct state *st, int readyfd) {
+                   int port, struct state *st, int readyfd, int work_us) {
     if (mode == REUSEPORT) {
         close(listening_fd);
         listening_fd = listener(port, 1, NULL);
@@ -129,6 +129,13 @@ static void worker(enum mode mode, int index, int listening_fd,
                 w->accepted++;
                 __atomic_add_fetch(&st->accepted, 1, __ATOMIC_RELAXED);
                 close(client);
+                /* Simulate real per-connection application work, if requested.
+                 * Busy CPU is intentional: it tests whether the kernel sends
+                 * new accepts to idle workers when one handler is occupied. */
+                if (work_us) {
+                    const double until = monotonic() + work_us / 1e6;
+                    while (monotonic() < until) { }
+                }
             }
             if (!accepted_this_wakeup) w->no_accept++;
         }
@@ -162,8 +169,8 @@ static int connect_once(int port) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 5) {
-        fprintf(stderr, "usage: %s shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US\n", argv[0]);
+    if (argc != 5 && argc != 6) {
+        fprintf(stderr, "usage: %s shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US [WORK_US]\n", argv[0]);
         return 2;
     }
     enum mode mode;
@@ -178,6 +185,8 @@ int main(int argc, char **argv) {
     if (*end || nconnections < 1 || nconnections > 100000) return 2;
     long gap = strtol(argv[4], &end, 10);
     if (*end || gap < 0 || gap > 1000000) return 2;
+    long work_us = argc == 6 ? strtol(argv[5], &end, 10) : 0;
+    if (argc == 6 && (*end || work_us < 0 || work_us > 10000)) return 2;
 
     struct state *st = mmap(NULL, sizeof(*st), PROT_READ | PROT_WRITE,
                             MAP_SHARED | MAP_ANONYMOUS, -1, 0);
@@ -193,7 +202,7 @@ int main(int argc, char **argv) {
         if (pid < 0) fail("fork");
         if (pid == 0) {
             close(ready[0]);
-            worker(mode, i, listening_fd, port, st, ready[1]);
+            worker(mode, i, listening_fd, port, st, ready[1], (int)work_us);
         }
         pids[i] = pid;
     }
@@ -243,13 +252,13 @@ int main(int argc, char **argv) {
     }
     uint64_t done = __atomic_load_n(&st->accepted, __ATOMIC_ACQUIRE);
     printf("{\"mode\":\"%s\",\"workers\":%ld,\"attempts\":%ld,\"sent\":%d,"
-           "\"accepted\":%" PRIu64 ",\"gap_us\":%ld,\"elapsed_s\":%.6f,"
+           "\"accepted\":%" PRIu64 ",\"gap_us\":%ld,\"work_us\":%ld,\"elapsed_s\":%.6f,"
            "\"generated_s\":%.6f,\"rate_per_s\":%.2f,"
            "\"worker_cpu_s\":%.6f,\"wakeup_events\":%" PRIu64 ","
            "\"zero_accept_wakeups\":%" PRIu64 ",\"accept_syscalls\":%" PRIu64 ","
            "\"min_worker_accepted\":%" PRIu64 ",\"max_worker_accepted\":%" PRIu64 ","
            "\"timed_out\":%s,\"child_failure\":%s}\n",
-           argv[1], nworkers, nconnections, sent, done, gap, elapsed,
+           argv[1], nworkers, nconnections, sent, done, gap, work_us, elapsed,
            generated, elapsed > 0 ? done / elapsed : 0.0, cpu_sec,
            wakes, no_accept, calls, min_accepted, max_accepted,
            timed_out ? "true" : "false", child_failure ? "true" : "false");
