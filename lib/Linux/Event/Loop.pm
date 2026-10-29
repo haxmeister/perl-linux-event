@@ -393,81 +393,81 @@ sub _drain_deferred_forks ($self) {
 }
 
 sub stop ($self) {
-        # A user stop must not be mistaken for defer_fork's internal wakeup.
-        my $driver = $self->_current_fork_driver;
-        $driver->{user_stop} = 1 if $driver;
-        $self->_stop_native();
-        return;
+    # A user stop must not be mistaken for defer_fork's internal wakeup.
+    my $driver = $self->_current_fork_driver;
+    $driver->{user_stop} = 1 if $driver;
+    $self->_stop_native();
+    return;
 }
 
 sub run ($self) {
-        my $driver = {
-            loop => $self,
-            parent => $FORK_DRIVER_FRAME,
-            user_stop => 0,
-        };
-        local $FORK_DRIVER_FRAME = $driver;
-        $self->_drain_deferred_forks;
-        while (!$driver->{user_stop}) {
-            $self->_run_native();
-            last if $driver->{user_stop};
-            last if !$self->_drain_deferred_forks;
-        }
-        return;
+    my $driver = {
+        loop => $self,
+        parent => $FORK_DRIVER_FRAME,
+        user_stop => 0,
+    };
+    local $FORK_DRIVER_FRAME = $driver;
+    $self->_drain_deferred_forks;
+    while (!$driver->{user_stop}) {
+        $self->_run_native();
+        last if $driver->{user_stop};
+        last if !$self->_drain_deferred_forks;
+    }
+    return;
 }
 
 sub run_for ($self, $seconds) {
-        require Time::HiRes;
-        my $started = Time::HiRes::clock_gettime(Time::HiRes::CLOCK_MONOTONIC());
-        my $driver = {
-            loop => $self,
-            parent => $FORK_DRIVER_FRAME,
-            user_stop => 0,
-        };
-        local $FORK_DRIVER_FRAME = $driver;
-        $self->_drain_deferred_forks;
-        my $first = 1;
-        while (!$driver->{user_stop}) {
-            my $elapsed = Time::HiRes::clock_gettime(
-                Time::HiRes::CLOCK_MONOTONIC()) - $started;
-            my $remaining = $seconds - $elapsed;
-            last if !$first && $remaining <= 0;
-            # The first native entry still validates all run_for arguments.
-            $self->_run_for_native(
-                $remaining > 0 ? $remaining : $seconds);
-            $first = 0;
-            last if $driver->{user_stop};
-            last if !$self->_drain_deferred_forks;
-        }
-        return;
+    require Time::HiRes;
+    my $started = Time::HiRes::clock_gettime(Time::HiRes::CLOCK_MONOTONIC());
+    my $driver = {
+        loop => $self,
+        parent => $FORK_DRIVER_FRAME,
+        user_stop => 0,
+    };
+    local $FORK_DRIVER_FRAME = $driver;
+    $self->_drain_deferred_forks;
+    my $first = 1;
+    while (!$driver->{user_stop}) {
+        my $elapsed = Time::HiRes::clock_gettime(
+            Time::HiRes::CLOCK_MONOTONIC()) - $started;
+        my $remaining = $seconds - $elapsed;
+        last if !$first && $remaining <= 0;
+        # The first native entry still validates all run_for arguments.
+        $self->_run_for_native(
+            $remaining > 0 ? $remaining : $seconds);
+        $first = 0;
+        last if $driver->{user_stop};
+        last if !$self->_drain_deferred_forks;
+    }
+    return;
 }
 
 sub run_once ($self, @args) {
-        my $driver = {
-            loop => $self,
-            parent => $FORK_DRIVER_FRAME,
-            user_stop => 0,
-        };
-        local $FORK_DRIVER_FRAME = $driver;
-        $self->_drain_deferred_forks;
-        return 0 if $driver->{user_stop};
-        my $n = $self->_run_once_native(@args);
-        $self->_drain_deferred_forks if !$driver->{user_stop};
-        return $n;
+    my $driver = {
+        loop => $self,
+        parent => $FORK_DRIVER_FRAME,
+        user_stop => 0,
+    };
+    local $FORK_DRIVER_FRAME = $driver;
+    $self->_drain_deferred_forks;
+    return 0 if $driver->{user_stop};
+    my $n = $self->_run_once_native(@args);
+    $self->_drain_deferred_forks if !$driver->{user_stop};
+    return $n;
 }
 
 sub poll ($self) {
-        my $driver = {
-            loop => $self,
-            parent => $FORK_DRIVER_FRAME,
-            user_stop => 0,
-        };
-        local $FORK_DRIVER_FRAME = $driver;
-        $self->_drain_deferred_forks;
-        return 0 if $driver->{user_stop};
-        my $n = $self->_poll_native();
-        $self->_drain_deferred_forks if !$driver->{user_stop};
-        return $n;
+    my $driver = {
+        loop => $self,
+        parent => $FORK_DRIVER_FRAME,
+        user_stop => 0,
+    };
+    local $FORK_DRIVER_FRAME = $driver;
+    $self->_drain_deferred_forks;
+    return 0 if $driver->{user_stop};
+    my $n = $self->_poll_native();
+    $self->_drain_deferred_forks if !$driver->{user_stop};
+    return $n;
 }
 
 sub CLONE_SKIP ($class) { 1 }
@@ -598,7 +598,10 @@ sub cancel ($self) {
     $self->{active} = 0;
     delete @$self{qw(options on_parent on_child on_error)};
     my $state = $self->{state};
-    $state->{pending}-- if $state && $state->{pending};
+    if ($state && $state->{pending}) {
+        $state->{pending}--;
+        $state->{queue} = [] if !$state->{pending};
+    }
     return $self;
 }
 
