@@ -65,6 +65,77 @@ reads the same page-cached source file, so it does **not** represent cold
 disk reads, TLS encryption, ordinary file-system latency, or full HTTP
 request handling.
 
+## Dedicated four-core Linux results (2026-10-30)
+
+The project owner ran the checked-in local runner (five repetitions) on
+a dedicated four-core Linux host and supplied a complete JSONL result
+file for analysis. The dataset contains **90/90 verified transfers**
+(5 sizes + 32 KiB slowed-receiver case, 3 modes, 5 repeats);
+no transfer had missing or corrupt bytes.
+
+The local file itself is **not committed**; only these aggregated measurements
+are recorded. All medians below are computed directly from the submitted
+JSONL rows. Lower sender CPU per MiB is better, while higher verified
+end-to-end MiB/s is better.
+
+### Median sender CPU time (milliseconds per MiB)
+
+| Transfer size | Copied pread/send | sendfile | splice | sendfile CPU reduction |
+|---|---:|---:|---:|---:|
+| 64 B | 26.5289 | 25.1567 | 25.4467 | 5.2% |
+| 4 KiB | 0.4478 | 0.3076 | 0.3901 | 31.3% |
+| 32 KiB | 0.2704 | 0.1002 | 0.0766 | 63.0% |
+| 200 KiB | 0.2565 | 0.0546 | 0.0663 | 78.7% |
+| 1 MiB | 0.2605 | 0.0528 | 0.0602 | 79.7% |
+| 32 KiB, 40 us delayed receiver | 0.3714 | 0.1401 | 0.1314 | 62.3% |
+
+### Median verified end-to-end throughput (MiB/s)
+
+| Transfer size | Copied pread/send | sendfile | splice |
+|---|---:|---:|---:|
+| 64 B | 37.6 | 39.7 | 39.2 |
+| 4 KiB | 2,227.7 | 3,205.5 | 2,539.2 |
+| 32 KiB | 3,673.0 | 9,846.8 | 8,026.9 |
+| 200 KiB | 3,889.5 | 6,978.0 | 7,297.7 |
+| 1 MiB | 3,756.0 | 7,191.9 | 6,875.8 |
+| 32 KiB, delayed receiver | 415.3 | 531.9 | 554.6 |
+
+Each of the five local repetitions showed lower sender CPU for
+`sendfile()` and `splice()` than copied writes in every scenario,
+including the slowed-receiver run. At 200 KiB and 1 MiB,
+`sendfile()` reduced sender CPU time by 78.7% and 79.7%
+respectively, relative to the median copy values.
+
+The receiver thread also uses CPU. Adding each trial's sender and
+receiver CPU and then taking medians, `sendfile()` reduced **combined
+sender+receiver thread CPU per MiB** by approximately 55.0% at 200 KiB
+and 56.3% at 1 MiB. This is a useful sanity check: the 80% sender
+CPU figure is **not** an 80% whole-process or system-wide CPU saving.
+
+The 32-KiB case favors `splice()` in sender CPU per MiB,
+but `sendfile()` was faster in verified end-to-end throughput in
+four of five repeats. For file-to-TCP transfers overall, `sendfile()`
+is generally preferable due to the smaller setup/lifecycle surface.
+`splice()` should be assessed separately for pipe/socket bridging.
+
+All tests transfer the same cached source file repeatedly over
+loopback with a consumer in another thread. The extremely high
+loopback MiB/s values are not estimates of physical network capacity.
+The comparison uses a straightforward C `pread()+send()` control,
+not Linux::Event's actual optimized native `writev()` queue. No
+Linux::Event Stream/TLS/framing integration is measured here.
+
+### Decision after dedicated run
+
+The large, repeatable file-transfer savings justify exploring a
+**feature-branch native Stream output-queue integration of sendfile**.
+They do not justify a synchronous sendfile call bypassing that queue.
+Prioritize ordered file offset/range accounting, cancellation,
+nonblocking readiness, fairness budget, deadlines, backpressure,
+shutdown and TLS rejection before attempting user-facing API design.
+Retain `splice()` for a distinct socket/pipe transport investigation.
+Do not merge the standalone research branch as a feature.
+
 ## Run on a dedicated Linux machine
 
 From repository root:
