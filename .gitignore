@@ -104,3 +104,6 @@
 bench/results/*.json
 bench/results/*.html
 !bench/results/.gitkeep
+
+# Experimental local UDP queued-burst results
+bench/results/udp/*.jsonl

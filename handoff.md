@@ -1,5 +1,28 @@
 # Linux::Event Handoff
 
+## ACTIVE UDP RECVMMSG RESEARCH (2026-10-30)
+
+Working branch: `feature/udp-recvmmsg-evaluation`, based on main
+`08d775cc2287fb63942c2a27b3a6bfeb59a28aa3`. This research **must
+not** be merged/released/bumped without approval. Main remains 0.118
+development (unreleased). Refer to
+`docs/UDP-RECVMMSG-EVALUATION.md` for design, benchmark commands,
+CI results and interpretation.
+
+The experimental receive-only XS fast path is controlled solely by
+`LINUX_EVENT_EXPERIMENT_RECVMMSG=8` or `32`. Default `recvmsg` is
+unchanged. `recvmmsg()` preserves per-packet callbacks and the
+`_recv_batch` return format, with scratch memory capped to 256 KiB.
+No `sendmmsg` implementation or public API changes.
+
+Focused CI run 41133285661 passed all 0/8/32 correctness modes and both
+native queued UDP receive and real Loop + on_datagram queued-burst
+benchmarks, with zero losses or payload errors. Initial native CPU-only
+advantage is 10-37% (payload/burst dependent); Loop + callback receive
+CPU-derived rates improved ~1.5-8% in prequeued burst cases. Serial UDP
+echo did not establish any benefit. Need full CI and repeat local quad
+measurement before considering a production change.
+
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
 The callback-safe deferred managed fork feature was squash-merged to main from
