@@ -58,8 +58,8 @@ jobs:
           for (workers,work,mode), values in sorted(groups.items()):
               med=lambda key: statistics.median(x[key] for x in values)
               print(f'workers={workers} work_us={work} mode={mode:9s} '
-                    f'generator_rate={med("connection_rate"):8.0f}/s '
-                    f'epoll_waits={med("epoll_wait_calls"):7.0f} '
+                    f'completed_rate={med("completed_rate"):8.0f}/s '
+                    f'cpu_s={med("worker_cpu_s"):6.4f} epoll_waits={med("epoll_wait_calls"):7.0f} '
                     f'accepted={med("accepted"):.0f} '
                     f'messages={med("messages"):.0f}')
           PY
