@@ -1,5 +1,28 @@
 # Linux::Event Handoff
 
+## ACTIVE SENDFILE / SPLICE RESEARCH (2026-10-30)
+
+Branch `feature/sendfile-splice-evaluation` (main baseline
+`08d775cc2287fb63942c2a27b3a6bfeb59a28aa3`). The standalone
+native experiment lives in `bench/experiments/zero-copy-tcp.c` with
+a local one-command wrapper `run-zero-copy-local.sh` and CI workflow
+`.github/workflows/zero-copy-evaluation.yml`. Documentation and CI
+data: `docs/ZERO-COPY-EVALUATION.md`.
+
+Stage 1 compares copied pread/send, sendfile and file->pipe->TCP splice
+using nonblocking loopback TCP, real EAGAIN/backpressure and byte-for-byte
+verification at receiver EOF. Sender CPU uses a per-thread clock; full
+throughput includes receiver completion. CI run 41137609523 passed
+84 verified transfers; sender CPU for sendfile was substantially lower
+at 32 KiB–1 MiB. This is C-only syscall research, **not an integration**
+in the Linux::Event Stream engine.
+
+**Do not modify main, bump version, tag or release.** A public file
+transfer method/queue contract is not decided; preserve Stream/TLS/framing,
+output order, fairness and lifecycle invariants before integration.
+Next: verify the documented local-run script, compare on dedicated quad
+if needed, then design native queue integration separately if justified.
+
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
 The callback-safe deferred managed fork feature was squash-merged to main from
