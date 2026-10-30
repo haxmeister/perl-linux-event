@@ -1,5 +1,45 @@
 # Linux::Event Handoff
 
+## ACTIVE STREAM SENDFILE INTEGRATION (2026-10-30)
+
+New integration branch: `feature/stream-sendfile`, based on current main
+`08d775cc2287fb63942c2a27b3a6bfeb59a28aa3` (0.118 unreleased).
+The completed research branch remains intact at
+`a46d77e4c199f7ba9876e5a42ebddd6123fc1af3`; PR #38 is research only.
+Do not modify main, bump versions, tag, release, or modify other repositories.
+
+Read `docs/STREAM-SENDFILE-DESIGN.md` next. This checkpoint contains inspection
+and a concrete proposal, not an implementation. The owner explicitly requested
+public API/ownership discussion before finalizing it. Proposed API is
+`sendfile($fh, offset => ..., length => ...)`, with a duplicated close-on-exec
+fd, offset zero by default, size-at-submission range, unchanged caller offset,
+existing boolean flow control, raw bytes like write(), and explicit TLS rejection.
+Proposed first scope is established plain socket Streams; pending connects reject.
+These public decisions remain proposals until the owner responds.
+
+Inspected current native queue, transport, lifecycle, callbacks, readiness,
+preconnection staging, framing, transitions, managed fork and CI. Smallest fit:
+file entries embedded in the existing les_write_seg_t list; writev stops at a
+file, sendfile drains only the head range. Preserve ordinary segment size and
+immediate byte writes. Extend common cleanup for file fds. Remaining file bytes
+participate in existing pending-byte/watermark/deadline/limit mechanisms. Proposed
+mixed-drain budget starts at 64 KiB and must be tested, not assumed optimal.
+
+Important implementation checks: callback teardown invalidates segment pointers;
+SIGPIPE must not terminate the process; premature file EOF is terminal; source
+contents must remain immutable until peer consumption (queue drain is not that
+notification); nonblocking output does not make cold disk reads asynchronous.
+The preconnection queue is a separate Perl byte-string array, so accepting file
+handles there cannot be silently assumed from the native queue extension.
+
+Next after API discussion: native implementation, focused correctness/lifecycle
+regressions, actual Stream file-transfer benchmarks, full compatibility and
+performance CI. Do not repeat the completed standalone syscall investigation.
+No tests or Stream performance runs are claimed for this documentation checkpoint.
+The working source snapshot was retrieved through GitHub and checked against
+main's exact Git tree `6e617fed7b19e85fc89adadf42806cb80fedee8b`.
+
+
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
 The callback-safe deferred managed fork feature was squash-merged to main from
