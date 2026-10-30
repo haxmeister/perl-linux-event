@@ -406,6 +406,7 @@ subtest 'failed exclusive ADD and DEL preserve read-interest state' => sub {
             }
             1;
         };
+        warn "isolated exclusive epoll rollback test failed: $@" if !$ok;
         POSIX::_exit($ok ? 0 : 1);
     }
     is(waitpid($pid, 0), $pid, 'isolated fd-error child reaped');
