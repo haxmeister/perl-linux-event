@@ -39,7 +39,7 @@ use Linux::Event::IO::Sock::Stream;
 
 {
     package T::SendfileLimited;
-    use parent 'T::SendfileWriter';
+    use parent -norequire, 'T::SendfileWriter';
     sub stream_tuning ($class) {
         return high_watermark => 2048, low_watermark => 1024,
             max_pending_bytes => 4096;
@@ -113,8 +113,6 @@ my $body = ('0123456789abcdef' x 65536);
     $loop->run_for(4);
     is($state->{received}, $expected, 'explicit range preserves exact bytes');
     is(tell($fh), 0, 'range send leaves the original file position untouched');
-    ok($writer->sendfile($fh, length => 0) == 0,
-        'writable-ended Stream rejects zero length like other writes') if 0;
     $writer->close;
     $reader->close;
     close($fh);
