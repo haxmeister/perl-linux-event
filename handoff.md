@@ -2,6 +2,9 @@
 
 ## ACTIVE STREAM SENDFILE INTEGRATION (2026-10-30)
 
+Proposal checkpoint: `407e75c9227fe3bc8c44a4005b2e149211eecc85`.
+Whitespace and manifest inventory checks passed; no executable code changed.
+
 New integration branch: `feature/stream-sendfile`, based on current main
 `08d775cc2287fb63942c2a27b3a6bfeb59a28aa3` (0.118 unreleased).
 The completed research branch remains intact at
