@@ -2418,14 +2418,32 @@ enable_read(w_obj)
     SV *w_obj
   CODE:
     le_watcher_t *w = le_watcher_from_sv(w_obj);
-    if (w && w->active && (!(w->mask & EPOLLIN) || (w->flags & EPOLLONESHOT))) { w->mask |= EPOLLIN; if (le_apply_mask(w) < 0) croak("enable_read epoll_ctl MOD failed: %s", strerror(errno)); }
+    if (w && w->active && (!(w->mask & EPOLLIN) || (w->flags & EPOLLONESHOT))) {
+        uint32_t previous = w->mask;
+        w->mask |= EPOLLIN;
+        if (le_apply_mask(w) < 0) {
+            int err = errno;
+            if (w->flags & EPOLLEXCLUSIVE) w->mask = previous;
+            croak("enable_read epoll_ctl %s failed: %s",
+                (w->flags & EPOLLEXCLUSIVE) ? "ADD" : "MOD", strerror(err));
+        }
+    }
 
 void
 disable_read(w_obj)
     SV *w_obj
   CODE:
     le_watcher_t *w = le_watcher_from_sv(w_obj);
-    if (w && w->active && (w->mask & EPOLLIN)) { w->mask &= ~EPOLLIN; if (le_apply_mask(w) < 0) croak("disable_read epoll_ctl MOD failed: %s", strerror(errno)); }
+    if (w && w->active && (w->mask & EPOLLIN)) {
+        uint32_t previous = w->mask;
+        w->mask &= ~EPOLLIN;
+        if (le_apply_mask(w) < 0) {
+            int err = errno;
+            if (w->flags & EPOLLEXCLUSIVE) w->mask = previous;
+            croak("disable_read epoll_ctl %s failed: %s",
+                (w->flags & EPOLLEXCLUSIVE) ? "DEL" : "MOD", strerror(err));
+        }
+    }
 
 void
 enable_write(w_obj)
