@@ -1,0 +1,73 @@
+name: EPOLLEXCLUSIVE Listener fairness tuning
+
+on:
+  push:
+    branches:
+      - feature/epollexclusive-evaluation
+    paths:
+      - 'bench/experiments/epollexclusive-linux-event.pl'
+      - '.github/workflows/epollexclusive-fairness.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  budget:
+    name: Test accept budgets and worker fairness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: '5.44'
+      - name: Compile Linux::Event
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+          perl Makefile.PL
+          make -j2
+      - name: Run budget matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bench/results/epollexclusive
+          for trial in 1 2; do
+            for workers in 4 8; do
+              for budget in 1 8 32 256; do
+                for mode in shared exclusive reuseport; do
+                  echo "trial=$trial workers=$workers budget=$budget mode=$mode"
+                  perl -Mblib bench/experiments/epollexclusive-linux-event.pl \
+                    "$mode" "$workers" 500 0 150 batch "$budget" |
+                    tee -a bench/results/epollexclusive/fairness.jsonl
+                done
+              done
+            done
+          done
+      - name: Summarize throughput, CPU and fairness
+        run: |
+          python3 - <<'PY'
+          import collections, json, statistics
+          rows = [json.loads(x) for x in open('bench/results/epollexclusive/fairness.jsonl')]
+          grouped = collections.defaultdict(list)
+          for row in rows:
+              grouped[(row['workers'], row['accept_budget'], row['mode'])].append(row)
+          for (workers,budget,mode), values in sorted(grouped.items()):
+              med = lambda f: statistics.median(f(x) for x in values)
+              fastest = med(lambda x: x['completed_rate'])
+              cpu = med(lambda x: x['worker_cpu_s'])
+              minimum = med(lambda x: min(w['accepted'] for w in x['worker']))
+              maximum = med(lambda x: max(w['accepted'] for w in x['worker']))
+              waits = med(lambda x: x['epoll_wait_calls'])
+              print(f'workers={workers} budget={budget:3d} mode={mode:9s} '
+                    f'rate={fastest:8.0f}/s cpu={cpu:.3f}s waits={waits:.0f} '
+                    f'min/max={minimum:.0f}/{maximum:.0f}')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: epollexclusive-accept-budget-matrix
+          path: bench/results/epollexclusive/fairness.jsonl
+          if-no-files-found: warn
