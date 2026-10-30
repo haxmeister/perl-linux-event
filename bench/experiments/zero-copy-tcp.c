@@ -171,9 +171,10 @@ static void trial(const char *mode,int file,const unsigned char *source,
         else {fprintf(stderr,"bad mode %s\n",mode);exit(2);}
     }
     double cpu=clock_s(CLOCK_THREAD_CPUTIME_ID)-cpu_at;
-    double wall=clock_s(CLOCK_MONOTONIC)-wall_at;
+    double enqueue_wall=clock_s(CLOCK_MONOTONIC)-wall_at;
     if(shutdown(sock,SHUT_WR)<0)die("shutdown");
     if(pthread_join(thread,NULL))die("pthread_join");
+    double end_to_end_wall=clock_s(CLOCK_MONOTONIC)-wall_at;
     if(pipefd[0]>=0){close(pipefd[0]);close(pipefd[1]);}
     close(sock);close(listen_fd);
     if(rx.error||rx.corrupt||rx.received!=rx.expected) {
@@ -184,12 +185,12 @@ static void trial(const char *mode,int file,const unsigned char *source,
     double mib=(double)rx.received/1048576.0;
     printf("{\"mode\":\"%s\",\"size\":%zu,\"rounds\":%"PRIu64",\"repeat\":%d,"
            "\"pressure_us\":%u,\"bytes\":%"PRIu64",\"verified\":true,"
-           "\"wall_s\":%.9f,\"sender_cpu_s\":%.9f,\"receiver_cpu_s\":%.9f,"
+           "\"enqueue_wall_s\":%.9f,\"wall_s\":%.9f,\"sender_cpu_s\":%.9f,\"receiver_cpu_s\":%.9f,"
            "\"mib_s\":%.3f,\"sender_cpu_ms_per_mib\":%.6f,"
            "\"calls\":{\"pread\":%"PRIu64",\"send\":%"PRIu64",\"sendfile\":%"PRIu64
            ",\"splice\":%"PRIu64",\"poll\":%"PRIu64",\"eagain\":%"PRIu64"}}\n",
-           mode,bytes,rounds,repeat,pressure_us,rx.received,wall,cpu,rx.cpu_s,
-           mib/wall,1000*cpu/mib,count.preads,count.sends,count.sendfiles,
+           mode,bytes,rounds,repeat,pressure_us,rx.received,enqueue_wall,end_to_end_wall,cpu,rx.cpu_s,
+           mib/end_to_end_wall,1000*cpu/mib,count.preads,count.sends,count.sendfiles,
            count.splices,count.polls,count.eagains);
     fflush(stdout);
 }
