@@ -22,12 +22,13 @@ sub listener_for ($loop, $accepted_ref) {
 }
 
 sub client_for ($listener) {
-    return IO::Socket::INET->new(
+    my $socket = IO::Socket::INET->new(
         PeerAddr => '127.0.0.1',
         PeerPort => $listener->port,
         Proto => 'tcp',
         Timeout => 3,
     ) or die "connect failed: $!";
+    return $socket;
 }
 
 {
@@ -382,6 +383,9 @@ subtest 'failed exclusive ADD and DEL preserve read-interest state' => sub {
                 die "unexpected failure mode: $@"
                     unless $@ =~ /disable_read epoll_ctl DEL failed/;
             }
+            # Remove the stale registry entry before the next pipe may reuse
+            # the same numeric fd. It is already closed by POSIX::close().
+            $registration->cancel;
 
             # ADD failure is the inverse case. A suspended watcher must
             # keep its disabled mask after failed resume, so the second
