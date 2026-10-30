@@ -143,6 +143,7 @@ struct le_watcher_s {
     uint32_t mask;
     uint32_t flags;
     int active;
+    int exclusive_suspended; /* Experimental internal listener registration. */
     le_loop_t *loop;
     SV *self_sv;
     SV *loop_sv;
@@ -1125,6 +1126,27 @@ static int le_apply_mask(le_watcher_t *w) {
     memset(&ev, 0, sizeof(ev));
     ev.events = le_epoll_events(w);
     ev.data.ptr = (void *)w;
+
+    /*
+     * EPOLLEXCLUSIVE can only be installed via ADD and cannot be MODified.
+     * An inactive experimental Listener is removed from epoll altogether.
+     * Its native watcher and Perl registration remain alive so resume()
+     * can ADD the same object back without changing lifecycle ownership.
+     */
+    if (w->flags & EPOLLEXCLUSIVE) {
+        if (!(w->mask & EPOLLIN)) {
+            if (w->exclusive_suspended) return 0;
+            if (le_epoll_ctl_timed(w->loop, EPOLL_CTL_DEL, w->fd, NULL) < 0)
+                return -1;
+            w->exclusive_suspended = 1;
+            return 0;
+        }
+        if (!w->exclusive_suspended) return 0;
+        if (le_epoll_ctl_timed(w->loop, EPOLL_CTL_ADD, w->fd, &ev) < 0)
+            return -1;
+        w->exclusive_suspended = 0;
+        return 0;
+    }
     return le_epoll_ctl_timed(w->loop, EPOLL_CTL_MOD, w->fd, &ev);
 }
 
@@ -1287,6 +1309,7 @@ typedef struct {
     int lean;
     int bench_native_echo;
     int internal;
+    int experimental_exclusive;
 } le_watch_opts_t;
 
 static void le_watch_opts_init(le_watch_opts_t *opt) {
@@ -1310,6 +1333,9 @@ static int le_watch_parse_common_option(const char *key, SV *val, le_watch_opts_
     }
     else if (strEQ(key, "_internal")) {
         opt->internal = SvTRUE(val) ? 1 : 0;
+    }
+    else if (strEQ(key, "_experimental_epollexclusive")) {
+        opt->experimental_exclusive = SvTRUE(val) ? 1 : 0;
     }
     else if (strEQ(key, "lean")) {
         opt->lean = SvTRUE(val) ? 1 : 0;
@@ -1335,16 +1361,27 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
         opt->callback_args = 1;
         if (!opt->data || !SvOK(opt->data)) croak("_callback_data_arg requires data");
     }
+    if (opt->experimental_exclusive && (!opt->internal || !opt->read_cb
+            || !SvOK(opt->read_cb) || opt->write_cb || opt->oneshot
+            || opt->edge_triggered || opt->bench_native_echo))
+        croak("_experimental_epollexclusive is for internal level-triggered read-only watchers");
 
     le_registry_grow(loop, fd);
     old = loop->registry[fd];
+    if (old && (opt->experimental_exclusive || (old->flags & EPOLLEXCLUSIVE)))
+        croak("experimental exclusive watchers cannot replace a live fd registration");
 
     w = le_watcher_alloc(loop);
     w->fd = fd;
     w->loop = loop;
     w->active = 1;
     w->mask = le_mask_from_callbacks(opt->read_cb, opt->write_cb);
-    w->flags = (opt->oneshot ? EPOLLONESHOT : 0) | (opt->edge_triggered ? EPOLLET : 0);
+    /* Linux rejects EPOLLRDHUP in an EPOLLEXCLUSIVE ADD. That readiness
+     * flag is useful for streams, not for listening sockets. */
+    if (opt->experimental_exclusive) w->mask &= ~EPOLLRDHUP;
+    w->flags = (opt->oneshot ? EPOLLONESHOT : 0)
+        | (opt->edge_triggered ? EPOLLET : 0)
+        | (opt->experimental_exclusive ? EPOLLEXCLUSIVE : 0);
     w->callback_args = opt->callback_args ? 1 : 0;
     w->callback_arg_data = opt->callback_arg_data ? 1 : 0;
     w->internal = opt->internal ? 1 : 0;
@@ -2381,14 +2418,32 @@ enable_read(w_obj)
     SV *w_obj
   CODE:
     le_watcher_t *w = le_watcher_from_sv(w_obj);
-    if (w && w->active && (!(w->mask & EPOLLIN) || (w->flags & EPOLLONESHOT))) { w->mask |= EPOLLIN; if (le_apply_mask(w) < 0) croak("enable_read epoll_ctl MOD failed: %s", strerror(errno)); }
+    if (w && w->active && (!(w->mask & EPOLLIN) || (w->flags & EPOLLONESHOT))) {
+        uint32_t previous = w->mask;
+        w->mask |= EPOLLIN;
+        if (le_apply_mask(w) < 0) {
+            int err = errno;
+            if (w->flags & EPOLLEXCLUSIVE) w->mask = previous;
+            croak("enable_read epoll_ctl %s failed: %s",
+                (w->flags & EPOLLEXCLUSIVE) ? "ADD" : "MOD", strerror(err));
+        }
+    }
 
 void
 disable_read(w_obj)
     SV *w_obj
   CODE:
     le_watcher_t *w = le_watcher_from_sv(w_obj);
-    if (w && w->active && (w->mask & EPOLLIN)) { w->mask &= ~EPOLLIN; if (le_apply_mask(w) < 0) croak("disable_read epoll_ctl MOD failed: %s", strerror(errno)); }
+    if (w && w->active && (w->mask & EPOLLIN)) {
+        uint32_t previous = w->mask;
+        w->mask &= ~EPOLLIN;
+        if (le_apply_mask(w) < 0) {
+            int err = errno;
+            if (w->flags & EPOLLEXCLUSIVE) w->mask = previous;
+            croak("disable_read epoll_ctl %s failed: %s",
+                (w->flags & EPOLLEXCLUSIVE) ? "DEL" : "MOD", strerror(err));
+        }
+    }
 
 void
 enable_write(w_obj)

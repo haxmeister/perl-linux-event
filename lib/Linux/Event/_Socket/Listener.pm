@@ -475,6 +475,8 @@ sub new ($class, %opt) {
         backlog             => $backlog,
         max_accept_per_tick => $maximum,
         edge_triggered      => $edge,
+        # Internal research-only switch. Not a constructor option or public API.
+        experimental_exclusive => $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} ? 1 : 0,
         owns_socket         => $owns_socket ? 1 : 0,
         unlink_on_close     => (defined($path) && $unlink_on_close) ? 1 : 0,
         state               => 'unattached',
@@ -628,6 +630,7 @@ sub _attach_to_loop ($self, $loop) {
             read => \&_accept_ready,
             error => \&_listener_error_ready,
             edge_triggered => $self->{edge_triggered} ? 1 : 0,
+            _experimental_epollexclusive => $self->{experimental_exclusive},
             _callback_data_arg => 1,
         );
     };

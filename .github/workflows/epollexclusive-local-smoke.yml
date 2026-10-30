@@ -1,0 +1,65 @@
+name: EPOLLEXCLUSIVE local runner smoke
+
+on:
+  push:
+    branches: [feature/epollexclusive-evaluation]
+    paths:
+      - 'bench/experiments/epollexclusive-local.pl'
+      - '.github/workflows/epollexclusive-local-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: '5.44'
+      - name: Compile Linux::Event
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+          perl Makefile.PL
+          make -j2
+      - name: Validate Perl syntax and CLI
+        run: |
+          perl -Mblib -c bench/experiments/epollexclusive-local.pl
+          perl -Mblib bench/experiments/epollexclusive-local.pl --help
+      - name: Execute all three modes with real Stream responses
+        run: |
+          perl -Mblib bench/experiments/epollexclusive-local.pl \
+            --seconds 2 --repeats 1 --workers 2 --work-us 0 \
+            --clients 16 --output bench/results/epollexclusive/local-smoke.jsonl
+      - name: Validate result file
+        run: |
+          python3 - <<'PY'
+          import json
+          path='bench/results/epollexclusive/local-smoke.jsonl'
+          rows=[json.loads(x) for x in open(path)]
+          assert rows[0]['type']=='metadata'
+          trials=[x for x in rows if x['type']=='trial']
+          assert {x['mode'] for x in trials} == {'shared','exclusive','reuseport'}
+          for x in trials:
+              assert x['child_failures'] == 0, x
+              assert len(x['worker']) == 2, x
+              assert x['traffic']['completed'] > 0, x
+              assert x['accepted'] >= x['traffic']['completed'], x
+              assert x['fairness_jain'] > 0, x
+              assert x['traffic']['latency_ms']['p95'] >= 0, x
+              assert x['traffic']['failed_reply'] == 0, x
+              assert x['traffic']['pending_eof'] == 0, x
+              assert sum(w['stream_errors'] for w in x['worker']) == 0, x
+          print('Local benchmark smoke passed for all modes')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: epollexclusive-local-smoke-results
+          path: bench/results/epollexclusive/local-smoke.jsonl
+          if-no-files-found: warn

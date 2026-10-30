@@ -1,0 +1,33 @@
+name: EPOLLEXCLUSIVE focused lifecycle regression
+
+on:
+  push:
+    branches: [feature/epollexclusive-evaluation]
+    paths:
+      - 't/loop-epollexclusive-experiment.t'
+      - 'xsloop/Loop.xs'
+      - 'lib/Linux/Event/_Socket/Listener.pm'
+      - '.github/workflows/epollexclusive-lifecycle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: '5.44'
+      - name: Build distribution
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+          perl Makefile.PL
+          make -j2
+      - name: Run focused lifecycle tests
+        run: prove -vb t/loop-epollexclusive-experiment.t

@@ -1,0 +1,71 @@
+name: EPOLLEXCLUSIVE Linux::Event server benchmark
+
+on:
+  push:
+    branches: [feature/epollexclusive-evaluation]
+    paths:
+      - 'bench/experiments/epollexclusive-linux-event.pl'
+      - 'lib/Linux/Event/_Socket/Listener.pm'
+      - 'xsloop/Loop.xs'
+      - '.github/workflows/epollexclusive-linux-event.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Real Linux::Event multiworker server
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: '5.44'
+      - name: Build Linux::Event
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+          perl Makefile.PL
+          make -j2
+      - name: Compare workers and traffic
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bench/results/epollexclusive
+          for trial in 1 2 3; do
+            for workers in 4 8; do
+              for work in 0 150; do
+                for mode in shared exclusive reuseport; do
+                  echo "trial=$trial workers=$workers work=$work mode=$mode"
+                  perl -Mblib bench/experiments/epollexclusive-linux-event.pl \
+                    "$mode" "$workers" 500 0 "$work" batch |
+                    tee -a bench/results/epollexclusive/linux-event.jsonl
+                done
+              done
+            done
+          done
+      - name: Summarize
+        run: |
+          python3 - <<'PY'
+          import collections, json, statistics
+          rows=[json.loads(x) for x in open('bench/results/epollexclusive/linux-event.jsonl')]
+          groups=collections.defaultdict(list)
+          for row in rows:
+              groups[(row['workers'],row['work_us'],row['traffic'],row['mode'])].append(row)
+          for (workers,work,traffic,mode), values in sorted(groups.items()):
+              med=lambda key: statistics.median(x[key] for x in values)
+              print(f'workers={workers} work_us={work} traffic={traffic} mode={mode:9s} '
+                    f'completed_rate={med("completed_rate"):8.0f}/s '
+                    f'cpu_s={med("worker_cpu_s"):6.4f} epoll_waits={med("epoll_wait_calls"):7.0f} '
+                    f'accepted={med("accepted"):.0f} '
+                    f'messages={med("messages"):.0f}')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: epollexclusive-real-linux-event-results
+          path: bench/results/epollexclusive/linux-event.jsonl
+          if-no-files-found: warn

@@ -1,5 +1,188 @@
 # Linux::Event Handoff
 
+## CORRECTION AFTER FIRST LOCAL RUN (2026-10-30)
+
+The first user-provided sustained file
+(`epollexclusive-local-v1`) finished all 24 combinations with valid
+acknowledgments and nearly even work distribution on a four-core Linux host.
+But the generated client closed sockets with TCP SO_LINGER(0): **every**
+completed request induced one server Stream `on_error` callback.
+This was a benchmark flaw, not evidence of a Linux::Event runtime error.
+
+The local generator now waits for the server's FIN, closes normally,
+and reports `pending_eof` if the FIN does not arrive. The experiment
+version in JSONL is `epollexclusive-local-v2`, and the focused smoke
+workflow now asserts zero Stream error callbacks, zero incomplete replies,
+and zero FIN timeouts in each mode. A fresh local run is required before
+using measured throughput/CPU/latency to decide whether to enable
+EPOLLEXCLUSIVE. Previous v1 CPU/throughput comparisons are contaminated
+by their error path. No user machine details or private results are
+committed to the repo.
+
+## USER-RUN LOCAL SUSTAINED BENCHMARK
+
+A sustained local Linux::Event comparison has been added on the experiment
+branch: `bench/experiments/epollexclusive-local.pl`.
+Instructions: `bench/experiments/EPOLLEXCLUSIVE-LOCAL.md`.
+
+Runs normal shared epoll vs EPOLLEXCLUSIVE vs independent SO_REUSEPORT
+over 2 and 4 worker processes, two synthetic CPU workloads, 15-second
+trials, two repetitions. Uses multiple local client load-generator
+processes to avoid a single generator's CPU ceiling. Captures completed
+round trips, CPU per worker and per generator, client latency distribution,
+worker fairness and errors. Stores one gitignored timestamped JSONL file.
+Run `perl -Mblib bench/experiments/epollexclusive-local.pl` after
+building this branch. No sudo or kernel tuning required.
+
+The local sustained runner was verified in CI smoke run 40989609434:
+https://github.com/haxmeister/perl-linux-event/actions/runs/40989609434
+The script compiled and ran ordinary shared, EPOLLEXCLUSIVE, and SO_REUSEPORT
+with 2 separate client generators and 2 worker processes, producing a parsed
+JSONL file with complete acknowledgments and per-worker stats.
+The dedicated smoke workflow is
+`.github/workflows/epollexclusive-local-smoke.yml`. Keep main untouched,
+PR #36 draft and 0.118 unreleased.
+
+## VERIFIED CHECKPOINT — EXCLUSIVE LIFECYCLE EXPERIMENT (2026-10-30)
+
+Current implemented branch includes transactional experimental epoll
+ADD/DEL mask rollback, Listener replacement/teardown/fork failure tests,
+and accept-budget fairness benchmarks.
+
+**Validated:**
+- Focused lifecycle CI run 40986880882 passed all 33 top-level tests,
+  including deliberate exclusive ADD and DEL failures in an isolated process.
+  Earlier failure was test setup only: closing a pipe and reusing its numeric
+  fd before canceling the old registry entry. The test now cancels the old
+  registration before creating the next pipe.
+- Full CI run 40986887272 has passed all eight Perl configurations
+  (including threaded) plus generated-distribution integrity. Its long
+  full performance-regression job was still in progress at this checkpoint.
+- Previously completed full nine-workload performance check 40981156061
+  passed the 10% gate; the largest throughput regression was -2.80% in
+  deadline Stream throughput and raw Stream was -0.06%.
+- The 48-case fair-accept budget run 40986208593 passed but showed that
+  budgets 1/8/32/256 cannot reliably balance exclusive workers.
+  SO_REUSEPORT was consistently better balanced.
+
+**Decision:** Do not merge, bump, tag, or publish. Keep PR #36 draft;
+the prototype has no new public API and runs only behind
+`LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1`. No main-branch changes were made.
+The next meaningful performance check should use long-running realistic
+servers with independently measured CPU and fairness on dedicated hardware,
+and evaluate the burden of switching existing ordinary listeners to
+exclusive registrations during managed fork.
+
+## CONTINUATION — EXCLUSIVE LIFECYCLE AND FAIRNESS (2026-10-30)
+
+This feature branch now includes additional safety checks beyond the first
+Linux::Event multi-worker benchmark:
+
+- Native `xsloop/Loop.xs` restores the prior read-interest mask if an
+  experimental exclusive EPOLL_CTL_ADD or EPOLL_CTL_DEL fails. Unmodified
+  ordinary watcher behavior is preserved.
+- `t/loop-epollexclusive-experiment.t` now checks rejected active/paused
+  watcher replacement, paused Listener detach and re-adoption, unsupported
+  fork disposition preflight, forced child reconstruction failure with parent
+  rollback, Listener closure during on_accept, child worker shutdown,
+  `fork(move => [$listener])`, and deliberately failed epoll DEL and ADD
+  in an isolated child process.
+- The benchmark accepts an optional `ACCEPT_BUDGET` argument after
+  `serial|batch`; all old invocations still default to 256.
+- Fairness workflow `.github/workflows/epollexclusive-fairness.yml`
+  completed run 40986208593 successfully: 48 tests, budgets 1/8/32/256,
+  4/8 workers, 500 batch requests and 150us synthetic work.
+  A budget of 1 did not solve the uneven exclusive worker allocation,
+  particularly with eight workers. SO_REUSEPORT was consistently much
+  more balanced. Full table and source caveats are in
+  `bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`.
+- Full baseline-versus-feature performance check previously passed in
+  CI run 40981156061, all nine workloads under the existing 10% gate,
+  including raw Stream throughput -0.06% and deadline Stream -2.80%.
+- The newest CI and performance check should be verified after the last
+  regression test amendment before considering further integration.
+
+Decision: **do not automatically enable EPOLLEXCLUSIVE yet**.
+The kernel primitive helps wakeup efficiency but is not an even worker
+scheduler. Keep this implementation research-only while testing realistic,
+long-running servers and kernel compatibility. Main and version 0.118
+remain untouched/unreleased. Draft PR #36 is not for merging yet.
+
+## ACTIVE EXPERIMENT — EPOLLEXCLUSIVE shared listeners (2026-10-29)
+
+Branch: `feature/epollexclusive-evaluation`, from main
+`08d775cc2287fb63942c2a27b3a6bfeb59a28aa3`.
+Draft PR #36: https://github.com/haxmeister/perl-linux-event/pull/36
+
+**Main has not changed for this experiment.** No merge, public API change,
+version bump, tag, GitHub release, or CPAN release is authorized. The
+development version on main remains 0.118 (unreleased).
+
+The branch includes an **opt-in internal** EPOLLEXCLUSIVE Listener/Loop
+prototype. The switch `LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1` applies
+only when creating an experimental Listener. Ordinary Listener behavior is
+unchanged without it. No public constructor option was added.
+
+Implementation:
+- `xsloop/Loop.xs`: internal exclusive watcher option; reject incompatible
+  flag combinations; omit EPOLLRDHUP from exclusive ADD; use DEL on pause,
+  ADD on resume; keep native watcher and Perl handle stable.
+- `lib/Linux/Event/_Socket/Listener.pm`: read the experimental environment
+  flag on Listener construction and pass the internal registration option
+  during attachment. The parent registers before fork; the child re-attaches
+  after the managed Loop reset.
+- `t/loop-epollexclusive-experiment.t` plus MANIFEST: default-mode control,
+  paused/resumed exclusive Listener, pending readiness, repeat cycles,
+  active/suspended close, `fork(share => [$listener])` with a paused
+  Listener, and callback-triggered `defer_fork(share => [$listener])`
+  followed by child pause/resume.
+- `bench/experiments/epollexclusive-accept.c` and
+  `bench/experiments/epollexclusive-linux-event.pl`: native standalone
+  kernel experiment plus real Perl Listener/Stream request/response
+  comparison, including serial and batch concurrent-requests mode.
+- Workflows `epollexclusive-evaluation.yml` and
+  `epollexclusive-linux-event.yml` run measurement matrices.
+
+The first C measurement run 40976555921 passed. Real Linux::Event
+sequential app-response run 40980410396 and concurrent batch run
+40980753795 passed, with every expected request and Stream reply delivered.
+
+Representative real Linux::Event medians (four workers, 500 batch requests,
+three trials; mode: shared / exclusive / SO_REUSEPORT):
+- Zero synthetic processing: 3550 / 4590 / 3840 completed/s.
+- 150 us synthetic CPU per message: 3625 / 4061 / 3704 completed/s.
+- With 150 us CPU, total worker CPU: .21 / .20 / .19 seconds.
+- Exclusive worker fairness is poor despite useful wakeup reduction:
+  median min/max per-worker accepts 4/230 in four-worker batch mode;
+  with eight workers and 150 us work, 0/229, vs SO_REUSEPORT 54/74.
+- Sequential mode can strongly favor one exclusive worker (0/500 accepted).
+
+Read the exact benchmark table and caveats in
+`bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`, and the architecture
+details in `docs/EPOLLEXCLUSIVE-EVALUATION.md`.
+
+Functional validation: the version of the prototype prior to the
+client-concurrency benchmark passed eight Perl configurations and
+distribution integrity in CI run 40980121599. The final comparison
+branch (including batch generator) has passed all eight Perl
+configurations and distribution integrity in CI run 40980758678;
+its long performance regression job should be checked before proceeding.
+The later CI run 40981156061 (after adding deferred-fork integration coverage)
+also passed all eight Perl configurations and distribution integrity; the
+full performance regression remained in progress at this checkpoint.
+Foreign-loop integration and deferred-fork driver overhead workflows
+also passed on the feature branch.
+
+NEXT:
+1. Extend correctness tests for fork preflight/rollback, watcher
+   replacement, and teardown during active callbacks.
+2. Test fairness under long-lived connections and a controlled
+   multi-core environment, not only short loopback requests.
+3. Verify the current full performance regression gate and
+   compare CPU cost on dedicated hardware.
+4. Only then decide whether to enable automatic exclusive shared
+   Listener registration. Do not modify main without explicit approval.
+
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
 The callback-safe deferred managed fork feature was squash-merged to main from
