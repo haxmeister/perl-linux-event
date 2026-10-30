@@ -1,0 +1,88 @@
+name: sendfile/splice Linux TCP research
+
+on:
+  push:
+    branches: [feature/sendfile-splice-evaluation]
+    paths:
+      - 'bench/experiments/zero-copy-tcp.c'
+      - '.github/workflows/zero-copy-evaluation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    name: Copy vs sendfile vs splice
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Compile Linux-only benchmark with strict warnings
+        run: |
+          mkdir -p bench/results/zero-copy
+          cc -O2 -std=c11 -Wall -Wextra -Werror -pthread \
+            bench/experiments/zero-copy-tcp.c \
+            -o /tmp/linux-event-zero-copy-bench
+      - name: Compare file to localhost TCP under normal receive
+        shell: bash
+        run: |
+          set -euo pipefail
+          for spec in '64 20000' '4096 8000' '32768 2000' '204800 400' '1048576 100'; do
+            read -r bytes rounds <<< "$spec"
+            echo "size=$bytes rounds=$rounds" >&2
+            /tmp/linux-event-zero-copy-bench --size "$bytes" \
+              --rounds "$rounds" --repeats 5 \
+              | tee -a bench/results/zero-copy/tcp.jsonl
+          done
+      - name: Exercise EAGAIN, short progress and real backpressure
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/linux-event-zero-copy-bench --size 32768 \
+            --rounds 1500 --repeats 3 --pressure-us 40 \
+            | tee -a bench/results/zero-copy/tcp.jsonl
+      - name: Verify integrity and compare CPU per MiB
+        run: |
+          python3 - <<'PY'
+          import collections, json, statistics
+          path = "bench/results/zero-copy/tcp.jsonl"
+          rows = [json.loads(line) for line in open(path)]
+          assert len(rows) == 54, len(rows)  # (5 sizes * 5 + 3) * 3 modes
+          for r in rows:
+              assert r["verified"] is True and r["bytes"] == r["size"] * r["rounds"], r
+              assert r["wall_s"] > 0 and r["sender_cpu_s"] > 0, r
+              calls = r["calls"]
+              assert calls["poll"] <= calls["eagain"], r
+              if r["mode"] == "copy":
+                  assert calls["pread"] and calls["send"] and not calls["sendfile"] and not calls["splice"], r
+              if r["mode"] == "sendfile":
+                  assert calls["sendfile"] and not calls["pread"] and not calls["splice"], r
+              if r["mode"] == "splice":
+                  assert calls["splice"] and not calls["pread"] and not calls["sendfile"], r
+          groups = collections.defaultdict(list)
+          for r in rows:
+              groups[(r["size"], r["pressure_us"], r["mode"])].append(r)
+          for size,pressure in sorted({k[:2] for k in groups}):
+              if pressure:
+                  print(f"Pressure scenario: receive sleep {pressure}us per read")
+              table = {}
+              for mode in ("copy","sendfile","splice"):
+                  trials=groups[(size,pressure,mode)]
+                  med=lambda key: statistics.median(r[key] for r in trials)
+                  table[mode]=med("sender_cpu_ms_per_mib")
+                  print(f"size={size:7} pressure={pressure:3} "
+                        f"{mode:8} CPU ms/MiB={table[mode]:8.4f} "
+                        f"rate MiB/s={med('mib_s'):9.1f} "
+                        f"EAGAIN={sum(r['calls']['eagain'] for r in trials)}")
+              for mode in ("sendfile","splice"):
+                  print(f"  {mode} sender CPU change vs copy = "
+                        f"{(table[mode]/table['copy']-1)*100:+.1f}%")
+          print(f"All {len(rows)} TCP transfer trials verified byte-for-byte")
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: sendfile-splice-tcp-research
+          path: bench/results/zero-copy/tcp.jsonl
+          if-no-files-found: warn
