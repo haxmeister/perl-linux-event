@@ -67,6 +67,15 @@ for my $mode (0, 8, 32) {
         ok(!$batch->[8], 'oversize: following packet untruncated');
         close $client;
         close $server;
+
+        # Very large configured input buffers must take the existing
+        # recvmsg path rather than multiplying allocations by batch size.
+        ($server, $client) = sockets();
+        put($client, 'large-limit-fallback');
+        check($mode, $server, ['large-limit-fallback'], 1,
+              300_000, 'over 256KiB scratch cap');
+        close $client;
+        close $server;
     };
 }
 done_testing;
