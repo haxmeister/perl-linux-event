@@ -40,7 +40,42 @@ jobs:
                 t/datagram-11-limits.t t/datagram-12-ownership-and-unix.t \
                 t/datagram-13-benchmark-smoke.t t/datagram-14-recvmmsg-experiment.t
           done
-      - name: Check existing serial UDP echo benchmark
+      - name: Compare legacy recvmsg with recvmmsg batch=8 and 32
         run: |
-          perl -Mblib bench/run-datagram-microbench.pl \
-            --packets 3000 --bytes 64 --repeats 1
+          set -euo pipefail
+          mkdir -p bench/results/udp
+          perl -Mblib -c bench/experiments/udp-recvmmsg-burst.pl
+          perl -Mblib bench/experiments/udp-recvmmsg-burst.pl \
+            --rounds 1500 --repeats 3 --sizes 64,512,1400,8192 \
+            --bursts 8,32 --modes 0,8,32 \
+            --output bench/results/udp/recvmmsg-ci.jsonl
+      - name: Summarize paired receive CPU comparisons
+        run: |
+          python3 - <<'PY'
+          import json, statistics, collections
+          rows=[json.loads(s) for s in open('bench/results/udp/recvmmsg-ci.jsonl')]
+          grouped=collections.defaultdict(list)
+          for r in rows:
+              if r['type']=='trial':
+                  assert r['sent']==r['received'] and r['errors']==0, r
+                  grouped[(r['bytes'],r['burst'],r['mode'])].append(r['receive_cpu_us_per_packet'])
+          for size,burst in sorted({k[:2] for k in grouped}):
+              vals={m:statistics.median(grouped[(size,burst,m)]) for m in (0,8,32)}
+              print(f'bytes={size:5} burst={burst:2}: recvmsg={vals[0]:.3f}us '
+                    f'recvmmsg8={vals[8]:.3f}us ({(vals[0]/vals[8]-1)*100:+.1f}% rate) '
+                    f'recvmmsg32={vals[32]:.3f}us ({(vals[0]/vals[32]-1)*100:+.1f}% rate)')
+          PY
+      - name: Check existing serial UDP echo benchmark, baseline and batch
+        run: |
+          for batch in 0 16; do
+            echo "serial UDP echo batch=$batch"
+            LINUX_EVENT_EXPERIMENT_RECVMMSG="$batch" \
+              perl -Mblib bench/run-datagram-microbench.pl \
+                --packets 3000 --bytes 64 --repeats 1
+          done
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: udp-recvmmsg-ci-comparison
+          path: bench/results/udp/recvmmsg-ci.jsonl
+          if-no-files-found: warn
