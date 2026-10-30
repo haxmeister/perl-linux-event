@@ -1,7 +1,9 @@
 # EPOLLEXCLUSIVE shared-listener evaluation
 
-This is a **measurement-only** branch. It does not change Linux::Event's
-public API or production epoll registrations. Main stays untouched.
+This is a **research-only feature branch** with an opt-in internal Listener/Loop
+prototype. Ordinary Linux::Event behavior and the public API remain unchanged
+unless the test-only `LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1` environment
+variable is set before constructing a Listener. Main stays untouched.
 
 ## Why this experiment
 
@@ -51,6 +53,48 @@ throughput is therefore not an independent capacity metric. Repeat benchmarks
 on a quiet dedicated machine before making product decisions. CI's shared
 runner is a smoke-and-directional measurement, not a performance guarantee.
 
+## Linux::Event integration prototype
+
+The branch has a narrow internal implementation in
+`lib/Linux/Event/_Socket/Listener.pm` and `xsloop/Loop.xs`.
+It installs `EPOLLEXCLUSIVE` on a Listener's first `EPOLL_CTL_ADD`,
+on **both parent and child** before/after a managed
+`fork(share => [$listener])`. It rejects incompatible edge-triggered,
+oneshot, write, and non-internal watcher combinations. It strips
+`EPOLLRDHUP` because the kernel rejects that bit on an exclusive ADD.
+
+`pause()` uses DEL, not MOD, and `resume()` uses ADD with the same
+native watcher and Perl registration retained. The default registration
+path, including its cheaper ordinary MOD, remains unchanged.
+
+The internal switch is strictly for evaluation, not a public option or
+a proposed default. For a local opt-in run:
+
+```sh
+LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1 perl -Mblib your-server.pl
+```
+
+Focused test: `t/loop-epollexclusive-experiment.t` covers ordinary behavior,
+exclusive pause/resume, pending socket readiness while paused, closing a
+suspended Listener, and managed-fork inheritance of a paused Listener.
+All eight supported CI Perl configurations and generated-distribution
+integrity have passed on the prototype.
+
+The real `Linux::Event` workload is
+`bench/experiments/epollexclusive-linux-event.pl`.
+It constructs actual Listener and Stream objects in each worker, exercises
+shared managed forks versus independent SO_REUSEPORT sockets, sends one-byte
+requests, waits for acknowledged Stream responses, and records per-process
+accept counts, epoll waits, and approximate worker CPU time.
+`serial` (one request at a time) and `batch` (many outstanding requests)
+have both been measured in CI.
+
+Real benchmark runs:
+- Sequential: https://github.com/haxmeister/perl-linux-event/actions/runs/40980410396
+- Concurrent batch: https://github.com/haxmeister/perl-linux-event/actions/runs/40980753795
+
+Results: `bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`.
+
 ## Linux constraints to verify before integration
 
 Linux man-pages document that `EPOLLEXCLUSIVE`:
@@ -75,19 +119,23 @@ These rules matter for the existing Listener implementation:
 - `fork(share => [$listener])` rebuilds the child Loop but leaves the parent
   Listener registration in place. Enabling exclusivity on the child alone is
   ineffective because the parent ordinary registration still wakes.
-- A future integration must cover setup *before* the fork, rollback if the
-  fork fails, registration replacement, teardown, fairness, source ownership,
-  and the effect of fork callbacks that modify the Listener.
+- The opt-in prototype installs exclusive registration in both parent
+  and child. A production design must still cover rollback when registration
+  or fork fails, watcher replacement, teardown, fairness, source ownership,
+  and callback-triggered changes after forking.
 
 ## Stage gates
 
-1. Establish paired kernel measurements on the three cases.
-2. Add focused regression tests for `EPOLLEXCLUSIVE` registration behavior,
-   lifecycle, and paused / resumed listeners in an experimental feature branch.
-3. Only if useful, prototype the minimal internal Loop/Listener integration
-   and exercise `fork(share => [...])` and `defer_fork(share => [...])`.
-4. Compare a real Linux::Event multi-worker server under identical workloads
-   and revisit CPU usage, fairness and the baseline 10% performance gate.
+1. Completed: paired kernel measurements of ordinary shared, exclusive shared,
+   and independent SO_REUSEPORT sockets.
+2. Completed: opt-in internal prototype and regression tests of pause/resume,
+   close, and managed `fork(share => [...])`.
+3. Completed: real Linux::Event Listener/Stream measurements with sequential
+   and concurrently outstanding request batches.
+4. Remaining: `defer_fork(share => [...])` integration regression; more
+   adversarial failure/rollback and teardown tests; CPU/fairness workloads
+   across different kernels and dedicated hardware; completed baseline
+   performance comparison before considering merge.
 5. Decide whether to merge. Do not add a public option or set any new default
    until the evidence supports it.
 

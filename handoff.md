@@ -1,50 +1,76 @@
 # Linux::Event Handoff
 
-## ACTIVE EXPERIMENT — EPOLLEXCLUSIVE shared-listener evaluation (2026-10-29)
+## ACTIVE EXPERIMENT — EPOLLEXCLUSIVE shared listeners (2026-10-29)
 
-- Branch: `feature/epollexclusive-evaluation` from main
-  `08d775cc2287fb63942c2a27b3a6bfeb59a28aa3`.
-- Draft PR: https://github.com/haxmeister/perl-linux-event/pull/36
-- Main remains untouched; no production Loop/Listener changes have been made.
-- Source development release 0.118 remains unreleased. Do not bump, tag,
-  release, or merge the experiment without explicit approval.
+Branch: `feature/epollexclusive-evaluation`, from main
+`08d775cc2287fb63942c2a27b3a6bfeb59a28aa3`.
+Draft PR #36: https://github.com/haxmeister/perl-linux-event/pull/36
 
-Experiment setup: standalone Linux C benchmark in
-`bench/experiments/epollexclusive-accept.c`; CI in
-`.github/workflows/epollexclusive-evaluation.yml`.
-Run succeeded: https://github.com/haxmeister/perl-linux-event/actions/runs/40976555921
-Full analysis:
-`bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`. Plan:
-`docs/EPOLLEXCLUSIVE-EVALUATION.md`.
+**Main has not changed for this experiment.** No merge, public API change,
+version bump, tag, GitHub release, or CPAN release is authorized. The
+development version on main remains 0.118 (unreleased).
 
-Key median findings, 8 workers, 1,200 burst TCP connections:
-- Empty handler: shared 18,265/s, EPOLLEXCLUSIVE 28,513/s,
-  SO_REUSEPORT 31,948/s.
-- Empty-accept wakeups: shared 1,384, exclusive 0, reuseport 0.
-- Exclusive worker imbalance: min/max 0/1193; reuseport 138/171.
-- With simulated 150us CPU per accepted connection: shared 18,596/s,
-  exclusive 20,043/s, reuseport 18,676/s. Large apparent exclusive
-  advantage narrows when application work is included; reuseport
-  distributes work more evenly.
-- The benchmark is *not* a real Linux::Event Stream server or definitive
-  basis to change the default accept mechanism. CI is shared hardware.
+The branch includes an **opt-in internal** EPOLLEXCLUSIVE Listener/Loop
+prototype. The switch `LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1` applies
+only when creating an experimental Listener. Ordinary Listener behavior is
+unchanged without it. No public constructor option was added.
 
-Important kernel and core constraints before implementation:
-- EPOLLEXCLUSIVE is ADD-only; subsequent epoll MOD yields EINVAL.
-  Listener pause/resume currently uses MOD.
-- `fork(share=>[$listener])` leaves parent registration in place and
-  reconstructs child registration. BOTH must become exclusive, before
-  the child starts accepting. An ordinary parent epoll still wakes.
-- Need robust rollback, pause/resume, detach/close, fork cancellation,
-  worker fairness, accept budgets, and realistic Stream workload tests.
-- SO_REUSEPORT is a separate-socket architecture rather than an automatic
-  replacement for managed shared listeners.
+Implementation:
+- `xsloop/Loop.xs`: internal exclusive watcher option; reject incompatible
+  flag combinations; omit EPOLLRDHUP from exclusive ADD; use DEL on pause,
+  ADD on resume; keep native watcher and Perl handle stable.
+- `lib/Linux/Event/_Socket/Listener.pm`: read the experimental environment
+  flag on Listener construction and pass the internal registration option
+  during attachment. The parent registers before fork; the child re-attaches
+  after the managed Loop reset.
+- `t/loop-epollexclusive-experiment.t` plus MANIFEST: default-mode control,
+  paused/resumed exclusive Listener, pending readiness, repeat cycles,
+  active/suspended close, and `fork(share => [$listener])` with a paused
+  Listener.
+- `bench/experiments/epollexclusive-accept.c` and
+  `bench/experiments/epollexclusive-linux-event.pl`: native standalone
+  kernel experiment plus real Perl Listener/Stream request/response
+  comparison, including serial and batch concurrent-requests mode.
+- Workflows `epollexclusive-evaluation.yml` and
+  `epollexclusive-linux-event.yml` run measurement matrices.
 
-Next task: prototype minimal **internal-only** exclusive registration on
-this feature branch, then compare actual Linux::Event fork-sharing servers
-against ordinary shared listeners and independent SO_REUSEPORT workers.
-Preserve public defaults and benchmark the impact. Do not merge until
-correctness, fairness, and CPU gains justify the complexity.
+The first C measurement run 40976555921 passed. Real Linux::Event
+sequential app-response run 40980410396 and concurrent batch run
+40980753795 passed, with every expected request and Stream reply delivered.
+
+Representative real Linux::Event medians (four workers, 500 batch requests,
+three trials; mode: shared / exclusive / SO_REUSEPORT):
+- Zero synthetic processing: 3550 / 4590 / 3840 completed/s.
+- 150 us synthetic CPU per message: 3625 / 4061 / 3704 completed/s.
+- With 150 us CPU, total worker CPU: .21 / .20 / .19 seconds.
+- Exclusive worker fairness is poor despite useful wakeup reduction:
+  median min/max per-worker accepts 4/230 in four-worker batch mode;
+  with eight workers and 150 us work, 0/229, vs SO_REUSEPORT 54/74.
+- Sequential mode can strongly favor one exclusive worker (0/500 accepted).
+
+Read the exact benchmark table and caveats in
+`bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`, and the architecture
+details in `docs/EPOLLEXCLUSIVE-EVALUATION.md`.
+
+Functional validation: the version of the prototype prior to the
+client-concurrency benchmark passed eight Perl configurations and
+distribution integrity in CI run 40980121599. The final comparison
+branch (including batch generator) has passed all eight Perl
+configurations and distribution integrity in CI run 40980758678;
+its long performance regression job should be checked before proceeding.
+Foreign-loop integration and deferred-fork driver overhead workflows
+also passed on the feature branch.
+
+NEXT:
+1. Extend correctness tests for `defer_fork(share=>[$listener])`,
+   fork preflight/rollback, watcher replacement, and teardown during
+   active callbacks.
+2. Test fairness under long-lived connections and a controlled
+   multi-core environment, not only short loopback requests.
+3. Verify the current full performance regression gate and
+   compare CPU cost on dedicated hardware.
+4. Only then decide whether to enable automatic exclusive shared
+   Listener registration. Do not modify main without explicit approval.
 
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 

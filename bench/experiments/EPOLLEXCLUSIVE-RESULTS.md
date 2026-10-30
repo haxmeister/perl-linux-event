@@ -73,3 +73,67 @@ handling, then run actual Linux::Event Listener+Stream workloads. Keep the
 prototype off main until correctness and performance have been demonstrated.
 The current benchmark is a research harness, not proof of application-level
 speedup.
+
+## Real Linux::Event Listener/Stream results (2026-10-29)
+
+**Sequential round trips:**
+https://github.com/haxmeister/perl-linux-event/actions/runs/40980410396
+
+Each request required a completed one-byte Stream reply before the next
+request started. 500 requests per trial, three trials per case; all 500
+responses completed in every trial. Rates are *completed application
+transactions* per second, not just TCP connect attempts.
+
+| Workers | Simulated work | Mode | Completed/s | Worker CPU s | Epoll waits | Median min/max accepted per worker |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 4 | 0 us | Shared | 3,206 | 0.12 | 2,352 | 0/247 |
+| 4 | 0 us | EPOLLEXCLUSIVE | 3,547 | 0.10 | 1,482 | 0/499 |
+| 4 | 0 us | SO_REUSEPORT | 3,024 | 0.09 | 1,249 | 118/136 |
+| 4 | 150 us | Shared | 2,033 | 0.21 | 2,288 | 5/305 |
+| 4 | 150 us | EPOLLEXCLUSIVE | 2,194 | 0.19 | 1,394 | 0/500 |
+| 4 | 150 us | SO_REUSEPORT | 2,130 | 0.18 | 1,356 | 113/133 |
+
+**Concurrent outstanding requests:**
+https://github.com/haxmeister/perl-linux-event/actions/runs/40980753795
+
+The client opens and writes up to 500 requests, then waits for all
+acknowledgments. This is a more realistic burst-contention case, though not a
+fully representative persistent-connection workload. Three trials per case,
+500 transactions; every request received its reply.
+
+| Workers | Simulated work | Mode | Completed/s | Worker CPU s | Epoll waits | Median min/max accepted per worker |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 4 | 0 us | Shared | 3,550 | 0.14 | 2,083 | 34/307 |
+| 4 | 0 us | EPOLLEXCLUSIVE | 4,590 | 0.11 | 1,131 | 0/406 |
+| 4 | 0 us | SO_REUSEPORT | 3,840 | 0.12 | 1,457 | 119/135 |
+| 4 | 150 us | Shared | 3,625 | 0.21 | 1,792 | 75/181 |
+| 4 | 150 us | EPOLLEXCLUSIVE | 4,061 | 0.20 | 1,400 | 4/230 |
+| 4 | 150 us | SO_REUSEPORT | 3,704 | 0.19 | 1,373 | 109/143 |
+| 8 | 0 us | Shared | 3,457 | 0.12 | 1,977 | 10/249 |
+| 8 | 0 us | EPOLLEXCLUSIVE | 4,742 | 0.12 | 1,107 | 0/350 |
+| 8 | 0 us | SO_REUSEPORT | 3,762 | 0.08 | 1,464 | 54/72 |
+| 8 | 150 us | Shared | 3,305 | 0.20 | 1,880 | 40/98 |
+| 8 | 150 us | EPOLLEXCLUSIVE | 3,558 | 0.19 | 1,476 | 0/229 |
+| 8 | 150 us | SO_REUSEPORT | 3,483 | 0.16 | 1,428 | 54/74 |
+
+The raw per-worker arrays are included in workflow artifacts and log JSON.
+Reported worker CPU uses Perl's `times()` and has relatively coarse timing
+resolution for short trials; the comparison is indicative only.
+
+**Interpretation:** The exclusive mode consistently reduces epoll activity
+and completed more transactions per second than ordinary shared epoll in the
+tested four/eight-worker scenarios. However, exclusive registration still
+produces uneven worker allocation even for concurrent batches. Sometimes
+a worker gets no accepts, while another receives most. SO_REUSEPORT has much
+more even distribution, and at eight workers with application CPU work its
+measured total worker CPU is lower.
+
+All tests were conducted on shared GitHub Actions runner hardware and
+short loopback TCP workloads. Workload ordering and OS scheduling introduce
+noise. These numbers do **not** justify making EPOLLEXCLUSIVE the default
+for shared Listeners yet.
+
+**Next stage:** Focus on fairness and correctness under worker pauses,
+restarts, failed fork/registration, and concurrent long-lived connections;
+test the `defer_fork` path. A dedicated-machine A/B test should precede
+any public integration decision. Keep all of this on the feature branch.
