@@ -1,5 +1,37 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE PROTOTYPE CHECKPOINT (2026-10-30)
+
+Implementation work now targets the existing `feature/stream-sendfile` branch
+without modifying main or the preserved research branch. A first native
+implementation has been prepared for commit, but is NOT YET CI-VERIFIED.
+The public API remains provisional pending final review.
+
+- `xsbytestream/stream_internal.h`: file entry embeds the existing small
+  byte segment header; a null SV marks an owned file descriptor plus explicit
+  source offset. State tracks file-entry count.
+- `xsbytestream/stream_write.c`: file range admission and duplicated
+  close-on-exec FD; one immediate bounded sendfile call on an empty queue;
+  mixed writev/sendfile readiness draining without crossing file boundaries;
+  64-KiB cumulative budget, native transport guard, thread-local SIGPIPE mask,
+  partial/EAGAIN/EINTR/premature EOF handling; same pending limits, watermarks,
+  byte statistics and teardown release.
+- `xsbytestream/ByteStream.xs`: private _sendfile entry.
+- `lib/Linux/Event/_Socket/Stream.pm`: experimental sendfile($fh, offset =>,
+  length =>) wrapper only for plain established sockets. This sends raw output
+  just like write(), including on framed subclasses (send() still frames).
+  No new public transfer object or callback.
+- `t/stream-69-sendfile.t`: initial ordering, close-source, offset, range,
+  hard-limit, and truncation regressions. Further lifecycle/fairness/TLS/peer
+  disconnect coverage is required, as is actual Stream performance measurement.
+- `MANIFEST`: includes new test.
+
+The previously recorded proposal is in `docs/STREAM-SENDFILE-DESIGN.md`.
+Local git/network access is unavailable; GitHub connector writes and GitHub
+Actions PR CI are the validation path. Do not claim tests passed until CI
+has run. Next: commit the prototype, open draft PR, inspect failures,
+correct and extend tests, benchmark real Streams, update exact commits here.
+
 ## ACTIVE STREAM SENDFILE INTEGRATION (2026-10-30)
 
 Proposal checkpoint: `407e75c9227fe3bc8c44a4005b2e149211eecc85`.
