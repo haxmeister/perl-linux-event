@@ -10,7 +10,6 @@ use IO::Socket::INET;
 use File::Path qw(make_path);
 use File::Basename qw(dirname);
 use POSIX qw(strftime);
-use Socket qw(SOL_SOCKET SO_LINGER);
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC CLOCK_PROCESS_CPUTIME_ID usleep);
 use Linux::Event::Loop;
 use Linux::Event::IO::Sock::Listener;
@@ -134,14 +133,17 @@ sub new_listener ($loop, $port, $reuseport, $work, $budget, $counts) {
     );
 }
 sub close_client ($client) {
-    # Client-only RST after receiving the reply avoids TIME_WAIT port
-    # exhaustion during sustained short connections. No system tuning.
-    $client->setsockopt(SOL_SOCKET, SO_LINGER, pack('ii', 1, 0));
+    # Let the server's Stream->end() deliver TCP FIN. We wait for that EOF
+    # after reading the acknowledgment, then close normally. Abruptly
+    # resetting the client socket with SO_LINGER(0) caused one server-side
+    # on_error callback for *every* completed request, badly contaminating
+    # the original benchmark with error-handling work.
     close $client;
 }
 sub generate_requests ($port, $seconds, $concurrency) {
     my $selector = IO::Select->new;
     my %issued;
+    my %received_reply;
     my @lat_us;
     my ($connected, $completed, $within, $connect_errors,
         $write_errors, $reply_errors) = (0,0,0,0,0,0);
@@ -181,22 +183,30 @@ sub generate_requests ($port, $seconds, $concurrency) {
             my $fd = fileno($client);
             my $received_at = mono();
             my $read = sysread($client, my $reply, 1);
-            if (defined($read) && $read == 1 && $reply eq 'y') {
+            if (defined($read) && $read == 1 && $reply eq 'y'
+                    && !$received_reply{$fd}) {
+                $received_reply{$fd} = 1;
                 $completed++;
                 $within++ if $received_at <= $deadline;
                 push @lat_us, int(($received_at - $issued{$fd}) * 1_000_000)
                     if exists $issued{$fd};
+                # Keep socket until the server's FIN; avoids sending RST.
+                next;
             }
-            else {
+            if (!defined($read) || $read != 0 || !$received_reply{$fd}) {
                 $reply_errors++;
             }
             $selector->remove($client);
             delete $issued{$fd};
+            delete $received_reply{$fd};
             close_client($client);
         }
     }
-    my $unanswered = $selector->count;
+    my $unanswered = 0;
+    my $pending_eof = 0;
     for my $client ($selector->handles) {
+        if ($received_reply{fileno($client)}) { $pending_eof++ }
+        else { $unanswered++ }
         $selector->remove($client);
         close_client($client);
     }
@@ -210,6 +220,7 @@ sub generate_requests ($port, $seconds, $concurrency) {
         completed_in_time => $within, completed_per_s => $within / $seconds,
         failed_connect => $connect_errors, failed_write => $write_errors,
         failed_reply => $reply_errors, unanswered => $unanswered,
+        pending_eof => $pending_eof,
         client_cpu_s => sprintf('%.6f', $client_cpu) + 0,
         client_cpu_fraction => sprintf('%.3f', $client_cpu / $seconds) + 0,
         latency_ms => {
@@ -237,7 +248,7 @@ sub histogram_percentile_ms ($hist, $percent) {
 sub combine_generators ($data, $seconds) {
     my %total = map { $_ => 0 } qw(
         connected completed completed_in_time failed_connect
-        failed_write failed_reply unanswered client_cpu_s
+        failed_write failed_reply unanswered pending_eof client_cpu_s
     );
     my %hist;
     my $max_cpu_fraction = 0;
@@ -507,6 +518,10 @@ for my $repeat (1 .. $opt{repeats}) {
                     if $trial->{traffic}{max_generator_cpu_fraction} > 0.9;
                 push @{$trial->{warnings}}, 'some requests have no reply'
                     if $trial->{traffic}{completed} < $trial->{traffic}{connected};
+                push @{$trial->{warnings}}, 'clients closed before server FIN'
+                    if $trial->{traffic}{pending_eof};
+                push @{$trial->{warnings}}, 'server Stream error callbacks occurred'
+                    if grep { $_->{stream_errors} } @{$trial->{worker}};
                 print {$out} $json->encode($trial), "\n";
                 push @all, $trial;
                 printf "    %7.0f replies/s; worker CPU %.2fs; p95 %.3fms"
