@@ -1,5 +1,35 @@
 # Linux::Event Handoff
 
+## VERIFIED CHECKPOINT — EXCLUSIVE LIFECYCLE EXPERIMENT (2026-10-30)
+
+Current implemented branch includes transactional experimental epoll
+ADD/DEL mask rollback, Listener replacement/teardown/fork failure tests,
+and accept-budget fairness benchmarks.
+
+**Validated:**
+- Focused lifecycle CI run 40986880882 passed all 33 top-level tests,
+  including deliberate exclusive ADD and DEL failures in an isolated process.
+  Earlier failure was test setup only: closing a pipe and reusing its numeric
+  fd before canceling the old registry entry. The test now cancels the old
+  registration before creating the next pipe.
+- Full CI run 40986887272 has passed all eight Perl configurations
+  (including threaded) plus generated-distribution integrity. Its long
+  full performance-regression job was still in progress at this checkpoint.
+- Previously completed full nine-workload performance check 40981156061
+  passed the 10% gate; the largest throughput regression was -2.80% in
+  deadline Stream throughput and raw Stream was -0.06%.
+- The 48-case fair-accept budget run 40986208593 passed but showed that
+  budgets 1/8/32/256 cannot reliably balance exclusive workers.
+  SO_REUSEPORT was consistently better balanced.
+
+**Decision:** Do not merge, bump, tag, or publish. Keep PR #36 draft;
+the prototype has no new public API and runs only behind
+`LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1`. No main-branch changes were made.
+The next meaningful performance check should use long-running realistic
+servers with independently measured CPU and fairness on dedicated hardware,
+and evaluate the burden of switching existing ordinary listeners to
+exclusive registrations during managed fork.
+
 ## CONTINUATION — EXCLUSIVE LIFECYCLE AND FAIRNESS (2026-10-30)
 
 This feature branch now includes additional safety checks beyond the first
