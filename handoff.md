@@ -23,8 +23,20 @@ output order, fairness and lifecycle invariants before integration.
 The local runner passed focused CI smoke (41137770758, 36 verified
 transfers); full corrected standalone CI (41137609523, 84 verified
 transfers) also passed. Draft PR #38 is open for full CI verification.
-Next: compare on dedicated quad if warranted, then design native queue
-integration separately if justified.
+The dedicated four-core run has completed and is summarized in
+`docs/ZERO-COPY-EVALUATION.md`. All 90/90 TCP transfers were byte-exact.
+Five-repeat medians: at 200 KiB and 1 MiB, sendfile used 78.7% and
+79.7% less sender CPU per MiB than the copied C baseline. Combined
+sender+receiver thread CPU fell ~55–56% on those sizes. Splice also
+saved substantial CPU, but sendfile offers the cleaner file-to-TCP
+integration path. The original local JSONL is not committed publicly.
+
+Next: if authorized, prototype an *explicit* sendfile file-range
+segment in the existing ordered native Stream output queue. No public
+API or Stream changes have been made in this experiment; preserve
+ordering, backpressure, deadline, cancellation, framing and TLS
+invariants before integration. Keep splice socket/pipe bridging
+separate from sendfile integration.
 
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
