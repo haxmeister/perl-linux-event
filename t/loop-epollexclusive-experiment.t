@@ -302,4 +302,93 @@ subtest 'closing Listener inside on_accept does not use stale watcher' => sub {
     close $second;
 };
 
+
+subtest 'shared child shutdown leaves parent Listener accepting' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+    my $pid = $loop->fork(share => [$listener]);
+    die "shared fork failed: $!" if !defined $pid;
+    if ($pid == 0) {
+        $listener->close;
+        POSIX::_exit($listener->is_terminal ? 0 : 1);
+    }
+    is(waitpid($pid, 0), $pid, 'shared child reaped');
+    is($? >> 8, 0, 'shared child closed its Listener');
+    ok($listener->is_running && $loop->has($listener),
+        'parent retains exclusive registration after child exits');
+    my $client = client_for($listener);
+    $loop->run_for(0.12);
+    is($accepted, 1, 'parent accepts after shared worker shuts down');
+    close $client;
+    $listener->close;
+};
+
+subtest 'moving exclusive Listener transfers acceptance to child' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+    my $port = $listener->port;
+    pipe(my $report_read, my $report_write) or die "move report pipe: $!";
+
+    my $pid = $loop->fork(move => [$listener]);
+    die "move fork failed: $!" if !defined $pid;
+    if ($pid == 0) {
+        close $report_read;
+        my $valid = $listener->is_running && $loop->has($listener);
+        $loop->run_for(0.3);
+        syswrite($report_write, $valid ? "$accepted" : "invalid");
+        close $report_write;
+        $listener->close;
+        POSIX::_exit($valid && $accepted == 1 ? 0 : 1);
+    }
+
+    close $report_write;
+    is($listener->state, 'moved', 'parent Listener is moved away');
+    my $client = IO::Socket::INET->new(
+        PeerAddr => '127.0.0.1', PeerPort => $port,
+        Proto => 'tcp', Timeout => 3,
+    ) or die "connect to moved Listener: $!";
+    is(sysread($report_read, my $report, 20), 1, 'child reports its accept count');
+    is($report, '1', 'moved child accepted one connection');
+    is(waitpid($pid, 0), $pid, 'moved Listener child reaped');
+    is($? >> 8, 0, 'moved child exited normally');
+    close $client;
+    close $report_read;
+};
+
+subtest 'failed exclusive DEL preserves read-interest state' => sub {
+    # Isolate the deliberately closed fd in a separate process so it cannot
+    # disturb the test runner's ordinary socket and Loop resources.
+    my $pid = CORE::fork();
+    die "isolated failure test fork failed: $!" if !defined $pid;
+    if ($pid == 0) {
+        my $ok = eval {
+            my $loop = Linux::Event::Loop->new;
+            pipe(my $reader, my $writer) or die "pipe failed: $!";
+            my $fd = fileno($reader);
+            my $registration = $loop->watch(
+                fd => $fd, _internal => 1,
+                _experimental_epollexclusive => 1,
+                read => sub { },
+            );
+            POSIX::close($fd) == 0 or die "close source fd failed: $!";
+            for (1 .. 2) {
+                my $success = eval { $registration->disable_read; 1 };
+                die "unexpected successful DEL after source close"
+                    if $success;
+                die "unexpected failure mode: $@"
+                    unless $@ =~ /disable_read epoll_ctl DEL failed/;
+            }
+            1;
+        };
+        POSIX::_exit($ok ? 0 : 1);
+    }
+    is(waitpid($pid, 0), $pid, 'isolated fd-error child reaped');
+    is($? >> 8, 0,
+        'repeated DEL failures prove failed exclusive mask updates roll back');
+};
+
 done_testing;
