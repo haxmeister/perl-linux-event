@@ -1,5 +1,21 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE FAIRNESS + TRANSITIONS REGRESSION (2026-10-30)
+
+Follow-up regression `t/stream-71-sendfile-fairness.t` adds:
+- Native writable readiness fairness (at most 64 KiB per ready drain when
+  a file segment is queued); repeated Loop turns continue progress;
+- sendfile mixed with ordinary output across transition_to(), keeping
+  original output order and avoiding errors;
+- on_drain callback closing a Stream mid-drain without use-after-free,
+  duplicate callbacks, or errors.
+
+These tests are newly added, not yet verified by CI. Await run results
+before claiming passed. Previous corrected assertion commit:
+`48d9d276fae4caff22fb3afec8ac32afffc0ee24`.
+All changes remain on feature/stream-sendfile, draft PR #39 only.
+No main/research modifications, version bump, release, or splice work.
+
 ## STREAM SENDFILE BENCHMARK VERIFIED (2026-10-30)
 
 Actual Linux::Event Stream TCP benchmark workflow
