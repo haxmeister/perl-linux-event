@@ -76,7 +76,8 @@ LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1 perl -Mblib your-server.pl
 
 Focused test: `t/loop-epollexclusive-experiment.t` covers ordinary behavior,
 exclusive pause/resume, pending socket readiness while paused, closing a
-suspended Listener, and managed-fork inheritance of a paused Listener.
+suspended Listener, managed-fork inheritance of a paused Listener, and
+callback-triggered `defer_fork(share => [$listener])` with child pause/resume.
 All eight supported CI Perl configurations and generated-distribution
 integrity have passed on the prototype.
 
@@ -132,8 +133,8 @@ These rules matter for the existing Listener implementation:
    close, and managed `fork(share => [...])`.
 3. Completed: real Linux::Event Listener/Stream measurements with sequential
    and concurrently outstanding request batches.
-4. Remaining: `defer_fork(share => [...])` integration regression; more
-   adversarial failure/rollback and teardown tests; CPU/fairness workloads
+4. Remaining: more adversarial failure/rollback and teardown tests;
+   CPU/fairness workloads
    across different kernels and dedicated hardware; completed baseline
    performance comparison before considering merge.
 5. Decide whether to merge. Do not add a public option or set any new default

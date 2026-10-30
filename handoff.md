@@ -25,8 +25,9 @@ Implementation:
   after the managed Loop reset.
 - `t/loop-epollexclusive-experiment.t` plus MANIFEST: default-mode control,
   paused/resumed exclusive Listener, pending readiness, repeat cycles,
-  active/suspended close, and `fork(share => [$listener])` with a paused
-  Listener.
+  active/suspended close, `fork(share => [$listener])` with a paused
+  Listener, and callback-triggered `defer_fork(share => [$listener])`
+  followed by child pause/resume.
 - `bench/experiments/epollexclusive-accept.c` and
   `bench/experiments/epollexclusive-linux-event.pl`: native standalone
   kernel experiment plus real Perl Listener/Stream request/response
@@ -58,13 +59,15 @@ distribution integrity in CI run 40980121599. The final comparison
 branch (including batch generator) has passed all eight Perl
 configurations and distribution integrity in CI run 40980758678;
 its long performance regression job should be checked before proceeding.
+The later CI run 40981156061 (after adding deferred-fork integration coverage)
+also passed all eight Perl configurations and distribution integrity; the
+full performance regression remained in progress at this checkpoint.
 Foreign-loop integration and deferred-fork driver overhead workflows
 also passed on the feature branch.
 
 NEXT:
-1. Extend correctness tests for `defer_fork(share=>[$listener])`,
-   fork preflight/rollback, watcher replacement, and teardown during
-   active callbacks.
+1. Extend correctness tests for fork preflight/rollback, watcher
+   replacement, and teardown during active callbacks.
 2. Test fairness under long-lived connections and a controlled
    multi-core environment, not only short loopback requests.
 3. Verify the current full performance regression gate and
