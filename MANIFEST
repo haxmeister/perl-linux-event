@@ -187,6 +187,7 @@ t/datagram-10-udp.t
 t/datagram-11-limits.t
 t/datagram-12-ownership-and-unix.t
 t/datagram-13-benchmark-smoke.t
+t/datagram-14-recvmmsg-experiment.t
 t/inotify-00-api.t
 t/inotify-10-events.t
 t/inotify-11-sharing.t
