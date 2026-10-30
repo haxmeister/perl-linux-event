@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use JSON::PP qw(encode_json);
 use IO::Socket::INET;
+use IO::Select;
 use POSIX ();
 use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC usleep);
 
@@ -34,7 +35,10 @@ sub stream_recipe () {
                 my $end = now() + $work_us / 1_000_000;
                 1 while now() < $end;
             }
-            $stream->close;
+            # Send a concrete application response. This measures completed
+            # Stream work rather than just the client's connect() speed.
+            $stream->write("y");
+            $stream->end;
         },
         on_error => sub ($stream, $error) {
             warn "Stream error: $error\n";
@@ -88,11 +92,15 @@ for my $index (0 .. $workers - 1) {
         syswrite($ready_write, 'R') == 1 or die "ready write failed: $!";
         close $ready_write;
         my $start = now();
+        my ($u0, $s0) = times;
         $loop->run_for(1.7);
+        my ($u1, $s1) = times;
         my $elapsed = now() - $start;
+        my $cpu = ($u1 + $s1) - ($u0 + $s0);
         my $stats = $loop->stats;
         my $line = join(' ', $index, $accepted, $messages, $accepted_bytes,
-            $stats->{epoll_wait_calls} // 0, sprintf('%.6f', $elapsed)) . "\n";
+            $stats->{epoll_wait_calls} // 0, sprintf('%.6f', $elapsed),
+            sprintf('%.6f', $cpu)) . "\n";
         syswrite($result_write, $line) == length($line)
             or die "result write failed: $!";
         close $result_write;
@@ -111,6 +119,7 @@ close $ready_read;
 $seed->close;
 my $start = now();
 my $sent = 0;
+my $completed = 0;
 for (1 .. $total) {
     my $client = IO::Socket::INET->new(
         PeerAddr => '127.0.0.1',
@@ -119,7 +128,14 @@ for (1 .. $total) {
         Timeout => 2,
     );
     if ($client) {
-        $sent++ if defined(syswrite($client, "x")) ;
+        if (syswrite($client, "x") == 1) {
+            $sent++;
+            my $ready = IO::Select->new($client)->can_read(2);
+            if ($ready) {
+                my $n = sysread($client, my $reply, 1);
+                $completed++ if defined($n) && $n == 1 && $reply eq 'y';
+            }
+        }
         close $client;
     }
     usleep($gap_us) if $gap_us;
@@ -133,12 +149,13 @@ for my $pid (@children) {
 my $total_seconds = now() - $start;
 my @worker;
 while (my $line = <$result_read>) {
-    my ($index, $naccept, $nmessages, $bytes, $waits, $duration) =
+    my ($index, $naccept, $nmessages, $bytes, $waits, $duration, $cpu) =
         split /\s+/, $line;
     push @worker, {
         index => 0 + $index, accepted => 0 + $naccept,
         messages => 0 + $nmessages, bytes => 0 + $bytes,
         epoll_wait_calls => 0 + $waits, worker_elapsed_s => 0 + $duration,
+        cpu_s => 0 + $cpu,
     };
 }
 close $result_read;
@@ -146,20 +163,23 @@ close $result_read;
 my $accepted_total = 0;
 my $messages_total = 0;
 my $waits_total = 0;
+my $worker_cpu = 0;
 for my $w (@worker) {
     $accepted_total += $w->{accepted};
     $messages_total += $w->{messages};
     $waits_total += $w->{epoll_wait_calls};
+    $worker_cpu += $w->{cpu_s};
 }
 say encode_json({
     mode => $mode, workers => 0 + $workers, attempted => 0 + $total,
-    sent => $sent, accepted => $accepted_total,
+    sent => $sent, completed => $completed, accepted => $accepted_total,
     messages => $messages_total, gap_us => 0 + $gap_us,
     work_us => 0 + $work_us,
     generator_seconds => $generator_seconds,
     total_seconds => $total_seconds,
-    connection_rate => $generator_seconds > 0 ? $sent / $generator_seconds : 0,
-    epoll_wait_calls => $waits_total, worker => \@worker, child_failures => $failed,
+    completed_rate => $generator_seconds > 0 ? $completed / $generator_seconds : 0,
+    epoll_wait_calls => $waits_total, worker_cpu_s => $worker_cpu,
+    worker => \@worker, child_failures => $failed,
 });
 exit($failed || @worker != $workers || $sent != $total
-    || $accepted_total != $total ? 1 : 0);
+    || $accepted_total != $total || $completed != $total ? 1 : 0);
