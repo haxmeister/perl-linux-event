@@ -248,7 +248,8 @@ sub run_trial ($mode, $workers, $work, $config) {
                     }
                     syswrite($ready_w, 'R') == 1 or die "ready failure";
                     close $ready_w;
-                    sysread($start_r, my $token, 1) == 1 && $token eq 'G'
+                    my $token;
+                    sysread($start_r, $token, 1) == 1 && $token eq 'G'
                         or die "start barrier failed";
                     close $start_r;
                     my $cpu_at = cpu();
