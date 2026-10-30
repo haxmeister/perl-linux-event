@@ -21,7 +21,7 @@ use Linux::Event::IO::Sock::Listener;
 
 my %opt = (
     seconds => 15, repeats => 2, workers => '2,4',
-    work_us => '0,150', clients => 32, accept_budget => 256,
+    work_us => '0,150', clients => 32, generators => 2, accept_budget => 256,
 );
 GetOptions(
     'seconds=f'       => \$opt{seconds},
@@ -29,6 +29,7 @@ GetOptions(
     'workers=s'       => \$opt{workers},
     'work-us=s'       => \$opt{work_us},
     'clients=i'       => \$opt{clients},
+    'generators=i'    => \$opt{generators},
     'accept-budget=i' => \$opt{accept_budget},
     'output=s'        => \$opt{output},
     'help'            => \$opt{help},
@@ -43,14 +44,15 @@ Linux::Event EPOLLEXCLUSIVE local sustained benchmark
   --repeats 2          Repeats per configuration
   --workers 2,4        Worker counts
   --work-us 0,150      Synthetic microseconds CPU work per reply
-  --clients 32         Maximum concurrent TCP requests (1..128)
+  --clients 32         Maximum outstanding requests PER generator (1..128)
+  --generators 2        Independent local client processes (1..4)
   --accept-budget 256  max_accept_per_tick for all modes
   --output PATH        JSONL results file (created automatically by default)
   --help               Show this screen
 
 Uses normal shared epoll, shared EPOLLEXCLUSIVE, and independent SO_REUSEPORT.
 Each request is one byte followed by a one-byte Stream acknowledgment.
-The client runs in a separate coordinating process, not in a server worker.
+Client load generators run in independent processes, not server workers.
 Worker processes are recreated for each trial.
 Only the JSONL result file is needed to analyze the measurements.
 The file omits hostname, username and local IP address.
@@ -64,6 +66,8 @@ die "--repeats must be 1..10\n"
     unless $opt{repeats} >= 1 && $opt{repeats} <= 10;
 die "--clients must be 1..128\n"
     unless $opt{clients} >= 1 && $opt{clients} <= 128;
+die "--generators must be 1..4\n"
+    unless $opt{generators} >= 1 && $opt{generators} <= 4;
 die "--accept-budget must be 1..4096\n"
     unless $opt{accept_budget} >= 1 && $opt{accept_budget} <= 4096;
 my @workers = split /,/, $opt{workers};
@@ -198,7 +202,10 @@ sub generate_requests ($port, $seconds, $concurrency) {
     }
     my $client_cpu = cpu() - $cpu_start;
     @lat_us = sort { $a <=> $b } @lat_us;
+    my %hist;
+    $hist{int($_ / 100)}++ for @lat_us;
     return {
+        latency_hist_100us => \%hist,
         connected => $connected, completed => $completed,
         completed_in_time => $within, completed_per_s => $within / $seconds,
         failed_connect => $connect_errors, failed_write => $write_errors,
@@ -212,6 +219,126 @@ sub generate_requests ($port, $seconds, $concurrency) {
             max => @lat_us ? $lat_us[-1] / 1000 : undef,
         },
     };
+}
+# Merge individual generator counts and 0.1-ms latency histograms without
+# averaging percentiles (which would give incorrect pooled latency figures).
+sub histogram_percentile_ms ($hist, $percent) {
+    my $total = 0;
+    $total += $_ for values %$hist;
+    return undef unless $total;
+    my $threshold = int(($percent / 100) * ($total - 1) + 0.999999) + 1;
+    my $seen = 0;
+    for my $bucket (sort { $a <=> $b } keys %$hist) {
+        $seen += $hist->{$bucket};
+        return $bucket / 10 if $seen >= $threshold;
+    }
+    return undef;
+}
+sub combine_generators ($data, $seconds) {
+    my %total = map { $_ => 0 } qw(
+        connected completed completed_in_time failed_connect
+        failed_write failed_reply unanswered client_cpu_s
+    );
+    my %hist;
+    my $max_cpu_fraction = 0;
+    my $max_latency_ms = 0;
+    for my $gen (@$data) {
+        $total{$_} += $gen->{$_} for keys %total;
+        while (my ($bucket, $count) = each %{$gen->{latency_hist_100us}}) {
+            $hist{$bucket} += $count;
+        }
+        $max_cpu_fraction = $gen->{client_cpu_fraction}
+            if $gen->{client_cpu_fraction} > $max_cpu_fraction;
+        $max_latency_ms = $gen->{latency_ms}{max}
+            if defined($gen->{latency_ms}{max})
+                && $gen->{latency_ms}{max} > $max_latency_ms;
+    }
+    return {
+        %total,
+        generators => scalar(@$data),
+        completed_per_s => $total{completed_in_time} / $seconds,
+        client_cpu_fraction => $total{client_cpu_s} / $seconds,
+        max_generator_cpu_fraction => $max_cpu_fraction,
+        latency_ms => {
+            p50 => histogram_percentile_ms(\%hist, 50),
+            p95 => histogram_percentile_ms(\%hist, 95),
+            p99 => histogram_percentile_ms(\%hist, 99),
+            max => $max_latency_ms,
+        },
+        latency_hist_100us => \%hist,
+        # Per-generator numbers are retained for diagnosing load limitations.
+        generator => [map {
+            my %copy = %$_;
+            delete $copy{latency_hist_100us};
+            \%copy;
+        } @$data],
+    };
+}
+
+# Start the server worker loops and client generators at the same barrier.
+# Clients are separate processes so one CPU-bound generator cannot silently
+# cap the server benchmark. Their CPU consumption is tracked separately.
+sub run_client_generators ($port, $config, $server_start, $server_count) {
+    pipe(my $ready_r, my $ready_w) or die "client generator start pipe: $!";
+    my @children;
+    my $merged = eval {
+        for my $index (0 .. $config->{generators} - 1) {
+            pipe(my $read, my $write) or die "client generator result pipe: $!";
+            my $pid = CORE::fork();
+            die "client generator fork failed: $!" unless defined $pid;
+            if ($pid == 0) {
+                close $read;
+                close $ready_w;
+                close $_->{reader} for @children;
+                my $ok = eval {
+                    my $token;
+                    sysread($ready_r, $token, 1) == 1 && $token eq 'C'
+                        or die "client generator start failed";
+                    close $ready_r;
+                    my $data = generate_requests(
+                        $port, $config->{seconds}, $config->{clients}
+                    );
+                    print {$write} JSON::PP->new->canonical->encode($data), "\n"
+                        or die "client generator result write failed";
+                    close $write or die "client generator result close failed";
+                    1;
+                };
+                warn "Client generator $index: $@\n" unless $ok;
+                POSIX::_exit($ok ? 0 : 2);
+            }
+            close $write;
+            push @children, {pid => $pid, reader => $read};
+        }
+        close $ready_r;
+        my $server_go = 'G' x $server_count;
+        syswrite($server_start, $server_go) == length($server_go)
+            or die "server start barrier failed";
+        close $server_start;
+        my $client_go = 'C' x $config->{generators};
+        syswrite($ready_w, $client_go) == length($client_go)
+            or die "client start barrier failed";
+        close $ready_w;
+        my @data;
+        for my $client (@children) {
+            my $line = readline($client->{reader});
+            die "client generator produced no data" unless defined $line;
+            push @data, JSON::PP->new->decode($line);
+            close $client->{reader};
+        }
+        my $failed = 0;
+        for my $client (@children) {
+            $failed++ if waitpid($client->{pid}, 0) != $client->{pid} || $?;
+        }
+        @children = ();
+        die "$failed client generator process(es) failed" if $failed;
+        combine_generators(\@data, $config->{seconds});
+    };
+    if (my $err = $@) {
+        kill 'TERM', map { $_->{pid} } @children;
+        waitpid($_->{pid}, 0) for @children;
+        die $err;
+    }
+    return $merged;
 }
 sub run_trial ($mode, $workers, $work, $config) {
     local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} =
@@ -286,12 +413,7 @@ sub run_trial ($mode, $workers, $work, $config) {
         }
         close $ready_r;
         $seed->close;
-        my $go = 'G' x $workers;
-        syswrite($start_w, $go) == length($go)
-            or die "start barrier write failed";
-        close $start_w;
-
-        my $traffic = generate_requests($port, $config->{seconds}, $config->{clients});
+        my $traffic = run_client_generators($port, $config, $start_w, $workers);
         my $child_failures = 0;
         for my $pid (@pids) {
             $child_failures++ if waitpid($pid, 0) != $pid || $?;
@@ -323,6 +445,7 @@ sub run_trial ($mode, $workers, $work, $config) {
         {
             mode => $mode, workers => $workers, work_us => $work,
             seconds => $config->{seconds}, clients => $config->{clients},
+            generators => $config->{generators},
             accept_budget => $config->{accept_budget},
             traffic => $traffic, worker => \@workers_data,
             accepted => $total_accepts, messages => $total_messages,
@@ -360,7 +483,8 @@ my @all;
 my $total_trials = $opt{repeats} * @workers * @work_us * 3;
 my $case_number = 0;
 say "Linux::Event sustained EPOLLEXCLUSIVE benchmark";
-say "Workers: $opt{workers}; synthetic work (us): $opt{work_us}; clients: $opt{clients}";
+say "Workers: $opt{workers}; synthetic work (us): $opt{work_us}; "
+    . "clients per generator: $opt{clients}; generators: $opt{generators}";
 say "Duration per trial: $opt{seconds}s; repetitions: $opt{repeats}";
 say "Results: $opt{output}";
 for my $repeat (1 .. $opt{repeats}) {
@@ -380,7 +504,7 @@ for my $repeat (1 .. $opt{repeats}) {
                 push @{$trial->{warnings}}, 'worker report missing'
                     unless $trial->{complete_worker_reports};
                 push @{$trial->{warnings}}, 'client may be CPU-bound'
-                    if $trial->{traffic}{client_cpu_fraction} > 0.9;
+                    if $trial->{traffic}{max_generator_cpu_fraction} > 0.9;
                 push @{$trial->{warnings}}, 'some requests have no reply'
                     if $trial->{traffic}{completed} < $trial->{traffic}{connected};
                 print {$out} $json->encode($trial), "\n";
