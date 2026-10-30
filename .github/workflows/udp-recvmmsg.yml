@@ -65,6 +65,31 @@ jobs:
                     f'recvmmsg8={vals[8]:.3f}us ({(vals[0]/vals[8]-1)*100:+.1f}% rate) '
                     f'recvmmsg32={vals[32]:.3f}us ({(vals[0]/vals[32]-1)*100:+.1f}% rate)')
           PY
+      - name: Compare actual Loop plus Datagram callbacks
+        run: |
+          set -euo pipefail
+          perl -Mblib -c bench/experiments/udp-recvmmsg-loop.pl
+          perl -Mblib bench/experiments/udp-recvmmsg-loop.pl \
+            --rounds 800 --repeats 3 --sizes 64,512,1400,8192 \
+            --bursts 8,32 --max-sizes payload,default --modes 0,8,32 \
+            --output bench/results/udp/recvmmsg-loop-ci.jsonl
+      - name: Summarize full Loop + callback paired CPU comparisons
+        run: |
+          python3 - <<'PY'
+          import json, collections, statistics
+          rows=[json.loads(s) for s in open('bench/results/udp/recvmmsg-loop-ci.jsonl')]
+          grouped=collections.defaultdict(list)
+          for r in rows:
+              if r['type']=='trial':
+                  assert r['received']==r['sent'] and r['bad']==0, r
+                  grouped[(r['bytes'],r['burst'],r['max_datagram_size'],r['mode'])].append(
+                      r['receive_cpu_us_per_packet'])
+          for size,burst,max_size in sorted({k[:3] for k in grouped}):
+              vals={m:statistics.median(grouped[(size,burst,max_size,m)]) for m in (0,8,32)}
+              print(f'bytes={size:5} burst={burst:2} max={max_size:7}: recvmsg={vals[0]:.3f}us '
+                    f'recvmmsg8={vals[8]:.3f}us ({(vals[0]/vals[8]-1)*100:+.1f}% rate) '
+                    f'recvmmsg32={vals[32]:.3f}us ({(vals[0]/vals[32]-1)*100:+.1f}% rate)')
+          PY
       - name: Check existing serial UDP echo benchmark, baseline and batch
         run: |
           for batch in 0 16; do
@@ -77,5 +102,7 @@ jobs:
         if: always()
         with:
           name: udp-recvmmsg-ci-comparison
-          path: bench/results/udp/recvmmsg-ci.jsonl
+          path: |
+            bench/results/udp/recvmmsg-ci.jsonl
+            bench/results/udp/recvmmsg-loop-ci.jsonl
           if-no-files-found: warn
