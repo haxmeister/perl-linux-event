@@ -1,0 +1,46 @@
+name: Experimental UDP recvmmsg correctness
+
+on:
+  push:
+    branches: [feature/udp-recvmmsg-evaluation]
+    paths:
+      - 'xsdatagram/**'
+      - 'lib/Linux/Event/_Socket/Dgram.pm'
+      - 't/datagram-*'
+      - 'bench/experiments/udp-recvmmsg-*.pl'
+      - '.github/workflows/udp-recvmmsg.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: '5.44'
+      - name: Build Linux::Event
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+          perl Makefile.PL
+          make -j2
+      - name: Test legacy and recvmmsg receive path
+        run: |
+          set -euo pipefail
+          for batch in 0 8 32; do
+            echo "receive batch=$batch"
+            LINUX_EVENT_EXPERIMENT_RECVMMSG="$batch" \
+              prove -b t/datagram-00-api.t t/datagram-10-udp.t \
+                t/datagram-11-limits.t t/datagram-12-ownership-and-unix.t \
+                t/datagram-13-benchmark-smoke.t t/datagram-14-recvmmsg-experiment.t
+          done
+      - name: Check existing serial UDP echo benchmark
+        run: |
+          perl -Mblib bench/run-datagram-microbench.pl \
+            --packets 3000 --bytes 64 --repeats 1
