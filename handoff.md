@@ -20,8 +20,11 @@ in the Linux::Event Stream engine.
 **Do not modify main, bump version, tag or release.** A public file
 transfer method/queue contract is not decided; preserve Stream/TLS/framing,
 output order, fairness and lifecycle invariants before integration.
-Next: verify the documented local-run script, compare on dedicated quad
-if needed, then design native queue integration separately if justified.
+The local runner passed focused CI smoke (41137770758, 36 verified
+transfers); full corrected standalone CI (41137609523, 84 verified
+transfers) also passed. Draft PR #38 is open for full CI verification.
+Next: compare on dedicated quad if warranted, then design native queue
+integration separately if justified.
 
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
