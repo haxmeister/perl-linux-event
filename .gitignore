@@ -104,3 +104,6 @@
 bench/results/*.json
 bench/results/*.html
 !bench/results/.gitkeep
+
+# Local sustained shared-listener comparison (machine-specific results)
+bench/results/epollexclusive/*.jsonl

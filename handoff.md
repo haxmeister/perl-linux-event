@@ -1,5 +1,25 @@
 # Linux::Event Handoff
 
+## USER-RUN LOCAL SUSTAINED BENCHMARK
+
+A sustained local Linux::Event comparison has been added on the experiment
+branch: `bench/experiments/epollexclusive-local.pl`.
+Instructions: `bench/experiments/EPOLLEXCLUSIVE-LOCAL.md`.
+
+Runs normal shared epoll vs EPOLLEXCLUSIVE vs independent SO_REUSEPORT
+over 2 and 4 worker processes, two synthetic CPU workloads, 15-second
+trials, two repetitions. Uses multiple local client load-generator
+processes to avoid a single generator's CPU ceiling. Captures completed
+round trips, CPU per worker and per generator, client latency distribution,
+worker fairness and errors. Stores one gitignored timestamped JSONL file.
+Run `perl -Mblib bench/experiments/epollexclusive-local.pl` after
+building this branch. No sudo or kernel tuning required.
+
+A separate smoke workflow
+`.github/workflows/epollexclusive-local-smoke.yml`
+must pass before asking the user to run this locally. Keep main untouched,
+PR #36 draft and 0.118 unreleased.
+
 ## VERIFIED CHECKPOINT — EXCLUSIVE LIFECYCLE EXPERIMENT (2026-10-30)
 
 Current implemented branch includes transactional experimental epoll
