@@ -15,9 +15,13 @@ worker fairness and errors. Stores one gitignored timestamped JSONL file.
 Run `perl -Mblib bench/experiments/epollexclusive-local.pl` after
 building this branch. No sudo or kernel tuning required.
 
-A separate smoke workflow
-`.github/workflows/epollexclusive-local-smoke.yml`
-must pass before asking the user to run this locally. Keep main untouched,
+The local sustained runner was verified in CI smoke run 40989609434:
+https://github.com/haxmeister/perl-linux-event/actions/runs/40989609434
+The script compiled and ran ordinary shared, EPOLLEXCLUSIVE, and SO_REUSEPORT
+with 2 separate client generators and 2 worker processes, producing a parsed
+JSONL file with complete acknowledgments and per-worker stats.
+The dedicated smoke workflow is
+`.github/workflows/epollexclusive-local-smoke.yml`. Keep main untouched,
 PR #36 draft and 0.118 unreleased.
 
 ## VERIFIED CHECKPOINT — EXCLUSIVE LIFECYCLE EXPERIMENT (2026-10-30)
