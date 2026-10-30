@@ -12,11 +12,14 @@ use Linux::Event::Loop;
 use Linux::Event::IO::Sock::Listener;
 
 # Research-only real Linux::Event Listener/Stream benchmark.
-# Arguments: shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US [serial|batch]
-my ($mode, $workers, $total, $gap_us, $work_us, $traffic) = @ARGV;
+# Arguments: shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US [serial|batch] [ACCEPT_BUDGET]
+my ($mode, $workers, $total, $gap_us, $work_us, $traffic, $accept_budget) = @ARGV;
 $traffic //= 'serial';
-die "usage: $0 shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US [serial|batch]\n"
-    unless (@ARGV == 5 || @ARGV == 6) && $traffic =~ /\A(?:serial|batch)\z/ && $mode =~ /\A(?:shared|exclusive|reuseport)\z/
+$accept_budget //= 256;
+die "usage: $0 shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US [serial|batch] [ACCEPT_BUDGET]\n"
+    unless (@ARGV >= 5 && @ARGV <= 7)
+    && $traffic =~ /\A(?:serial|batch)\z/
+    && $accept_budget =~ /\A[1-9]\d*\z/ && $accept_budget <= 4096 && $mode =~ /\A(?:shared|exclusive|reuseport)\z/
     && $workers =~ /\A[1-9]\d*\z/ && $workers <= 16
     && $total =~ /\A[1-9]\d*\z/ && $total <= 10_000
     && $gap_us =~ /\A\d+\z/ && $gap_us <= 1_000_000
@@ -54,7 +57,7 @@ sub create_listener ($loop, $port, $reuseport) {
         port => $port,
         reuseport => $reuseport,
         backlog => 4096,
-        max_accept_per_tick => 256,
+        max_accept_per_tick => $accept_budget,
         stream => stream_recipe(),
         on_accept => sub ($listener, $stream) { $accepted++ },
     );
@@ -201,7 +204,7 @@ say encode_json({
     mode => $mode, workers => 0 + $workers, attempted => 0 + $total,
     sent => $sent, completed => $completed, accepted => $accepted_total,
     messages => $messages_total, gap_us => 0 + $gap_us,
-    traffic => $traffic,
+    traffic => $traffic, accept_budget => 0 + $accept_budget,
     work_us => 0 + $work_us,
     generator_seconds => $generator_seconds,
     total_seconds => $total_seconds,
