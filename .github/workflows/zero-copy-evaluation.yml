@@ -5,6 +5,7 @@ on:
     branches: [feature/sendfile-splice-evaluation]
     paths:
       - 'bench/experiments/zero-copy-tcp.c'
+      - 'bench/experiments/run-zero-copy-local.sh'
       - '.github/workflows/zero-copy-evaluation.yml'
   workflow_dispatch:
 
@@ -24,6 +25,10 @@ jobs:
           cc -O2 -std=c11 -Wall -Wextra -Werror -pthread \
             bench/experiments/zero-copy-tcp.c \
             -o /tmp/linux-event-zero-copy-bench
+      - name: Smoke local one-command runner
+        run: |
+          bash -n bench/experiments/run-zero-copy-local.sh
+          bash bench/experiments/run-zero-copy-local.sh --quick
       - name: Compare file to localhost TCP under normal receive
         shell: bash
         run: |
