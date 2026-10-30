@@ -485,7 +485,7 @@ open my $out, '>', $opt{output} or die "Cannot open output file: $!";
 $out->autoflush(1);
 my $json = JSON::PP->new->canonical;
 print {$out} $json->encode({
-    type => 'metadata', benchmark => 'epollexclusive-local-v1',
+    type => 'metadata', benchmark => 'epollexclusive-local-v2',
     machine => machine_info(), settings => \%opt,
     created_local => $stamp, branch => 'feature/epollexclusive-evaluation',
 }), "\n";

@@ -18,6 +18,10 @@ perl -Mblib bench/experiments/epollexclusive-local.pl
 The runner prints a **Saved results file** path under
 `bench/results/epollexclusive/`. Send that single `.jsonl` file back for analysis.
 Result files in this directory are Git-ignored.
+The JSONL metadata identifies the corrected benchmark as
+`epollexclusive-local-v2`. Do not compare raw performance results from
+v1 directly with v2, because v1 repeatedly triggered TCP resets and
+Stream error callbacks.
 
 ## What it does
 
@@ -73,9 +77,13 @@ Use `--help` to see all switches, including `--generators`,
 
 Close other CPU-heavy programs, do not run multiple copies of this test
 at once, and avoid changing power profiles or kernel settings between runs.
-The benchmark creates many short localhost TCP connections; it enables
-SO_LINGER reset **on the test clients only** to avoid exhausting ephemeral
-ports through TIME_WAIT. It never modifies global network settings.
+The benchmark creates many short localhost TCP connections. Clients
+wait for the server's normal TCP FIN after the one-byte response and then
+close gracefully. This is important: the initial experimental client used
+SO_LINGER(0), causing one TCP reset and server Stream error callback per
+completed request. That behavior contaminated the first local dataset with
+error-handling overhead. **Use benchmark v2** for performance comparisons.
+The script never modifies global network settings.
 
 The result file stores CPU/kernel information and timings but deliberately
 omits hostname, account name, IP address, and raw application payloads.

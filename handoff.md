@@ -1,5 +1,24 @@
 # Linux::Event Handoff
 
+## CORRECTION AFTER FIRST LOCAL RUN (2026-10-30)
+
+The first user-provided sustained file
+(`epollexclusive-local-v1`) finished all 24 combinations with valid
+acknowledgments and nearly even work distribution on a four-core Linux host.
+But the generated client closed sockets with TCP SO_LINGER(0): **every**
+completed request induced one server Stream `on_error` callback.
+This was a benchmark flaw, not evidence of a Linux::Event runtime error.
+
+The local generator now waits for the server's FIN, closes normally,
+and reports `pending_eof` if the FIN does not arrive. The experiment
+version in JSONL is `epollexclusive-local-v2`, and the focused smoke
+workflow now asserts zero Stream error callbacks, zero incomplete replies,
+and zero FIN timeouts in each mode. A fresh local run is required before
+using measured throughput/CPU/latency to decide whether to enable
+EPOLLEXCLUSIVE. Previous v1 CPU/throughput comparisons are contaminated
+by their error path. No user machine details or private results are
+committed to the repo.
+
 ## USER-RUN LOCAL SUSTAINED BENCHMARK
 
 A sustained local Linux::Event comparison has been added on the experiment
