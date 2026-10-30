@@ -15,12 +15,12 @@ unchanged. `recvmmsg()` preserves per-packet callbacks and the
 `_recv_batch` return format, with scratch memory capped to 256 KiB.
 No `sendmmsg` implementation or public API changes.
 
-Focused CI run 41133285661 passed all 0/8/32 correctness modes and both
+Focused CI runs 41133285661 and 41133547504 passed all 0/8/32 correctness modes and both
 native queued UDP receive and real Loop + on_datagram queued-burst
 benchmarks, with zero losses or payload errors. Initial native CPU-only
 advantage is 10-37% (payload/burst dependent); Loop + callback receive
 CPU-derived rates improved ~1.5-8% in prequeued burst cases. Serial UDP
-echo did not establish any benefit. Need full CI and repeat local quad
+echo did not establish any benefit. Draft PR #37 is open for full CI validation. Need full CI and repeat local quad
 measurement before considering a production change.
 
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
