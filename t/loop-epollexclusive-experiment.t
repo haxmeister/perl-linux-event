@@ -127,4 +127,50 @@ sub client_for ($listener) {
     $listener->close;
 }
 
+
+{
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+    pipe(my $report_read, my $report_write) or die "defer_fork pipe: $!";
+
+    my ($pid, $requested_inside_dispatch, $parent_quiescent, $request);
+    $loop->defer(sub {
+        $requested_inside_dispatch = $loop->running;
+        $request = $loop->defer_fork(
+            share => [$listener],
+            on_child => sub {
+                close $report_read;
+                my $ok = !$loop->running && $listener->is_running
+                    && $loop->has($listener)
+                    && $listener->{experimental_exclusive};
+                $listener->pause;
+                $listener->resume;
+                $ok &&= $listener->state eq 'listening';
+                syswrite($report_write, $ok ? 'Y' : 'N');
+                close $report_write;
+                POSIX::_exit($ok ? 0 : 1);
+            },
+            on_parent => sub ($child_pid) {
+                $pid = $child_pid;
+                $parent_quiescent = !$loop->running;
+                $loop->stop;
+            },
+        );
+    });
+    $loop->run;
+    ok($requested_inside_dispatch, 'deferred exclusive fork requested during dispatch');
+    ok($parent_quiescent, 'exclusive fork parent callback runs outside dispatch');
+    ok($pid > 0, 'deferred exclusive fork created child');
+    ok(!$request->is_active, 'deferred exclusive fork handle consumed');
+    close $report_write;
+    is(sysread($report_read, my $result, 1), 1, 'deferred child status received');
+    is($result, 'Y', 'deferred child can pause/resume exclusive shared Listener');
+    is(waitpid($pid, 0), $pid, 'deferred child reaped');
+    is($? >> 8, 0, 'deferred child passed');
+    close $report_read;
+    $listener->close;
+}
+
 done_testing;
