@@ -1,5 +1,36 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE VERIFICATION AND EXPANDED COVERAGE (2026-10-30)
+
+First implementation commit:
+`f723089e12b5294df948ea457bb22b90d2a15e7e`.
+An in-file test inheritance typo was corrected at
+`505da85737446e2fb88372a6c02dbeb3d562c896`.
+
+GitHub Actions [41143236988](https://github.com/haxmeister/perl-linux-event/actions/runs/41143236988)
+PASSED ALL TEN JOBS: eight Perl configurations, distribution integrity,
+and the existing full ordinary-write performance regression gate.
+The earlier run failed only because the added test attempted to load an
+in-file test package with unqualified 'use parent'.
+
+Additional files now prepared for the next commit/CI:
+- `t/stream-70-sendfile-lifecycle.t`: duplicate-fd cleanup on close and
+  close_write, zero-range/no-regular-source validation, framed raw output,
+  TLS rejection before/after handshake, SIGPIPE-safe peer disconnect.
+- `bench/run-stream-sendfile-bench.pl`: ACTUAL Linux::Event Stream transfers
+  using real localhost TCP; sendfile, bounded sysread/write producer, and
+  separate preloaded byte-write control; forked receiver SHA256 integrity
+  verification, separate sender/receiver process CPU, throughput, output
+  queue and EAGAIN metrics. Rotating trials, full size sweep, optional pressure.
+- `.github/workflows/stream-sendfile-integration.yml`: benchmark CI
+  with retained JSONL. Benchmark outcomes are not yet known. No baseline
+  performance conclusion about Stream sendfile is claimed.
+
+All code remains on draft PR #39, feature branch only. Do not merge main,
+touch research PR #38, change versions, or publish. Further review needed
+for reentrant errors, protocol transitions, managed fork, deadline fairness,
+performance and the provisional public API contract.
+
 ## STREAM SENDFILE PROTOTYPE CHECKPOINT (2026-10-30)
 
 Implementation work now targets the existing `feature/stream-sendfile` branch

@@ -1,0 +1,61 @@
+name: Actual Stream sendfile performance
+
+on:
+  pull_request:
+    paths:
+      - 'xsbytestream/**'
+      - 'lib/Linux/Event/_Socket/Stream.pm'
+      - 'bench/run-stream-sendfile-bench.pl'
+      - '.github/workflows/stream-sendfile-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stream-sendfile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5.44"
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev
+          cpanm --notest --installdeps .
+      - name: Build core
+        run: |
+          perl Makefile.PL
+          make --jobs=2
+      - name: Benchmark actual Stream transfers over TCP
+        run: |
+          mkdir -p bench/results
+          perl -Mblib bench/run-stream-sendfile-bench.pl \
+            --sizes=64,4096,32768,204800,1048576,8388608 --repeats=3 \
+            --jsonl=bench/results/sendfile-stream-normal.jsonl
+          perl -Mblib bench/run-stream-sendfile-bench.pl \
+            --sizes=32768,204800 --repeats=2 --pressure-us=40 \
+            --jsonl=bench/results/sendfile-stream-pressured.jsonl
+          perl -MJSON::PP -e '
+            for my $file (@ARGV) {
+              open my $fh, "<", $file or die $!;
+              while (<$fh>) {
+                my $r = decode_json($_);
+                die "unverified transfer" unless $r->{verified};
+                printf "%s %8d B sender CPU %9.4f ms/MiB receiver CPU %9.4f ms/MiB throughput %8.2f MiB/s EAGAIN %s\n",
+                  $r->{mode}, $r->{bytes}, $r->{sender_cpu_ms_per_mib},
+                  $r->{receiver_cpu_ms_per_mib}, $r->{throughput_mib_s},
+                  $r->{eagain_count} // "-";
+              }
+            }
+          ' bench/results/sendfile-stream-*.jsonl
+      - name: Retain JSONL data
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: actual-stream-sendfile
+          path: bench/results/sendfile-stream-*.jsonl
+          if-no-files-found: warn

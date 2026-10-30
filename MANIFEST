@@ -44,6 +44,7 @@ bench/run-stream-feedback-timer-fairness.pl
 bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/run-stream-payload-sweep.pl
+bench/run-stream-sendfile-bench.pl
 bench/run-stream-timer-fairness.pl
 bench/run-stream-transition-bench.pl
 bench/run-stream-watcher-state-bench.pl
@@ -289,6 +290,7 @@ t/stream-66-resource-kind-transition.t
 t/stream-67-first-class-raw-callback-benchmark-smoke.t
 t/stream-68-read-fairness.t
 t/stream-69-sendfile.t
+t/stream-70-sendfile-lifecycle.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t
