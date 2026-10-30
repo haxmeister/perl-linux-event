@@ -48,7 +48,7 @@ jobs:
           import collections, json, statistics
           path = "bench/results/zero-copy/tcp.jsonl"
           rows = [json.loads(line) for line in open(path)]
-          assert len(rows) == 54, len(rows)  # (5 sizes * 5 + 3) * 3 modes
+          assert len(rows) == 84, len(rows)  # (5 sizes * 5 + 3) * 3 modes
           for r in rows:
               assert r["verified"] is True and r["bytes"] == r["size"] * r["rounds"], r
               assert r["wall_s"] > 0 and r["sender_cpu_s"] > 0, r
