@@ -104,3 +104,6 @@
 bench/results/*.json
 bench/results/*.html
 !bench/results/.gitkeep
+
+# Host-specific sendfile/splice research datasets
+bench/results/zero-copy/*.jsonl
