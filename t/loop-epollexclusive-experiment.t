@@ -359,7 +359,7 @@ subtest 'moving exclusive Listener transfers acceptance to child' => sub {
     close $report_read;
 };
 
-subtest 'failed exclusive DEL preserves read-interest state' => sub {
+subtest 'failed exclusive ADD and DEL preserve read-interest state' => sub {
     # Isolate the deliberately closed fd in a separate process so it cannot
     # disturb the test runner's ordinary socket and Loop resources.
     my $pid = CORE::fork();
@@ -382,13 +382,35 @@ subtest 'failed exclusive DEL preserves read-interest state' => sub {
                 die "unexpected failure mode: $@"
                     unless $@ =~ /disable_read epoll_ctl DEL failed/;
             }
+
+            # ADD failure is the inverse case. A suspended watcher must
+            # keep its disabled mask after failed resume, so the second
+            # enable_read still attempts an ADD rather than silently succeeding.
+            pipe(my $second_reader, my $second_writer)
+                or die "second pipe failed: $!";
+            my $second_fd = fileno($second_reader);
+            my $second_registration = $loop->watch(
+                fd => $second_fd, _internal => 1,
+                _experimental_epollexclusive => 1,
+                read => sub { },
+            );
+            $second_registration->disable_read;
+            POSIX::close($second_fd) == 0
+                or die "close second source fd failed: $!";
+            for (1 .. 2) {
+                my $success = eval { $second_registration->enable_read; 1 };
+                die "unexpected successful ADD after source close"
+                    if $success;
+                die "unexpected failure mode: $@"
+                    unless $@ =~ /enable_read epoll_ctl ADD failed/;
+            }
             1;
         };
         POSIX::_exit($ok ? 0 : 1);
     }
     is(waitpid($pid, 0), $pid, 'isolated fd-error child reaped');
     is($? >> 8, 0,
-        'repeated DEL failures prove failed exclusive mask updates roll back');
+        'repeated ADD and DEL failures roll back experimental read-interest changes');
 };
 
 done_testing;

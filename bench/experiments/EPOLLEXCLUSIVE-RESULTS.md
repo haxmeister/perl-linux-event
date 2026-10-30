@@ -137,3 +137,45 @@ for shared Listeners yet.
 restarts, failed fork/registration, and concurrent long-lived connections;
 test the `defer_fork` path. A dedicated-machine A/B test should precede
 any public integration decision. Keep all of this on the feature branch.
+
+## Accept-budget fairness matrix — 2026-10-30
+
+[Passing CI measurement run 40986208593](https://github.com/haxmeister/perl-linux-event/actions/runs/40986208593),
+48 completed trials; two repeats per worker/budget/mode combination.
+The benchmark used four and eight worker processes, 500 concurrently
+outstanding one-byte requests, 150 microseconds of synthetic per-message
+CPU work, and `max_accept_per_tick` of 1, 8, 32, or 256.
+All requested Stream replies were delivered. Medians below are computed
+from two trials, so do not overinterpret small throughput differences.
+
+### Four workers
+
+| Budget | Exclusive completed/s | Exclusive worker CPU s | Exclusive min/max accepted | SO_REUSEPORT completed/s |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 6,691 | 0.130 | 40/186 | 6,768 |
+| 8 | 6,605 | 0.120 | 26/194 | 6,757 |
+| 32 | 6,690 | 0.135 | 33/178 | 6,629 |
+| 256 | 6,350 | 0.120 | 18/200 | 6,539 |
+
+### Eight workers
+
+| Budget | Exclusive completed/s | Exclusive worker CPU s | Exclusive min/max accepted | SO_REUSEPORT completed/s |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 6,236 | 0.125 | 2/201 | 6,042 |
+| 8 | 6,421 | 0.120 | 5/168 | 6,033 |
+| 32 | 6,347 | 0.115 | 4/194 | 6,082 |
+| 256 | 6,370 | 0.120 | 1/198 | 6,088 |
+
+In these trials a smaller accept budget sometimes modestly improved
+distribution for four workers, but did not eliminate the imbalance and did
+not consistently improve throughput. With eight workers some exclusive
+processes still accepted almost nothing. SO_REUSEPORT was much more balanced
+at every budget. Absolute rates were higher in this CI run than in the
+previous 500-request experiment, which reinforces the caution about
+benchmark host and scheduling variance.
+
+**Conclusion:** accept-budget tuning does not make EPOLLEXCLUSIVE a fair
+worker-selection mechanism. Do not change the default `max_accept_per_tick`
+or automatically select EPOLLEXCLUSIVE for shared listeners based on this
+experiment. Next useful evaluation is a longer application workload on a
+dedicated multicore host and a kernel-version compatibility matrix.

@@ -96,6 +96,26 @@ Real benchmark runs:
 
 Results: `bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`.
 
+## Further lifecycle verification and fairness tuning
+
+The latest experiment includes targeted regression tests for rejection of
+replacement registrations (active or paused), detach/re-adoption of the same
+listening socket, a fork preflight refusal, injected child reconstruction
+failure, shutdown during an active `on_accept` callback, shutdown of a shared
+child worker, and managed transfer of the Listener to a child. The native
+mask-update path restores the previous logical read mask if an exclusive
+`EPOLL_CTL_ADD` or `EPOLL_CTL_DEL` operation fails; deliberately invalidated
+descriptors verify both failure paths in an isolated child test.
+
+The accept-budget matrix is recorded in
+`bench/experiments/EPOLLEXCLUSIVE-RESULTS.md` and run by
+`.github/workflows/epollexclusive-fairness.yml`. It exercises budgets of
+1, 8, 32 and 256 with 4/8 workers. A lower budget is not a dependable fix
+for the strong worker imbalance of exclusive registrations.
+
+These are *experimental test controls*, not proposed core defaults or new
+public Listener parameters.
+
 ## Linux constraints to verify before integration
 
 Linux man-pages document that `EPOLLEXCLUSIVE`:

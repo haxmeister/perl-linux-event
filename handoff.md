@@ -1,5 +1,40 @@
 # Linux::Event Handoff
 
+## CONTINUATION — EXCLUSIVE LIFECYCLE AND FAIRNESS (2026-10-30)
+
+This feature branch now includes additional safety checks beyond the first
+Linux::Event multi-worker benchmark:
+
+- Native `xsloop/Loop.xs` restores the prior read-interest mask if an
+  experimental exclusive EPOLL_CTL_ADD or EPOLL_CTL_DEL fails. Unmodified
+  ordinary watcher behavior is preserved.
+- `t/loop-epollexclusive-experiment.t` now checks rejected active/paused
+  watcher replacement, paused Listener detach and re-adoption, unsupported
+  fork disposition preflight, forced child reconstruction failure with parent
+  rollback, Listener closure during on_accept, child worker shutdown,
+  `fork(move => [$listener])`, and deliberately failed epoll DEL and ADD
+  in an isolated child process.
+- The benchmark accepts an optional `ACCEPT_BUDGET` argument after
+  `serial|batch`; all old invocations still default to 256.
+- Fairness workflow `.github/workflows/epollexclusive-fairness.yml`
+  completed run 40986208593 successfully: 48 tests, budgets 1/8/32/256,
+  4/8 workers, 500 batch requests and 150us synthetic work.
+  A budget of 1 did not solve the uneven exclusive worker allocation,
+  particularly with eight workers. SO_REUSEPORT was consistently much
+  more balanced. Full table and source caveats are in
+  `bench/experiments/EPOLLEXCLUSIVE-RESULTS.md`.
+- Full baseline-versus-feature performance check previously passed in
+  CI run 40981156061, all nine workloads under the existing 10% gate,
+  including raw Stream throughput -0.06% and deadline Stream -2.80%.
+- The newest CI and performance check should be verified after the last
+  regression test amendment before considering further integration.
+
+Decision: **do not automatically enable EPOLLEXCLUSIVE yet**.
+The kernel primitive helps wakeup efficiency but is not an even worker
+scheduler. Keep this implementation research-only while testing realistic,
+long-running servers and kernel compatibility. Main and version 0.118
+remain untouched/unreleased. Draft PR #36 is not for merging yet.
+
 ## ACTIVE EXPERIMENT — EPOLLEXCLUSIVE shared listeners (2026-10-29)
 
 Branch: `feature/epollexclusive-evaluation`, from main
