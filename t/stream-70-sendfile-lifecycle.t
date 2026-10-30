@@ -61,7 +61,7 @@ sub fd_count () {
     my $writer = T::FileLifecycle->new(fh => $left, data => $state);
     my $fh = file_of('D' x (1024 * 1024));
     my $before = fd_count();
-    ok(!$writer->sendfile($fh), 'large sendfile keeps an owned pending range');
+    ok($writer->sendfile($fh), 'large sendfile accepts the fixed source range');
     is(fd_count(), $before + 1, 'queued range owns a duplicated fd');
     $writer->close;
     is(fd_count(), $before - 1,

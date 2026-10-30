@@ -1,6 +1,6 @@
 # Native Stream file transfers — proposed contract
 
-Status: implementation proposal, awaiting the owner's public API discussion.
+Status: native prototype implemented on feature branch, public API still provisional.
 Branch: `feature/stream-sendfile`, based on main
 `08d775cc2287fb63942c2a27b3a6bfeb59a28aa3` (0.118 unreleased).
 The completed syscall research remains on `feature/sendfile-splice-evaluation`

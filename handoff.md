@@ -1,5 +1,31 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE BENCHMARK VERIFIED (2026-10-30)
+
+Actual Linux::Event Stream TCP benchmark workflow
+[41144061635](https://github.com/haxmeister/perl-linux-event/actions/runs/41144061635)
+PASSED 66/66 byte-verified source-to-receiver trials, including a
+slowed-receiver case. These are genuine Stream sendfile() comparisons
+against a bounded Perl sysread/write producer and a separate preloaded
+byte-write control, not the earlier standalone syscall experiment.
+
+Shared CI runner median sender CPU ms/MiB (sendfile vs copy producer):
+- 32 KiB: 11.9202 vs 13.6687 (12.8% reduction).
+- 200 KiB: 2.3546 vs 3.1560 (25.4%).
+- 1 MiB: 0.8377 vs 1.5890 (47.3%).
+- 8 MiB: 0.3487 vs 1.0392 (66.4%).
+
+8 MiB end-to-end throughput medians: sendfile 213.31 MiB/s,
+copy producer 221.11 MiB/s, preloaded write 179.09 MiB/s.
+Native 64-KiB readiness budget may cap throughput and should be measured
+against larger budgets using paired CI/dedicated machine runs.
+These shared-runner figures are preliminary, not acceptance baselines.
+The independent core CI at run 41144061550 caught one newly added
+test expectation error: a 1-MiB range below default high watermark
+correctly returns true after one immediate 64-KiB sendfile call; the test
+incorrectly expected false. Correct the assertion and rerun CI.
+No functional runtime failure is established by this assertion error.
+
 ## STREAM SENDFILE VERIFICATION AND EXPANDED COVERAGE (2026-10-30)
 
 First implementation commit:
