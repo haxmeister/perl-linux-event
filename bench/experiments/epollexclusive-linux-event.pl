@@ -12,10 +12,11 @@ use Linux::Event::Loop;
 use Linux::Event::IO::Sock::Listener;
 
 # Research-only real Linux::Event Listener/Stream benchmark.
-# Arguments: shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US
-my ($mode, $workers, $total, $gap_us, $work_us) = @ARGV;
-die "usage: $0 shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US\n"
-    unless @ARGV == 5 && $mode =~ /\A(?:shared|exclusive|reuseport)\z/
+# Arguments: shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US [serial|batch]
+my ($mode, $workers, $total, $gap_us, $work_us, $traffic) = @ARGV;
+$traffic //= 'serial';
+die "usage: $0 shared|exclusive|reuseport WORKERS CONNECTIONS GAP_US WORK_US [serial|batch]\n"
+    unless (@ARGV == 5 || @ARGV == 6) && $traffic =~ /\A(?:serial|batch)\z/ && $mode =~ /\A(?:shared|exclusive|reuseport)\z/
     && $workers =~ /\A[1-9]\d*\z/ && $workers <= 16
     && $total =~ /\A[1-9]\d*\z/ && $total <= 10_000
     && $gap_us =~ /\A\d+\z/ && $gap_us <= 1_000_000
@@ -120,6 +121,7 @@ $seed->close;
 my $start = now();
 my $sent = 0;
 my $completed = 0;
+my $selector = IO::Select->new;
 for (1 .. $total) {
     my $client = IO::Socket::INET->new(
         PeerAddr => '127.0.0.1',
@@ -130,15 +132,40 @@ for (1 .. $total) {
     if ($client) {
         if (syswrite($client, "x") == 1) {
             $sent++;
-            my $ready = IO::Select->new($client)->can_read(2);
-            if ($ready) {
-                my $n = sysread($client, my $reply, 1);
-                $completed++ if defined($n) && $n == 1 && $reply eq 'y';
+            if ($traffic eq 'batch') {
+                $selector->add($client);
+            }
+            else {
+                my @ready = IO::Select->new($client)->can_read(2);
+                if (@ready) {
+                    my $n = sysread($client, my $reply, 1);
+                    $completed++ if defined($n) && $n == 1 && $reply eq 'y';
+                }
+                close $client;
             }
         }
-        close $client;
+        else {
+            close $client;
+        }
     }
     usleep($gap_us) if $gap_us;
+}
+if ($traffic eq 'batch') {
+    # Allow all outstanding requests to reach workers at once. A deadline
+    # prevents a benchmark failure from leaving the workflow hung.
+    my $deadline = now() + 5;
+    while ($selector->count && now() < $deadline) {
+        for my $client ($selector->can_read(0.25)) {
+            my $n = sysread($client, my $reply, 1);
+            $completed++ if defined($n) && $n == 1 && $reply eq 'y';
+            $selector->remove($client);
+            close $client;
+        }
+    }
+    for my $client ($selector->handles) {
+        $selector->remove($client);
+        close $client;
+    }
 }
 my $generator_seconds = now() - $start;
 my $failed = 0;
@@ -174,6 +201,7 @@ say encode_json({
     mode => $mode, workers => 0 + $workers, attempted => 0 + $total,
     sent => $sent, completed => $completed, accepted => $accepted_total,
     messages => $messages_total, gap_us => 0 + $gap_us,
+    traffic => $traffic,
     work_us => 0 + $work_us,
     generator_seconds => $generator_seconds,
     total_seconds => $total_seconds,
