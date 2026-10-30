@@ -52,6 +52,9 @@ jobs:
               assert x['accepted'] >= x['traffic']['completed'], x
               assert x['fairness_jain'] > 0, x
               assert x['traffic']['latency_ms']['p95'] >= 0, x
+              assert x['traffic']['failed_reply'] == 0, x
+              assert x['traffic']['pending_eof'] == 0, x
+              assert sum(w['stream_errors'] for w in x['worker']) == 0, x
           print('Local benchmark smoke passed for all modes')
           PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
