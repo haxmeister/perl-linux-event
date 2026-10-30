@@ -279,6 +279,15 @@ les_sendfile_submit(pTHX_ les_xsstate_t *st, int source_fd,
         close(owned_fd);
         croak("sendfile(): source must be a regular file");
     }
+    {
+        int access = fcntl(owned_fd, F_GETFL);
+        if (access < 0 || (access & O_ACCMODE) == O_WRONLY) {
+            int err = access < 0 ? errno : EBADF;
+            close(owned_fd);
+            croak("sendfile(): source file is not readable: %s",
+                strerror(err));
+        }
+    }
     if ((off_t)offset < 0 || (UV)(off_t)offset != offset
         || (off_t)(UV)info.st_size != info.st_size) {
         close(owned_fd);

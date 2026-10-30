@@ -1,5 +1,19 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE SOURCE PERMISSION VALIDATION (2026-10-30)
+
+Added a cheap native F_GETFL guard during sendfile submission: a regular
+file opened write-only is rejected before the socket is affected, with
+the duplicated descriptor released. The new regression covers this
+validation and verifies the Stream stays open after the invalid request.
+This matters because sendfile uses a borrowed supplied file handle and
+requires readable regular-file input. Existing byte-write path unchanged.
+
+New code and t/stream-70 validation are pending CI after this commit.
+Earlier benchmark run 41144061635 passed; do not assume its numbers
+apply to changes without a separate run. Main, release, research PR
+and other repositories remain untouched.
+
 ## STREAM SENDFILE FAIRNESS + TRANSITIONS REGRESSION (2026-10-30)
 
 Follow-up regression `t/stream-71-sendfile-fairness.t` adds:

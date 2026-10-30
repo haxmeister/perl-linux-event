@@ -101,6 +101,16 @@ sub fd_count () {
     ok(!$ok, 'socket source is rejected as a non-regular file');
     like($@, qr/source must be a regular file/,
         'nonregular source has a clear diagnostic');
+    my $temporary = File::Temp->new(UNLINK => 1);
+    my $path = $temporary->filename;
+    open(my $writeonly, '>', $path) or die "open writeonly: $!";
+    my $readable_ok = eval { $writer->sendfile($writeonly); 1 };
+    ok(!$readable_ok, 'write-only regular file is rejected');
+    like($@, qr/source file is not readable/,
+        'unreadable source is explained without closing the Stream');
+    ok(!$writer->is_closed, 'bad source arguments do not close output socket');
+    close $writeonly;
+    close $temporary;
     $writer->close;
     close $right;
     close $fh;
