@@ -173,4 +173,133 @@ sub client_for ($listener) {
     $listener->close;
 }
 
+
+subtest 'reject replacing exclusive registration without disturbing it' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+
+    for my $paused (0, 1) {
+        $listener->pause if $paused;
+        my $old_state = $listener->state;
+        my $replaced = eval {
+            $loop->watch(fd => $listener->fd, read => sub { });
+            1;
+        };
+        ok(!$replaced, "replacement rejected while $old_state");
+        like($@, qr/experimental exclusive watchers cannot replace/,
+            'replacement rejection has specific error');
+        is($listener->state, $old_state, 'failed replacement retains Listener state');
+        ok($loop->has($listener), 'failed replacement keeps original Listener attached');
+    }
+
+    $listener->resume;
+    my $client = client_for($listener);
+    $loop->run_for(0.12);
+    is($accepted, 1, 'exclusive Listener still accepts after rejected replacements');
+    close $client;
+    $listener->close;
+};
+
+subtest 'detach suspended Listener and adopt its filehandle' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+    my $port = $listener->port;
+    $listener->pause;
+    my $fh = $listener->detach;
+    ok($listener->is_terminal, 'suspended original Listener becomes detached');
+    ok(defined($fh) && defined(fileno($fh)), 'detached socket remains open');
+
+    my $new_accepted = 0;
+    my $adopted = Linux::Event::IO::Sock::Listener->new(
+        loop => $loop,
+        fh => $fh,
+        owns_socket => 1,
+        stream => { on_data => sub { } },
+        on_accept => sub ($server, $stream) {
+            $new_accepted++;
+            $stream->close;
+        },
+    );
+    is($adopted->port, $port, 'new Listener retains existing port');
+    my $client = client_for($adopted);
+    $loop->run_for(0.12);
+    is($new_accepted, 1, 're-adopted socket accepts under exclusive registration');
+    is($accepted, 0, 'detached Listener receives no callbacks');
+    close $client;
+    $adopted->close;
+    ok($adopted->is_terminal, 'adopted Listener closes');
+};
+
+subtest 'preflight refusal leaves exclusive Listener live' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+    my $ok = eval { $loop->fork(clone => [$listener]); 1 };
+    ok(!$ok, 'unsupported Listener clone refused before fork');
+    like($@, qr/Listener does not support 'clone'/, 'fork preflight explains invalid disposition');
+    ok($listener->is_running && $loop->has($listener), 'exclusive Listener remains registered');
+    my $client = client_for($listener);
+    $loop->run_for(0.12);
+    is($accepted, 1, 'exclusive Listener continues accepting after preflight error');
+    close $client;
+    $listener->close;
+};
+
+subtest 'failed child reconstruction does not change parent watcher' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = listener_for($loop, \$accepted);
+    my ($ok, $error);
+    {
+        no warnings 'redefine';
+        local *Linux::Event::_Socket::Listener::_fork_child_share = sub {
+            die "injected exclusive child failure\n";
+        };
+        $ok = eval { $loop->fork(share => [$listener]); 1 };
+        $error = $@;
+    }
+    ok(!$ok, 'failed child reconstruction aborts managed fork');
+    like($error, qr/injected exclusive child failure/,
+        'child reconstruction error propagated to parent');
+    ok($listener->is_running && $loop->has($listener),
+        'failed fork leaves parent exclusive Listener active');
+    my $client = client_for($listener);
+    $loop->run_for(0.12);
+    is($accepted, 1, 'parent still accepts after child reconstruction failure');
+    close $client;
+    $listener->close;
+};
+
+subtest 'closing Listener inside on_accept does not use stale watcher' => sub {
+    local $ENV{LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE} = 1;
+    my $loop = Linux::Event::Loop->new;
+    my $accepted = 0;
+    my $listener = Linux::Event::IO::Sock::Listener->new(
+        loop => $loop,
+        host => '127.0.0.1',
+        port => 0,
+        stream => { on_data => sub { } },
+        on_accept => sub ($server, $stream) {
+            $accepted++;
+            $stream->close;
+            $server->close;
+        },
+    );
+    my $first = client_for($listener);
+    my $second = client_for($listener);
+    $loop->run_for(0.12);
+    is($accepted, 1, 'only first batch callback is delivered after shutdown');
+    ok($listener->is_terminal, 'Listener closed during callback');
+    $loop->poll;
+    pass('Loop is still safely driveable after callback-triggered shutdown');
+    close $first;
+    close $second;
+};
+
 done_testing;
