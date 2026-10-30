@@ -1376,6 +1376,9 @@ static SV *le_watch_register(SV *loop_obj, le_loop_t *loop, int fd, le_watch_opt
     w->loop = loop;
     w->active = 1;
     w->mask = le_mask_from_callbacks(opt->read_cb, opt->write_cb);
+    /* Linux rejects EPOLLRDHUP in an EPOLLEXCLUSIVE ADD. That readiness
+     * flag is useful for streams, not for listening sockets. */
+    if (opt->experimental_exclusive) w->mask &= ~EPOLLRDHUP;
     w->flags = (opt->oneshot ? EPOLLONESHOT : 0)
         | (opt->edge_triggered ? EPOLLET : 0)
         | (opt->experimental_exclusive ? EPOLLEXCLUSIVE : 0);
