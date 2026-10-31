@@ -1,5 +1,31 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE INTEGRATION COVERAGE AND CI (2026-10-30)
+
+The exact feature HEAD `eac4cd0f5dd94cdb19cc12acc56e8df6336a485d`
+passed the complete ten-job core CI run
+[41144520668](https://github.com/haxmeister/perl-linux-event/actions/runs/41144520668)
+and actual Stream TCP benchmark run
+[41144520718](https://github.com/haxmeister/perl-linux-event/actions/runs/41144520718).
+Earlier handoff entries that say tests were pending are superseded by these
+confirmed results for that commit.
+
+Next coverage additions in this feature-branch commit:
+- `t/stream-72-sendfile-multirange.t`: interleaved output with several
+  fixed ranges from two files, repeated use of one source, caller position and
+  descriptor ownership, graceful end and EOF, queued detach rejection.
+- `t/stream-73-sendfile-timeout.t`: a file stalled against a non-reading
+  socket must use the normal native write inactivity deadline, close cleanly
+  once, and release its duplicated source descriptor.
+- Public Stream POD: short file-transfer example and the narrow API contract,
+  including plain-only, raw output, ownership, and backpressure semantics.
+
+These newly added tests require CI validation; previous clean run refers to
+the earlier exact commit only. Main remains unchanged; the separate research
+branch and PR #38 are untouched. Draft integration PR #39 remains unmerged.
+No version bumps or release work.
+
+
 ## STREAM SENDFILE SOURCE PERMISSION VALIDATION (2026-10-30)
 
 Added a cheap native F_GETFL guard during sendfile submission: a regular
