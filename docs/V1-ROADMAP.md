@@ -246,20 +246,27 @@ accuracy, oversized-packet handling, output ordering, backpressure, and
 `max_datagrams_per_tick` fairness. Measure packet rate, CPU per packet,
 latency, and fairness across small and larger datagrams.
 
-#### sendfile() and splice() zero-copy paths
+#### sendfile() integrated; splice() research retained
 
-Evaluate Linux zero-copy data movement for workloads where bytes do not need
-application-level transformation.
+**Implemented in the unreleased 0.118 development line:** established plain
+socket Streams now provide `sendfile($fh, offset => ..., length => ...)`.
+This adds native, ordered file-range entries to the existing Stream write
+queue. It retains backpressure, hard output limits, deadlines, graceful
+shutdown, descriptor ownership and managed-fork behavior, without reading
+the file into Perl or adding message framing. TLS and pending outbound
+connections are deliberately unsupported. A private 64-KiB readiness
+budget limits file-drain work. Tests and real Stream performance measurements
+passed before and after the merge; see
+[`STREAM-SENDFILE-DESIGN.md`](STREAM-SENDFILE-DESIGN.md) and
+[merged PR #39](https://github.com/haxmeister/perl-linux-event/pull/39).
 
-`sendfile()` is directly relevant to file-to-socket transfer such as static
-HTTP content. `splice()` is potentially more general for Linux::Event's
-communications-engine role because it can move bytes between suitable pipes and
-sockets without surfacing the payload through Perl.
-
-These must not silently bypass Stream framing, TLS, transition, backpressure,
-or lifecycle semantics. A separate explicit transfer capability may be cleaner
-than adding magic to ordinary `send()`. Benchmark copies, CPU, throughput,
-backpressure behavior, cancellation, partial progress, and fallback paths.
+**Researched, not implemented in core:** `splice()` was benchmarked
+alongside `sendfile()` for file-to-TCP transfers. Socket/pipe bridging
+could be useful for relays, but it is a separate potential capability
+with its own ordering, backpressure, cancellation and lifetime contract.
+Do not treat it as unfinished `sendfile()` integration. The syscall
+comparison and evidence remain in
+[draft research PR #38](https://github.com/haxmeister/perl-linux-event/pull/38).
 
 #### fanotify
 

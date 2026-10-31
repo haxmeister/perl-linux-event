@@ -601,22 +601,32 @@ lifecycle notification, signals, and asynchronous standard I/O.
 
 ## Sending files over plain sockets
 
-An established plain TCP or Unix-domain Stream can send an open file without
-copying its contents into a Perl string:
+An established plain TCP or Unix-domain Stream can send an open regular
+file without reading it into a Perl string:
 
 ```perl
 open my $file, '<:raw', 'backup.tar' or die $!;
 $stream->write("BACKUP\n");
 $stream->sendfile($file);
-$stream->end;
-close $file;
+close $file;                # The Stream owns its own descriptor.
+$stream->end;               # Drain the file before finishing output.
 ```
 
-`sendfile($file, offset => 1024, length => 4096)` sends a specific range.
-File output stays in order with normal `write()` calls and uses the same
-backpressure and error handling. It sends raw bytes, without adding framing.
-It is not available for TLS connections or connections still being established.
-See `Linux::Event::IO::Sock::Stream` for details.
+Use `sendfile($file, offset => 1024, length => 4096)` to send a byte range.
+The default offset is zero, regardless of the filehandle's current position.
+File ranges stay in order with ordinary `write()` calls; no Perl file-content
+buffer is created for them.
+
+A false return can mean **backpressure**, not a rejected transfer: do not
+submit the same file again. Resume producing additional output from
+`on_drain`. The usual `max_pending_bytes` limit still applies and can close
+the Stream with an `output_limit` error.
+
+`sendfile()` is raw output (it does not add framing), and it is unavailable
+on TLS or other non-plain transports and while a connection is being
+established. The source file must not change while the transfer is in use;
+closing your filehandle does not freeze its contents. See the
+[`IO::Sock::Stream` POD](lib/Linux/Event/IO/Sock/Stream.pm) for details.
 
 ## Backpressure and deadlines
 

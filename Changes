@@ -1,6 +1,18 @@
 Revision history for Linux-Event
 
 0.118  (unreleased)
+    - Add Stream->sendfile($file, offset => ..., length => ...) for
+      established plain TCP and Unix-domain socket Streams. File ranges share
+      the native ordered output queue with write() and obey existing
+      backpressure, output limits, deadlines, graceful end, and close behavior.
+      Keep the caller's file position unchanged and retain an owned
+      close-on-exec duplicate so the caller may close its filehandle.
+    - Reject TLS and other non-plain transports, pending connections, and
+      invalid file ranges rather than silently copying or reframing data.
+      Preserve the ordinary byte-write hot path and bound mixed file output
+      to 64 KiB per readiness turn for Loop fairness. Add regression tests for
+      ordering, callbacks, lifecycle, managed fork, and file descriptor
+      cleanup, plus byte-verified TCP benchmarks and public documentation.
     - Add Loop->defer_fork() so socket, timer, and other event callbacks can
       request a managed fork without forking inside native dispatch. Reuse
       the existing resource-aware share/clone/move dispositions and child
