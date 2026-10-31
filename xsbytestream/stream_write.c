@@ -254,7 +254,6 @@ les_sendfile_submit(pTHX_ les_xsstate_t *st, int source_fd,
     les_file_seg_t *file;
     UV size, remaining, attempted;
     int owned_fd;
-    STRLEN progress = 0;
 
     if (!st || st->closed)
         return 0;
@@ -331,7 +330,6 @@ les_sendfile_submit(pTHX_ les_xsstate_t *st, int source_fd,
             written = les_safe_sendfile(
                 st->write_fd, owned_fd, &current, requested);
             if (written > 0) {
-                progress = (STRLEN)written;
                 offset = (UV)current;
                 remaining -= (UV)written;
                 LES_STAT(st, bytes_written) += (unsigned long long)written;
@@ -382,7 +380,6 @@ les_sendfile_submit(pTHX_ les_xsstate_t *st, int source_fd,
         LES_STAT(st, queue_peak_bytes) = (unsigned long long)st->pending_bytes;
     if (!st->write_blocked && st->pending_bytes > st->high_watermark)
         st->write_blocked = 1;
-    (void)progress;
     return (st->write_blocked ? 0 : LES_WRITE_FLOW_OK)
          | LES_WRITE_QUEUED;
 }

@@ -296,6 +296,7 @@ t/stream-71-sendfile-fairness.t
 t/stream-72-sendfile-multirange.t
 t/stream-73-sendfile-timeout.t
 t/stream-74-sendfile-fork.t
+t/stream-75-sendfile-drain-reentrancy.t
 t/tls-00-load.t
 t/tls-01-declaration.t
 t/tls-10-stream.t

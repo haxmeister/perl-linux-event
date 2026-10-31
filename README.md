@@ -599,6 +599,25 @@ own queue or IPC mechanism.
 `Linux::Event::Kernel::Process` provides native process spawning, pidfd
 lifecycle notification, signals, and asynchronous standard I/O.
 
+## Sending files over plain sockets
+
+An established plain TCP or Unix-domain Stream can send an open file without
+copying its contents into a Perl string:
+
+```perl
+open my $file, '<:raw', 'backup.tar' or die $!;
+$stream->write("BACKUP\n");
+$stream->sendfile($file);
+$stream->end;
+close $file;
+```
+
+`sendfile($file, offset => 1024, length => 4096)` sends a specific range.
+File output stays in order with normal `write()` calls and uses the same
+backpressure and error handling. It sends raw bytes, without adding framing.
+It is not available for TLS connections or connections still being established.
+See `Linux::Event::IO::Sock::Stream` for details.
+
 ## Backpressure and deadlines
 
 Ordered-byte I/O writes immediately when possible and queues only the unsent

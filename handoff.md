@@ -1,5 +1,36 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE FINAL NATIVE REVIEW (2026-10-30)
+
+At exact commit `978a0168288ef286f9742b57ac00d70375719da4`,
+full CI #41161874475 PASSED all ten jobs (Perl configurations,
+distribution integrity, and ordinary-write performance comparison).
+Actual Stream benchmark #41161874446 also PASSED.
+
+Final native review covered file segment ownership and cleanup, `F_DUPFD_CLOEXEC` and close-on-exec, explicit offset/range checks,
+readable regular-file validation, mixed writev/sendfile ordering,
+short writes/EAGAIN/EINTR/early EOF, SIGPIPE masking, shared pending-byte
+accounting, hard output limits, graceful end/close_write/close,
+write deadlines, callback teardown, managed fork (move and child drop),
+TLS rejection, and the 64-KiB fairness budget. No blocking correctness
+defect was identified during the source review. A redundant native
+`progress` variable is removed without changing syscall behavior.
+
+One additional targeted regression tests a producer that submits a
+second file from inside `on_drain`, preserving ordering and graceful
+EOF; and validates empty-source no-op semantics. Added at
+`t/stream-75-sendfile-drain-reentrancy.t`. This new test and the
+small README file-transfer explanation require a fresh CI run.
+Do not call that follow-up CI green until actually verified.
+
+Public API remains only `sendfile($fh, offset => ..., length => ...)`,
+with existing backpressure/close/error callbacks, and no new public
+tuning or transfer object. The chosen file-drain budget remains 64 KiB.
+Feature branch and PR #39 only; `main`, version 0.118, research PR #38
+and other distributions are untouched. PR #39 still requires a final
+description update and owner approval before merge.
+
+
 ## STREAM SENDFILE PUBLIC SURFACE ALLOWLIST FIX (2026-10-30)
 
 The feature commit `a474d970890f401841127f0227f71ac325f9b1f8`
