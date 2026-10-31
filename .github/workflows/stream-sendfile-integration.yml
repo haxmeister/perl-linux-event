@@ -62,6 +62,7 @@ jobs:
           if-no-files-found: warn
 
   budget-sweep:
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:

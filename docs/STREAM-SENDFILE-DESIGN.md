@@ -140,6 +140,20 @@ Arbitrary in-place edits cannot be reliably detected; document the requirement.
 Linux syscall contract reference:
 https://man7.org/linux/man-pages/man2/sendfile.2.html
 
+## File-drain budget decision (2026-10-30)
+
+Keep 64 KiB per writable readiness drain for ordered file output. Four
+isolated native variants (64, 128, 256, 512 KiB) were compared using actual
+Linux::Event Streams, SHA-256-verified 1- and 16-MiB TCP transfers, and
+1-ms native Kernel::Timer callbacks. In the corrected six-trial 16-MiB
+sweep, throughput was 307.39, 307.45, 307.08, and 307.87 MiB/s respectively;
+sender CPU was 0.2870, 0.3048, 0.2985, and 0.3035 ms/MiB, and timer p95
+lateness was 0.0165, 0.0182, 0.0158, and 0.0179 ms. Thus no compelling
+throughput or fairness benefit warrants a larger budget. Preserve the private
+64-KiB default rather than add a public knob. These shared-runner values are
+measurements, not guarantees; rerun the manual budget-sweep job on target
+hardware if later profiling reveals a problem.
+
 ## Implementation and verification sequence
 
 1. Discuss the proposed public contract with the owner, especially raw framing,

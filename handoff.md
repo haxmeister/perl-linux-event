@@ -1,5 +1,42 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE BUDGET DECISION AND MANAGED-FORK TEST (2026-10-30)
+
+The corrected actual-Stream budget sweep passed on exact commit
+`5159ebc77782accbe7524859f7f33ceb9e0165df`, workflow
+#41161571136. It tested four isolated compiled budgets (64, 128, 256,
+512 KiB), alternating order, six SHA-256-verified TCP cases per mode/size,
+with a concurrent repeating 1-ms native Timer. The Timer measurement
+reconstructs the scheduled due time, because the native scheduler advances
+the recurring deadline before invoking the callback.
+
+16-MiB sendfile medians, budget: throughput MiB/s, sender CPU ms/MiB,
+timer p95 lateness ms:
+- 64 KiB: 307.39, 0.2870, 0.0165
+- 128 KiB: 307.45, 0.3048, 0.0182
+- 256 KiB: 307.08, 0.2985, 0.0158
+- 512 KiB: 307.87, 0.3035, 0.0179
+
+On the shared CI runner, increasing 64->512 KiB gains less than 0.2%
+16-MiB throughput. Timer p95 and CPU do not establish a sustained
+advantage. **KEEP the private 64-KiB file-drain budget.** These are
+provisional machine-specific measurements, not general hardware limits.
+Keep the heavy sweep reproducible as a workflow_dispatch-only job, so
+ordinary PR changes do not rebuild four copies. Normal SHA-256-verified
+Stream benchmark CI continues to run on PRs.
+
+New `t/stream-74-sendfile-fork.t` tests managed fork with a queued
+file: default child drop must close only its inherited source duplicate
+while the parent continues owning its queue; explicit move must transfer
+the entire ordered file-plus-trailer queue to the child, with the parent
+receiver verifying bytes and EOF. Include the new test in MANIFEST.
+These managed-fork regressions require a fresh full CI run and must not be
+called passed until verified.
+
+`main`, versions, releases, PR #38 and other repositories remain unchanged.
+Draft integration PR #39 is not merged.
+
+
 ## STREAM SENDFILE BENCHMARK TIMER DEADLINE CORRECTION (2026-10-30)
 
 The native Timer scheduler advances its recurring `deadline` before calling
