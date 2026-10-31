@@ -165,13 +165,142 @@ The default rule is:
    improve the library's communications-engine role enough to justify its API
    and maintenance surface.
 
-### Near-term Linux facilities: completed work and open candidates
+### Current status at a glance (2026-10-31)
 
-This list tracks progress as well as possible future work. A facility that
-has already been integrated should not be treated as a new experiment merely
-because it appeared on the original roadmap.
+The version on `main` is **0.118 (unreleased)**. The latest published
+CPAN version is **0.117**. The four original reactor-contract milestones
+above are implemented. The version 0.118 development line also includes
+`Loop->defer_fork()` and native Stream `sendfile()`.
+Completion of these milestones does **not** by itself authorize a 1.000
+release; the release gates below still apply.
 
-#### Netlink
+The distinctions below are deliberate. **Experimented and not merged**
+does not mean **not investigated**; **designed and deferred** does not
+mean **not designed**.
+
+| Facility or work | Status | Decision / next condition |
+| --- | --- | --- |
+| Foreign-loop `poll_fd()`/`poll()`, `defer()`, managed `fork()`, Inotify | Implemented and merged (0.115–0.117) | Maintain existing contracts |
+| `defer_fork()` | Implemented and merged (0.118 unreleased) | No additional fork API required by this plan |
+| Stream `sendfile()` | Implemented and merged (0.118 unreleased) | Documented; 64 KiB private drain budget |
+| `EPOLLEXCLUSIVE` shared listeners | Fully prototyped, benchmarked, **not merged** | Hold after mixed sustained results; do not enable by default |
+| `recvmmsg()` Datagram receive batching | Prototyped, benchmarked, **not merged** | Modest small-packet gain, 8 KiB regression; do not enable by default |
+| `splice()` | Syscall/file-to-TCP experiment completed; no core integration | Reopen only with a concrete socket/pipe relay use case |
+| Netlink | **Core + separate-distribution design approved**; implementation deferred | Begin only on a new explicit priority decision |
+| `sendmmsg()` | **Not experimentally investigated** | Evaluate only for significant outgoing Datagram queue/burst workloads |
+| `fanotify`, UDP metadata/GSO/GRO, specialized socket families, TCP knobs | Roadmap candidates, **not yet investigated as core features** | Need a real user or performance case |
+
+Research branches and PRs are preserved for evidence, not as work awaiting
+automatic merge. The key records are
+[exclusive shared listeners, PR #36](https://github.com/haxmeister/perl-linux-event/pull/36),
+[UDP receive batching, PR #37](https://github.com/haxmeister/perl-linux-event/pull/37),
+[zero-copy syscall study, PR #38](https://github.com/haxmeister/perl-linux-event/pull/38), and
+[merged Stream sendfile, PR #39](https://github.com/haxmeister/perl-linux-event/pull/39).
+A cross-version summary and the actual research decisions are kept in
+[`DEVELOPMENT-HISTORY.md`](DEVELOPMENT-HISTORY.md).
+No specific feature has been approved as the next implementation after
+`sendfile()`.
+
+### Implemented and merged: native Stream file transfer
+
+Established plain socket Streams now provide
+`sendfile($fh, offset => ..., length => ...)` on the unreleased 0.118
+development line. It adds owned file-range entries to the existing native
+ordered output queue and retains the `write()` ordering, backpressure,
+hard output limits, deadlines, graceful end, teardown and managed-fork
+contracts. The method emits raw bytes rather than framed messages; TLS
+and pending outbound connections are deliberately unsupported.
+
+A private **64 KiB** per-readiness file/mixed-output budget was retained
+after real Stream and Timer sweeps showed no meaningful reason to enlarge
+it. Correctness tests, the actual Stream benchmark, the ordinary-byte
+performance regression, and post-merge CI passed. See
+[`STREAM-SENDFILE-DESIGN.md`](STREAM-SENDFILE-DESIGN.md) and
+[merged PR #39](https://github.com/haxmeister/perl-linux-event/pull/39).
+The separate research PR #38 remains open for historical evidence,
+not because `sendfile()` is incomplete.
+
+### Investigated, measured, and deliberately not integrated
+
+#### EPOLLEXCLUSIVE for fork-shared Listeners
+
+[Draft PR #36](https://github.com/haxmeister/perl-linux-event/pull/36)
+contains a real opt-in native Listener/Loop prototype, the
+`fork(share => [...])` and `defer_fork()` integration tests, lifecycle
+and failed-registration rollback coverage, and comparisons against
+ordinary fork-shared epoll and independent `SO_REUSEPORT` sockets.
+The prototype is behind
+`LINUX_EVENT_EXPERIMENT_EPOLLEXCLUSIVE=1` and is **not** in `main`.
+
+Kernel-level and shorter real-Stream experiments reduced empty accept
+wakeups and sometimes improved transaction rate, but short bursts
+also showed uneven distribution across workers. We then built and
+corrected a sustained local quad-core benchmark: its first version
+used TCP reset closes and contaminated server error handling, so
+only corrected **v2** results are suitable for performance decisions.
+Across the five-repeat v2 local comparison, 5,694,682 request/reply
+transactions completed with no losses or Stream errors. For four
+workers, medians were:
+
+| Synthetic handler work | Ordinary shared | EPOLLEXCLUSIVE | SO_REUSEPORT |
+| --- | ---: | ---: | ---: |
+| 0 microseconds | 10,684 replies/s | 11,120 (+4.1%) | 10,573 |
+| 150 microseconds | 7,903 replies/s | 6,951 (**−12.0%**) | 7,448 |
+
+The sustained test distributed work much more evenly than short bursts
+(fairness above 0.998), but did **not** show a dependable performance
+win. The local raw dataset was supplied during development and was not
+committed to the public branch; the branch retains its benchmark driver,
+CI measurements, and [test instructions](https://github.com/haxmeister/perl-linux-event/blob/feature/epollexclusive-evaluation/bench/experiments/EPOLLEXCLUSIVE-LOCAL.md).
+**Decision:** stop this investigation for now; preserve draft PR #36.
+Do not enable exclusive registration by default or merge the prototype.
+Reopen only with new representative evidence and a concrete shared-socket need.
+
+#### recvmmsg() Datagram receive batching
+
+[Draft PR #37](https://github.com/haxmeister/perl-linux-event/pull/37)
+contains an experimental bounded native receive path controlled by
+`LINUX_EVENT_EXPERIMENT_RECVMMSG=8|32`. It preserves one callback per
+packet, peer information, truncation, zero-length packets and the
+`max_datagrams_per_tick` bound. The existing `recvmsg()` path is the
+production default. Full branch CI
+[passed](https://github.com/haxmeister/perl-linux-event/actions/runs/41133753891).
+
+The local four-core follow-up verified **5,280,000 packets across
+150/150 trials** with no losses or corruption. In the complete
+Loop/`on_datagram` workload, native receive batching yielded about
+2.5–5.1% less CPU for 64-byte datagrams and 1.0–2.8% less for
+1,400-byte datagrams, but approximately **1.9–2.8% more CPU at 8 KiB**.
+Serial ping-pong did not establish a consistent gain. The raw local
+measurement was discussed during development; the feature branch
+retains its reproducible benchmark programs and initial CI results in
+[`UDP-RECVMMSG-EVALUATION.md`](https://github.com/haxmeister/perl-linux-event/blob/feature/udp-recvmmsg-evaluation/docs/UDP-RECVMMSG-EVALUATION.md).
+
+**Decision:** keep PR #37 as research; do not make batching the
+default or merge it based on these results. This concludes the
+`recvmmsg()` investigation for now; it does **not** include
+`sendmmsg()`.
+
+#### splice() and the earlier zero-copy comparison
+
+[Draft research PR #38](https://github.com/haxmeister/perl-linux-event/pull/38)
+compared copied file-to-TCP transmission with Linux `sendfile()` and
+`splice()` using verified real TCP transfers and backpressure cases.
+A five-repeat local run delivered **90/90 byte-verified transfers**.
+For 200 KiB and 1 MiB, `sendfile()` reduced sender CPU per MiB by
+approximately 79–80% against copying. That evidence led to the
+now-merged `sendfile()` feature.
+
+`splice()` was **measured but not integrated**. Its possible value
+is a distinct socket/pipe bridge for proxy and relay workloads, not
+an unfinished file-sending implementation. Any future bridge needs
+its own ordering, TLS/framing eligibility, queue ownership, fairness,
+backpressure, cancellation and lifecycle design. **Do not restart
+the existing syscall comparison without new evidence.**
+
+### Designed and intentionally deferred
+
+#### Netlink — approved two-layer architecture, not implemented
 
 Netlink is the most conspicuous missing Linux event source, and the project has
 made an explicit architectural decision to support it in two layers.
@@ -216,10 +345,11 @@ Linux::Event::Netlink distribution
     family-specific event/value objects and higher-level semantics
 ```
 
-This is approved future work, not the next immediate implementation task. The
-core primitive and the separate distribution are both intended to be built,
-but the work is deliberately deferred until a later development session rather
-than displacing the current release/core agenda.
+This is an **approved design decision**, recorded in
+[merged PR #33](https://github.com/haxmeister/perl-linux-event/pull/33);
+no Netlink primitive or high-level distribution has been implemented.
+The user deliberately deferred this work. It is a valid future
+capability, but **not automatically the next task**.
 
 When implementation begins, design the core primitive first around real
 `NETLINK_ROUTE` requirements, then build the Route layer in the separate
@@ -227,52 +357,20 @@ distribution as the integration test of that primitive. Avoid designing an
 overly generic Netlink API in isolation before the first real family proves the
 boundary.
 
-#### EPOLLEXCLUSIVE for shared listeners
+### Genuinely uninvestigated Linux-native candidates
 
-Managed `Loop->fork()` can intentionally share a Listener while parent and
-child own independent epoll instances. Evaluate `EPOLLEXCLUSIVE` for that
-case to reduce unnecessary wakeups and thundering-herd behavior.
+#### sendmmsg() Datagram transmit batching
 
-This work is both correctness-sensitive and performance-sensitive. It must
-cover shared-listener lifecycle, accept fairness, edge cases around replacement
-and teardown, and paired multi-process accept benchmarks before changing the
-default registration policy.
+`sendmmsg()` has **not** been implemented or measured in this
+project. It must not be grouped with the completed `recvmmsg()`
+receive investigation. The current Datagram write path sends
+individual packets; transmit batching is worth measuring only when
+a real workload creates enough queued outbound datagrams for
+one syscall to send multiple packets. Preserve packet boundaries,
+addresses, order, errors, backpressure and per-tick fairness.
+Do not promise a speedup from immediate serial sends.
 
-#### recvmmsg() and sendmmsg() for Datagram
-
-The Datagram engine currently preserves packet semantics with repeated
-`recvmsg()` and send operations. Evaluate Linux `recvmmsg()` and
-`sendmmsg()` batching to reduce syscall and dispatch overhead under packet
-load.
-
-The experiment must preserve one-datagram/one-callback semantics, peer address
-accuracy, oversized-packet handling, output ordering, backpressure, and
-`max_datagrams_per_tick` fairness. Measure packet rate, CPU per packet,
-latency, and fairness across small and larger datagrams.
-
-#### sendfile() integrated; splice() research retained
-
-**Implemented in the unreleased 0.118 development line:** established plain
-socket Streams now provide `sendfile($fh, offset => ..., length => ...)`.
-This adds native, ordered file-range entries to the existing Stream write
-queue. It retains backpressure, hard output limits, deadlines, graceful
-shutdown, descriptor ownership and managed-fork behavior, without reading
-the file into Perl or adding message framing. TLS and pending outbound
-connections are deliberately unsupported. A private 64-KiB readiness
-budget limits file-drain work. Tests and real Stream performance measurements
-passed before and after the merge; see
-[`STREAM-SENDFILE-DESIGN.md`](STREAM-SENDFILE-DESIGN.md) and
-[merged PR #39](https://github.com/haxmeister/perl-linux-event/pull/39).
-
-**Researched, not implemented in core:** `splice()` was benchmarked
-alongside `sendfile()` for file-to-TCP transfers. Socket/pipe bridging
-could be useful for relays, but it is a separate potential capability
-with its own ordering, backpressure, cancellation and lifetime contract.
-Do not treat it as unfinished `sendfile()` integration. The syscall
-comparison and evidence remain in
-[draft research PR #38](https://github.com/haxmeister/perl-linux-event/pull/38).
-
-#### fanotify
+#### fanotify — candidate, not investigated
 
 Evaluate `fanotify` as the broader Linux filesystem-notification companion to
 Inotify.
@@ -283,7 +381,7 @@ kernel-version behavior make this a more specialized resource than Inotify, so
 the initial design should keep privileged policy out of the ordinary event
 path.
 
-#### Linux UDP metadata and acceleration
+#### Linux UDP metadata and acceleration — candidates, not investigated
 
 Evaluate Linux packet facilities as concrete upper-layer needs appear. High
 value candidates include:
@@ -298,7 +396,7 @@ value candidates include:
 These should be integrated incrementally rather than as one large socket-option
 dump. Each addition needs a demonstrated consumer and packet-level tests.
 
-### Specialized Linux transports and packet interfaces
+### Specialized Linux transports and packet interfaces — candidates only
 
 The following facilities are useful enough to remain on the roadmap, but they
 should follow the general primitives above unless a real project creates an
@@ -328,7 +426,7 @@ This is potentially high-performance but substantially lower-level than
 Datagram, so privilege requirements, memory ownership, ring lifetime, and
 fairness need a deliberate API rather than exposing kernel structures directly.
 
-### Additional performance candidates
+### Additional performance candidates — not yet experimentally evaluated
 
 The following Linux facilities merit measured experiments when the matching
 workload appears:

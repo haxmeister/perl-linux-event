@@ -690,6 +690,11 @@ performance-regression baselines.
 
 Architecture and behavior are documented under `docs/`. In particular:
 
+- `docs/V1-ROADMAP.md` — current feature status: merged, researched/deferred,
+  designed/deferred, and not yet investigated
+- `docs/DEVELOPMENT-HISTORY.md` — dated research outcomes and decisions
+- `docs/STREAM-SENDFILE-DESIGN.md` — the implemented Stream file-transfer contract
+
 - `docs/CORE.md`
 - `docs/IO-KERNEL-ARCHITECTURE.md`
 - `docs/ARCHITECTURE.md`

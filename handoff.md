@@ -1,5 +1,41 @@
 # Linux::Event Handoff
 
+## ROADMAP AND RESEARCH STATUS RECONCILIATION (2026-10-31)
+
+The authoritative [1.000 roadmap](docs/V1-ROADMAP.md) and
+[development history](docs/DEVELOPMENT-HISTORY.md) now distinguish
+**implemented/merged**, **investigated but deliberately unmerged**,
+**designed and deferred**, and **not yet investigated**. These
+documents are the first reference when choosing future work; do
+not restart the EPOLLEXCLUSIVE or recvmmsg research just because
+their draft PRs are open.
+
+Key decisions: `EPOLLEXCLUSIVE` [PR #36](https://github.com/haxmeister/perl-linux-event/pull/36)
+completed a corrected sustained four-core comparison with no
+dependable production benefit (150-us work: exclusive 12.0% slower
+than ordinary shared). `recvmmsg()`
+[PR #37](https://github.com/haxmeister/perl-linux-event/pull/37)
+completed a 5.28-million-packet four-core comparison with modest
+small-packet CPU savings and a repeatable 8-KiB regression.
+Neither is in `main`; both were intentionally left as research.
+`sendfile()` is fully merged in 0.118; `splice()` was measured
+but not integrated. `sendmmsg()` has not been researched.
+Netlink's two-layer architecture is approved but deferred.
+No particular new feature has been authorized as the next
+implementation.
+
+[PR #34](https://github.com/haxmeister/perl-linux-event/pull/34)
+is a separate regression-only TLS transition investigation; do
+not imply a production core fix or a verified reproducer from it.
+Earlier XS simplification and native-connect/watcher experiments
+are already concluded and documented.
+
+Version **0.118 remains unreleased**; CPAN remains 0.117.
+This reconciliation is documentation only. The older handoff
+sections below are historical checkpoints and may contain
+superseded instructions; current status takes precedence.
+
+
 ## CURRENT MAIN — SENDFILE MERGED AND DOCUMENTED (2026-10-31)
 
 Current `main` includes native ordered Stream `sendfile()`, merged from

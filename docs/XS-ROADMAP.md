@@ -11,9 +11,20 @@ The roadmap now has a second, equally important rule:
 > prefer Perl for cold policy, lifecycle, validation, ownership orchestration,
 > and presentation when paired benchmarks show no meaningful cost.
 
-`docs/STREAM-REVIEW-FOLLOWUPS.md` defines the current Stream correctness work.
-`docs/xs-reduction-roadmap.md` defines the deliberate program for shrinking the
-native Stream surface after that correctness work is complete.
+`docs/STREAM-REVIEW-FOLLOWUPS.md` records the Stream correctness program.
+`docs/xs-reduction-roadmap.md` records the measured program for shrinking the
+native Stream surface.
+
+**Current status (2026-10-31):** The Priority 0 correctness
+work and initial XS reduction/consolidation phases below were
+completed and measured in September. Their old numbered priorities
+are historical, not an instruction to begin them again. Core
+0.118 adds `defer_fork()` and ordered native `sendfile()`;
+the current Linux-native feature ledger, including the completed
+`EPOLLEXCLUSIVE` and `recvmmsg()` experiments, is in
+[`V1-ROADMAP.md`](V1-ROADMAP.md). Reopen the older XS
+experiments only with a new correctness requirement or a
+representative profile.
 
 ## Permanent benchmark rule - payload sizes through 200 KB
 
