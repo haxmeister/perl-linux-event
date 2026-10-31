@@ -1,5 +1,18 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE PUBLIC SURFACE ALLOWLIST FIX (2026-10-30)
+
+The feature commit `a474d970890f401841127f0227f71ac325f9b1f8`
+passed the new `t/stream-74-sendfile-fork.t` in the observed core CI
+matrix jobs and the ordinary actual-Stream benchmark workflow
+#41161736615. The full CI run #41161736592 caught a packaging-only test
+failure: `t/20-public-surface.t` maintains an exact allowlist of
+`bench/` files, and did not yet include the new summary tool. Update
+the allowlist to include `summarize-stream-sendfile-budget.pl` and
+rerun full CI. Engine/fork behavior did not cause this failure.
+Do not claim final full CI is green until the corrected exact commit passes.
+
+
 ## STREAM SENDFILE BUDGET DECISION AND MANAGED-FORK TEST (2026-10-30)
 
 The corrected actual-Stream budget sweep passed on exact commit
