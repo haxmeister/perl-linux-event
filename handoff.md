@@ -1,5 +1,30 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE BUDGET SWEEP (2026-10-30)
+
+The full ten-job core CI run #41153049081 and actual Stream TCP benchmark
+#41153049094 both PASSED on exact integration commit
+`207441524e19cf97c15fcacae2da187365f74c53`. This includes corrected
+source-file-only FD accounting on a write timeout, multiple file ranges,
+graceful EOF, and detach rejection. The previous "await CI" note is superseded.
+
+Next feature-branch experiment adds a private budget sweep without changing
+the production 64-KiB LES_FILE_DRAIN_BUDGET default. The CI workflow builds
+four separate source copies with 64, 128, 256, and 512-KiB native drain
+budgets. It runs real verified TCP Stream transfers with concurrent 1-ms
+Kernel::Timer callbacks for each build, repeated in ascending and descending
+budget order. The existing benchmark remains byte-/SHA-256-verified and now
+optionally reports timer sample count, per-case p95/max lateness, and labelled
+build budget. The separate summary script reports median sender CPU/MiB,
+end-to-end throughput, and median timer p95/max per variant. These experiments
+must be judged using all metrics, not only throughput or a noisy CI median.
+
+A new full CI run and budget sweep will be required after the benchmark
+instrumentation and workflow commit. No production default, public API, main,
+research PR #38, versions, or other repositories are changed by this step.
+Draft PR #39 remains unmerged.
+
+
 ## STREAM SENDFILE TIMEOUT TEST FIX (2026-10-30)
 
 Exact commit `6a8cedeea512ac1ddc13d1283a161725ecd28049` passed

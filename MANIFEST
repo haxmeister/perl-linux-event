@@ -45,6 +45,7 @@ bench/run-stream-lifecycle-bench.pl
 bench/run-stream-microbench.pl
 bench/run-stream-payload-sweep.pl
 bench/run-stream-sendfile-bench.pl
+bench/summarize-stream-sendfile-budget.pl
 bench/run-stream-timer-fairness.pl
 bench/run-stream-transition-bench.pl
 bench/run-stream-watcher-state-bench.pl

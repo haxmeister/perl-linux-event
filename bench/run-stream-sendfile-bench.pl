@@ -12,6 +12,7 @@ use Time::HiRes qw(time clock_gettime CLOCK_PROCESS_CPUTIME_ID usleep);
 use POSIX qw(_exit);
 
 use Linux::Event::Loop;
+use Linux::Event::Kernel::Timer;
 use Linux::Event::IO::Sock::Stream;
 
 {
@@ -53,7 +54,7 @@ sub process_cpu () {
     return clock_gettime(CLOCK_PROCESS_CPUTIME_ID);
 }
 
-sub test_case ($mode, $size, $pressure_us) {
+sub test_case ($mode, $size, $pressure_us, $tick_us, $budget_bytes) {
     my $body = substr(('0123456789abcdef' x int(($size + 15) / 16)), 0, $size);
     my $sha = sha256_hex($body);
     my $source = make_source($body);
@@ -109,6 +110,18 @@ sub test_case ($mode, $size, $pressure_us) {
     );
     my $start_wall = time;
     my $start_cpu = process_cpu();
+    my @timer_late_ms;
+    my $timer;
+    if ($tick_us) {
+        $timer = Linux::Event::Kernel::Timer->new(
+            loop => $loop, every => $tick_us / 1_000_000,
+            on_timer => sub ($self) {
+                my $late_ms = 1000
+                    * (Linux::Event::Kernel::Timer->now - $self->deadline);
+                push @timer_late_ms, $late_ms > 0 ? $late_ms : 0;
+            },
+        );
+    }
 
     if ($mode eq 'sendfile') {
         $stream->sendfile($source);
@@ -144,6 +157,7 @@ sub test_case ($mode, $size, $pressure_us) {
     }
 
     $loop->run_for(30) unless $stream->is_closed;
+    $timer->cancel if $timer && $timer->is_active;
     my $sender_cpu = process_cpu() - $start_cpu;
     $stream->close if !$stream->is_closed;
     waitpid($pid, 0);
@@ -164,8 +178,17 @@ sub test_case ($mode, $size, $pressure_us) {
 
     my $mib = $size / 1048576;
     my $stats = $state->{stats} // {};
+    my @sorted_late = sort { $a <=> $b } @timer_late_ms;
+    my $p95 = @sorted_late
+        ? $sorted_late[int(0.95 * (@sorted_late - 1))] : undef;
+    my $max_late = @sorted_late ? $sorted_late[-1] : undef;
     return {
         mode => $mode,
+        budget_bytes => $budget_bytes,
+        timer_interval_us => $tick_us,
+        timer_samples => scalar(@timer_late_ms),
+        timer_late_p95_ms => $p95,
+        timer_late_max_ms => $max_late,
         bytes => $size,
         receiver_delay_us => $pressure_us,
         verified => JSON::PP::true,
@@ -186,14 +209,20 @@ my $sizes = '64,4096,32768,204800,1048576,8388608';
 my $repeats = 3;
 my $pressure_us = 0;
 my $jsonl = '';
+my $tick_us = 0;
+my $budget_bytes = 65536;
 GetOptions(
     'sizes=s' => \$sizes,
     'repeats=i' => \$repeats,
     'pressure-us=i' => \$pressure_us,
     'jsonl=s' => \$jsonl,
+    'tick-us=i' => \$tick_us,
+    'budget-bytes=i' => \$budget_bytes,
 ) or die "usage: $0 [--sizes=64,4096,...] [--repeats=3] [--pressure-us=0] [--jsonl=path]\n";
 die "repeats must be >= 1\n" if $repeats < 1;
 die "pressure-us must be >= 0\n" if $pressure_us < 0;
+die "tick-us must be >= 0\n" if $tick_us < 0;
+die "budget-bytes must be positive\n" if $budget_bytes < 1;
 my @sizes = split /,/, $sizes;
 for my $size (@sizes) {
     die "sizes must be positive integer bytes\n"
@@ -211,7 +240,8 @@ for my $size (@sizes) {
     for my $rep (0 .. $repeats - 1) {
         for my $i (0 .. 2) {
             my $mode = $modes[($rep + $i) % 3];
-            my $result = test_case($mode, $size, $pressure_us);
+            my $result = test_case($mode, $size, $pressure_us,
+                $tick_us, $budget_bytes);
             $result->{repetition} = $rep + 1;
             print {$output} encode_json($result), "\n";
         }
