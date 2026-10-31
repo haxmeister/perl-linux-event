@@ -1,5 +1,43 @@
 # Linux::Event Handoff
 
+## CURRENT MAIN — SENDFILE MERGED AND DOCUMENTED (2026-10-31)
+
+Current `main` includes native ordered Stream `sendfile()`, merged from
+[PR #39](https://github.com/haxmeister/perl-linux-event/pull/39)
+as `f219f24f278cdb1319a38402d3a9a35f61523e08`.
+The feature was validated at `955a0622c56841779fd16fdc37fe0548cd04048a`
+with [ten successful CI jobs](https://github.com/haxmeister/perl-linux-event/actions/runs/41166889428)
+and the [actual Stream benchmark](https://github.com/haxmeister/perl-linux-event/actions/runs/41166889422).
+The post-merge `main` [CI also passed](https://github.com/haxmeister/perl-linux-event/actions/runs/41208249334).
+
+Source version remains **0.118 (unreleased)**. Do not tag, release on
+GitHub, or upload to CPAN until expressly approved. The feature adds
+one public method, `sendfile($fh, offset => ..., length => ...)`, for
+established plain TCP and Unix-domain socket Streams. It is ordered
+with `write()`, uses the native queue and existing flow control,
+duplicates the file descriptor, preserves the caller's position, and
+rejects TLS and pending connections. The private file/mixed-queue
+fairness budget is 64 KiB per writable readiness turn. Research
+[PR #38](https://github.com/haxmeister/perl-linux-event/pull/38)
+remains separate; `splice()` has not been integrated.
+
+A documentation-only `main` change, `4ee9a4c852bad2bd6a409e002ee77f2bf03b90cc`,
+updated `Changes`, the README, public Stream POD, the roadmap,
+connection and ordered-byte guides, and
+`docs/STREAM-SENDFILE-DESIGN.md`. Those now describe implemented
+behavior and tested limitations, not an unmerged proposal. The
+documentation CI is a separate check and should not be called passed
+until its exact commit completes.
+
+**All sendfile sections below this note are historical checkpoints.**
+In particular, older instructions to keep PR #39 draft, await the
+final callback regression, or avoid a `main` merge are superseded.
+Research PRs #36 (EPOLLEXCLUSIVE), #37 (recvmmsg), and #38
+(sendfile/splice syscall comparison) remain separate, unmerged
+research. No core implementation of `splice()` or `sendmmsg()`
+is claimed here.
+
+
 ## STREAM SENDFILE FINAL NATIVE REVIEW (2026-10-30)
 
 At exact commit `978a0168288ef286f9742b57ac00d70375719da4`,

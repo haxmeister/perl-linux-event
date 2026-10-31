@@ -165,7 +165,11 @@ The default rule is:
    improve the library's communications-engine role enough to justify its API
    and maintenance surface.
 
-### Near-term Linux facilities to explore
+### Near-term Linux facilities: completed work and open candidates
+
+This list tracks progress as well as possible future work. A facility that
+has already been integrated should not be treated as a new experiment merely
+because it appeared on the original roadmap.
 
 #### Netlink
 
