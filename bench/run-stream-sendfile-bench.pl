@@ -116,8 +116,12 @@ sub test_case ($mode, $size, $pressure_us, $tick_us, $budget_bytes) {
         $timer = Linux::Event::Kernel::Timer->new(
             loop => $loop, every => $tick_us / 1_000_000,
             on_timer => sub ($self) {
+                # Recurring Timers publish their *next* deadline before
+                # invoking on_timer. Reconstruct the represented due time.
+                my $due = $self->deadline
+                    - $self->expirations * $self->interval;
                 my $late_ms = 1000
-                    * (Linux::Event::Kernel::Timer->now - $self->deadline);
+                    * (Linux::Event::Kernel::Timer->now - $due);
                 push @timer_late_ms, $late_ms > 0 ? $late_ms : 0;
             },
         );

@@ -1,5 +1,17 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE BENCHMARK TIMER DEADLINE CORRECTION (2026-10-30)
+
+The native Timer scheduler advances its recurring `deadline` before calling
+`on_timer`, so a simple `now - deadline` would measure the next tick and
+falsely report zero lateness. The budget sweep now reconstructs the due time
+from `deadline - expirations * interval` inside the callback. This also
+accounts for coalesced missed intervals. The previous budget-sweep run at
+`7e76bafd2b4af178a8a98c823fb641f73dee6683` must NOT be used to compare
+timer fairness. Rerun the budget variants and full CI after this correction.
+The production 64-KiB budget remains unchanged; main remains untouched.
+
+
 ## STREAM SENDFILE BUDGET SWEEP (2026-10-30)
 
 The full ten-job core CI run #41153049081 and actual Stream TCP benchmark
