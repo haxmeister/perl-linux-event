@@ -230,6 +230,8 @@ my %allowed = map { $_ => 1 } qw(
     run-stream-lifecycle-bench.pl
     run-stream-microbench.pl
     run-stream-payload-sweep.pl
+    run-stream-sendfile-bench.pl
+    summarize-stream-sendfile-budget.pl
     run-stream-timer-fairness.pl
     run-stream-feedback-timer-fairness.pl
     run-tls-accept-setup-bench.pl

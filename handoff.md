@@ -1,5 +1,326 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE FINAL NATIVE REVIEW (2026-10-30)
+
+At exact commit `978a0168288ef286f9742b57ac00d70375719da4`,
+full CI #41161874475 PASSED all ten jobs (Perl configurations,
+distribution integrity, and ordinary-write performance comparison).
+Actual Stream benchmark #41161874446 also PASSED.
+
+Final native review covered file segment ownership and cleanup, `F_DUPFD_CLOEXEC` and close-on-exec, explicit offset/range checks,
+readable regular-file validation, mixed writev/sendfile ordering,
+short writes/EAGAIN/EINTR/early EOF, SIGPIPE masking, shared pending-byte
+accounting, hard output limits, graceful end/close_write/close,
+write deadlines, callback teardown, managed fork (move and child drop),
+TLS rejection, and the 64-KiB fairness budget. No blocking correctness
+defect was identified during the source review. A redundant native
+`progress` variable is removed without changing syscall behavior.
+
+One additional targeted regression tests a producer that submits a
+second file from inside `on_drain`, preserving ordering and graceful
+EOF; and validates empty-source no-op semantics. Added at
+`t/stream-75-sendfile-drain-reentrancy.t`. This new test and the
+small README file-transfer explanation require a fresh CI run.
+Do not call that follow-up CI green until actually verified.
+
+Public API remains only `sendfile($fh, offset => ..., length => ...)`,
+with existing backpressure/close/error callbacks, and no new public
+tuning or transfer object. The chosen file-drain budget remains 64 KiB.
+Feature branch and PR #39 only; `main`, version 0.118, research PR #38
+and other distributions are untouched. PR #39 still requires a final
+description update and owner approval before merge.
+
+
+## STREAM SENDFILE PUBLIC SURFACE ALLOWLIST FIX (2026-10-30)
+
+The feature commit `a474d970890f401841127f0227f71ac325f9b1f8`
+passed the new `t/stream-74-sendfile-fork.t` in the observed core CI
+matrix jobs and the ordinary actual-Stream benchmark workflow
+#41161736615. The full CI run #41161736592 caught a packaging-only test
+failure: `t/20-public-surface.t` maintains an exact allowlist of
+`bench/` files, and did not yet include the new summary tool. Update
+the allowlist to include `summarize-stream-sendfile-budget.pl` and
+rerun full CI. Engine/fork behavior did not cause this failure.
+Do not claim final full CI is green until the corrected exact commit passes.
+
+
+## STREAM SENDFILE BUDGET DECISION AND MANAGED-FORK TEST (2026-10-30)
+
+The corrected actual-Stream budget sweep passed on exact commit
+`5159ebc77782accbe7524859f7f33ceb9e0165df`, workflow
+#41161571136. It tested four isolated compiled budgets (64, 128, 256,
+512 KiB), alternating order, six SHA-256-verified TCP cases per mode/size,
+with a concurrent repeating 1-ms native Timer. The Timer measurement
+reconstructs the scheduled due time, because the native scheduler advances
+the recurring deadline before invoking the callback.
+
+16-MiB sendfile medians, budget: throughput MiB/s, sender CPU ms/MiB,
+timer p95 lateness ms:
+- 64 KiB: 307.39, 0.2870, 0.0165
+- 128 KiB: 307.45, 0.3048, 0.0182
+- 256 KiB: 307.08, 0.2985, 0.0158
+- 512 KiB: 307.87, 0.3035, 0.0179
+
+On the shared CI runner, increasing 64->512 KiB gains less than 0.2%
+16-MiB throughput. Timer p95 and CPU do not establish a sustained
+advantage. **KEEP the private 64-KiB file-drain budget.** These are
+provisional machine-specific measurements, not general hardware limits.
+Keep the heavy sweep reproducible as a workflow_dispatch-only job, so
+ordinary PR changes do not rebuild four copies. Normal SHA-256-verified
+Stream benchmark CI continues to run on PRs.
+
+New `t/stream-74-sendfile-fork.t` tests managed fork with a queued
+file: default child drop must close only its inherited source duplicate
+while the parent continues owning its queue; explicit move must transfer
+the entire ordered file-plus-trailer queue to the child, with the parent
+receiver verifying bytes and EOF. Include the new test in MANIFEST.
+These managed-fork regressions require a fresh full CI run and must not be
+called passed until verified.
+
+`main`, versions, releases, PR #38 and other repositories remain unchanged.
+Draft integration PR #39 is not merged.
+
+
+## STREAM SENDFILE BENCHMARK TIMER DEADLINE CORRECTION (2026-10-30)
+
+The native Timer scheduler advances its recurring `deadline` before calling
+`on_timer`, so a simple `now - deadline` would measure the next tick and
+falsely report zero lateness. The budget sweep now reconstructs the due time
+from `deadline - expirations * interval` inside the callback. This also
+accounts for coalesced missed intervals. The previous budget-sweep run at
+`7e76bafd2b4af178a8a98c823fb641f73dee6683` must NOT be used to compare
+timer fairness. Rerun the budget variants and full CI after this correction.
+The production 64-KiB budget remains unchanged; main remains untouched.
+
+
+## STREAM SENDFILE BUDGET SWEEP (2026-10-30)
+
+The full ten-job core CI run #41153049081 and actual Stream TCP benchmark
+#41153049094 both PASSED on exact integration commit
+`207441524e19cf97c15fcacae2da187365f74c53`. This includes corrected
+source-file-only FD accounting on a write timeout, multiple file ranges,
+graceful EOF, and detach rejection. The previous "await CI" note is superseded.
+
+Next feature-branch experiment adds a private budget sweep without changing
+the production 64-KiB LES_FILE_DRAIN_BUDGET default. The CI workflow builds
+four separate source copies with 64, 128, 256, and 512-KiB native drain
+budgets. It runs real verified TCP Stream transfers with concurrent 1-ms
+Kernel::Timer callbacks for each build, repeated in ascending and descending
+budget order. The existing benchmark remains byte-/SHA-256-verified and now
+optionally reports timer sample count, per-case p95/max lateness, and labelled
+build budget. The separate summary script reports median sender CPU/MiB,
+end-to-end throughput, and median timer p95/max per variant. These experiments
+must be judged using all metrics, not only throughput or a noisy CI median.
+
+A new full CI run and budget sweep will be required after the benchmark
+instrumentation and workflow commit. No production default, public API, main,
+research PR #38, versions, or other repositories are changed by this step.
+Draft PR #39 remains unmerged.
+
+
+## STREAM SENDFILE TIMEOUT TEST FIX (2026-10-30)
+
+Exact commit `6a8cedeea512ac1ddc13d1283a161725ecd28049` passed
+the actual Stream benchmark workflow #41152924126. In the core suite,
+new `t/stream-72-sendfile-multirange.t` passed, and
+`t/stream-73-sendfile-timeout.t` confirmed timeout behavior, but two
+FD-count assertions assumed no new timerfd would be created on first
+queued output. The Loop legitimately creates a timerfd when the
+write-inactivity deadline becomes active. The regression now counts
+only `/proc/self/fd` entries with the source file's device/inode.
+This directly verifies one original FD, two while queued, and one
+again after timeout. No engine change is indicated by the failure.
+Await full CI on corrected exact commit.
+
+
+## STREAM SENDFILE INTEGRATION COVERAGE AND CI (2026-10-30)
+
+The exact feature HEAD `eac4cd0f5dd94cdb19cc12acc56e8df6336a485d`
+passed the complete ten-job core CI run
+[41144520668](https://github.com/haxmeister/perl-linux-event/actions/runs/41144520668)
+and actual Stream TCP benchmark run
+[41144520718](https://github.com/haxmeister/perl-linux-event/actions/runs/41144520718).
+Earlier handoff entries that say tests were pending are superseded by these
+confirmed results for that commit.
+
+Next coverage additions in this feature-branch commit:
+- `t/stream-72-sendfile-multirange.t`: interleaved output with several
+  fixed ranges from two files, repeated use of one source, caller position and
+  descriptor ownership, graceful end and EOF, queued detach rejection.
+- `t/stream-73-sendfile-timeout.t`: a file stalled against a non-reading
+  socket must use the normal native write inactivity deadline, close cleanly
+  once, and release its duplicated source descriptor.
+- Public Stream POD: short file-transfer example and the narrow API contract,
+  including plain-only, raw output, ownership, and backpressure semantics.
+
+These newly added tests require CI validation; previous clean run refers to
+the earlier exact commit only. Main remains unchanged; the separate research
+branch and PR #38 are untouched. Draft integration PR #39 remains unmerged.
+No version bumps or release work.
+
+
+## STREAM SENDFILE SOURCE PERMISSION VALIDATION (2026-10-30)
+
+Added a cheap native F_GETFL guard during sendfile submission: a regular
+file opened write-only is rejected before the socket is affected, with
+the duplicated descriptor released. The new regression covers this
+validation and verifies the Stream stays open after the invalid request.
+This matters because sendfile uses a borrowed supplied file handle and
+requires readable regular-file input. Existing byte-write path unchanged.
+
+New code and t/stream-70 validation are pending CI after this commit.
+Earlier benchmark run 41144061635 passed; do not assume its numbers
+apply to changes without a separate run. Main, release, research PR
+and other repositories remain untouched.
+
+## STREAM SENDFILE FAIRNESS + TRANSITIONS REGRESSION (2026-10-30)
+
+Follow-up regression `t/stream-71-sendfile-fairness.t` adds:
+- Native writable readiness fairness (at most 64 KiB per ready drain when
+  a file segment is queued); repeated Loop turns continue progress;
+- sendfile mixed with ordinary output across transition_to(), keeping
+  original output order and avoiding errors;
+- on_drain callback closing a Stream mid-drain without use-after-free,
+  duplicate callbacks, or errors.
+
+These tests are newly added, not yet verified by CI. Await run results
+before claiming passed. Previous corrected assertion commit:
+`48d9d276fae4caff22fb3afec8ac32afffc0ee24`.
+All changes remain on feature/stream-sendfile, draft PR #39 only.
+No main/research modifications, version bump, release, or splice work.
+
+## STREAM SENDFILE BENCHMARK VERIFIED (2026-10-30)
+
+Actual Linux::Event Stream TCP benchmark workflow
+[41144061635](https://github.com/haxmeister/perl-linux-event/actions/runs/41144061635)
+PASSED 66/66 byte-verified source-to-receiver trials, including a
+slowed-receiver case. These are genuine Stream sendfile() comparisons
+against a bounded Perl sysread/write producer and a separate preloaded
+byte-write control, not the earlier standalone syscall experiment.
+
+Shared CI runner median sender CPU ms/MiB (sendfile vs copy producer):
+- 32 KiB: 11.9202 vs 13.6687 (12.8% reduction).
+- 200 KiB: 2.3546 vs 3.1560 (25.4%).
+- 1 MiB: 0.8377 vs 1.5890 (47.3%).
+- 8 MiB: 0.3487 vs 1.0392 (66.4%).
+
+8 MiB end-to-end throughput medians: sendfile 213.31 MiB/s,
+copy producer 221.11 MiB/s, preloaded write 179.09 MiB/s.
+Native 64-KiB readiness budget may cap throughput and should be measured
+against larger budgets using paired CI/dedicated machine runs.
+These shared-runner figures are preliminary, not acceptance baselines.
+The independent core CI at run 41144061550 caught one newly added
+test expectation error: a 1-MiB range below default high watermark
+correctly returns true after one immediate 64-KiB sendfile call; the test
+incorrectly expected false. Correct the assertion and rerun CI.
+No functional runtime failure is established by this assertion error.
+
+## STREAM SENDFILE VERIFICATION AND EXPANDED COVERAGE (2026-10-30)
+
+First implementation commit:
+`f723089e12b5294df948ea457bb22b90d2a15e7e`.
+An in-file test inheritance typo was corrected at
+`505da85737446e2fb88372a6c02dbeb3d562c896`.
+
+GitHub Actions [41143236988](https://github.com/haxmeister/perl-linux-event/actions/runs/41143236988)
+PASSED ALL TEN JOBS: eight Perl configurations, distribution integrity,
+and the existing full ordinary-write performance regression gate.
+The earlier run failed only because the added test attempted to load an
+in-file test package with unqualified 'use parent'.
+
+Additional files now prepared for the next commit/CI:
+- `t/stream-70-sendfile-lifecycle.t`: duplicate-fd cleanup on close and
+  close_write, zero-range/no-regular-source validation, framed raw output,
+  TLS rejection before/after handshake, SIGPIPE-safe peer disconnect.
+- `bench/run-stream-sendfile-bench.pl`: ACTUAL Linux::Event Stream transfers
+  using real localhost TCP; sendfile, bounded sysread/write producer, and
+  separate preloaded byte-write control; forked receiver SHA256 integrity
+  verification, separate sender/receiver process CPU, throughput, output
+  queue and EAGAIN metrics. Rotating trials, full size sweep, optional pressure.
+- `.github/workflows/stream-sendfile-integration.yml`: benchmark CI
+  with retained JSONL. Benchmark outcomes are not yet known. No baseline
+  performance conclusion about Stream sendfile is claimed.
+
+All code remains on draft PR #39, feature branch only. Do not merge main,
+touch research PR #38, change versions, or publish. Further review needed
+for reentrant errors, protocol transitions, managed fork, deadline fairness,
+performance and the provisional public API contract.
+
+## STREAM SENDFILE PROTOTYPE CHECKPOINT (2026-10-30)
+
+Implementation work now targets the existing `feature/stream-sendfile` branch
+without modifying main or the preserved research branch. A first native
+implementation has been prepared for commit, but is NOT YET CI-VERIFIED.
+The public API remains provisional pending final review.
+
+- `xsbytestream/stream_internal.h`: file entry embeds the existing small
+  byte segment header; a null SV marks an owned file descriptor plus explicit
+  source offset. State tracks file-entry count.
+- `xsbytestream/stream_write.c`: file range admission and duplicated
+  close-on-exec FD; one immediate bounded sendfile call on an empty queue;
+  mixed writev/sendfile readiness draining without crossing file boundaries;
+  64-KiB cumulative budget, native transport guard, thread-local SIGPIPE mask,
+  partial/EAGAIN/EINTR/premature EOF handling; same pending limits, watermarks,
+  byte statistics and teardown release.
+- `xsbytestream/ByteStream.xs`: private _sendfile entry.
+- `lib/Linux/Event/_Socket/Stream.pm`: experimental sendfile($fh, offset =>,
+  length =>) wrapper only for plain established sockets. This sends raw output
+  just like write(), including on framed subclasses (send() still frames).
+  No new public transfer object or callback.
+- `t/stream-69-sendfile.t`: initial ordering, close-source, offset, range,
+  hard-limit, and truncation regressions. Further lifecycle/fairness/TLS/peer
+  disconnect coverage is required, as is actual Stream performance measurement.
+- `MANIFEST`: includes new test.
+
+The previously recorded proposal is in `docs/STREAM-SENDFILE-DESIGN.md`.
+Local git/network access is unavailable; GitHub connector writes and GitHub
+Actions PR CI are the validation path. Do not claim tests passed until CI
+has run. Next: commit the prototype, open draft PR, inspect failures,
+correct and extend tests, benchmark real Streams, update exact commits here.
+
+## ACTIVE STREAM SENDFILE INTEGRATION (2026-10-30)
+
+Proposal checkpoint: `407e75c9227fe3bc8c44a4005b2e149211eecc85`.
+Whitespace and manifest inventory checks passed; no executable code changed.
+
+New integration branch: `feature/stream-sendfile`, based on current main
+`08d775cc2287fb63942c2a27b3a6bfeb59a28aa3` (0.118 unreleased).
+The completed research branch remains intact at
+`a46d77e4c199f7ba9876e5a42ebddd6123fc1af3`; PR #38 is research only.
+Do not modify main, bump versions, tag, release, or modify other repositories.
+
+Read `docs/STREAM-SENDFILE-DESIGN.md` next. This checkpoint contains inspection
+and a concrete proposal, not an implementation. The owner explicitly requested
+public API/ownership discussion before finalizing it. Proposed API is
+`sendfile($fh, offset => ..., length => ...)`, with a duplicated close-on-exec
+fd, offset zero by default, size-at-submission range, unchanged caller offset,
+existing boolean flow control, raw bytes like write(), and explicit TLS rejection.
+Proposed first scope is established plain socket Streams; pending connects reject.
+These public decisions remain proposals until the owner responds.
+
+Inspected current native queue, transport, lifecycle, callbacks, readiness,
+preconnection staging, framing, transitions, managed fork and CI. Smallest fit:
+file entries embedded in the existing les_write_seg_t list; writev stops at a
+file, sendfile drains only the head range. Preserve ordinary segment size and
+immediate byte writes. Extend common cleanup for file fds. Remaining file bytes
+participate in existing pending-byte/watermark/deadline/limit mechanisms. Proposed
+mixed-drain budget starts at 64 KiB and must be tested, not assumed optimal.
+
+Important implementation checks: callback teardown invalidates segment pointers;
+SIGPIPE must not terminate the process; premature file EOF is terminal; source
+contents must remain immutable until peer consumption (queue drain is not that
+notification); nonblocking output does not make cold disk reads asynchronous.
+The preconnection queue is a separate Perl byte-string array, so accepting file
+handles there cannot be silently assumed from the native queue extension.
+
+Next after API discussion: native implementation, focused correctness/lifecycle
+regressions, actual Stream file-transfer benchmarks, full compatibility and
+performance CI. Do not repeat the completed standalone syscall investigation.
+No tests or Stream performance runs are claimed for this documentation checkpoint.
+The working source snapshot was retrieved through GitHub and checked against
+main's exact Git tree `6e617fed7b19e85fc89adadf42806cb80fedee8b`.
+
+
 ## CURRENT STATE - 0.118 development on main (UNRELEASED)
 
 The callback-safe deferred managed fork feature was squash-merged to main from
