@@ -19,9 +19,16 @@ use Linux::Event::IO::Sock::Stream;
     sub on_close ($self) { $self->data->{closes}++ }
 }
 
-sub fd_count () {
+sub source_fd_count ($source) {
+    my @file = stat($source);
+    die "stat source: $!" if !@file;
     opendir(my $dir, '/proc/self/fd') or die "opendir /proc/self/fd: $!";
-    my $count = scalar grep { /^\d+$/ } readdir($dir);
+    my $count = 0;
+    for my $fd (grep { /^\d+$/ } readdir($dir)) {
+        my @entry = stat("/proc/self/fd/$fd");
+        next unless @entry;
+        $count++ if $entry[0] == $file[0] && $entry[1] == $file[1];
+    }
     closedir($dir);
     return $count;
 }
@@ -45,11 +52,11 @@ sub fd_count () {
     }
     seek($fh, 0, 0) or die "seek: $!";
 
-    my $baseline_fds = fd_count();
+    is(source_fd_count($fh), 1, 'source initially has one open handle');
     $writer->sendfile($fh);
     ok($writer->pending_bytes > 0,
         'stalled file transfer participates in native queued output');
-    is(fd_count(), $baseline_fds + 1, 'queued transfer owns source fd');
+    is(source_fd_count($fh), 2, 'queued transfer owns a second source fd');
     $loop->run_for(1);
     ok($writer->is_closed, 'write inactivity timeout terminates stalled sendfile');
     is(scalar @{ $state->{errors} }, 1, 'one write timeout error emitted');
@@ -57,8 +64,8 @@ sub fd_count () {
     is($state->{errors}[0]->operation, 'write',
         'sendfile stall uses existing write timeout operation');
     is($state->{closes}, 1, 'stalled transfer closes exactly once');
-    is(fd_count(), $baseline_fds - 1,
-        'timeout closes duplicated source fd and underlying socket');
+    is(source_fd_count($fh), 1,
+        'timeout releases owned source fd without closing caller handle');
     close $peer;
     close $fh;
 }

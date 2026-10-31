@@ -1,5 +1,20 @@
 # Linux::Event Handoff
 
+## STREAM SENDFILE TIMEOUT TEST FIX (2026-10-30)
+
+Exact commit `6a8cedeea512ac1ddc13d1283a161725ecd28049` passed
+the actual Stream benchmark workflow #41152924126. In the core suite,
+new `t/stream-72-sendfile-multirange.t` passed, and
+`t/stream-73-sendfile-timeout.t` confirmed timeout behavior, but two
+FD-count assertions assumed no new timerfd would be created on first
+queued output. The Loop legitimately creates a timerfd when the
+write-inactivity deadline becomes active. The regression now counts
+only `/proc/self/fd` entries with the source file's device/inode.
+This directly verifies one original FD, two while queued, and one
+again after timeout. No engine change is indicated by the failure.
+Await full CI on corrected exact commit.
+
+
 ## STREAM SENDFILE INTEGRATION COVERAGE AND CI (2026-10-30)
 
 The exact feature HEAD `eac4cd0f5dd94cdb19cc12acc56e8df6336a485d`
