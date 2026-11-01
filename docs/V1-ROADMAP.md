@@ -107,14 +107,14 @@ and active resolver requests are rejected. Move uses a child-ready/parent-commit
 handshake so parent descriptor teardown does not happen until child
 reconstruction succeeds. Deferred callbacks are not inherited.
 
-The 0.118 development line extends managed fork with callback-safe
+The 0.118 release line extends managed fork with callback-safe
 `Loop->defer_fork(%options)`. It queues managed fork requests and uses the
 existing deferred wakeup service to unwind the active native driver before
 forking at a quiescent boundary. Parent and child callbacks run only after
 resource reconstruction; pending parent requests are not inherited by the
 child. The API supports `run`, `run_for`, `run_once`, and `poll` without
 loosening the direct `fork` rule. The established resource matrix is
-unchanged. This is implemented in source but not yet released on CPAN.
+unchanged. This is implemented in 0.118; the CPAN upload is pending.
 
 ### 4. Native filesystem notification with inotify
 
@@ -167,9 +167,9 @@ The default rule is:
 
 ### Current status at a glance (2026-10-31)
 
-The version on `main` is **0.118 (unreleased)**. The latest published
-CPAN version is **0.117**. The four original reactor-contract milestones
-above are implemented. The version 0.118 development line also includes
+The version on `main` is **0.118**, prepared for publication on
+2026-11-01. The latest verified published CPAN version is **0.117**. The four original reactor-contract milestones
+above are implemented. The 0.118 release line also includes
 `Loop->defer_fork()` and native Stream `sendfile()`.
 Completion of these milestones does **not** by itself authorize a 1.000
 release; the release gates below still apply.
@@ -181,8 +181,8 @@ mean **not designed**.
 | Facility or work | Status | Decision / next condition |
 | --- | --- | --- |
 | Foreign-loop `poll_fd()`/`poll()`, `defer()`, managed `fork()`, Inotify | Implemented and merged (0.115–0.117) | Maintain existing contracts |
-| `defer_fork()` | Implemented and merged (0.118 unreleased) | No additional fork API required by this plan |
-| Stream `sendfile()` | Implemented and merged (0.118 unreleased) | Documented; 64 KiB private drain budget |
+| `defer_fork()` | Implemented and merged (0.118) | No additional fork API required by this plan |
+| Stream `sendfile()` | Implemented and merged (0.118) | Documented; 64 KiB private drain budget |
 | `EPOLLEXCLUSIVE` shared listeners | Fully prototyped, benchmarked, **not merged** | Hold after mixed sustained results; do not enable by default |
 | `recvmmsg()` Datagram receive batching | Prototyped, benchmarked, **not merged** | Modest small-packet gain, 8 KiB regression; do not enable by default |
 | `splice()` | Syscall/file-to-TCP experiment completed; no core integration | Reopen only with a concrete socket/pipe relay use case |
@@ -204,7 +204,7 @@ No specific feature has been approved as the next implementation after
 ### Implemented and merged: native Stream file transfer
 
 Established plain socket Streams now provide
-`sendfile($fh, offset => ..., length => ...)` on the unreleased 0.118
+`sendfile($fh, offset => ..., length => ...)` in 0.118
 development line. It adds owned file-range entries to the existing native
 ordered output queue and retains the `write()` ordering, backpressure,
 hard output limits, deadlines, graceful end, teardown and managed-fork

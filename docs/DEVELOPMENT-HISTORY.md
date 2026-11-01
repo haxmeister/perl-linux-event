@@ -2,16 +2,17 @@
 
 This file preserves historical engineering decisions and the benchmark/optimization phase notes that previously occupied the project README. It is not public API documentation; current contracts are in module POD and the design guides.
 
-## Current 0.118 development and October 2026 research decisions
+## 0.118 release preparation and October 2026 research decisions
 
-**Snapshot: 2026-10-31.** `main` is Linux::Event **0.118
-(unreleased)**; CPAN remains at **0.117**. The four original
+**Snapshot: 2026-11-01.** `main` is Linux::Event **0.118**,
+prepared for publication; CPAN remains at **0.117** pending upload. The four original
 reactor-contract milestones in the [1.000 roadmap](V1-ROADMAP.md)
 were implemented: foreign-loop `poll_fd()/poll()`, `defer()`,
 resource-aware managed `fork()`, and native Inotify. Version 0.118
 then merged callback-safe `defer_fork()` ([PR #35](https://github.com/haxmeister/perl-linux-event/pull/35))
 and native ordered Stream `sendfile()` ([PR #39](https://github.com/haxmeister/perl-linux-event/pull/39)).
-No release, tag, or CPAN upload has been authorized for 0.118.
+Release preparation was approved on 2026-11-01; tagging, a GitHub
+release, and CPAN upload still require completion and verification.
 
 This section records experiments **already completed**, not
 proposals to begin new work. All numbers are workload-specific and

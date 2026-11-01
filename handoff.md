@@ -30,7 +30,8 @@ not imply a production core fix or a verified reproducer from it.
 Earlier XS simplification and native-connect/watcher experiments
 are already concluded and documented.
 
-Version **0.118 remains unreleased**; CPAN remains 0.117.
+Release preparation for **0.118** was approved on 2026-11-01; CPAN
+remains at 0.117 until the upload is completed and verified.
 This reconciliation is documentation only. The older handoff
 sections below are historical checkpoints and may contain
 superseded instructions; current status takes precedence.
@@ -46,8 +47,9 @@ with [ten successful CI jobs](https://github.com/haxmeister/perl-linux-event/act
 and the [actual Stream benchmark](https://github.com/haxmeister/perl-linux-event/actions/runs/41166889422).
 The post-merge `main` [CI also passed](https://github.com/haxmeister/perl-linux-event/actions/runs/41208249334).
 
-Source version remains **0.118 (unreleased)**. Do not tag, release on
-GitHub, or upload to CPAN until expressly approved. The feature adds
+Source version is **0.118**. The owner approved release preparation on
+2026-11-01. Tagging, GitHub publication, and the CPAN upload are still
+pending; a merged source commit is not a published release. The feature adds
 one public method, `sendfile($fh, offset => ..., length => ...)`, for
 established plain TCP and Unix-domain socket Streams. It is ordered
 with `write()`, uses the native queue and existing flow control,
