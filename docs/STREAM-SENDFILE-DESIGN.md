@@ -1,7 +1,7 @@
 # Native Stream sendfile — implemented contract and verification
 
 **Status:** Implemented and merged into Linux::Event `main` for the
-**0.118 development version (unreleased)** on 2026-10-31.
+**0.118 release candidate** on 2026-10-31.
 [PR #39](https://github.com/haxmeister/perl-linux-event/pull/39) merged as
 `f219f24f278cdb1319a38402d3a9a35f61523e08`.
 The earlier Linux syscall comparison remains separate on
@@ -147,4 +147,4 @@ file-read/`write()` production and to preloaded byte writes, with
 receiver-side byte integrity verification.
 
 This feature is merged and complete; `splice()` remains separate research.
-No 0.118 GitHub release or CPAN upload is implied by the merge.
+The merge alone does not publish a 0.118 GitHub release or CPAN upload.

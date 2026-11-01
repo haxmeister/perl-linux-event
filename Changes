@@ -1,6 +1,6 @@
 Revision history for Linux-Event
 
-0.118  (unreleased)
+0.118  2026-11-01
     - Add Stream->sendfile($file, offset => ..., length => ...) for
       established plain TCP and Unix-domain socket Streams. File ranges share
       the native ordered output queue with write() and obey existing
