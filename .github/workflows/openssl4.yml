@@ -1,0 +1,41 @@
+name: OpenSSL 4 TLS compatibility
+
+on:
+  pull_request:
+    paths:
+      - 'xstls/TLS.xs'
+      - 't/tls-20-deadline-and-eof.t'
+      - '.github/workflows/openssl4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  openssl4-arm:
+    name: OpenSSL 4 on ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: shogo82148/actions-setup-perl@c3e9892cade8a01db1a8498b756f48d6ca98b678 # v1
+        with:
+          perl-version: "5.36"
+          multi-thread: true
+      - name: Build OpenSSL 4.0.3
+        run: |
+          git clone --depth 1 --branch openssl-4.0.3 https://github.com/openssl/openssl.git "$RUNNER_TEMP/openssl-source"
+          cd "$RUNNER_TEMP/openssl-source"
+          ./Configure --prefix="$RUNNER_TEMP/openssl4" --libdir=lib shared no-tests
+          make --jobs=2
+          make install_sw
+          "$RUNNER_TEMP/openssl4/bin/openssl" version
+      - name: Build Linux::Event against OpenSSL 4
+        run: |
+          export CPATH="$RUNNER_TEMP/openssl4/include"
+          export LIBRARY_PATH="$RUNNER_TEMP/openssl4/lib"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/openssl4/lib"
+          perl Makefile.PL
+          make --jobs=2
+          prove -b -v t/tls-20-deadline-and-eof.t
+          prove -b t/tls-*.t
