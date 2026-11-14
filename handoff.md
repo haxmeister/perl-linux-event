@@ -1,5 +1,23 @@
 # Linux::Event Handoff
 
+## 0.120 MAINTENANCE RELEASE PREPARATION (2026-11-14)
+
+Linux::Event 0.119 has been published to GitHub and CPAN. Two CPAN Testers
+reports on ARM64 Linux with OpenSSL 4.0, using Perl 5.36.3 and 5.44.0,
+identified the same TLS unclean-EOF classification failure in
+`t/tls-20-deadline-and-eof.t` (assertions 18 and 19).
+[PR #43](https://github.com/haxmeister/perl-linux-event/pull/43)
+fixed the native classification in `xstls/TLS.xs` and added
+`.github/workflows/openssl4.yml`. The ARM64/OpenSSL 4.0.3 job verified
+19/19 EOF tests and 115/115 TLS tests. Ordinary CI, sanitizer checks,
+distribution integrity and performance regression checks also passed.
+
+The `release/0.120` branch updates the distribution to 0.120, tracks
+consistent metadata and this maintenance-only history entry. There are no
+new features and no public API or native consumer ABI changes. Merge into
+`main` only after release-branch verification. Tagging, the GitHub release,
+and uploading to CPAN are reserved for the maintainer, not performed here.
+
 ## 0.119 MAINTENANCE RELEASE PREPARATION (2026-11-13)
 
 GitHub [PR #41](https://github.com/haxmeister/perl-linux-event/pull/41)

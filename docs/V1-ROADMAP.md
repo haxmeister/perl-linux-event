@@ -21,11 +21,12 @@ clean semantic fit, focused correctness tests, realistic benchmarks where
 performance is the reason for the work, and an acceptable maintenance cost.
 Rejected and neutral experiments remain useful evidence.
 
-**Maintenance note (2026-11-13):** The 0.118 release was published after
-the dated 2026-10-31 status snapshot below. The later native-consumer
-exception use-after-free correction merged as PR #41 and is being prepared
-for the 0.119 maintenance release. It changes no public API or roadmap
-priority; no new Linux-native feature was selected.
+**Maintenance update (2026-11-14):** Linux::Event 0.119 was published.
+Subsequent ARM64/OpenSSL 4 CPAN Testers reports exposed an unclean TLS EOF
+classification error. PR #43 fixed it, and the ARM64/OpenSSL 4.0.3
+compatibility suite passed. The 0.120 maintenance-release branch packages
+that correction without any new features or public API/ABI changes.
+GitHub tagging, publication and CPAN upload are separate maintainer actions.
 
 ## 0.114 correctness release
 
