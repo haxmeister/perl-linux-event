@@ -29,7 +29,7 @@ jobs:
           ./Configure --prefix="$RUNNER_TEMP/openssl4" --libdir=lib shared no-tests
           make --jobs=2
           make install_sw
-          "$RUNNER_TEMP/openssl4/bin/openssl" version
+          LD_LIBRARY_PATH="$RUNNER_TEMP/openssl4/lib" "$RUNNER_TEMP/openssl4/bin/openssl" version
       - name: Build Linux::Event against OpenSSL 4
         run: |
           export CPATH="$RUNNER_TEMP/openssl4/include"
