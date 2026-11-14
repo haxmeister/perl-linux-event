@@ -1,0 +1,31 @@
+name: Sanitizers
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  asan-ubsan:
+    name: AddressSanitizer and UndefinedBehaviorSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libssl-dev libasan8 libubsan1
+      - name: Build instrumented native extensions
+        run: |
+          perl Makefile.PL OPTIMIZE="-O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined"
+          make --jobs=2
+      - name: Run complete suite under ASan and UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
+          prove -b t/
