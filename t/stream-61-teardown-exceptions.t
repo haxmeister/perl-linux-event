@@ -69,7 +69,7 @@ use Linux::Event::_ByteStream;
 {
     package T::UnwindMessageLine;
     use parent -norequire, 'T::UnwindMessageBase';
-    use Linux::Event::Framer 'Delimiter', "\\n";
+    use Linux::Event::Framer 'Delimiter', "\n";
 }
 
 {
@@ -229,15 +229,15 @@ subtest 'on_close exception occurs after ownership teardown' => sub {
 };
 
 for my $case (
-    ['framed message', 'T::UnwindMessageLine', "message\\n"],
-    ['raw input',      'T::UnwindRaw',         "message\\n"],
+    ['framed message', 'T::UnwindMessageLine', "message\n"],
+    ['raw input',      'T::UnwindRaw',         "message\n"],
 ) {
     my ($kind, $class, $payload) = @$case;
 
     subtest "$kind callback exception clears pending flush while Stream lives" => sub {
         my ($loop, $stream, $peer, $fh, $data) = socket_stream($class);
         $stream->{xs_state}->_test_consumer_arm(sub {
-            die "synthetic $kind callback exception\\n";
+            die "synthetic $kind callback exception\n";
         });
         is(syswrite($peer, $payload), length($payload),
             "$kind input submitted");
@@ -261,7 +261,7 @@ for my $case (
             my $closing = $stream;
             undef $stream;
             $closing->close;
-            die "synthetic $kind close exception\\n";
+            die "synthetic $kind close exception\n";
         });
         is(syswrite($peer, $payload), length($payload),
             "$kind input submitted");
