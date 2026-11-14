@@ -1,5 +1,27 @@
 # Linux::Event Handoff
 
+## 0.119 MAINTENANCE RELEASE PREPARATION (2026-11-13)
+
+GitHub [PR #41](https://github.com/haxmeister/perl-linux-event/pull/41)
+merged the native-consumer exception use-after-free fix to `main` as
+`1152feb3a4cb3e721e22bcdb2bedc8e5ba126513`. The regression covers raw
+and framed consumer callbacks, exception propagation, reentrant close and
+last-reference teardown. The instrumented ASan/UBSan run passed 174 files and
+3,613 tests; ordinary multi-Perl CI, distribution checks, actual Stream
+sendfile benchmarks and the performance-regression gate also passed.
+
+The `release/0.119` preparation updates all Perl module versions to 0.119,
+the tracked CPAN metadata and `Changes`. This is a narrow maintenance release:
+no public API/ABI changes or newly selected Linux-native features. The
+release-preparation PR requires its own CI verification; do not claim it passed
+before that run completes. Tagging `v0.119`, publishing a GitHub release and
+uploading to CPAN are **not** part of release preparation.
+
+**Historical status correction:** Linux::Event 0.118 was published on GitHub
+(and uploaded to CPAN) after the older checkpoints below. References there to
+0.118 being unpublished or CPAN still being at 0.117 describe the pre-release
+state, not today's repository status.
+
 ## ROADMAP AND RESEARCH STATUS RECONCILIATION (2026-10-31)
 
 The authoritative [1.000 roadmap](docs/V1-ROADMAP.md) and
